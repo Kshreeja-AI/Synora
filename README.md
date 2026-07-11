@@ -1,0 +1,2 @@
+# Synora
+Synora OS
