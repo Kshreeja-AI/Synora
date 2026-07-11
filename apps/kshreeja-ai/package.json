@@ -1,0 +1,27 @@
+{
+  "name": "@synora/kshreeja-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kshreeja AI — a multi-agent research & writing assistant. The first product built on the Synora platform; contains zero platform infrastructure of its own, only agents, tools, and a workflow.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@synora/config": "workspace:*",
+    "@synora/core": "workspace:*",
+    "@synora/gateway": "workspace:*",
+    "@synora/tools": "workspace:*",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

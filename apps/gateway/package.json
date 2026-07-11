@@ -1,0 +1,44 @@
+{
+  "name": "@synora/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synora's platform-wide HTTP/SSE gateway: wires every package into a running service via dependency injection. Domain-independent — products mount their own agents/tools on top.",
+  "type": "module",
+  "main": "./dist/index-lib.js",
+  "types": "./dist/index-lib.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index-lib.d.ts",
+      "default": "./dist/index-lib.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@synora/config": "workspace:*",
+    "@synora/core": "workspace:*",
+    "@synora/event-bus": "workspace:*",
+    "@synora/memory": "workspace:*",
+    "@synora/observability": "workspace:*",
+    "@synora/orchestration": "workspace:*",
+    "@synora/providers": "workspace:*",
+    "@synora/security": "workspace:*",
+    "@synora/tools": "workspace:*",
+    "fastify": "^5.2.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

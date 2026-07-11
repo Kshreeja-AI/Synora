@@ -1,0 +1,32 @@
+{
+  "name": "@synora/event-bus",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Event-driven backbone: in-memory bus for single-process/tests, Redis pub/sub for multi-instance deployments — both implementing the same EventBus port.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@synora/core": "workspace:*",
+    "@synora/observability": "workspace:*",
+    "ioredis": "^5.4.2",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@synora/providers",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Provider-agnostic ModelProvider adapters. Anthropic and OpenAI ship today; adding a new vendor means implementing one interface here, not touching orchestration or products.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b --watch",
+    "typecheck": "tsc -b --pretty",
+    "test": "vitest run",
+    "clean": "rm -rf dist .turbo"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@synora/core": "workspace:*",
+    "openai": "^4.77.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

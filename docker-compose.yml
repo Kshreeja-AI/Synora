@@ -1,0 +1,59 @@
+name: synora
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synora
+      POSTGRES_PASSWORD: synora
+      POSTGRES_DB: synora
+    ports:
+      - "5432:5432"
+    volumes:
+      - synora_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synora"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - synora_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Kshreeja AI is the first product built on the Synora platform: it imports
+  # @synora/gateway's buildPlatformContainer/createServer, registers its own
+  # agents/tools/workflows, and boots the same HTTP surface apps/gateway
+  # exposes standalone. Point this at a different app's Dockerfile to run a
+  # future product on the same platform instead.
+  kshreeja-ai:
+    build:
+      context: .
+      dockerfile: apps/kshreeja-ai/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://synora:synora@postgres:5432/synora
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  synora_pg_data:
+  synora_redis_data:
