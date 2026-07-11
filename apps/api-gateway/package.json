@@ -1,0 +1,41 @@
+{
+  "name": "@synora/api-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@synora/application": "workspace:*",
+    "@synora/config": "workspace:*",
+    "@synora/di": "workspace:*",
+    "@synora/errors": "workspace:*",
+    "@synora/event-bus": "workspace:*",
+    "@synora/infra-llm-openrouter": "workspace:*",
+    "@synora/infra-postgres": "workspace:*",
+    "@synora/infra-qdrant": "workspace:*",
+    "@synora/infra-redis": "workspace:*",
+    "@synora/infra-secrets-env": "workspace:*",
+    "@synora/infra-storage-s3": "workspace:*",
+    "@synora/logger": "workspace:*",
+    "@synora/plugin-example-task": "workspace:*",
+    "@synora/plugin-system": "workspace:*",
+    "@synora/types": "workspace:*",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

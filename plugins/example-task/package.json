@@ -1,0 +1,40 @@
+{
+  "name": "@synora/plugin-example-task",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@synora/application": "workspace:*",
+    "@synora/di": "workspace:*",
+    "@synora/domain": "workspace:*",
+    "@synora/errors": "workspace:*",
+    "@synora/event-bus": "workspace:*",
+    "@synora/infra-postgres": "workspace:*",
+    "@synora/plugin-system": "workspace:*",
+    "@synora/types": "workspace:*",
+    "drizzle-orm": "^0.38.2"
+  },
+  "devDependencies": {
+    "@synora/test-utils": "workspace:*",
+    "@types/node": "^22.10.0",
+    "drizzle-kit": "^0.30.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

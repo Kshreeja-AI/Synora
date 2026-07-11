@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "dist"],
+  "references": [
+    { "path": "../../packages/application" },
+    { "path": "../../packages/domain" },
+    { "path": "../../packages/shared/shared-errors" },
+    { "path": "../../packages/shared/shared-di" },
+    { "path": "../../packages/shared/shared-event-bus" },
+    { "path": "../../packages/shared/shared-plugin-system" },
+    { "path": "../../packages/shared/shared-types" },
+    { "path": "../../packages/infrastructure/infra-postgres" }
+  ]
+}

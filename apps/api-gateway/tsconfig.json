@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "dist", "e2e"],
+  "references": [
+    { "path": "../../packages/application" },
+    { "path": "../../packages/shared/shared-config" },
+    { "path": "../../packages/shared/shared-di" },
+    { "path": "../../packages/shared/shared-errors" },
+    { "path": "../../packages/shared/shared-event-bus" },
+    { "path": "../../packages/shared/shared-logger" },
+    { "path": "../../packages/shared/shared-plugin-system" },
+    { "path": "../../packages/shared/shared-types" },
+    { "path": "../../packages/infrastructure/infra-llm-openrouter" },
+    { "path": "../../packages/infrastructure/infra-postgres" },
+    { "path": "../../packages/infrastructure/infra-qdrant" },
+    { "path": "../../packages/infrastructure/infra-redis" },
+    { "path": "../../packages/infrastructure/infra-secrets-env" },
+    { "path": "../../packages/infrastructure/infra-storage-s3" },
+    { "path": "../../plugins/example-task" }
+  ]
+}

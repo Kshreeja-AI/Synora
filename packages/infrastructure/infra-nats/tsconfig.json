@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src"],
+  "exclude": ["**/*.test.ts", "**/*.test-helper.ts", "dist"],
+  "references": [{ "path": "../../domain" }, { "path": "../../shared/shared-event-bus" }]
+}

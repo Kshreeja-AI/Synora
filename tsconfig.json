@@ -1,0 +1,26 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/domain" },
+    { "path": "packages/application" },
+    { "path": "packages/shared/shared-types" },
+    { "path": "packages/shared/shared-errors" },
+    { "path": "packages/shared/shared-logger" },
+    { "path": "packages/shared/shared-config" },
+    { "path": "packages/shared/shared-di" },
+    { "path": "packages/shared/shared-event-bus" },
+    { "path": "packages/shared/shared-plugin-system" },
+    { "path": "packages/shared/test-utils" },
+    { "path": "packages/infrastructure/infra-postgres" },
+    { "path": "packages/infrastructure/infra-redis" },
+    { "path": "packages/infrastructure/infra-qdrant" },
+    { "path": "packages/infrastructure/infra-nats" },
+    { "path": "packages/infrastructure/infra-llm-openrouter" },
+    { "path": "packages/infrastructure/infra-auth-better-auth" },
+    { "path": "packages/infrastructure/infra-storage-s3" },
+    { "path": "packages/infrastructure/infra-secrets-env" },
+    { "path": "packages/infrastructure/infra-workflow-temporal" },
+    { "path": "plugins/example-task" },
+    { "path": "apps/api-gateway" }
+  ]
+}
