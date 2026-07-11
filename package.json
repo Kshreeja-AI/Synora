@@ -1,0 +1,30 @@
+{
+  "name": "synora",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Synora — a modular, provider-agnostic AI platform for building multiple AI products.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "gateway": "pnpm --filter @synora/gateway dev",
+    "kshreeja": "pnpm --filter @synora/kshreeja-ai dev"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.10.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
