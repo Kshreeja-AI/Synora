@@ -1,0 +1,80 @@
+# Netlify Configuration for Synora Frontend
+# Deployment configuration for Next.js application
+
+[build]
+  # Build command for production
+  command = "npm run build --scope=@synora/web"
+
+  # Directory with the static content
+  publish = "apps/web/.next"
+
+  # Build functions directory
+  functions = "netlify/functions"
+
+# Environment variables
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_VERSION = "10"
+  NEXT_PUBLIC_API_URL = "https://api-staging.synora.example.com"
+  NODE_ENV = "production"
+
+# Redirects and rewrites
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# Cache headers for static assets
+[[headers]]
+  for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# API routes
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Content-Type = "application/json"
+
+# Context-specific settings
+[context.production]
+  command = "npm run build --scope=@synora/web"
+  publish = "apps/web/.next"
+
+[context.production.environment]
+  NEXT_PUBLIC_API_URL = "https://api.synora.example.com"
+  NEXTAUTH_URL = "https://synora.example.com"
+
+[context.staging]
+  command = "npm run build --scope=@synora/web"
+  publish = "apps/web/.next"
+
+[context.staging.environment]
+  NEXT_PUBLIC_API_URL = "https://api-staging.synora.example.com"
+  NEXTAUTH_URL = "https://staging.synora.example.com"
+
+[context.deploy-preview]
+  command = "npm run build --scope=@synora/web"
+  publish = "apps/web/.next"
+
+[context.deploy-preview.environment]
+  NEXT_PUBLIC_API_URL = "https://api-staging.synora.example.com"
+
+[context.branch-deploy]
+  command = "npm run build --scope=@synora/web"
+  publish = "apps/web/.next"
+
+[context.branch-deploy.environment]
+  NEXT_PUBLIC_API_URL = "https://api-staging.synora.example.com"
