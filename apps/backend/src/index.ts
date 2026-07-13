@@ -64,6 +64,7 @@ app.use((req, res) => {
 });
 
 // Error Handler (must be last)
+// @ts-ignore - Express error handler signature requires 4 params
 app.use(errorHandler);
 
 // Start Server
