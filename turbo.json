@@ -1,0 +1,48 @@
+{
+  "$schema": "https://turbo.build/json-schema.json",
+  "version": "2",
+  "extends": ["//"],
+  "globalDependencies": ["**/.env.local", ".env.local"],
+  "tasks": {
+    "build": {
+      "outputs": [".next/**", "dist/**", ".tsbuildinfo/**"],
+      "cache": true,
+      "dependsOn": ["^build"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "outputs": [".eslintcache"],
+      "cache": true
+    },
+    "test": {
+      "outputs": ["coverage/**"],
+      "cache": true
+    },
+    "test:watch": {
+      "cache": false,
+      "persistent": true
+    },
+    "test:coverage": {
+      "outputs": ["coverage/**"],
+      "cache": true
+    },
+    "type-check": {
+      "cache": true
+    },
+    "format": {
+      "cache": true
+    },
+    "db:generate": {
+      "cache": true
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "db:seed": {
+      "cache": false
+    }
+  }
+}

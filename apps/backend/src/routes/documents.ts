@@ -1,0 +1,57 @@
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { createApiResponse, NotFoundException } from '@synora/shared';
+
+const router = Router();
+const prisma = new PrismaClient();
+
+router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const documents = await prisma.document.findMany({
+      where: { userId: req.userId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    res.json(createApiResponse(documents));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { title, content, format } = req.body;
+
+    const document = await prisma.document.create({
+      data: {
+        userId: req.userId!,
+        title,
+        content,
+        format: format || 'MARKDOWN',
+      },
+    });
+
+    res.status(201).json(createApiResponse(document));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const document = await prisma.document.findUnique({
+      where: { id: req.params.id },
+    });
+
+    if (!document || document.userId !== req.userId) {
+      throw new NotFoundException('Document');
+    }
+
+    res.json(createApiResponse(document));
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;
