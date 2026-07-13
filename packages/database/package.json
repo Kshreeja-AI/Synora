@@ -10,7 +10,11 @@
     "db:migrate:create": "prisma migrate dev --create-only",
     "db:seed": "ts-node --esm prisma/seed.ts",
     "db:reset": "prisma migrate reset",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test": "echo 'Database package - no tests'",
+    "lint": "echo 'Database package - no linting'",
+    "format": "echo 'Database package - no formatting'",
+    "type-check": "echo 'Database package - no type-check'"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1"
