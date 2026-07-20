@@ -126,10 +126,11 @@ export class SecretsManager {
   /**
    * Startup validation: for every catalog entry required in the current
    * environment, confirm a value resolves. Call this once during app boot.
-   * Throws SecretsValidationError (fail-fast) unless the environment is
-   * local/development, where missing required secrets only warn — that's
-   * what makes "use placeholders during development" safe: dev never
-   * hard-fails on a missing secret, staging/production always does.
+   * Throws SecretsValidationError (fail-fast) in staging/production;
+   * development/testing/qa only warn — matching which stages get the
+   * placeholder fallback (see factory.ts#createSourceChain), so "use
+   * placeholders during development" holds for all three non-hard-fail
+   * stages, not just development.
    */
   async validateRequired(): Promise<void> {
     const missing: string[] = [];
@@ -144,7 +145,8 @@ export class SecretsManager {
 
     if (missing.length === 0) return;
 
-    if (this.environment === 'local' || this.environment === 'development') {
+    const softFailStages: readonly string[] = ['development', 'testing', 'qa'];
+    if (softFailStages.includes(this.environment)) {
       for (const key of missing) {
         this.auditLog.record({
           timestamp: new Date(),
@@ -152,7 +154,7 @@ export class SecretsManager {
           action: 'access-denied',
           source: 'placeholder',
           actor: 'startup-validation',
-          metadata: { reason: 'missing-in-dev-non-fatal' },
+          metadata: { reason: 'missing-in-non-production-non-fatal' },
         });
       }
       return;

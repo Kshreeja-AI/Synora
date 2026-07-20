@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { createApiResponse, createApiError, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
+import { getConfig } from '../config';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -43,7 +44,7 @@ router.post('/register', async (req, res, next) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       jwtSecret,
-      { expiresIn: process.env.JWT_EXPIRY || '15m' }
+      { expiresIn: getConfig().auth.jwtExpiry }
     );
 
     res.status(201).json(
@@ -79,7 +80,7 @@ router.post('/login', async (req, res, next) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       jwtSecret,
-      { expiresIn: process.env.JWT_EXPIRY || '15m' }
+      { expiresIn: getConfig().auth.jwtExpiry }
     );
 
     await prisma.user.update({

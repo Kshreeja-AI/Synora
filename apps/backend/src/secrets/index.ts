@@ -8,7 +8,7 @@ export type { SecretsManagerOptions } from './secretsManager';
 export { LoggerAuditLog } from './audit/loggerAuditLog';
 export { StubHsmProvider } from './hsm/stubHsmProvider';
 export { SECRET_CATALOG } from './registry';
-export { createDefaultSecretsManager, createSourceChain, detectEnvironment } from './factory';
+export { createDefaultSecretsManager, createSourceChain } from './factory';
 
 import { createDefaultSecretsManager } from './factory';
 
