@@ -1,7 +1,5 @@
 {
   "$schema": "https://turbo.build/json-schema.json",
-  "version": "2",
-  "extends": ["//"],
   "globalDependencies": ["**/.env.local", ".env.local"],
   "tasks": {
     "build": {
@@ -15,11 +13,13 @@
     },
     "lint": {
       "outputs": [".eslintcache"],
-      "cache": true
+      "cache": true,
+      "dependsOn": ["^build"]
     },
     "test": {
       "outputs": ["coverage/**"],
-      "cache": true
+      "cache": true,
+      "dependsOn": ["^build"]
     },
     "test:watch": {
       "cache": false,
@@ -27,10 +27,12 @@
     },
     "test:coverage": {
       "outputs": ["coverage/**"],
-      "cache": true
+      "cache": true,
+      "dependsOn": ["^build"]
     },
     "type-check": {
-      "cache": true
+      "cache": true,
+      "dependsOn": ["^build"]
     },
     "format": {
       "cache": true
