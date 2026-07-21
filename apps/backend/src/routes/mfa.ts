@@ -1,8 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import bcryptjs from 'bcryptjs';
+import { PrismaClient } from '@prisma/client';
 import { createApiResponse, createApiError, UnauthorizedException } from '@synora/shared';
 import { MFAService } from '../services/mfa/mfa.service';
+import { ChallengeTokenService } from '../services/mfa/challenge-token.service';
 import { csrfProtectionMiddleware } from '../middleware/csrfProtection';
+
+const prisma = new PrismaClient();
 
 const router = Router();
 
@@ -109,10 +114,17 @@ router.post('/setup/confirm', requireAuth, csrfProtectionMiddleware, async (req,
       throw new UnauthorizedException('You must save recovery codes before proceeding');
     }
 
-    // Parse recovery codes from body (user must submit them back for confirmation)
-    const recoveryCodes = req.body.recoveryCodes || [];
+    // Validate recovery codes format (CRITICAL: must be valid SHA-256 hashes from server)
+    const recoveryCodes = Array.isArray(req.body.recoveryCodes) ? req.body.recoveryCodes : [];
     if (recoveryCodes.length !== 10) {
-      throw new UnauthorizedException('All recovery codes required for confirmation');
+      throw new UnauthorizedException('All 10 recovery codes required for confirmation');
+    }
+
+    // Validate each recovery code is a valid SHA-256 hash (64 hex characters)
+    for (const code of recoveryCodes) {
+      if (typeof code !== 'string' || !/^[a-f0-9]{64}$/.test(code)) {
+        throw new UnauthorizedException('Invalid recovery code format - expected 64 hex characters');
+      }
     }
 
     await MFAService.confirmSetup(userId, setupToken, recoveryCodes);
@@ -137,15 +149,27 @@ router.post('/verify', csrfProtectionMiddleware, async (req, res, next) => {
   try {
     const { mfaChallengeToken, code, recoveryCode } = verifySchema.parse(req.body);
 
+    // Get session ID and device info from request
+    const sessionId = (req as any).sessionId || 'unknown';
+    const ipAddress = req.ip || req.connection.remoteAddress || 'unknown';
+    const userAgent = req.get('user-agent') || 'unknown';
+
     // Determine if verifying TOTP code or recovery code
     if (code) {
-      // Get userId from challenge token
-      const { userId } = await parseChallengeToken(mfaChallengeToken);
+      // Verify and extract userId from challenge token (CRITICAL: must verify token properly)
+      const challengeToken = await ChallengeTokenService.verifyToken(mfaChallengeToken, '');
+      if (!challengeToken) {
+        throw new UnauthorizedException('Invalid or expired challenge token');
+      }
 
+      const userId = challengeToken.userId;
+
+      // Verify TOTP code
       await MFAService.verifyChallengeCode(userId, mfaChallengeToken, code);
 
-      // Return JWT token + user info
-      // (In real implementation, would generate JWT here)
+      // Consume the challenge token (mark as used atomically)
+      await ChallengeTokenService.consumeToken(challengeToken.id);
+
       res.json(
         createApiResponse({
           message: 'MFA verified',
@@ -153,13 +177,23 @@ router.post('/verify', csrfProtectionMiddleware, async (req, res, next) => {
         })
       );
     } else if (recoveryCode) {
-      const { userId } = await parseChallengeToken(mfaChallengeToken);
+      // Verify and extract userId from challenge token
+      const challengeToken = await ChallengeTokenService.verifyToken(mfaChallengeToken, '');
+      if (!challengeToken) {
+        throw new UnauthorizedException('Invalid or expired challenge token');
+      }
 
+      const userId = challengeToken.userId;
+
+      // Verify recovery code
       const result = await MFAService.verifyChallengeRecoveryCode(
         userId,
         mfaChallengeToken,
         recoveryCode
       );
+
+      // Consume the challenge token
+      await ChallengeTokenService.consumeToken(challengeToken.id);
 
       res.json(
         createApiResponse({
@@ -185,10 +219,16 @@ router.post('/disable', requireAuth, csrfProtectionMiddleware, async (req, res, 
     const userId = (req as any).userId;
     const { password } = disableSchema.parse(req.body);
 
-    // In real implementation, verify password here
-    // const user = await prisma.user.findUnique({ where: { id: userId } });
-    // const isValid = await bcryptjs.compare(password, user.password);
-    // if (!isValid) throw new UnauthorizedException('Invalid password');
+    // Verify password (CRITICAL: required before disabling MFA)
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const isPasswordValid = await bcryptjs.compare(password, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid password');
+    }
 
     await MFAService.disable(userId);
 
@@ -217,14 +257,5 @@ router.get('/recovery-codes', requireAuth, csrfProtectionMiddleware, async (req,
     next(error);
   }
 });
-
-/**
- * Helper: Parse userId from challenge token
- * In real implementation, would decrypt/verify token
- */
-async function parseChallengeToken(token: string): Promise<{ userId: string }> {
-  // This would be implemented properly in production
-  return { userId: 'temp-user-id' };
-}
 
 export default router;

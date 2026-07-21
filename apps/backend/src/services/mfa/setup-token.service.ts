@@ -41,6 +41,7 @@ export class SetupTokenService {
   /**
    * Verify setup token + mark as verified
    * Called when user enters code from authenticator
+   * Uses timing-safe userId comparison to prevent timing attacks
    */
   static async verifyToken(token: string, code: string, userId: string): Promise<{ secret: string } | null> {
     try {
@@ -54,8 +55,13 @@ export class SetupTokenService {
         return null;
       }
 
-      // Verify ownership
-      if (setupToken.userId !== userId) {
+      // Verify ownership with timing-safe comparison
+      try {
+        crypto.timingSafeEqual(
+          Buffer.from(setupToken.userId),
+          Buffer.from(userId)
+        );
+      } catch {
         return null;
       }
 
@@ -84,6 +90,7 @@ export class SetupTokenService {
   /**
    * Get verified setup token
    * Used to confirm setup is complete
+   * Uses timing-safe userId comparison to prevent timing attacks
    */
   static async getVerified(token: string, userId: string): Promise<{ secret: string } | null> {
     try {
@@ -93,7 +100,21 @@ export class SetupTokenService {
         where: { tokenHash },
       });
 
-      if (!setupToken || setupToken.userId !== userId || !setupToken.verified) {
+      if (!setupToken) {
+        return null;
+      }
+
+      // Verify ownership with timing-safe comparison
+      try {
+        crypto.timingSafeEqual(
+          Buffer.from(setupToken.userId),
+          Buffer.from(userId)
+        );
+      } catch {
+        return null;
+      }
+
+      if (!setupToken.verified) {
         return null;
       }
 

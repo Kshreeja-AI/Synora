@@ -121,7 +121,13 @@ export function MFAVerificationForm({ mfaChallengeToken, email }: MFAVerificatio
                 type="text"
                 placeholder="XXXX-XXXX"
                 value={recoveryCode}
-                onChange={(e) => setRecoveryCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 9))}
+                onChange={(e) => {
+                  const cleaned = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+                  const formatted = cleaned.length > 4
+                    ? cleaned.slice(0, 4) + '-' + cleaned.slice(4, 8)
+                    : cleaned.slice(0, 4);
+                  setRecoveryCode(formatted);
+                }}
                 maxLength={9}
                 disabled={isLoading}
                 className="w-full px-4 py-3 border rounded font-mono text-lg disabled:opacity-50"

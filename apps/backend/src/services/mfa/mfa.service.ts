@@ -229,6 +229,27 @@ export class MFAService {
       throw new UnauthorizedException('Too many failed attempts. Try again later.');
     }
 
+    // CRITICAL: Check failure count BEFORE recording attempt (prevents allowing MAX attempts)
+    // If we already have MAX_FAILED_ATTEMPTS - 1 failures, reject this attempt immediately
+    const existingFailures = await prisma.mFAAttempt.count({
+      where: {
+        mfaMethodId: mfaMethod.id,
+        success: false,
+        createdAt: {
+          gte: new Date(Date.now() - MFA_CONFIG.LOCKOUT_DURATION),
+        },
+      },
+    });
+
+    if (existingFailures >= MFA_CONFIG.MAX_FAILED_ATTEMPTS - 1) {
+      // Lock account BEFORE recording this attempt
+      await prisma.mFAMethod.update({
+        where: { id: mfaMethod.id },
+        data: { status: 'RECOVERY_MODE' },
+      });
+      throw new UnauthorizedException('Too many failed attempts. Account locked.');
+    }
+
     // Verify TOTP code
     const isValid = TOTPService.verify(code, mfaMethod.secret);
 
@@ -242,25 +263,6 @@ export class MFAService {
     });
 
     if (!isValid) {
-      // Check failure count
-      const recentFailures = await prisma.mFAAttempt.count({
-        where: {
-          mfaMethodId: mfaMethod.id,
-          success: false,
-          createdAt: {
-            gte: new Date(Date.now() - 15 * 60 * 1000), // Last 15 minutes
-          },
-        },
-      });
-
-      if (recentFailures >= MFA_CONFIG.MAX_FAILED_ATTEMPTS) {
-        // Lock account
-        await prisma.mFAMethod.update({
-          where: { id: mfaMethod.id },
-          data: { status: 'RECOVERY_MODE' },
-        });
-      }
-
       throw new UnauthorizedException('Invalid MFA code');
     }
 
@@ -279,6 +281,8 @@ export class MFAService {
   /**
    * Verify recovery code during login
    * User is using backup code (lost authenticator scenario)
+   * Uses constant-time search to prevent timing attacks
+   * Uses atomic conditional update to prevent reuse race condition
    */
   static async verifyChallengeRecoveryCode(
     userId: string,
@@ -311,31 +315,52 @@ export class MFAService {
       throw new NotFoundException('MFA not enabled');
     }
 
-    // Find matching recovery code
-    const codeIndex = mfaMethod.backupCodesHash.findIndex((hash) =>
-      RecoveryCodeService.verifyCode(recoveryCode, hash)
-    );
+    // Perform constant-time recovery code verification
+    // Get all recovery codes for this MFA method
+    const allRecoveryCodes = await prisma.mFARecoveryCode.findMany({
+      where: { mfaMethodId: mfaMethod.id },
+    });
 
-    if (codeIndex === -1) {
+    if (allRecoveryCodes.length === 0) {
       throw new UnauthorizedException('Invalid recovery code');
     }
 
-    // Mark recovery code as used
-    const recoveryCodeRecord = await prisma.mFARecoveryCode.findFirst({
-      where: {
-        mfaMethodId: mfaMethod.id,
-        codeHash: mfaMethod.backupCodesHash[codeIndex],
-      },
-    });
+    // Find matching code using constant-time comparison
+    let matchedCode: typeof allRecoveryCodes[0] | null = null;
+    const providedHash = RecoveryCodeService.hashCode(recoveryCode);
 
-    if (recoveryCodeRecord?.usedAt) {
+    for (const codeRecord of allRecoveryCodes) {
+      try {
+        // Use timing-safe comparison for each code
+        if (crypto.timingSafeEqual(Buffer.from(providedHash), Buffer.from(codeRecord.codeHash))) {
+          matchedCode = codeRecord;
+        }
+      } catch {
+        // timingSafeEqual throws on length mismatch, continue checking
+      }
+    }
+
+    if (!matchedCode) {
+      throw new UnauthorizedException('Invalid recovery code');
+    }
+
+    if (matchedCode.usedAt) {
       throw new UnauthorizedException('Recovery code already used');
     }
 
-    await prisma.mFARecoveryCode.update({
-      where: { id: recoveryCodeRecord!.id },
+    // Atomically update recovery code (only if usedAt is still null)
+    // CRITICAL: Prevents race condition where two concurrent requests both use same code
+    const updated = await prisma.mFARecoveryCode.updateMany({
+      where: {
+        id: matchedCode.id,
+        usedAt: null, // Only update if NOT used
+      },
       data: { usedAt: new Date() },
     });
+
+    if (updated.count === 0) {
+      throw new UnauthorizedException('Recovery code already used');
+    }
 
     // Update MFA method status to RECOVERY_MODE (user lost device)
     await prisma.mFAMethod.update({

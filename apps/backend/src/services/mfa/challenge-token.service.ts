@@ -46,6 +46,7 @@ export class ChallengeTokenService {
    * Verify challenge token
    * Checks: exists, not expired, not already used
    * Returns token object if valid, null otherwise
+   * Uses timing-safe userId comparison to prevent timing attacks
    */
   static async verifyToken(token: string, userId: string): Promise<any | null> {
     try {
@@ -62,8 +63,19 @@ export class ChallengeTokenService {
         // No token found
       }
 
-      // Verify ownership + timing-safe
-      if (!challengeToken || challengeToken.userId !== userId) {
+      // Verify ownership with timing-safe comparison
+      if (!challengeToken) {
+        return null;
+      }
+
+      try {
+        // Use timing-safe comparison for userId to prevent timing attacks
+        crypto.timingSafeEqual(
+          Buffer.from(challengeToken.userId),
+          Buffer.from(userId)
+        );
+      } catch {
+        // Timing-safe equal throws on mismatch, return null without revealing timing info
         return null;
       }
 

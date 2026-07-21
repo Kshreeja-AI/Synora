@@ -45,9 +45,10 @@ export class RecoveryCodeService {
   /**
    * Hash recovery code for storage
    * Uses SHA-256 so original code is never stored
+   * Canonicalizes input to uppercase for consistent hashing
    */
   static hashCode(code: string): string {
-    return crypto.createHash('sha256').update(code).digest('hex');
+    return crypto.createHash('sha256').update(code.toUpperCase()).digest('hex');
   }
 
   /**

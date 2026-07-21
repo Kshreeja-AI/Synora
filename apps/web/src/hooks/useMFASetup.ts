@@ -156,6 +156,10 @@ export function useMFASetup() {
         ...prev,
         step: 'complete',
         isLoading: false,
+        // Clear sensitive data from state after confirmation
+        recoveryCodes: null,
+        setupToken: null,
+        secret: null,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to confirm setup';

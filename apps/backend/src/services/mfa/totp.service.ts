@@ -113,37 +113,30 @@ export class TOTPService {
 
   /**
    * Get counter value for timestamp (RFC 4226)
+   * Converts to big-endian 64-bit representation
    */
   private static getCounter(timestamp: number): Buffer {
     const counter = Buffer.alloc(8);
-
-    // Convert timestamp to counter (big-endian 64-bit)
     const windowCount = Math.floor(timestamp / this.TIME_STEP);
 
-    for (let i = 7; i >= 0; i--) {
-      counter[i] = windowCount & 0xff;
-      (counter as any).writeUInt8(windowCount & 0xff, i);
-    }
-
-    // Correctly write big-endian 64-bit number
-    for (let i = 7; i >= 0; i--) {
-      counter[i] = windowCount & 0xff;
-      counter.writeUInt8(windowCount & 0xff, i);
-    }
+    // Write big-endian 64-bit number (high byte first)
+    counter.writeBigInt64BE(BigInt(windowCount), 0);
 
     return counter;
   }
 
   /**
    * Timing-safe string comparison
+   * Pads both strings to same length to prevent timing leaks
    */
   private static timingSafeEqual(a: string, b: string): boolean {
-    if (a.length !== b.length) {
-      return false;
-    }
+    // Pad both to same length to prevent timing oracle
+    const maxLen = Math.max(a.length, b.length);
+    const aPadded = a.padStart(maxLen, '\0');
+    const bPadded = b.padStart(maxLen, '\0');
 
     try {
-      return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+      return crypto.timingSafeEqual(Buffer.from(aPadded), Buffer.from(bPadded));
     } catch {
       return false;
     }
