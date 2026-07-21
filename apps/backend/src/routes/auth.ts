@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
-import { createApiResponse, createApiError, ValidationException } from '@synora/shared';
+import { createApiResponse, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
 

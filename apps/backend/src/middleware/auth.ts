@@ -54,7 +54,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
     req.userId = decoded.userId;
     req.user = decoded;
     next();
-  } catch (error) {
+  } catch {
     next(new UnauthorizedException('Invalid or expired token'));
   }
 }

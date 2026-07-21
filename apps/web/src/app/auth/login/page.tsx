@@ -31,7 +31,7 @@ export default function LoginPage() {
 
       localStorage.setItem('token', data.data.token);
       window.location.href = '/dashboard';
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);

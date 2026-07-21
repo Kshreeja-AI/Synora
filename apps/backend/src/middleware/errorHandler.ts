@@ -7,7 +7,7 @@ export function errorHandler(
   error: unknown,
   req: Request,
   res: Response,
-  next: NextFunction
+  _next: NextFunction
 ) {
   logger.error('Error occurred', {
     url: req.url,
