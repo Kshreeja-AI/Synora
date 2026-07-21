@@ -2,13 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import bcryptjs from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@synora/database';
 import { createApiResponse, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
 
 const router: Router = Router();
-const prisma = new PrismaClient();
 
 const registerSchema = z.object({
   email: z.string().email(),
