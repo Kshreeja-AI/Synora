@@ -4,6 +4,7 @@ import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { createApiResponse, createApiError, ValidationException } from '@synora/shared';
+import { secretsManager } from '../secrets';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -38,9 +39,10 @@ router.post('/register', async (req, res, next) => {
       },
     });
 
+    const jwtSecret = await secretsManager.get('JWT_SECRET', 'backend:auth-route');
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || '',
+      jwtSecret,
       { expiresIn: process.env.JWT_EXPIRY || '15m' }
     );
 
@@ -73,9 +75,10 @@ router.post('/login', async (req, res, next) => {
       throw new ValidationException('Invalid email or password');
     }
 
+    const jwtSecret = await secretsManager.get('JWT_SECRET', 'backend:auth-route');
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || '',
+      jwtSecret,
       { expiresIn: process.env.JWT_EXPIRY || '15m' }
     );
 

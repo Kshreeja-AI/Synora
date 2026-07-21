@@ -1,3 +1,8 @@
+# Local secret material — never commit real secrets
+infrastructure/docker/secrets/
+*.secret
+.secrets/
+
 # Logs
 logs
 *.log

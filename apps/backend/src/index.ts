@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { secretsManager } from './secrets';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import projectRoutes from './routes/projects';
@@ -67,10 +68,21 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start Server
-app.listen(PORT, () => {
-  logger.info(`🚀 Server running at http://localhost:${PORT}`);
-  logger.info(`📚 API available at http://localhost:${PORT}/api`);
-});
+secretsManager
+  .validateRequired()
+  .then(() => {
+    app.listen(PORT, () => {
+      logger.info(`🚀 Server running at http://localhost:${PORT}`);
+      logger.info(`📚 API available at http://localhost:${PORT}/api`);
+      logger.info(`🔐 Secrets environment: ${secretsManager.getEnvironment()}`);
+    });
+  })
+  .catch((error) => {
+    logger.error('Startup aborted: required secrets are missing', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    process.exit(1);
+  });
 
 // Graceful Shutdown
 process.on('SIGTERM', () => {

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { UnauthorizedException } from '@synora/shared';
+import { secretsManager } from '../secrets';
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -11,45 +12,63 @@ export interface AuthRequest extends Request {
   };
 }
 
-export function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+interface JwtPayload {
+  userId: string;
+  email: string;
+  role: string;
+}
+
+/**
+ * Verifies against every known version of JWT_SECRET, newest first, so a
+ * token signed just before a rotation still validates during the grace
+ * window instead of forcing every logged-in user to re-authenticate the
+ * moment the key rotates.
+ */
+async function verifyToken(token: string): Promise<JwtPayload> {
+  const current = await secretsManager.get('JWT_SECRET', 'backend:auth-middleware');
+  const history = secretsManager.getVersions('JWT_SECRET');
+  const candidates = history.length > 0 ? [...history].reverse().map((v) => v.value) : [current];
+
+  for (const secret of candidates) {
+    try {
+      return jwt.verify(token, secret) as JwtPayload;
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error('Token did not verify against any known secret version');
+}
+
+export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    throw new UnauthorizedException('Missing or invalid authorization header');
+    return next(new UnauthorizedException('Missing or invalid authorization header'));
   }
 
   const token = authHeader.substring(7);
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as {
-      userId: string;
-      email: string;
-      role: string;
-    };
-
+    const decoded = await verifyToken(token);
     req.userId = decoded.userId;
     req.user = decoded;
     next();
   } catch (error) {
-    throw new UnauthorizedException('Invalid or expired token');
+    next(new UnauthorizedException('Invalid or expired token'));
   }
 }
 
-export function optionalAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+export async function optionalAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7);
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || '') as {
-        userId: string;
-        email: string;
-        role: string;
-      };
-
+      const decoded = await verifyToken(token);
       req.userId = decoded.userId;
       req.user = decoded;
-    } catch (error) {
+    } catch {
       // If token is invalid, continue without authentication
     }
   }

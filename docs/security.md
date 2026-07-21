@@ -4,6 +4,11 @@
 
 Security is built into every layer of Synora AI, from authentication to data protection.
 
+> **Secret management** (how JWT signing keys, database credentials, and
+> API keys are stored, rotated, versioned, and audited across every
+> environment and deployment platform) has its own document:
+> [Secret Management System](security/SECRET_MANAGEMENT.md).
+
 ## Authentication & Authorization
 
 ### JWT Implementation
