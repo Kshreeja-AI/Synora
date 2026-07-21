@@ -5,7 +5,15 @@
  * same shape regardless of where a secret's value actually comes from.
  */
 
-export type SecretEnvironment = 'local' | 'development' | 'staging' | 'production';
+// Type-only: the canonical DeploymentStage lives in ../config/types and is
+// owned by the Environment Management System. This is a compile-time-only
+// reference (`import type`), so it does not create a runtime dependency —
+// config/configLoader.ts separately depends on secrets at runtime to
+// resolve secret-backed fields like DATABASE_URL, and that one-directional
+// runtime edge (config -> secrets) is intentional.
+import type { DeploymentStage } from '../config/types';
+
+export type SecretEnvironment = DeploymentStage;
 
 /**
  * Where a secret's value was actually read from. Distinct from

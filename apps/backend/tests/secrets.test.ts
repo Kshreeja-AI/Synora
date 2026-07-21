@@ -33,7 +33,7 @@ describe('SecretsManager', () => {
       const primary = new InMemorySource({ FOO: 'primary-value' });
       const fallback = new InMemorySource({ FOO: 'fallback-value' });
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [primary, fallback],
         auditLog: new RecordingAuditLog(),
       });
@@ -45,7 +45,7 @@ describe('SecretsManager', () => {
       const primary = new InMemorySource({});
       const fallback = new InMemorySource({ FOO: 'fallback-value' });
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [primary, fallback],
         auditLog: new RecordingAuditLog(),
       });
@@ -57,7 +57,7 @@ describe('SecretsManager', () => {
       const unavailable = new InMemorySource({ FOO: 'should-not-be-read' }, false);
       const available = new InMemorySource({ FOO: 'real-value' });
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [unavailable, available],
         auditLog: new RecordingAuditLog(),
       });
@@ -67,7 +67,7 @@ describe('SecretsManager', () => {
 
     it('throws SecretNotFoundError when no source has the key', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({})],
         auditLog: new RecordingAuditLog(),
       });
@@ -77,7 +77,7 @@ describe('SecretsManager', () => {
 
     it('tryGet resolves to undefined instead of throwing', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({})],
         auditLog: new RecordingAuditLog(),
       });
@@ -89,7 +89,7 @@ describe('SecretsManager', () => {
   describe('placeholder fallback', () => {
     it('serves a deterministic placeholder when nothing else has the key', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({}), new PlaceholderSecretSource()],
         auditLog: new RecordingAuditLog(),
       });
@@ -102,7 +102,7 @@ describe('SecretsManager', () => {
     it('records an access-placeholder audit event, never the value', async () => {
       const auditLog = new RecordingAuditLog();
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new PlaceholderSecretSource()],
         auditLog,
       });
@@ -117,7 +117,7 @@ describe('SecretsManager', () => {
   describe('rotation and versioning', () => {
     it('rotate() bumps the version and preserves history', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({ KEY: 'v1' })],
         auditLog: new RecordingAuditLog(),
       });
@@ -138,7 +138,7 @@ describe('SecretsManager', () => {
     it('rotate() records a rotate audit event', async () => {
       const auditLog = new RecordingAuditLog();
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({ KEY: 'v1' })],
         auditLog,
       });
@@ -155,7 +155,7 @@ describe('SecretsManager', () => {
   describe('expiration', () => {
     it('isExpired() is false when no rotation policy is configured', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({ KEY: 'v1' })],
         auditLog: new RecordingAuditLog(),
       });
@@ -170,13 +170,13 @@ describe('SecretsManager', () => {
           key: 'KEY',
           description: 'test',
           owner: 'test',
-          environments: ['local'],
+          environments: ['development'],
           requiredIn: [],
           rotationDays: -1, // already "expired" relative to now
         },
       ];
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({ KEY: 'v1' })],
         auditLog: new RecordingAuditLog(),
         catalog,
@@ -193,13 +193,13 @@ describe('SecretsManager', () => {
           key: 'KEY',
           description: 'test',
           owner: 'test',
-          environments: ['local'],
+          environments: ['development'],
           requiredIn: [],
           rotationDays: -1,
         },
       ];
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({ KEY: 'v1' })],
         auditLog,
         catalog,
@@ -217,14 +217,14 @@ describe('SecretsManager', () => {
         key: 'REQUIRED_KEY',
         description: 'test',
         owner: 'test',
-        environments: ['local', 'production'],
+        environments: ['development', 'production'],
         requiredIn: ['production'],
       },
     ];
 
-    it('does not throw in local when a required-in-production secret is missing', async () => {
+    it('does not throw in development when a required-in-production secret is missing', async () => {
       const manager = new SecretsManager({
-        environment: 'local',
+        environment: 'development',
         sources: [new InMemorySource({})],
         auditLog: new RecordingAuditLog(),
         catalog,
@@ -254,6 +254,20 @@ describe('SecretsManager', () => {
 
       await expect(manager.validateRequired()).resolves.toBeUndefined();
     });
+
+    it.each(['testing', 'qa'] as const)(
+      'does not throw in %s when a required-in-production secret is missing',
+      async (environment) => {
+        const manager = new SecretsManager({
+          environment,
+          sources: [new InMemorySource({})],
+          auditLog: new RecordingAuditLog(),
+          catalog: [{ ...catalog[0], environments: [environment, 'production'] }],
+        });
+
+        await expect(manager.validateRequired()).resolves.toBeUndefined();
+      }
+    );
   });
 
   describe('server-only guard', () => {
@@ -263,7 +277,7 @@ describe('SecretsManager', () => {
         expect(
           () =>
             new SecretsManager({
-              environment: 'local',
+              environment: 'development',
               sources: [],
               auditLog: new RecordingAuditLog(),
             })
@@ -301,5 +315,27 @@ describe('EnvVarSecretSource platform detection', () => {
   it('treats empty string as unset', async () => {
     const source = new EnvVarSecretSource({ FOO: '' } as NodeJS.ProcessEnv);
     await expect(source.read('FOO')).resolves.toBeUndefined();
+  });
+});
+
+describe('createSourceChain', () => {
+  const noModes = { offline: false, mock: false, enterprise: false, government: false, selfHosted: false };
+
+  it('never includes a placeholder source in production by default', async () => {
+    const { createSourceChain } = await import('../src/secrets/factory');
+    const sources = createSourceChain('production', noModes, {} as NodeJS.ProcessEnv);
+    expect(sources.some((s) => s.kind === 'placeholder')).toBe(false);
+  });
+
+  it('includes a placeholder source in production when MOCK_MODE is on', async () => {
+    const { createSourceChain } = await import('../src/secrets/factory');
+    const sources = createSourceChain('production', { ...noModes, mock: true }, {} as NodeJS.ProcessEnv);
+    expect(sources.some((s) => s.kind === 'placeholder')).toBe(true);
+  });
+
+  it.each(['testing', 'qa'] as const)('includes a placeholder source in %s even without mock mode', async (stage) => {
+    const { createSourceChain } = await import('../src/secrets/factory');
+    const sources = createSourceChain(stage, noModes, {} as NodeJS.ProcessEnv);
+    expect(sources.some((s) => s.kind === 'placeholder')).toBe(true);
   });
 });

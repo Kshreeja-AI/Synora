@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { ApiException } from '@synora/shared';
+import { getConfig } from '../config';
 
 export function errorHandler(
   error: unknown,
@@ -27,12 +28,13 @@ export function errorHandler(
   }
 
   if (error instanceof Error) {
+    const isDevelopment = getConfig().stage === 'development';
     return res.status(500).json({
       success: false,
       error: {
         code: 'INTERNAL_ERROR',
-        message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-        details: process.env.NODE_ENV === 'development' ? { stack: error.stack } : undefined,
+        message: isDevelopment ? error.message : 'Internal server error',
+        details: isDevelopment ? { stack: error.stack } : undefined,
       },
     });
   }

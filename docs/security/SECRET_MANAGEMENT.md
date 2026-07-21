@@ -18,9 +18,11 @@ targets, and how to add a new secret or a new secret source.
    a CI/CD-injected env var. Swapping the source for a key requires no
    code change outside `apps/backend/src/secrets/factory.ts`.
 3. **Development never requires real secrets.** Every secret has a
-   deterministic placeholder fallback in `local`/`development`. Staging
-   and production never fall back to placeholders — a missing required
-   secret fails startup instead.
+   deterministic placeholder fallback in `development`/`testing`/`qa`.
+   Staging and production never fall back to placeholders by default — a
+   missing required secret fails startup instead — except when `MOCK_MODE`
+   is explicitly enabled (see [Environment Management](../operations/ENVIRONMENT_MANAGEMENT.md)),
+   which is an intentional, audited opt-in, not a silent default.
 4. **Every access is audited**, without ever logging the secret's value —
    `SecretAuditEvent` has no `value` field, so leaking one through the
    audit log is a type error, not just a code-review concern.
@@ -68,17 +70,23 @@ flowchart LR
 
 ## 3. Environments
 
-| Environment | `APP_ENV` | Source chain (in order) | Placeholder fallback | Missing required secret |
-|---|---|---|---|---|
-| Local | `local` | env vars → placeholder | Yes | Warns, does not block startup |
-| Development | `development` | env vars → placeholder | Yes | Warns, does not block startup |
-| Staging | `staging` | Kubernetes file → Docker file → env vars | **No** | **Fails startup** |
-| Production | `production` | Kubernetes file → Docker file → env vars | **No** | **Fails startup** |
+Deployment stage is one axis; `MOCK_MODE` is an orthogonal one — see
+[Environment Management](../operations/ENVIRONMENT_MANAGEMENT.md#2-two-axes-stage-and-mode)
+for the full model. For secrets specifically:
 
-`APP_ENV` is read first; if unset, `NODE_ENV` is used; if neither is set,
-`local` is assumed. Set `APP_ENV` explicitly in staging/production — don't
-rely on `NODE_ENV=production` alone, since some platforms (Vercel,
-Netlify) set `NODE_ENV=production` for preview deployments too.
+| Stage (`APP_STAGE`) | Source chain (in order) | Placeholder fallback | Missing required secret |
+|---|---|---|---|
+| `development` | env vars → placeholder | Yes | Warns, does not block startup |
+| `testing` | env vars → placeholder | Yes | Warns, does not block startup |
+| `qa` | env vars → placeholder | Yes | Warns, does not block startup |
+| `staging` | Kubernetes file → Docker file → env vars (→ placeholder **only if `MOCK_MODE=true`**) | No, unless `MOCK_MODE=true` | **Fails startup** |
+| `production` | Kubernetes file → Docker file → env vars (→ placeholder **only if `MOCK_MODE=true`**) | No, unless `MOCK_MODE=true` | **Fails startup** |
+
+`APP_STAGE` is read first; if unset, `NODE_ENV` is used; if neither is
+set, `development` is assumed. Set `APP_STAGE` explicitly in
+staging/production — don't rely on `NODE_ENV=production` alone, since some
+platforms (Vercel, Netlify) set `NODE_ENV=production` for preview
+deployments too.
 
 ## 4. Platform setup
 
@@ -90,18 +98,23 @@ you configure the value on each platform, described below.
 the value (via `VERCEL`, `NETLIFY`, `GITHUB_ACTIONS`, `CI` — all
 auto-set by those platforms) purely for audit-trail clarity.
 
-### 4.1 Local
+### 4.1 Development
 
 Copy `.env.example` → `.env.local` (root), `apps/backend/.env.example` →
 `apps/backend/.env.local`, `apps/web/.env.example` → `apps/web/.env.local`.
 Leave secret values blank to run entirely on placeholders — the app boots
-and functions end-to-end, just not against real external services.
+and functions end-to-end, just not against real external services. A
+shared dev environment (if any) works the same way, just with `.env.local`
+provisioned by whoever manages it rather than each developer individually.
 
-### 4.2 Development (shared dev environment, if any)
+### 4.2 Testing & QA
 
-Same as local, but `.env.local` files are provisioned by whoever manages
-the shared environment rather than each developer individually. Still
-falls back to placeholders for anything unset.
+Same placeholder-fallback behavior as development — automated test suites
+and QA environments should never need real credentials to run. If a QA
+environment specifically needs to exercise real integrations, set the
+real secret's env var (or mount it via Docker/Kubernetes) as you would for
+staging; anything left unset still falls back to a placeholder rather than
+failing the run.
 
 ### 4.3 CI/CD (generic)
 
