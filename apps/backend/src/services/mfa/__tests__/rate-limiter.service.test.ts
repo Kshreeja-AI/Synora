@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { RateLimiterService, createRateLimiterService } from '../rate-limiter.service';
 
@@ -266,8 +267,10 @@ describe('RateLimiterService', () => {
     it('should return attempt history', async () => {
       const userId = 'user-history-1';
 
+      // Distinct timestamps keep the DESC ordering deterministic; same-ms
+      // inserts have no defined order.
       await prisma.mFAAuditLog.create({
-        data: { userId, action: 'VERIFICATION_SUCCESS', timestamp: new Date() },
+        data: { userId, action: 'VERIFICATION_SUCCESS', timestamp: new Date(Date.now() - 2000) },
       });
       await prisma.mFAAuditLog.create({
         data: { userId, action: 'VERIFICATION_FAILED', timestamp: new Date() },

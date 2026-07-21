@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import bcryptjs from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { type SignOptions } from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { createApiResponse, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
 
-const router = Router();
+const router: Router = Router();
 const prisma = new PrismaClient();
 
 const registerSchema = z.object({
@@ -44,7 +44,10 @@ router.post('/register', async (req, res, next) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       jwtSecret,
-      { expiresIn: getConfig().auth.jwtExpiry }
+      {
+        algorithm: 'HS256',
+        expiresIn: getConfig().auth.jwtExpiry as SignOptions['expiresIn'],
+      }
     );
 
     res.status(201).json(
@@ -80,7 +83,10 @@ router.post('/login', async (req, res, next) => {
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
       jwtSecret,
-      { expiresIn: getConfig().auth.jwtExpiry }
+      {
+        algorithm: 'HS256',
+        expiresIn: getConfig().auth.jwtExpiry as SignOptions['expiresIn'],
+      }
     );
 
     await prisma.user.update({

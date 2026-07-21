@@ -31,7 +31,8 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 
   for (const secret of candidates) {
     try {
-      return jwt.verify(token, secret) as JwtPayload;
+      // Pin the algorithm so "alg: none" / algorithm-substitution tokens are rejected
+      return jwt.verify(token, secret, { algorithms: ['HS256'] }) as unknown as JwtPayload;
     } catch {
       continue;
     }
@@ -52,7 +53,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   try {
     const decoded = await verifyToken(token);
     req.userId = decoded.userId;
-    req.user = decoded;
+    req.user = { id: decoded.userId, email: decoded.email, role: decoded.role };
     next();
   } catch {
     next(new UnauthorizedException('Invalid or expired token'));
@@ -67,7 +68,7 @@ export async function optionalAuthMiddleware(req: AuthRequest, res: Response, ne
     try {
       const decoded = await verifyToken(token);
       req.userId = decoded.userId;
-      req.user = decoded;
+      req.user = { id: decoded.userId, email: decoded.email, role: decoded.role };
     } catch {
       // If token is invalid, continue without authentication
     }

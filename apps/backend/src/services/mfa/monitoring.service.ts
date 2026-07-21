@@ -42,7 +42,9 @@ export class MonitoringService {
 
     const totalVerifications = actions.VERIFICATION_SUCCESS + actions.VERIFICATION_FAILED;
     const successRate = totalVerifications > 0 ? (actions.VERIFICATION_SUCCESS / totalVerifications) * 100 : 0;
-    const lockoutRate = totalVerifications > 0 ? (actions.ACCOUNT_LOCKOUT / totalVerifications) * 100 : 0;
+    // Lockouts as a share of all auth outcomes (verifications + lockouts)
+    const totalAuthEvents = totalVerifications + actions.ACCOUNT_LOCKOUT;
+    const lockoutRate = totalAuthEvents > 0 ? (actions.ACCOUNT_LOCKOUT / totalAuthEvents) * 100 : 0;
 
     return {
       totalVerifications,

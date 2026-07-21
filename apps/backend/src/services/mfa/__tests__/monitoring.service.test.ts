@@ -1,5 +1,6 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { PrismaClient } from '@prisma/client';
-import { MonitoringService, createMonitoringService, MFAMetrics } from '../monitoring.service';
+import { MonitoringService, createMonitoringService } from '../monitoring.service';
 
 describe('MonitoringService', () => {
   let prisma: PrismaClient;
@@ -23,7 +24,7 @@ describe('MonitoringService', () => {
     it('should calculate metrics for time window', async () => {
       const userId = 'user-metrics-1';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       // Create verification logs
       await prisma.mFAAuditLog.create({
@@ -58,7 +59,7 @@ describe('MonitoringService', () => {
     it('should count lockouts and recovery usage', async () => {
       const userId = 'user-metrics-2';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       await prisma.mFAAuditLog.create({
         data: { userId, action: 'ACCOUNT_LOCKOUT', timestamp: new Date() },
@@ -76,7 +77,7 @@ describe('MonitoringService', () => {
     it('should calculate lockout rate', async () => {
       const userId = 'user-metrics-3';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       await prisma.mFAAuditLog.create({
         data: { userId, action: 'VERIFICATION_SUCCESS', timestamp: new Date() },
@@ -232,7 +233,7 @@ describe('MonitoringService', () => {
       const user1 = 'user-action-1';
       const user2 = 'user-action-2';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       await prisma.mFAAuditLog.create({
         data: { userId: user1, action: 'VERIFICATION_SUCCESS', timestamp: new Date() },
@@ -251,7 +252,7 @@ describe('MonitoringService', () => {
       const userId = 'user-trend-1';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
       const midpoint = new Date((startTime.getTime() + Date.now()) / 2);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       // Add logs in first half
       await prisma.mFAAuditLog.create({
@@ -274,7 +275,7 @@ describe('MonitoringService', () => {
       const userId = 'user-trend-2';
       const startTime = new Date(Date.now() - 60 * 60 * 1000);
       const midpoint = new Date((startTime.getTime() + Date.now()) / 2);
-      const endTime = new Date();
+      const endTime = new Date(Date.now() + 60 * 1000);
 
       // Add many logs in first half
       for (let i = 0; i < 5; i++) {

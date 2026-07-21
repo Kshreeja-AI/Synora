@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 interface AuditLogMetadata {
   [key: string]: string | number | boolean | null | undefined;
@@ -35,7 +35,7 @@ export class MFAAuditService {
         data: {
           userId,
           action,
-          metadata: metadata ? JSON.stringify(metadata) : null,
+          metadata: metadata ? (metadata as Prisma.InputJsonValue) : Prisma.DbNull,
           timestamp: new Date(),
         },
       });

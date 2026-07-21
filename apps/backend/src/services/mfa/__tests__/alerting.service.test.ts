@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { AlertingService, AlertChannel, createAlertingService } from '../alerting.service';
 
@@ -7,6 +8,11 @@ describe('AlertingService', () => {
 
   beforeAll(() => {
     prisma = new PrismaClient();
+  });
+
+  // Alerts are held in memory per service instance; a fresh instance per
+  // test keeps exact-count assertions independent of execution order.
+  beforeEach(() => {
     alertingService = createAlertingService(prisma);
   });
 
