@@ -1,0 +1,59 @@
+{
+  "description": "RFC 4226 Appendix D - Test Vectors for HOTP",
+  "secret": "3132333435363738393031323334353637383930",
+  "secretDescription": "20 bytes ASCII string '12345678901234567890' in hex",
+  "algorithm": "HMAC-SHA1",
+  "digitCount": 6,
+  "vectors": [
+    {
+      "counter": 0,
+      "expectedCode": "755224",
+      "description": "Counter = 0"
+    },
+    {
+      "counter": 1,
+      "expectedCode": "287082",
+      "description": "Counter = 1"
+    },
+    {
+      "counter": 2,
+      "expectedCode": "359152",
+      "description": "Counter = 2"
+    },
+    {
+      "counter": 3,
+      "expectedCode": "969429",
+      "description": "Counter = 3"
+    },
+    {
+      "counter": 4,
+      "expectedCode": "338314",
+      "description": "Counter = 4"
+    },
+    {
+      "counter": 5,
+      "expectedCode": "254676",
+      "description": "Counter = 5"
+    },
+    {
+      "counter": 6,
+      "expectedCode": "287922",
+      "description": "Counter = 6"
+    },
+    {
+      "counter": 7,
+      "expectedCode": "162583",
+      "description": "Counter = 7"
+    },
+    {
+      "counter": 8,
+      "expectedCode": "399871",
+      "description": "Counter = 8"
+    },
+    {
+      "counter": 9,
+      "expectedCode": "520489",
+      "description": "Counter = 9"
+    }
+  ]
+}
