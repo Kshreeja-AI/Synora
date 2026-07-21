@@ -44,6 +44,11 @@ model User {
   // CSRF tokens
   csrfTokens    CsrfToken[]
 
+  // MFA
+  mfaMethods    MFAMethod[]
+  mfaChallenges MFAChallengeToken[]
+  mfaSetupTokens MFASetupToken[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -392,4 +397,109 @@ model CsrfToken {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@index([ipAddress, createdAt])
+}
+
+// Multi-Factor Authentication (MFA)
+model MFAMethod {
+  id              String    @id @default(cuid())
+  userId          String
+  type            MFAType   @default(TOTP)
+  status          MFAStatus @default(SETUP_PENDING)
+
+  // TOTP-specific (encrypted)
+  secret          String?
+  backupCodesHash String[]
+
+  // Metadata
+  deviceName      String?
+  createdAt       DateTime  @default(now())
+  enabledAt       DateTime?
+  lastUsedAt      DateTime?
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts        MFAAttempt[]
+  recoveryCodes   MFARecoveryCode[]
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([status])
+}
+
+model MFAAttempt {
+  id              String    @id @default(cuid())
+  mfaMethodId     String
+  sessionId       String?
+  ipAddress       String?
+  userAgent       String?
+  code            String?
+  success         Boolean
+  createdAt       DateTime  @default(now())
+
+  mfaMethod       MFAMethod @relation(fields: [mfaMethodId], references: [id], onDelete: Cascade)
+
+  @@index([mfaMethodId])
+  @@index([createdAt])
+  @@index([success])
+  @@index([mfaMethodId, createdAt])
+}
+
+model MFAChallengeToken {
+  id              String    @id @default(cuid())
+  userId          String
+  tokenHash       String    @unique
+  sessionId       String?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  usedAt          DateTime?
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, createdAt])
+}
+
+model MFARecoveryCode {
+  id              String    @id @default(cuid())
+  mfaMethodId     String
+  codeHash        String    @unique
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  mfaMethod       MFAMethod @relation(fields: [mfaMethodId], references: [id], onDelete: Cascade)
+
+  @@index([mfaMethodId])
+  @@index([usedAt])
+  @@index([mfaMethodId, createdAt])
+}
+
+model MFASetupToken {
+  id              String    @id @default(cuid())
+  userId          String
+  tokenHash       String    @unique
+  secret          String
+  verified        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum MFAType {
+  TOTP
+}
+
+enum MFAStatus {
+  SETUP_PENDING
+  ACTIVE
+  DISABLED
+  RECOVERY_MODE
 }

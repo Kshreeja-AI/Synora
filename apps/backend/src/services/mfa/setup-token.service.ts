@@ -1,0 +1,144 @@
+import crypto from 'crypto';
+import { PrismaClient } from '@prisma/client';
+import { TOTPService } from './totp.service';
+
+const prisma = new PrismaClient();
+
+/**
+ * Setup Token Service
+ * Manages temporary tokens during MFA setup process
+ * Keeps TOTP secret safe during enrollment
+ */
+export class SetupTokenService {
+  private static readonly EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
+  private static readonly TOKEN_LENGTH = 32;
+
+  /**
+   * Create setup token with TOTP secret
+   * Returns token + secret to user for QR code display
+   */
+  static async createToken(userId: string): Promise<{ token: string; secret: string; uri: string; expiresAt: Date }> {
+    const token = crypto.randomBytes(this.TOKEN_LENGTH).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const secret = TOTPService.generateSecret();
+    const expiresAt = new Date(Date.now() + this.EXPIRY_MS);
+
+    // Store encrypted secret temporarily
+    await prisma.mFASetupToken.create({
+      data: {
+        userId,
+        tokenHash,
+        secret,
+        expiresAt,
+      },
+    });
+
+    const uri = TOTPService.getUri(userId, secret);
+
+    return { token, secret, uri, expiresAt };
+  }
+
+  /**
+   * Verify setup token + mark as verified
+   * Called when user enters code from authenticator
+   */
+  static async verifyToken(token: string, code: string, userId: string): Promise<{ secret: string } | null> {
+    try {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const setupToken = await prisma.mFASetupToken.findUnique({
+        where: { tokenHash },
+      });
+
+      if (!setupToken) {
+        return null;
+      }
+
+      // Verify ownership
+      if (setupToken.userId !== userId) {
+        return null;
+      }
+
+      // Check expiry
+      if (new Date() > setupToken.expiresAt) {
+        return null;
+      }
+
+      // Verify TOTP code against secret
+      if (!TOTPService.verify(code, setupToken.secret)) {
+        return null;
+      }
+
+      // Mark as verified
+      await prisma.mFASetupToken.update({
+        where: { id: setupToken.id },
+        data: { verified: true },
+      });
+
+      return { secret: setupToken.secret };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Get verified setup token
+   * Used to confirm setup is complete
+   */
+  static async getVerified(token: string, userId: string): Promise<{ secret: string } | null> {
+    try {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+      const setupToken = await prisma.mFASetupToken.findUnique({
+        where: { tokenHash },
+      });
+
+      if (!setupToken || setupToken.userId !== userId || !setupToken.verified) {
+        return null;
+      }
+
+      // Check expiry
+      if (new Date() > setupToken.expiresAt) {
+        return null;
+      }
+
+      return { secret: setupToken.secret };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Delete setup token after MFA is confirmed
+   */
+  static async deleteToken(tokenHash: string): Promise<boolean> {
+    try {
+      await prisma.mFASetupToken.delete({
+        where: { tokenHash },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Cleanup expired setup tokens
+   */
+  static async cleanupExpired(): Promise<number> {
+    const result = await prisma.mFASetupToken.deleteMany({
+      where: {
+        expiresAt: { lt: new Date() },
+      },
+    });
+
+    return result.count;
+  }
+
+  /**
+   * Get expiry time
+   */
+  static getExpiryTime(): Date {
+    return new Date(Date.now() + this.EXPIRY_MS);
+  }
+}
