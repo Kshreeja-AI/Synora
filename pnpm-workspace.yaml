@@ -1,3 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# argon2 ships a native addon and needs its postinstall build step (compiles
+# via node-gyp, or falls back to a prebuilt binary if available) to produce a
+# working binding. Explicitly allow-listed rather than approved interactively
+# so a fresh `pnpm install` in CI/production behaves identically without a
+# prompt.
+onlyBuiltDependencies:
+  - argon2

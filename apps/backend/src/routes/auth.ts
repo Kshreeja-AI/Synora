@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import bcryptjs from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { prisma } from '@synora/database';
 import { createApiResponse, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
+import { hashPassword, verifyPassword, needsRehash } from '../services/password.service';
 
 const router: Router = Router();
 
@@ -29,7 +29,7 @@ router.post('/register', async (req, res, next) => {
       throw new ValidationException('Email already registered');
     }
 
-    const hashedPassword = await bcryptjs.hash(password, 12);
+    const hashedPassword = await hashPassword(password);
 
     const user = await prisma.user.create({
       data: {
@@ -73,7 +73,7 @@ router.post('/login', async (req, res, next) => {
       throw new ValidationException('Invalid email or password');
     }
 
-    const isPasswordValid = await bcryptjs.compare(password, user.password);
+    const isPasswordValid = await verifyPassword(user.password, password);
     if (!isPasswordValid) {
       throw new ValidationException('Invalid email or password');
     }
@@ -88,9 +88,17 @@ router.post('/login', async (req, res, next) => {
       }
     );
 
+    // Transparent migration: a correct password against a legacy bcrypt
+    // hash (or an Argon2 hash with outdated parameters) is re-hashed with
+    // the current Argon2id settings and persisted here. No user-visible
+    // change, no forced reset — every successful login gradually migrates
+    // the stored hash population off bcrypt.
     await prisma.user.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: {
+        lastLoginAt: new Date(),
+        ...(needsRehash(user.password) ? { password: await hashPassword(password) } : {}),
+      },
     });
 
     res.json(
