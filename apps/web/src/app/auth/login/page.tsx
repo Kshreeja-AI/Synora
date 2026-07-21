@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@synora/design-system';
+import { useCsrfToken } from '@/hooks/useCsrfToken';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { token: csrfToken, isLoading: csrfLoading, refreshToken } = useCsrfToken();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,13 +18,31 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      if (!csrfToken) {
+        throw new Error('CSRF token not available');
+      }
+
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken,
+        },
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
+
+      // Handle CSRF token expiration
+      if (response.status === 403 && data.error?.code === 'CSRF_TOKEN_EXPIRED') {
+        const newToken = await refreshToken();
+        if (!newToken) {
+          setError('Security token expired. Please refresh and try again.');
+          return;
+        }
+        // Retry with new token
+        return handleSubmit(e);
+      }
 
       if (!response.ok) {
         setError(data.error?.message || 'Login failed');
@@ -31,7 +51,7 @@ export default function LoginPage() {
 
       localStorage.setItem('token', data.data.token);
       window.location.href = '/dashboard';
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -45,6 +65,12 @@ export default function LoginPage() {
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded text-red-700">
           {error}
+        </div>
+      )}
+
+      {csrfLoading && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded text-blue-700">
+          Initializing security features...
         </div>
       )}
 
@@ -83,7 +109,7 @@ export default function LoginPage() {
           type="submit"
           variant="primary"
           size="md"
-          disabled={loading}
+          disabled={loading || csrfLoading || !csrfToken}
           className="w-full"
         >
           {loading ? 'Signing in...' : 'Sign In'}

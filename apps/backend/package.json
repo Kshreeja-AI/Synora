@@ -52,5 +52,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "prisma": {
+    "schema": "../../packages/database/prisma/schema.prisma"
   }
 }
