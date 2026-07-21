@@ -87,7 +87,7 @@ async function bootstrap() {
   return app;
 }
 
-const appPromise = bootstrap().catch((error) => {
+const appPromise: Promise<unknown> = bootstrap().catch((error) => {
   logger.error('Startup aborted', {
     error: error instanceof Error ? error.message : String(error),
   });

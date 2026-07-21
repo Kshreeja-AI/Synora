@@ -41,9 +41,6 @@ model User {
   // Activity tracking
   activityLogs  ActivityLog[]
 
-  // MFA audit logging
-  mfaAuditLogs  MFAAuditLog[]
-
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -374,6 +371,8 @@ model VerificationToken {
 }
 
 // MFA Audit Logging
+// userId is a soft reference (no FK): audit records must survive user
+// lifecycle changes and remain queryable for compliance retention windows.
 model MFAAuditLog {
   id            String    @id @default(cuid())
   userId        String
@@ -381,8 +380,6 @@ model MFAAuditLog {
   metadata      Json?
   timestamp     DateTime  @default(now())
   createdAt     DateTime  @default(now())
-
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, timestamp])
   @@index([action, timestamp])

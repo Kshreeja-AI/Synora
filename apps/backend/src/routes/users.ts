@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException } from '@synora/shared';
 
-const router = Router();
+const router: Router = Router();
 const prisma = new PrismaClient();
 
 router.get('/me', authMiddleware, async (req: AuthRequest, res, next) => {

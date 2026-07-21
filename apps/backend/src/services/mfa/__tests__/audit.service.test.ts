@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { MFAAuditService, MFAAuditAction, createMFAAuditService } from '../audit.service';
 
@@ -17,6 +18,7 @@ describe('MFAAuditService', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await prisma.mFAAuditLog.deleteMany({});
   });
 
@@ -90,9 +92,16 @@ describe('MFAAuditService', () => {
     });
 
     it('should throw error on database failure', async () => {
-      jest.spyOn(prisma.mFAAuditLog, 'create').mockRejectedValueOnce(new Error('DB Error'));
+      // Spying on the shared Prisma client corrupts its proxy-backed model
+      // delegates on restore, so use an isolated stub client instead.
+      const failingPrisma = {
+        mFAAuditLog: {
+          create: vi.fn().mockRejectedValue(new Error('DB Error')),
+        },
+      } as unknown as PrismaClient;
+      const failingService = createMFAAuditService(failingPrisma);
 
-      await expect(auditService.log(testUserId, MFAAuditAction.SETUP_INITIATED)).rejects.toThrow('DB Error');
+      await expect(failingService.log(testUserId, MFAAuditAction.SETUP_INITIATED)).rejects.toThrow('DB Error');
     });
   });
 
@@ -185,8 +194,7 @@ describe('MFAAuditService', () => {
 
   describe('getLogsByTimeRange()', () => {
     it('should return logs within time range', async () => {
-      const now = new Date();
-      const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+      const now = new Date(Date.now() + 60 * 1000);
       const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
 
       await auditService.log('user1', MFAAuditAction.SETUP_INITIATED);
@@ -240,10 +248,15 @@ describe('MFAAuditService', () => {
 
     it('should respect lookback window', async () => {
       const userId = 'lookback-test-user';
-      const now = new Date();
-      const twoHoursAgo = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
 
-      await auditService.log(userId, MFAAuditAction.VERIFICATION_FAILED);
+      await prisma.mFAAuditLog.create({
+        data: {
+          userId,
+          action: MFAAuditAction.VERIFICATION_FAILED,
+          timestamp: twoHoursAgo,
+        },
+      });
 
       const events1h = await auditService.getUserSecurityEvents(userId, 1);
       const events3h = await auditService.getUserSecurityEvents(userId, 3);

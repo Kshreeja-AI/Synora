@@ -60,6 +60,8 @@ jobs:
 
       - name: Run tests
         run: pnpm run test:coverage
+        env:
+          DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
 
       - name: Build
         run: pnpm run build

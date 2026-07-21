@@ -84,7 +84,7 @@ export class RateLimiterService {
   async checkRecoveryCodeAttempt(userId: string): Promise<RateLimitStatus> {
     // Recovery codes are more sensitive - allow fewer attempts
     const recoveryWindowMinutes = this.config.windowMinutes * 2; // 2x stricter window
-    const maxRecoveryAttempts = this.config.maxAttemptsPerWindow / 2; // 2x fewer attempts
+    const maxRecoveryAttempts = Math.floor(this.config.maxAttemptsPerWindow / 2); // 2x fewer attempts
 
     const windowStart = new Date(Date.now() - recoveryWindowMinutes * 60 * 1000);
 
@@ -125,9 +125,9 @@ export class RateLimiterService {
       },
     });
 
-    // Progressive: 30min, 60min, 120min, etc.
-    const multiplier = Math.min(lockoutCount, 5); // Cap at 5x
-    return this.config.lockoutMinutes * Math.pow(2, multiplier - 1);
+    // Progressive doubling per prior lockout: 30min, 60min, 120min, ...
+    const exponent = Math.min(lockoutCount, 5); // Cap doubling at 2^5
+    return this.config.lockoutMinutes * Math.pow(2, exponent);
   }
 
   async isIpRateLimited(ipAddress: string): Promise<RateLimitStatus> {
