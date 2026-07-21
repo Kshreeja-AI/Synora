@@ -41,6 +41,9 @@ model User {
   // Activity tracking
   activityLogs  ActivityLog[]
 
+  // MFA audit logging
+  mfaAuditLogs  MFAAuditLog[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -368,4 +371,20 @@ model VerificationToken {
   expires       DateTime
 
   @@unique([identifier, token])
+}
+
+// MFA Audit Logging
+model MFAAuditLog {
+  id            String    @id @default(cuid())
+  userId        String
+  action        String
+  metadata      Json?
+  timestamp     DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+  @@index([action, timestamp])
+  @@index([timestamp])
 }
