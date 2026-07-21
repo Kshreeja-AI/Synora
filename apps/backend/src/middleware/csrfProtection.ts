@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 import { ForbiddenException } from '@synora/shared';
 import {
   CsrfManager,
@@ -10,9 +11,20 @@ import {
 
 const prisma = new PrismaClient();
 
+function validateOrigin(req: Request): boolean {
+  const origin = req.headers.origin || req.headers.referer;
+  const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:3000'];
+
+  if (!origin) {
+    return false;
+  }
+
+  return allowedOrigins.some((allowed) => origin.startsWith(allowed));
+}
+
 /**
  * CSRF Protection Middleware
- * Validates CSRF tokens on state-changing requests
+ * Validates CSRF tokens on state-changing requests with timing-constant comparison
  */
 export async function csrfProtectionMiddleware(
   req: Request,
@@ -25,61 +37,128 @@ export async function csrfProtectionMiddleware(
   }
 
   try {
+    // Validate origin header (defense-in-depth)
+    if (!validateOrigin(req)) {
+      throw new ForbiddenException('CSRF token validation failed');
+    }
+
     const token = extractCsrfToken(req);
 
     if (!token) {
-      throw new ForbiddenException('CSRF token missing');
+      throw new ForbiddenException('CSRF token validation failed');
     }
 
-    // Validate token format
-    if (!CsrfManager.isValidTokenFormat(token)) {
-      throw new ForbiddenException('CSRF token invalid');
+    // Use timing-constant token lookup even if format is invalid
+    let tokenHash: string;
+    if (CsrfManager.isValidTokenFormat(token)) {
+      tokenHash = CsrfManager.hashToken(token);
+    } else {
+      // Generate fake hash for invalid format (maintains constant timing)
+      tokenHash = 'invalid-format-' + crypto.randomBytes(16).toString('hex');
     }
 
-    // Hash token for database lookup
-    const tokenHash = CsrfManager.hashToken(token);
-
-    // Find token in database
+    // Find token in database (always do this for constant timing)
     const csrfToken = await prisma.csrfToken.findUnique({
       where: { tokenHash },
     });
 
-    if (!csrfToken) {
-      throw new ForbiddenException('CSRF token not found');
+    // Perform all validations after DB lookup
+    if (!csrfToken || !CsrfManager.isValidTokenFormat(token)) {
+      throw new ForbiddenException('CSRF token validation failed');
     }
 
-    // Check if token is expired
-    if (new Date() > csrfToken.expiresAt) {
-      throw new ForbiddenException('CSRF token expired');
+    // Check session match (if session is bound)
+    if (csrfToken.sessionId && csrfToken.sessionId !== req.sessionID) {
+      throw new ForbiddenException('CSRF token validation failed');
     }
 
-    // Check if token has already been used
-    if (csrfToken.usedAt) {
-      throw new ForbiddenException('CSRF token already used');
-    }
+    // Check expiry using atomic transaction to prevent race condition
+    const result = await prisma.$transaction(async (tx) => {
+      // Re-fetch within transaction to ensure current state
+      const freshToken = await tx.csrfToken.findUnique({
+        where: { tokenHash },
+      });
 
-    // Mark token as used (consume it)
-    await prisma.csrfToken.update({
-      where: { id: csrfToken.id },
-      data: { usedAt: new Date() },
+      if (!freshToken) {
+        throw new ForbiddenException('CSRF token validation failed');
+      }
+
+      // Check expiry
+      if (new Date() > freshToken.expiresAt) {
+        throw new ForbiddenException('CSRF token validation failed');
+      }
+
+      // Check if already used (atomic check)
+      if (freshToken.usedAt) {
+        throw new ForbiddenException('CSRF token validation failed');
+      }
+
+      // Mark token as used atomically
+      await tx.csrfToken.update({
+        where: { id: freshToken.id },
+        data: { usedAt: new Date() },
+      });
+
+      // Generate new token atomically
+      const newToken = CsrfManager.generateToken();
+      const newTokenHash = CsrfManager.hashToken(newToken);
+      const expiresAt = CsrfManager.getExpiryTime();
+
+      const created = await tx.csrfToken.create({
+        data: {
+          tokenHash: newTokenHash,
+          expiresAt,
+          userId: (req as any).userId || null,
+          sessionId: req.sessionID,
+          ipAddress: req.ip || req.socket.remoteAddress || 'unknown',
+          userAgent: req.headers['user-agent'] || 'unknown',
+        },
+      });
+
+      return { newToken, expiresAt };
     });
 
-    // Generate new token for response
-    const newToken = CsrfManager.generateToken();
-    const newTokenHash = CsrfManager.hashToken(newToken);
-    const expiresAt = CsrfManager.getExpiryTime();
+    // Return token in header (primary) and attach to response
+    res.setHeader('X-CSRF-Token', result.newToken);
+    res.setHeader('X-CSRF-Expires', result.expiresAt.toISOString());
 
-    await prisma.csrfToken.create({
-      data: {
-        token: newToken,
-        tokenHash: newTokenHash,
-        expiresAt,
-        userId: (req as any).userId || null,
+    // Store token expiry in response locals for response middleware to include in body
+    (res as any).locals = (res as any).locals || {};
+    (res as any).locals.csrfToken = result.newToken;
+    (res as any).locals.csrfExpiry = result.expiresAt;
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Rate limiter for CSRF token generation
+ * Prevents token enumeration attacks - per-IP limit
+ */
+export async function rateLimitCsrfGeneration(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+
+    // Count recent CSRF tokens from this specific IP
+    const recentTokens = await prisma.csrfToken.count({
+      where: {
+        ipAddress: ip,
+        createdAt: {
+          gte: oneMinuteAgo,
+        },
       },
     });
 
-    // Store new token in response for client to use in next request
-    res.setHeader('X-CSRF-Token', newToken);
+    if (recentTokens >= CSRF_CONFIG.RATE_LIMIT_PER_MINUTE) {
+      throw new ForbiddenException('CSRF token rate limit exceeded');
+    }
 
     next();
   } catch (error) {
@@ -90,6 +169,7 @@ export async function csrfProtectionMiddleware(
 /**
  * Generate CSRF Token Route Handler
  * Returns a new CSRF token for the client
+ * Only hash is stored in database; raw token never persisted
  */
 export async function generateCsrfToken(
   req: Request,
@@ -100,18 +180,27 @@ export async function generateCsrfToken(
     const token = CsrfManager.generateToken();
     const tokenHash = CsrfManager.hashToken(token);
     const expiresAt = CsrfManager.getExpiryTime();
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
 
-    // Store token in database
-    await prisma.csrfToken.create({
-      data: {
-        token,
-        tokenHash,
-        expiresAt,
-        userId: (req as any).userId || null,
-      },
+    // Store ONLY hash in database (never store raw token)
+    // Use transaction to ensure consistency
+    await prisma.$transaction(async (tx) => {
+      await tx.csrfToken.create({
+        data: {
+          tokenHash,
+          expiresAt,
+          userId: (req as any).userId || null,
+          sessionId: req.sessionID,
+          ipAddress: ip,
+          userAgent: req.headers['user-agent'] || 'unknown',
+        },
+      });
     });
 
-    // Return token to client
+    // Return token in BOTH header (primary) and body (fallback)
+    res.setHeader('X-CSRF-Token', token);
+    res.setHeader('X-CSRF-Expires', expiresAt.toISOString());
+
     res.json({
       success: true,
       data: {
@@ -125,57 +214,38 @@ export async function generateCsrfToken(
 }
 
 /**
- * Rate limiter for CSRF token generation
- * Prevents token enumeration attacks
- */
-export async function rateLimitCsrfGeneration(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-
-    // Count recent CSRF tokens from this IP
-    const recentTokens = await prisma.csrfToken.count({
-      where: {
-        createdAt: {
-          gte: oneMinuteAgo,
-        },
-        // Note: We'd need to store IP address to rate limit properly
-        // For now, we'll just count all tokens
-      },
-    });
-
-    // Note: This is a simplified rate limit
-    // In production, track IP addresses in CSRF token table
-    if (recentTokens > CSRF_CONFIG.RATE_LIMIT_PER_MINUTE * 100) {
-      throw new ForbiddenException('Rate limit exceeded: too many token requests');
-    }
-
-    next();
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * Cleanup middleware to remove expired CSRF tokens
+ * Cleanup job to mark expired CSRF tokens
  * Run periodically (e.g., every 10 minutes)
+ * Marks tokens instead of deleting to prevent edge cases with concurrent access
  */
 export async function cleanupExpiredCsrfTokens() {
   try {
-    const deleted = await prisma.csrfToken.deleteMany({
+    const updated = await prisma.csrfToken.updateMany({
       where: {
         expiresAt: {
           lt: new Date(),
         },
+        usedAt: null, // Only mark if not already used
+      },
+      data: {
+        usedAt: new Date(), // Mark as expired
       },
     });
 
-    console.log(`Cleaned up ${deleted.count} expired CSRF tokens`);
+    if (updated.count > 0) {
+      console.log(`Marked ${updated.count} expired CSRF tokens`);
+    }
   } catch (error) {
     console.error('Error cleaning up CSRF tokens:', error);
   }
+}
+
+/**
+ * Schedule periodic cleanup of expired CSRF tokens
+ * Call this in your server initialization
+ */
+export function scheduleCleanup(intervalMinutes: number = 10) {
+  const intervalMs = intervalMinutes * 60 * 1000;
+  setInterval(cleanupExpiredCsrfTokens, intervalMs);
+  console.log(`CSRF token cleanup scheduled every ${intervalMinutes} minutes`);
 }

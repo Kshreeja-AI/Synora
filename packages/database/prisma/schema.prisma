@@ -376,10 +376,11 @@ model VerificationToken {
 // CSRF Token Management
 model CsrfToken {
   id            String    @id @default(cuid())
-  token         String    @unique
   tokenHash     String    @unique
   userId        String?
   sessionId     String?
+  ipAddress     String?
+  userAgent     String?
   createdAt     DateTime  @default(now())
   expiresAt     DateTime
   usedAt        DateTime?
@@ -390,4 +391,5 @@ model CsrfToken {
   @@index([tokenHash])
   @@index([userId, createdAt])
   @@index([expiresAt])
+  @@index([ipAddress, createdAt])
 }

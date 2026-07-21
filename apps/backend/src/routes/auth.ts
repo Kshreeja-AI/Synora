@@ -4,7 +4,7 @@ import bcryptjs from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
 import { createApiResponse, createApiError, ValidationException } from '@synora/shared';
-import { csrfProtectionMiddleware, generateCsrfToken } from '../middleware/csrfProtection';
+import { csrfProtectionMiddleware, generateCsrfToken, rateLimitCsrfGeneration } from '../middleware/csrfProtection';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -20,8 +20,8 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-// Get CSRF token (no authentication required)
-router.get('/csrf', generateCsrfToken);
+// Get CSRF token (no authentication required, rate-limited per IP)
+router.get('/csrf', rateLimitCsrfGeneration, generateCsrfToken);
 
 // Protected routes with CSRF validation
 router.post('/register', csrfProtectionMiddleware, async (req, res, next) => {
@@ -104,8 +104,21 @@ router.post('/login', csrfProtectionMiddleware, async (req, res, next) => {
   }
 });
 
-router.post('/logout', csrfProtectionMiddleware, (_req, res) => {
-  res.json(createApiResponse({ message: 'Logged out successfully' }));
+router.post('/logout', csrfProtectionMiddleware, async (req, res, next) => {
+  try {
+    const userId = (req as any).userId;
+
+    // Invalidate all CSRF tokens for this user on logout
+    if (userId) {
+      await prisma.csrfToken.deleteMany({
+        where: { userId },
+      });
+    }
+
+    res.json(createApiResponse({ message: 'Logged out successfully' }));
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;
