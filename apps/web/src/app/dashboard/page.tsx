@@ -4,8 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@synora/design-system';
 
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+}
+
 export default function DashboardPage() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,7 +33,7 @@ export default function DashboardPage() {
 
         const data = await response.json();
         setUser(data.data);
-      } catch (error) {
+      } catch {
         localStorage.removeItem('token');
         window.location.href = '/auth/login';
       } finally {
