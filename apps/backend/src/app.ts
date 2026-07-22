@@ -12,6 +12,7 @@ import userRoutes from './routes/users';
 import projectRoutes from './routes/projects';
 import documentRoutes from './routes/documents';
 import imageRoutes from './routes/images';
+import aiRoutes from './routes/ai';
 
 export interface CreateAppDeps {
   /**
@@ -119,6 +120,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/projects', projectRoutes);
   app.use('/api/documents', documentRoutes);
   app.use('/api/images', imageRoutes);
+  app.use('/api/ai', aiRoutes);
 
   // 404 Handler
   app.use((req, res) => {
