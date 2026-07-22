@@ -38,6 +38,38 @@ const ARGON2_OPTIONS = {
 const BCRYPT_HASH_PATTERN = /^\$2[aby]\$/;
 
 /**
+ * A real Argon2id hash of a fixed throwaway value, used only to spend
+ * verification time on the "user does not exist" login path so that an
+ * unauthenticated caller cannot distinguish a registered email (which incurs
+ * a real hash comparison) from an unregistered one (which otherwise would
+ * return early and measurably faster). Computed once at module load.
+ */
+let dummyHashPromise: Promise<string> | undefined;
+
+function getDummyHash(): Promise<string> {
+  if (!dummyHashPromise) {
+    dummyHashPromise = argon2.hash('synora-nonexistent-account-timing-equalizer', ARGON2_OPTIONS);
+  }
+  return dummyHashPromise;
+}
+
+/**
+ * Perform a password verification that always returns false but spends the
+ * same wall-clock time a real verification would. Call this on the login
+ * path when the account does not exist (or has no password set), so that
+ * response timing does not reveal account existence. The result is discarded;
+ * only its timing cost matters.
+ */
+export async function fakeVerifyPassword(password: string): Promise<false> {
+  try {
+    await argon2.verify(await getDummyHash(), password);
+  } catch {
+    // ignore — this call exists purely to equalize timing
+  }
+  return false;
+}
+
+/**
  * Hash a plaintext password with Argon2id. Use for all new passwords
  * (registration, password change/reset).
  */

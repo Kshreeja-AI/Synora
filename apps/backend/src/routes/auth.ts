@@ -5,7 +5,12 @@ import { prisma } from '@synora/database';
 import { createApiResponse, ValidationException } from '@synora/shared';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
-import { hashPassword, verifyPassword, needsRehash } from '../services/password.service';
+import {
+  hashPassword,
+  verifyPassword,
+  needsRehash,
+  fakeVerifyPassword,
+} from '../services/password.service';
 
 const router: Router = Router();
 
@@ -70,6 +75,10 @@ router.post('/login', async (req, res, next) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.password) {
+      // Spend the same verification time a real account would, so response
+      // timing cannot distinguish a registered email from an unregistered
+      // one. The message is identical to the wrong-password case below.
+      await fakeVerifyPassword(password);
       throw new ValidationException('Invalid email or password');
     }
 

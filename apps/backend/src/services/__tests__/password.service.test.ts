@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import bcryptjs from 'bcryptjs';
-import { hashPassword, verifyPassword, needsRehash } from '../password.service';
+import {
+  hashPassword,
+  verifyPassword,
+  needsRehash,
+  fakeVerifyPassword,
+} from '../password.service';
 
 describe('password.service', () => {
   describe('hashPassword()', () => {
@@ -94,6 +99,41 @@ describe('password.service', () => {
 
     it('is true for an unparseable hash (fail toward re-hashing, not toward silent staleness)', () => {
       expect(needsRehash('garbage')).toBe(true);
+    });
+  });
+
+  describe('fakeVerifyPassword()', () => {
+    it('always resolves to false', async () => {
+      await expect(fakeVerifyPassword('anything')).resolves.toBe(false);
+      await expect(fakeVerifyPassword('')).resolves.toBe(false);
+    });
+
+    it('spends real verification time (timing-equalization is not a no-op)', async () => {
+      // A genuine Argon2 verify against the dummy hash must take non-trivial
+      // time; if this were a cheap early return, the login timing side channel
+      // would remain open. The threshold is deliberately low to avoid CI
+      // flakiness while still proving actual work happens.
+      const start = process.hrtime.bigint();
+      await fakeVerifyPassword('some-candidate-password');
+      const elapsedMs = Number(process.hrtime.bigint() - start) / 1e6;
+
+      expect(elapsedMs).toBeGreaterThan(5);
+    });
+
+    it('takes time comparable to a real verify against a real hash', async () => {
+      const realHash = await hashPassword('real-password');
+
+      const realStart = process.hrtime.bigint();
+      await verifyPassword(realHash, 'wrong-guess');
+      const realMs = Number(process.hrtime.bigint() - realStart) / 1e6;
+
+      const fakeStart = process.hrtime.bigint();
+      await fakeVerifyPassword('wrong-guess');
+      const fakeMs = Number(process.hrtime.bigint() - fakeStart) / 1e6;
+
+      // Same order of magnitude — not asserting equality (JIT/scheduling
+      // noise), just that the fake path isn't an obviously-faster early exit.
+      expect(fakeMs).toBeGreaterThan(realMs / 4);
     });
   });
 

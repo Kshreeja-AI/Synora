@@ -101,6 +101,31 @@ describe('POST /api/auth/register and /api/auth/login — password hashing', () 
     expect(unchanged?.password).toBe(legacyHash);
   });
 
+  describe('email enumeration resistance (login)', () => {
+    it('returns an identical 400 + generic message for an unknown email and a wrong password', async () => {
+      const email = `enum-known-${Date.now()}@example.com`;
+      const password = 'the-real-password';
+      testEmails.push(email);
+      await request(app).post('/api/auth/register').send({ email, password });
+
+      const unknownEmailRes = await request(app)
+        .post('/api/auth/login')
+        .send({ email: `enum-unknown-${Date.now()}@example.com`, password: 'whatever' });
+
+      const wrongPasswordRes = await request(app)
+        .post('/api/auth/login')
+        .send({ email, password: 'not-the-real-password' });
+
+      // Same status, same error code, same message — nothing distinguishes
+      // "this account does not exist" from "wrong password for this account".
+      expect(unknownEmailRes.status).toBe(400);
+      expect(wrongPasswordRes.status).toBe(400);
+      expect(unknownEmailRes.body.error.code).toBe(wrongPasswordRes.body.error.code);
+      expect(unknownEmailRes.body.error.message).toBe(wrongPasswordRes.body.error.message);
+      expect(unknownEmailRes.body.error.message).toBe('Invalid email or password');
+    });
+  });
+
   it('does not rewrite an already-current Argon2id hash on login', async () => {
     const email = `already-migrated-${Date.now()}@example.com`;
     testEmails.push(email);
