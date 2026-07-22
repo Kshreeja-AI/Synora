@@ -1,9 +1,27 @@
 # Synora Release Roadmap
 
 **Author:** Release Manager
-**Date:** 2026-07-21
+**Date:** 2026-07-21 (Release 1 status updated 2026-07-22)
 **Basis:** MASTER_PRODUCTION_EXECUTION_PLAN.md, re-verified against actual committed source and git history. Markdown claims not trusted.
 **Objective:** A real, launchable SaaS for real paying customers — not a theoretical perfect system. Release 1 is the minimum for that; Releases 2–4 are hardening, enterprise, and hyperscale.
+
+---
+
+## ✅ RELEASE 1: COMPLETE (2026-07-22)
+
+All 8 Release 1 blockers (R1-a through R1-h) are implemented, tested, and
+verified. All CI gates (`test`, `security`, `docker`) are green on commit
+`a199dc5ed9c0d940ce0b8125526a793791dece09` (branch
+`claude/synora-ai-platform-h5q0k2`). A full production verification sweep
+(build, 274 tests, live boot exercising `/health`, `/ready`, register,
+login, refresh, logout, the AI endpoint, and account lockout) also passed.
+
+See:
+- `RELEASE_1_LAUNCH_READINESS.md` — env vars, keys, deploy/migration commands, R1 checklist
+- `RELEASE_1_VERIFICATION_REPORT.md` — every CI issue found while stabilizing the pipeline, root cause, fix, and evidence
+- `RELEASE_2_PLAN.md` — next release's objectives and priorities
+
+Release 2 work has not started as of this update.
 
 ---
 
@@ -32,18 +50,27 @@
 
 Effort: **S** ≤0.5d · **M** 0.5–2d · **L** 2–5d · **XL** >5d. Risk reflects blast radius if done wrong.
 
-### Release 1 tasks
+### Release 1 tasks — ✅ ALL COMPLETE
 
-| ID | Task | Why required | Blocks R1? | Effort | Risk | Dependencies | Verification | Rollback |
-|---|---|---|---|---|---|---|---|---|
-| **R1-a** | **P0-6 Email-enumeration fix** | Real customers' account existence is currently discoverable via differing login/register responses — privacy + phishing-target leak | **YES** | S | Low | none | Test: identical response shape for known vs unknown email on login+register | Revert one file; behavior additive |
-| **R1-b** | **P1-9 Input validation on every mutating route** | `POST /images/generate` etc. trust arbitrary bodies → 500s and mass-assignment; a customer-facing API must never 500 on bad input | **YES** | M | Low | none | Test: each mutating route returns 400 (not 500) on malformed/missing fields | Per-route revert |
-| **R1-c** | **P0-4 Refresh token + logout invalidation** | 15-min access tokens with no refresh = re-login every 15 min (unusable); no revocation = "logout" is fake. Real sessions need both | **YES** | L | Med | Prisma singleton (done), `Session` model (exists) | Tests: login issues access+refresh; refresh rotates; logout revokes refresh; revoked refresh rejected | Feature-flag refresh; access tokens still work standalone |
-| **R1-d** | **P0-5 Account lockout on login** | Per-account brute force is currently unthrottled; a real customer's account can be password-sprayed indefinitely | **YES** | M | Med | login-attempt recording | Test: N failed logins → lockout → correct password rejected during window → unlock after window | Config-driven threshold; disable by raising limit |
-| **R1-e** | **P0-7 Real AI provider integration (text/code first)** | The product's value is AI generation; today it returns placeholder data. Adding an API key must activate real generation — the integration code must exist first | **YES** | XL | Med | config/secrets (done), provider abstraction | Tests: provider abstraction + Anthropic adapter with the HTTP boundary stubbed; config selects provider; missing key fails clean. Live call activates on real key (documented) | Config selects a safe default; provider swappable |
-| **R1-f** | **P0-8 Dockerfile + reproducible artifact** | There is no way to deploy the app at all today | **YES** | M | Low | none | `docker build` produces a running non-root image; container `/ready` returns 200 against a DB | Dockerfile is additive; no runtime code change |
-| **R1-g** | **P0-12 + P1-10 Secret hygiene + blocking CI secret/vuln scan** | Untracked `.env.staging` with real-looking secrets present; Snyk is non-blocking so a critical CVE passes green | **YES** | S | Low | none | CI fails on a planted secret and on a high-severity advisory; `git ls-files` shows no secret material | Scans are CI-only; no runtime impact |
-| **R1-h** | **RELEASE_1_LAUNCH_READINESS.md** | The founder's deliverable: exact env vars, keys, deploy + migration commands, checklist | **YES (final)** | S | Low | all above | Doc lists only env/keys/commands; no code step remains | n/a |
+| ID | Task | Status | Why required | Blocks R1? | Effort | Risk | Dependencies | Verification | Rollback |
+|---|---|---|---|---|---|---|---|---|---|
+| **R1-a** | **P0-6 Email-enumeration fix** | ✅ Done | Real customers' account existence is currently discoverable via differing login/register responses — privacy + phishing-target leak | **YES** | S | Low | none | Test: identical response shape for known vs unknown email on login+register | Revert one file; behavior additive |
+| **R1-b** | **P1-9 Input validation on every mutating route** | ✅ Done | `POST /images/generate` etc. trust arbitrary bodies → 500s and mass-assignment; a customer-facing API must never 500 on bad input | **YES** | M | Low | none | Test: each mutating route returns 400 (not 500) on malformed/missing fields | Per-route revert |
+| **R1-c** | **P0-4 Refresh token + logout invalidation** | ✅ Done | 15-min access tokens with no refresh = re-login every 15 min (unusable); no revocation = "logout" is fake. Real sessions need both | **YES** | L | Med | Prisma singleton (done), `Session` model (exists) | Tests: login issues access+refresh; refresh rotates; logout revokes refresh; revoked refresh rejected | Feature-flag refresh; access tokens still work standalone |
+| **R1-d** | **P0-5 Account lockout on login** | ✅ Done | Per-account brute force is currently unthrottled; a real customer's account can be password-sprayed indefinitely | **YES** | M | Med | login-attempt recording | Test: N failed logins → lockout → correct password rejected during window → unlock after window | Config-driven threshold; disable by raising limit |
+| **R1-e** | **P0-7 Real AI provider integration (text/code first)** | ✅ Done | The product's value is AI generation; today it returns placeholder data. Adding an API key must activate real generation — the integration code must exist first | **YES** | XL | Med | config/secrets (done), provider abstraction | Tests: provider abstraction + Anthropic adapter with the HTTP boundary stubbed; config selects provider; missing key fails clean. Live call activates on real key (documented) | Config selects a safe default; provider swappable |
+| **R1-f** | **P0-8 Dockerfile + reproducible artifact** | ✅ Done | There is no way to deploy the app at all today | **YES** | M | Low | none | `docker build` produces a running non-root image; container `/ready` returns 200 against a DB | Dockerfile is additive; no runtime code change |
+| **R1-g** | **P0-12 + P1-10 Secret hygiene + blocking CI secret/vuln scan** | ✅ Done | Untracked `.env.staging` with real-looking secrets present; Snyk is non-blocking so a critical CVE passes green | **YES** | S | Low | none | CI fails on a planted secret and on a high-severity advisory; `git ls-files` shows no secret material | Scans are CI-only; no runtime impact |
+| **R1-h** | **RELEASE_1_LAUNCH_READINESS.md** | ✅ Done | The founder's deliverable: exact env vars, keys, deploy + migration commands, checklist | **YES (final)** | S | Low | all above | Doc lists only env/keys/commands; no code step remains | n/a |
+
+Beyond the original 8 blockers, stabilizing CI (`test`/`security`/`docker`
+all green) required fixing 7 additional real bugs found only by actually
+running CI rather than trusting green-status claims — see
+`RELEASE_1_VERIFICATION_REPORT.md` for the full list (latent AI test bugs,
+a workspace-breaking `pnpm prune`, a broken gitleaks install script, 11
+verified-false-positive secret-scan findings, a container logging
+permission crash, a Docker port-binding issue, and a missing-OpenSSL
+Prisma failure).
 
 ### Release 2 tasks (production hardening — deferred, with reason)
 
