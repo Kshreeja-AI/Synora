@@ -1,0 +1,38 @@
+# Never send build/artifact/vcs noise into the Docker build context. The
+# builder stage installs deps and builds from source, so these are rebuilt.
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+coverage
+**/coverage
+*.tsbuildinfo
+
+# VCS + local tooling
+.git
+.gitignore
+.github
+
+# Secrets and local env — must never enter an image layer
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+*.secret
+.secrets
+infrastructure/docker/secrets
+
+# Logs and editor cruft
+logs
+*.log
+.eslintcache
+.DS_Store
+
+# Docs and non-runtime files (keep the image lean; none are needed at runtime)
+docs
+*.md

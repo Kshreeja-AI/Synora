@@ -68,6 +68,16 @@ export async function loadConfig(
     auth: {
       jwtExpiry: readString(env, 'JWT_EXPIRY', defaults.auth.jwtExpiry),
       jwtRefreshExpiry: readString(env, 'JWT_REFRESH_EXPIRY', defaults.auth.jwtRefreshExpiry),
+      maxFailedLoginAttempts: readNumber(
+        env,
+        'MAX_FAILED_LOGIN_ATTEMPTS',
+        defaults.auth.maxFailedLoginAttempts
+      ),
+      lockoutDurationMinutes: readNumber(
+        env,
+        'LOCKOUT_DURATION_MINUTES',
+        defaults.auth.lockoutDurationMinutes
+      ),
     },
     urls: {
       backendUrl: readString(env, 'BACKEND_URL', defaults.urls.backendUrl),
@@ -84,6 +94,27 @@ export async function loadConfig(
       openaiEnabled: Boolean(openaiKey),
       anthropicEnabled: Boolean(anthropicKey),
       replicateEnabled: Boolean(replicateKey),
+    },
+    ai: {
+      provider: env.AI_PROVIDER || undefined,
+      anthropicModel: readString(env, 'ANTHROPIC_MODEL', defaults.ai.anthropicModel),
+      openaiModel: readString(env, 'OPENAI_MODEL', defaults.ai.openaiModel),
+      geminiModel: readString(env, 'GEMINI_MODEL', defaults.ai.geminiModel),
+      xaiModel: readString(env, 'XAI_MODEL', defaults.ai.xaiModel),
+      openrouterModel: readString(env, 'OPENROUTER_MODEL', defaults.ai.openrouterModel),
+      deepseekModel: readString(env, 'DEEPSEEK_MODEL', defaults.ai.deepseekModel),
+      togetherModel: readString(env, 'TOGETHER_MODEL', defaults.ai.togetherModel),
+      azureOpenAIEndpoint: env.AZURE_OPENAI_ENDPOINT || undefined,
+      azureOpenAIDeployment: env.AZURE_OPENAI_DEPLOYMENT || undefined,
+      azureOpenAIApiVersion: readString(
+        env,
+        'AZURE_OPENAI_API_VERSION',
+        defaults.ai.azureOpenAIApiVersion
+      ),
+      bedrockRegion: readString(env, 'BEDROCK_REGION', defaults.ai.bedrockRegion),
+      bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
+      ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
+      ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
     },
   };
 

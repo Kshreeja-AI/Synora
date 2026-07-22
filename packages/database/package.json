@@ -2,8 +2,17 @@
   "name": "@synora/database",
   "version": "0.1.0",
   "private": true,
-  "description": "Synora Database Schema & Migrations",
+  "description": "Synora Database Schema, Migrations & Shared Prisma Client",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
+    "build": "prisma generate && tsc",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
@@ -11,10 +20,10 @@
     "db:seed": "ts-node --esm prisma/seed.ts",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
-    "test": "echo 'Database package - no tests'",
+    "test": "echo 'Database package - client covered via backend tests'",
     "lint": "echo 'Database package - no linting'",
     "format": "echo 'Database package - no formatting'",
-    "type-check": "echo 'Database package - no type-check'"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^5.7.1"

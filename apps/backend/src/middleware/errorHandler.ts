@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 import { ApiException } from '@synora/shared';
 import { getConfig } from '../config';
@@ -15,6 +16,20 @@ export function errorHandler(
     error: error instanceof Error ? error.message : String(error),
     stack: error instanceof Error ? error.stack : undefined,
   });
+
+  // Zod validation failures are client errors (bad request body/params),
+  // never a 500. Surface the field-level issues so the caller can correct
+  // the request, without leaking any server internals.
+  if (error instanceof ZodError) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Invalid request',
+        details: error.flatten(),
+      },
+    });
+  }
 
   if (error instanceof ApiException) {
     return res.status(error.statusCode).json({

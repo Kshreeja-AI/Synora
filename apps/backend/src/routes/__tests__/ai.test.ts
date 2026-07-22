@@ -1,0 +1,194 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import request from 'supertest';
+import type { Express } from 'express';
+import express, { json } from 'express';
+import aiRouter from '../ai';
+
+// Store a reference to the mocked function
+let mockGenerateText: ReturnType<typeof vi.fn>;
+
+// Mock the generateText function
+vi.mock('../../ai', async () => {
+  const actual = await vi.importActual('../../ai');
+  mockGenerateText = vi.fn();
+  return {
+    ...actual,
+    generateText: mockGenerateText,
+  };
+});
+
+describe('AI Routes', () => {
+  let app: Express;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app = express();
+    app.use(json());
+    app.use('/api', aiRouter);
+
+    // Error handling middleware
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const status = err.status || 500;
+      const message = err.message || 'Internal server error';
+      res.status(status).json({ error: message });
+    });
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('POST /api/generate', () => {
+    it('generates text successfully', async () => {
+      const mockResult = {
+        text: 'Generated response',
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+        usage: { inputTokens: 10, outputTokens: 20 },
+        finishReason: 'end_turn',
+      };
+
+      mockGenerateText.mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Write hello world',
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toEqual(mockResult);
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: 'Write hello world',
+        })
+      );
+    });
+
+    it('accepts all optional parameters', async () => {
+      mockGenerateText.mockResolvedValue({
+        text: 'Result',
+        provider: 'openai',
+        model: 'gpt-4o',
+        usage: { inputTokens: 5, outputTokens: 10 },
+        finishReason: 'stop',
+      });
+
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Write code',
+          mode: 'code',
+          model: 'gpt-4o-mini',
+          maxTokens: 2048,
+          temperature: 0.7,
+          systemPrompt: 'You are a code expert',
+        });
+
+      expect(response.status).toBe(200);
+      expect(mockGenerateText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prompt: 'Write code',
+          mode: 'code',
+          model: 'gpt-4o-mini',
+          maxTokens: 2048,
+          temperature: 0.7,
+          systemPrompt: 'You are a code expert',
+        })
+      );
+    });
+
+    it('rejects request without prompt', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          model: 'claude-sonnet-5',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects empty prompt', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: '',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects invalid mode', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+          mode: 'invalid-mode',
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects invalid maxTokens (non-integer)', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+          maxTokens: 2048.5,
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects maxTokens out of range', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+          maxTokens: 1000000,
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('rejects invalid temperature', async () => {
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+          temperature: 3.0,
+        });
+
+      expect(response.status).toBe(400);
+    });
+
+    it('handles provider errors', async () => {
+      mockGenerateText.mockRejectedValue(
+        new Error('No provider configured')
+      );
+
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+        });
+
+      expect(response.status).toBe(500);
+    });
+
+    it('handles API call errors', async () => {
+      mockGenerateText.mockRejectedValue(
+        new Error('Rate limit exceeded')
+      );
+
+      const response = await request(app)
+        .post('/api/generate')
+        .send({
+          prompt: 'Test',
+        });
+
+      expect(response.status).toBe(500);
+    });
+  });
+});

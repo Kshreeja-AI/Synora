@@ -1,10 +1,17 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException } from '@synora/shared';
 
 const router: Router = Router();
-const prisma = new PrismaClient();
+
+const generateImageSchema = z.object({
+  prompt: z.string().min(1).max(4000),
+  width: z.number().int().positive().max(4096).optional(),
+  height: z.number().int().positive().max(4096).optional(),
+  projectId: z.string().min(1).optional(),
+});
 
 router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
@@ -21,7 +28,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.post('/generate', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { prompt, width, height, projectId } = req.body;
+    const { prompt, width, height, projectId } = generateImageSchema.parse(req.body);
 
     const image = await prisma.generatedImage.create({
       data: {

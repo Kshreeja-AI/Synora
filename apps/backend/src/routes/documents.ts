@@ -1,10 +1,16 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import { prisma, DocumentFormat } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException } from '@synora/shared';
 
 const router: Router = Router();
-const prisma = new PrismaClient();
+
+const createDocumentSchema = z.object({
+  title: z.string().min(1).max(300),
+  content: z.string().max(1_000_000),
+  format: z.nativeEnum(DocumentFormat).optional(),
+});
 
 router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
@@ -21,14 +27,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { title, content, format } = req.body;
+    const { title, content, format } = createDocumentSchema.parse(req.body);
 
     const document = await prisma.document.create({
       data: {
         userId: req.userId!,
         title,
         content,
-        format: format || 'MARKDOWN',
+        format: format ?? DocumentFormat.MARKDOWN,
       },
     });
 

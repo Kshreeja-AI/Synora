@@ -1,10 +1,15 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException } from '@synora/shared';
 
 const router: Router = Router();
-const prisma = new PrismaClient();
+
+const createProjectSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000).optional(),
+});
 
 router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
@@ -21,7 +26,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { name, description } = req.body;
+    const { name, description } = createProjectSchema.parse(req.body);
 
     const project = await prisma.project.create({
       data: {
