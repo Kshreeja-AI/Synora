@@ -72,6 +72,50 @@ jobs:
           files: ./coverage/coverage-final.json
           fail_ci_if_error: false
 
+  docker:
+    runs-on: ubuntu-latest
+    # Verifies the production image actually assembles from the Dockerfile.
+    # This is the image-build check that cannot be run in a sandbox without a
+    # Docker daemon; the runtime of the built artifact is covered by the
+    # backend test suite booting the app in the `test` job.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build backend production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: synora-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the built image starts and reports liveness
+        run: |
+          # Start the container with the required production secrets and a
+          # throwaway DATABASE_URL; assert /health responds 200. This proves
+          # the image's entrypoint runs (catches the ESM-extension class of
+          # bug that a plain `docker build` would not).
+          docker run -d --name synora-ci \
+            -e NODE_ENV=production \
+            -e PORT=3001 \
+            -e JWT_SECRET=ci-only-not-a-real-secret-000000000000 \
+            -e NEXTAUTH_SECRET=ci-only-not-a-real-secret-111111111111 \
+            -e DATABASE_URL=postgresql://synora:synora@127.0.0.1:5432/synora \
+            -p 3001:3001 synora-backend:ci
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3001/health >/dev/null; then
+              echo "container healthy"; docker rm -f synora-ci; exit 0
+            fi
+            sleep 1
+          done
+          echo "container did not become healthy"; docker logs synora-ci; docker rm -f synora-ci; exit 1
+
   security:
     runs-on: ubuntu-latest
 
