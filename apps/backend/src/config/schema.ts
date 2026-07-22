@@ -40,6 +40,8 @@ export const AppConfigSchema = z.object({
   auth: z.object({
     jwtExpiry: z.string().min(1),
     jwtRefreshExpiry: z.string().min(1),
+    maxFailedLoginAttempts: z.number().int().positive(),
+    lockoutDurationMinutes: z.number().int().positive(),
   }),
 
   urls: z.object({

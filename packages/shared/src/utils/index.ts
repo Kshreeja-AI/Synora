@@ -154,3 +154,10 @@ export class ForbiddenException extends ApiException {
     this.name = 'ForbiddenException';
   }
 }
+
+export class LockedException extends ApiException {
+  constructor(message = 'Account temporarily locked', details?: Record<string, unknown>) {
+    super('ACCOUNT_LOCKED', message, 423, details);
+    this.name = 'LockedException';
+  }
+}

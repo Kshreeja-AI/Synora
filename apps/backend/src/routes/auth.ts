@@ -1,7 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
-import { createApiResponse, ValidationException, UnauthorizedException } from '@synora/shared';
+import {
+  createApiResponse,
+  ValidationException,
+  UnauthorizedException,
+  LockedException,
+} from '@synora/shared';
 import {
   hashPassword,
   verifyPassword,
@@ -9,6 +14,7 @@ import {
   fakeVerifyPassword,
 } from '../services/password.service';
 import { issueTokens, rotateTokens, revokeRefreshToken } from '../services/token.service';
+import { checkLockout, recordFailedLogin, clearLoginLockout } from '../services/lockout.service';
 
 const router: Router = Router();
 
@@ -95,8 +101,20 @@ router.post('/login', async (req, res, next) => {
       throw new ValidationException('Invalid email or password');
     }
 
+    // Checked before verifying the password: a locked account must reject
+    // every attempt for the lockout duration, including a correct password —
+    // otherwise lockout would only ever stop guessing, not a lucky guess.
+    const lockout = checkLockout(user);
+    if (lockout.isLocked) {
+      throw new LockedException(
+        'Account temporarily locked due to too many failed login attempts. Try again later.',
+        { lockedUntil: lockout.lockedUntil!.toISOString() }
+      );
+    }
+
     const isPasswordValid = await verifyPassword(user.password, password);
     if (!isPasswordValid) {
+      await recordFailedLogin(user.id);
       throw new ValidationException('Invalid email or password');
     }
 
@@ -105,6 +123,7 @@ router.post('/login', async (req, res, next) => {
     // current Argon2id settings and persisted here. No user-visible change,
     // no forced reset — every successful login gradually migrates the stored
     // hash population off bcrypt.
+    await clearLoginLockout(user.id);
     await prisma.user.update({
       where: { id: user.id },
       data: {

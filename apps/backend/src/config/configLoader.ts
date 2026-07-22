@@ -68,6 +68,16 @@ export async function loadConfig(
     auth: {
       jwtExpiry: readString(env, 'JWT_EXPIRY', defaults.auth.jwtExpiry),
       jwtRefreshExpiry: readString(env, 'JWT_REFRESH_EXPIRY', defaults.auth.jwtRefreshExpiry),
+      maxFailedLoginAttempts: readNumber(
+        env,
+        'MAX_FAILED_LOGIN_ATTEMPTS',
+        defaults.auth.maxFailedLoginAttempts
+      ),
+      lockoutDurationMinutes: readNumber(
+        env,
+        'LOCKOUT_DURATION_MINUTES',
+        defaults.auth.lockoutDurationMinutes
+      ),
     },
     urls: {
       backendUrl: readString(env, 'BACKEND_URL', defaults.urls.backendUrl),

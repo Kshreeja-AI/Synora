@@ -49,6 +49,12 @@ model User {
   updatedAt     DateTime    @updatedAt
   lastLoginAt   DateTime?
 
+  // Login lockout: incremented on each failed password verification, reset
+  // to 0 on a successful login. lockedUntil is set once the threshold is
+  // reached and cleared on the next successful login.
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+
   @@index([email])
   @@index([status])
 }

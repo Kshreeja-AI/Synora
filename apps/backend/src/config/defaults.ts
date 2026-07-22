@@ -21,6 +21,8 @@ export interface StageDefaults {
   auth: {
     jwtExpiry: string;
     jwtRefreshExpiry: string;
+    maxFailedLoginAttempts: number;
+    lockoutDurationMinutes: number;
   };
   urls: {
     backendUrl: string;
@@ -43,6 +45,8 @@ const BASE_DEFAULTS: StageDefaults = {
   auth: {
     jwtExpiry: '15m',
     jwtRefreshExpiry: '7d',
+    maxFailedLoginAttempts: 5,
+    lockoutDurationMinutes: 15,
   },
   urls: {
     backendUrl: 'http://localhost:3001',
