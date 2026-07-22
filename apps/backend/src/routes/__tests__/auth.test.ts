@@ -71,6 +71,8 @@ describe('POST /api/auth/register and /api/auth/login — password hashing', () 
 
     expect(loginRes.status).toBe(200);
     expect(loginRes.body.data.token).toBeDefined();
+    expect(loginRes.body.data.accessToken).toBeDefined();
+    expect(loginRes.body.data.refreshToken).toBeDefined();
 
     const postMigration = await prisma.user.findUnique({ where: { id: user.id } });
     expect(postMigration?.password?.startsWith('$argon2id$')).toBe(true);

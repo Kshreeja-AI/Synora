@@ -41,6 +41,9 @@ model User {
   // Activity tracking
   activityLogs  ActivityLog[]
 
+  // Auth sessions (refresh tokens)
+  refreshTokens RefreshToken[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -368,6 +371,25 @@ model VerificationToken {
   expires       DateTime
 
   @@unique([identifier, token])
+}
+
+// Refresh tokens for stateful, revocable sessions. The raw opaque token is
+// never stored — only its SHA-256 hash — so a database read cannot mint a
+// session. Rotation is enforced by revoking the presented token whenever a
+// new one is issued; logout revokes the token, which is what makes "log out"
+// actually end the session (the short-lived access token expires within
+// minutes, and no new one can be minted without a live refresh token).
+model RefreshToken {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 // MFA Audit Logging
