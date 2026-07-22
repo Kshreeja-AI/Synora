@@ -23,6 +23,15 @@ ARG NODE_IMAGE=node:22-bookworm-slim
 FROM ${NODE_IMAGE} AS builder
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# bookworm-slim ships with no OpenSSL at all. Prisma's query engine dynamically
+# links against libssl, and without it present, `prisma generate`'s platform
+# detection can't determine the real OpenSSL version (3.x on bookworm) and
+# silently falls back to a stale default (debian-openssl-1.1.x) — bundling an
+# engine that then can't load anywhere, including right here at generate time
+# in the exact same image. Installing openssl before generate runs makes
+# detection see the real version and bundle the matching engine.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 # Enable corepack so the exact pnpm from packageManager is used.
 RUN corepack enable
 WORKDIR /app
@@ -46,6 +55,13 @@ ENV NODE_ENV=production
 # The app reads its port from config (default 3001); keep them aligned.
 ENV PORT=3001
 WORKDIR /app
+
+# Prisma's query engine binary dynamically links against libssl at request
+# time, not just at `prisma generate` time — needed here too, independent of
+# the builder stage's copy (see the builder stage's comment for why this is
+# required at all on bookworm-slim).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Carry over the full workspace as-is, dev dependencies included. Both
 # `pnpm prune --prod` and `pnpm deploy` were tried here and rejected: in this
