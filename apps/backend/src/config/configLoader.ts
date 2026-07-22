@@ -111,7 +111,14 @@ export async function loadConfig(
         'AZURE_OPENAI_API_VERSION',
         defaults.ai.azureOpenAIApiVersion
       ),
-      bedrockRegion: readString(env, 'BEDROCK_REGION', defaults.ai.bedrockRegion),
+      // No default: unlike every other field here, AWS_ACCESS_KEY_ID/
+      // AWS_SECRET_ACCESS_KEY are extremely common ambient env vars in any
+      // AWS-hosted deployment (ECS task roles, EC2 instance profiles, CI/CD)
+      // for reasons entirely unrelated to AI generation. Requiring an
+      // explicit BEDROCK_REGION (no fallback) is what makes Bedrock
+      // opt-in rather than silently auto-activated by unrelated AWS
+      // credentials — see bedrock.provider.ts's isConfigured().
+      bedrockRegion: env.BEDROCK_REGION || undefined,
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),

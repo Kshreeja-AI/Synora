@@ -62,7 +62,7 @@ describe('generateText', () => {
 
     expect(mockProvider.generateText).toHaveBeenCalledWith({
       prompt: 'Write code',
-      mode: 'code-generation',
+      mode: 'code',
       model: 'gpt-4o-mini',
       maxTokens: 2048,
       temperature: 0.5,

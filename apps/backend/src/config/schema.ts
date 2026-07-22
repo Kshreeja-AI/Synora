@@ -85,7 +85,7 @@ export const AppConfigSchema = z.object({
     azureOpenAIEndpoint: z.string().optional(),
     azureOpenAIDeployment: z.string().optional(),
     azureOpenAIApiVersion: z.string().min(1),
-    bedrockRegion: z.string().min(1),
+    bedrockRegion: z.string().min(1).optional(),
     bedrockModelId: z.string().min(1),
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),

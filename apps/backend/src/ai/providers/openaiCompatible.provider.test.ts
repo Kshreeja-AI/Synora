@@ -152,7 +152,7 @@ describe('OpenAICompatibleTextProvider', () => {
 
     await expect(
       provider.generateText({ prompt: 'Test' })
-    ).rejects.toThrow('OpenAI-compatible text generation failed');
+    ).rejects.toThrow('openai text generation failed');
   });
 
   it('handles missing usage data gracefully', async () => {

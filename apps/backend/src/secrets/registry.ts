@@ -100,7 +100,7 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
   {
     key: 'AWS_ACCESS_KEY_ID',
     description:
-      'AWS access key used by the Bedrock text-generation provider. Requires AWS_SECRET_ACCESS_KEY to also be set.',
+      'AWS access key used by the Bedrock text-generation provider. Requires AWS_SECRET_ACCESS_KEY and the BEDROCK_REGION env var (no default — deliberately not auto-detected from ambient AWS credentials alone) to also be set.',
     owner: 'backend',
     environments: ['staging', 'production'],
     requiredIn: [],

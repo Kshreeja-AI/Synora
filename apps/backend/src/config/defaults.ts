@@ -37,7 +37,6 @@ export interface StageDefaults {
     deepseekModel: string;
     togetherModel: string;
     azureOpenAIApiVersion: string;
-    bedrockRegion: string;
     bedrockModelId: string;
     ollamaModel: string;
   };
@@ -76,7 +75,6 @@ const BASE_DEFAULTS: StageDefaults = {
     deepseekModel: 'deepseek-chat',
     togetherModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
     azureOpenAIApiVersion: '2024-10-21',
-    bedrockRegion: 'us-east-1',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',
   },
