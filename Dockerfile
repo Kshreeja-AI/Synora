@@ -39,7 +39,8 @@ RUN pnpm run build --filter=@synora/backend...
 # Drop dev dependencies from node_modules so the runtime image doesn't ship
 # compilers, eslint, vitest, etc. The generated Prisma client and the argon2
 # native binary live under node_modules and are preserved by prune.
-RUN pnpm prune --prod
+# CI=true disables interactive prompts in non-TTY environments (Docker CI).
+RUN CI=true pnpm prune --prod
 
 # --- Runtime ---------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
