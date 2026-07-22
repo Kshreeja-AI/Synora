@@ -121,7 +121,41 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the secret scan can inspect the whole tree/log.
+          fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # BLOCKING gate: fail the build on any high or critical vulnerability in
+      # dependencies that actually ship to production. Requires no account or
+      # token, so it protects every deploy out of the box. Dev-only tooling
+      # (vitest/vite) is excluded via --prod because it never reaches a
+      # customer; those are tracked separately, not shipped.
+      - name: Audit production dependencies (blocking, high+)
+        run: pnpm audit --prod --audit-level=high
+
+      # BLOCKING gate: fail the build if any secret material is detected in the
+      # tree or git history.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Best-effort deeper scan. Non-blocking because it requires an account
+      # token that a fresh clone will not have; the blocking gates above do not.
       - name: Run Snyk security scan
         uses: snyk/actions/node@master
         env:

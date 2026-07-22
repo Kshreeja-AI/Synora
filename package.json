@@ -25,6 +25,11 @@
     "turbo": "^2.0.0",
     "typescript": "^5.3.3"
   },
+  "pnpm": {
+    "overrides": {
+      "sharp": ">=0.35.0"
+    }
+  },
   "engines": {
     "node": ">=20.0.0"
   },
