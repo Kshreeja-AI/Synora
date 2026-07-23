@@ -323,9 +323,16 @@ Deliberate Release 1 scope decisions — not bugs, but real gaps a new
 engineer should know about before assuming feature parity with a mature
 SaaS:
 
-- **No MFA enforced anywhere**, despite a complete implementation existing
-  on the `recover/mfa` branch (TOTP, recovery codes, 4 frontend
-  components). Not rebased onto the current base yet — Release 2, R2-a.
+- **No MFA enforced anywhere.** The core implementation (TOTP,
+  challenge/setup/recovery-code services, `routes/mfa.ts`, 4 frontend
+  components, `useMFASetup` hook, RFC 4226/6238 test vectors, DB migration)
+  exists only on the `recover/mfa` branch and needs rebasing onto the
+  current base. Separately, 4 MFA-*adjacent* services already sit in
+  mainline at `apps/backend/src/services/mfa/` (`audit.service.ts`,
+  `rate-limiter.service.ts`, `monitoring.service.ts`,
+  `alerting.service.ts`) with their own passing tests — but they are
+  genuinely dead code today: nothing outside their own test files imports
+  them. Both halves land together in Release 2, R2-a.
 - **No CSRF protection**, despite a complete implementation existing on
   `recover/csrf`. Correctly deferred: R1 uses bearer tokens in the
   `Authorization` header, which aren't CSRF-vulnerable; CSRF only becomes
@@ -371,7 +378,10 @@ Full plan: `RELEASE_2_PLAN.md`. Before starting:
   and `recover/csrf` branches — both are complete implementations that
   predate several Release 1 changes (Prisma singleton, refresh-token
   schema, `app.ts` restructuring), so landing them is a rebase +
-  re-verification job, not new development.
+  re-verification job, not new development. The 4 already-in-mainline
+  MFA-adjacent services at `apps/backend/src/services/mfa/` (see §11) will
+  need re-review during that rebase too — confirm they still match
+  whatever `recover/mfa`'s `mfa.service.ts` expects before wiring them in.
 - **Outstanding administrative step from Release 1:** this session's git
   credentials were scoped to push only the `claude/synora-ai-platform-h5q0k2`
   branch — tagging the Release 1 commit as `v1.0.0` and creating the
