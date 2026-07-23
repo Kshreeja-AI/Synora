@@ -243,7 +243,7 @@ small addition rather than a redesign.
   the moment the secrets module graph is evaluated with `window` defined
   — a hard backstop if this package is ever accidentally imported into
   client code.
-- `npm run secrets:check` (`scripts/check-no-client-secrets.mjs`) statically
+- `pnpm run secrets:check` (`scripts/check-no-client-secrets.mjs`) statically
   scans every `'use client'` file and `apps/web/next.config.js`'s `env`
   block for non-`NEXT_PUBLIC_*` references and fails the build if it finds
   one. Run it locally or wire it into CI as a required check.

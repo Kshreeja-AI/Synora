@@ -16,10 +16,20 @@ model User {
   emailVerified DateTime?   // Email verification timestamp
   name          String?     // Display name
   image         String?     // Profile image URL
-  password      String?     // Hashed password (null if OAuth)
+  password      String?     // Argon2id hash (null if OAuth-only); bcrypt
+                             // hashes from before the R1 migration are
+                             // transparently re-hashed to Argon2id on next
+                             // successful login (see P0-11 doc)
   role          UserRole    // USER, ADMIN, MODERATOR
   status        UserStatus  // ACTIVE, INACTIVE, SUSPENDED, DELETED
-  
+
+  // Login lockout (R1-d): incremented on each failed password check,
+  // reset to 0 on success. lockedUntil is set once the threshold is hit
+  // (default: 5 attempts / 15 minutes, both config-driven) and cleared on
+  // the next successful login.
+  failedLoginAttempts Int
+  lockedUntil         DateTime?
+
   // Relations
   accounts      Account[]   // OAuth accounts
   profile       UserProfile?
@@ -31,6 +41,7 @@ model User {
   videos        GeneratedVideo[]
   audios        GeneratedAudio[]
   activityLogs  ActivityLog[]
+  refreshTokens RefreshToken[]  // R1-c, see below
   
   // Timestamps
   createdAt     DateTime
@@ -40,7 +51,10 @@ model User {
 ```
 
 **Indexes**:
-- `email` (unique)
+- `email` — no separate index declared; the `@unique` constraint already
+  creates one, and a second explicit `@@index([email])` was removed
+  during the post-Release-1 audit as pure duplicate write overhead (same
+  reasoning applies to `Workspace.slug` below)
 - `status`
 
 ### Account
@@ -94,7 +108,7 @@ model Workspace {
 ```
 
 **Indexes**:
-- `slug` (unique)
+- `slug` — no separate index declared, same reasoning as `User.email` above
 
 ### Project
 Represents a user project/workspace for organizing content.
@@ -286,6 +300,47 @@ model Session {
 **Indexes**:
 - `userId`
 
+### RefreshToken (R1-c)
+Backs the refresh-token rotation described in `docs/api.md`'s Auth
+Endpoints section and `docs/production/R1-c_REFRESH_TOKENS.md`.
+
+```prisma
+model RefreshToken {
+  id          String    // Unique identifier
+  tokenHash   String    // SHA-256 hash of the token — the raw opaque
+                         // token is never stored, so a database read
+                         // alone cannot mint a session
+  userId      String    // FK to User, cascades on user delete
+  expiresAt   DateTime
+  revokedAt   DateTime? // Set on rotation (superseded) or explicit logout
+  createdAt   DateTime
+}
+```
+
+**Indexes**: `tokenHash` (unique), `userId`, `expiresAt`
+
+### MFAAuditLog
+Audit trail for MFA-related actions. Exists in the schema and is written
+to by the (currently unwired) MFA-adjacent services in
+`apps/backend/src/services/mfa/` — see `PROJECT_HANDOVER.md` §11 for why
+those services aren't active yet. `userId` is a deliberate soft reference
+(no foreign key): audit records must survive user lifecycle changes and
+remain queryable for compliance retention windows even after a user is
+deleted.
+
+**Indexes**: `(userId, timestamp)`, `(action, timestamp)`, `timestamp`
+
+### Other models
+The following exist in `packages/database/prisma/schema.prisma` and
+aren't reproduced in full here — treat the schema file as the definitive
+source for their exact fields:
+
+- **`UserProfile`**, **`UserPreferences`** — one-to-one with `User`; bio/avatar/social links and theme/notification settings, respectively.
+- **`WorkspaceMember`** — join table for the `User`↔`Workspace` many-to-many, carrying a `WorkspaceRole`.
+- **`WorkspaceInvitation`** — pending email invitations to a workspace, token-based, with expiry.
+- **`ApiKey`** — workspace-scoped API keys (not currently exposed via any route — reserved for a future programmatic-access feature).
+- **`VerificationToken`** — generic identifier/token pair for NextAuth-style verification flows; not currently wired to any route.
+
 ## Enums
 
 ### UserRole
@@ -381,24 +436,40 @@ enum WorkspaceRole {
 
 ## Migration Workflow
 
+Package manager is pnpm, not npm (see `packageManager` in the root
+`package.json`). Run these from the repo root, or `cd
+packages/database` first and drop the `--filter` flag:
+
 ### Creating a Migration
 ```bash
-npm run db:migrate:create -- --name description_of_change
+pnpm --filter @synora/database db:migrate:create --name description_of_change
 ```
 
 ### Applying Migrations
 ```bash
-# Development (includes seed)
-npm run db:migrate:dev
+# Development — creates + applies + regenerates the client
+pnpm --filter @synora/database db:migrate:dev
 
-# Production
-npm run db:migrate
+# CI / staging / production — applies pending migrations only, no prompts
+pnpm --filter @synora/database db:migrate    # prisma migrate deploy
 ```
 
 ### Resetting Database (Development Only)
 ```bash
-npm run db:reset
+pnpm --filter @synora/database db:reset
 ```
+
+### Inspecting Data
+```bash
+pnpm --filter @synora/database db:studio
+```
+
+Note: `db:generate` and `db:migrate` are also exposed as root-level Turbo
+scripts (`pnpm run db:generate`, `pnpm run db:migrate`) that fan out to
+every workspace package that defines them; `db:migrate:dev`, `db:reset`,
+and `db:studio` are currently only defined in `packages/database`, so
+those three need the `--filter` form above (or `cd packages/database`
+first).
 
 ## Query Patterns
 
@@ -454,10 +525,14 @@ const activities = await prisma.activityLog.findMany({
 
 ## Backup & Recovery
 
-- Database backups: Daily automated backups (depends on hosting provider)
-- Point-in-time recovery: Keep last 30 days of backups
-- Disaster recovery: Failover to read replica if available
+Release 1 deliberately does not run its own backup job. Instead, choosing
+a **managed** Postgres provider (RDS, Neon, Supabase, Railway, etc.) with
+automated backups and point-in-time recovery enabled is a documented
+production checklist requirement (`PROJECT_HANDOVER.md` §10) — the
+provider's backup/PITR is the actual mechanism, not application code.
+Owning an in-app backup job with a rehearsed restore drill is a Release 2
+item (`RELEASE_2_PLAN.md`, R2-g).
 
 ---
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-07-23 (Release 1)

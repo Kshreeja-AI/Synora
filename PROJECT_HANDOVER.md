@@ -1,12 +1,19 @@
 # Synora — Project Handover
 
-**As of:** 2026-07-22, Release 1 complete (branch `claude/synora-ai-platform-h5q0k2`, tag/release pending — see §12)
+**As of:** 2026-07-23, Release 1 complete and frozen (branch `claude/synora-ai-platform-h5q0k2`, tag/release pending — see §12)
 
 This document is written for a senior engineer joining the project with
 zero prior context. It covers what exists, how it's built, how to run it,
 how to deploy it, and what's deliberately not done yet. Where a topic has
 its own detailed doc already, this document summarizes and links rather
 than duplicating.
+
+**See also:** `RELEASE_1_FINAL.md` is the other authoritative Release 1
+document — a single-file snapshot of features, API, database, deployment,
+security, limitations, and the Release 2 starting point. This document
+(`PROJECT_HANDOVER.md`) is oriented toward *how to work in the codebase*;
+`RELEASE_1_FINAL.md` is oriented toward *what shipped*. `docs/README.md`
+indexes everything else.
 
 ---
 
@@ -127,28 +134,33 @@ synora/
 │   ├── docker/
 │   └── k8s/                     # Present but unused — R4 (hyperscale) work
 ├── docs/
+│   ├── README.md                 # Full documentation hierarchy — read this first
 │   ├── architecture.md, api.md, database.md, deployment.md, security.md
 │   ├── operations/               # Environment management + migration guide
-│   ├── security/                 # Secret management, an audit doc
-│   └── production/               # One doc per shipped R1 item (R1-a..R1-g), each with
-│                                  # what-was-wrong / what-changed / tests / verification
+│   ├── security/                 # Secret management
+│   ├── production/               # One doc per shipped R1 item (R1-a..R1-g, plus two
+│   │                              # pre-R1 fixes), each with what-was-wrong /
+│   │                              # what-changed / tests / verification
+│   └── archive/                  # Historical, point-in-time reports — frozen, not
+│                                  # living; see docs/archive/README.md
 ├── .github/workflows/ci.yml      # test, security, docker jobs
 ├── Dockerfile                    # Multi-stage production image
 ├── docker-compose.dev.yml        # Local Postgres for development
 ├── RELEASE_ROADMAP.md            # Living roadmap — R1 complete, R2-R4 planned
+├── RELEASE_1_FINAL.md            # The authoritative Release 1 snapshot
 ├── RELEASE_1_LAUNCH_READINESS.md # R1's env vars, deploy commands, checklist
 ├── RELEASE_1_VERIFICATION_REPORT.md # Every CI issue found+fixed stabilizing R1's pipeline
-├── RELEASE_2_PLAN.md             # This release's plan
+├── PRODUCTION_READINESS_AUDIT.md # Final CTO-level audit after R1 shipped
+├── RELEASE_2_PLAN.md             # Next release's plan
 └── package.json                  # Root workspace config, packageManager pin
 ```
 
-A large number of dated audit/certification markdown files exist at the
-repo root (`ARCHITECTURE_REVIEW_v2.md`, `PERFORMANCE_REVIEW_v2.md`,
-`PRODUCTION_READINESS_v2.md`, `MODULE_1_FINAL_CERTIFICATION.md`, etc.) —
-these are point-in-time snapshots from earlier in the project's history,
-not living documents. Treat `RELEASE_ROADMAP.md` and the docs listed above
-as current; treat everything else at the root as historical record unless
-independently re-verified.
+Every markdown file that predates Release 1's completion and described a
+past, incomplete state (independent reviews, certification reports, a
+git-forensics investigation, early PR-description drafts) has been moved
+into `docs/archive/` — see `docs/archive/README.md` for why each is kept.
+Nothing at the repo root today is a stale snapshot; if you find one that
+is, that's a regression from this state, not the norm.
 
 ---
 
@@ -229,20 +241,29 @@ Prisma Migrate, standard workflow:
 
 ```bash
 # Local dev — creates + applies a new migration, regenerates the client
-pnpm --filter @synora/database db:migrate:dev
+pnpm run db:migrate:dev    # exposed at root too, both fan out to @synora/database
 
 # CI / staging / production — applies pending migrations only, no prompts
-pnpm --filter @synora/database db:migrate    # runs `prisma migrate deploy`
+pnpm run db:migrate        # runs `prisma migrate deploy`
 
 # Regenerate the client without migrating (e.g. after a schema-only pull)
 pnpm run db:generate
+
+# Reset the local dev database (destructive — dev only)
+pnpm run db:reset
+
+# Open Prisma Studio
+pnpm run db:studio
 ```
 
-Schema lives at `packages/database/prisma/schema.prisma`; 3 migrations
+Schema lives at `packages/database/prisma/schema.prisma`; 4 migrations
 currently applied (`20260721000000_init`,
-`20260722000000_add_refresh_token`, `20260722010000_add_login_lockout`).
-`migrate deploy` is safe to run on every deploy, including when there's
-nothing pending. There is no seed data configured for production.
+`20260722000000_add_refresh_token`, `20260722010000_add_login_lockout`,
+`20260723192205_drop_redundant_unique_indexes`). `migrate deploy` is safe
+to run on every deploy, including when there's nothing pending. There is
+no seed script and no seed data configured — an earlier `db:seed` script
+referenced a `prisma/seed.ts` file that never existed and was removed in
+the post-Release-1 audit.
 
 **CI note:** the `test` job in `ci.yml` runs `db:generate` then
 `db:migrate` against a real `postgres:16-alpine` service container before
@@ -388,10 +409,11 @@ Full plan: `RELEASE_2_PLAN.md`. Before starting:
   corresponding GitHub Release were both requested but blocked by that
   scope (tag push returned HTTP 403; no GitHub Release-creation tool was
   available in this session's toolset either). Whoever has full repo
-  write access should tag commit `a199dc5ed9c0d940ce0b8125526a793791dece09`
-  as `v1.0.0` and create the GitHub Release "Release 1.0.0 - Production
-  Ready" before or alongside starting Release 2 work, so the tag exists as
-  a real rollback point.
+  write access should tag the current HEAD of this branch (the frozen,
+  final Release 1 state — confirm with `git log -1`) as `v1.0.0` and
+  create the GitHub Release "Release 1.0.0 - Production Ready" before or
+  alongside starting Release 2 work, so the tag exists as a real rollback
+  point.
 - **Founder decisions to reconfirm:** both decisions flagged in
   `RELEASE_ROADMAP.md` (MFA/CSRF deferred to R2; AI is text/code-first in
   R1) were correct as of Release 1's launch. If priorities have shifted,

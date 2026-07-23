@@ -17,7 +17,6 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:create": "prisma migrate dev --create-only",
-    "db:seed": "ts-node --esm prisma/seed.ts",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "test": "echo 'Database package - client covered via backend tests'",
@@ -31,7 +30,6 @@
   "devDependencies": {
     "@types/node": "^20.10.6",
     "prisma": "^5.7.1",
-    "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
 }
