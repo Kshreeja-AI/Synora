@@ -31,3 +31,12 @@ cfbd8ad6e7461a69009e3295b95dee81d54c9e70:README.md:curl-auth-header:49
 # illustrative example, not a live token.
 5c6f89389dd6e020ec8fed6415ac10facfa90377:docs/security/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
 490e396b0489f75f65d004f14ea718fc9b9b6fb7:docs/security/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
+
+# "s6WAIv23vrALHk4G..." example refresh-token value used three times in
+# docs/api.md's Auth Endpoints section (register/login/refresh response
+# examples) — a truncated illustrative placeholder, not a real token.
+# Current docs/api.md uses a lower-entropy placeholder going forward;
+# these fingerprints only cover the value's earlier commit in history.
+f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:63
+f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:124
+f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:152

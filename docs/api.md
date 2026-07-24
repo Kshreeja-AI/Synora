@@ -60,7 +60,7 @@ Content-Type: application/json
   "success": true,
   "data": {
     "accessToken": "eyJhbGc...",
-    "refreshToken": "s6WAIv23vrALHk4G...",
+    "refreshToken": "<opaque-refresh-token>",
     "token": "eyJhbGc...",
     "user": {
       "id": "cuid123",
@@ -121,7 +121,7 @@ POST /api/auth/refresh
 Content-Type: application/json
 
 {
-  "refreshToken": "s6WAIv23vrALHk4G..."
+  "refreshToken": "<opaque-refresh-token>"
 }
 ```
 
@@ -149,7 +149,7 @@ POST /api/auth/logout
 Content-Type: application/json
 
 {
-  "refreshToken": "s6WAIv23vrALHk4G..."
+  "refreshToken": "<opaque-refresh-token>"
 }
 ```
 
