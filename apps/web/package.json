@@ -26,6 +26,7 @@
     "axios": "^1.6.2",
     "tailwindcss": "^3.4.1",
     "clsx": "^2.0.0",
+    "lucide-react": "^0.454.0",
     "@synora/design-system": "workspace:*",
     "@synora/shared": "workspace:*"
   },
@@ -45,6 +46,7 @@
     "@vitejs/plugin-react": "^4.2.0",
     "@testing-library/react": "^14.1.2",
     "@testing-library/jest-dom": "^6.1.5",
-    "jsdom": "^23.0.0"
+    "jsdom": "^23.0.0",
+    "zod": "^3.22.4"
   }
 }
