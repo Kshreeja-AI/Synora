@@ -9,14 +9,15 @@ verified against the repository, not assumed.
 
 - **Current release:** Release 2 — "Complete customer-facing platform"
   (`RELEASE_2_PLAN.md`)
-- **Current milestone:** M1 (Foundation) **complete**; M2 (Marketing
-  site) **not started** — it is the active next task (`NEXT_TASK.md`)
+- **Current milestone:** M2 (Marketing site) **complete**; M3 (Auth UX +
+  onboarding + app shell) is the active next task (`NEXT_TASK.md`)
 - **Current branch:** `claude/synora-ai-platform-h5q0k2`
-- **Current commit:** `337641c` — fix(design-system): add
-  @vitest/coverage-v8 for CI test:coverage
+- **Current commit:** `88496ca` — feat(web): Release 2 M2 — marketing
+  site (landing, pricing, features, changelog)
 - **Current PR:** #31 → `SYNORA`, open, not merged (base tip `7bd7f5d`)
-- **Current CI status:** ✅ green on `337641c` (run 30145780034 — test,
-  security, docker all pass)
+- **Current CI status:** ✅ green through `337641c` (docs commit
+  `323f284` and the M2 push verified after this snapshot; gate rule: M3
+  does not start until the M2 push is green)
 
 ## Completed features (working end-to-end)
 
@@ -36,6 +37,12 @@ verified against the repository, not assumed.
   had never compiled before M1), typed API client with single-flight
   401-refresh-retry, token storage, Zustand auth store, TanStack Query +
   next-themes providers, Geist fonts, token-styled pages
+- **M2 marketing site:** `(marketing)` route group with glass navbar
+  (mobile menu, theme toggle) + footer; animated landing page; pricing
+  page + FAQ; six SSG feature pages from one template; changelog
+  timeline — all driven by typed content modules under
+  `apps/web/src/content/`; sitemap/robots/OpenGraph; browser-verified
+  desktop/mobile in both themes
 
 ## Working but interim (functional today, scheduled for replacement)
 

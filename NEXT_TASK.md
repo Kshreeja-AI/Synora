@@ -1,4 +1,4 @@
-# NEXT TASK — Release 2, Milestone 2: Marketing Site
+# NEXT TASK — Release 2, Milestone 3: Auth UX + Onboarding + App Shell
 
 **Maintenance rule:** this file always contains ONLY the exact next
 development task. When a task completes (milestone gate passed: lint,
@@ -8,153 +8,171 @@ one".
 
 ## Goal
 
-Ship the public marketing surface of Synora as a premium, animated,
-dark-first experience built exclusively from `@synora/design-system`:
+Turn the authenticated side of Synora from a skeleton into a real
+product entry experience:
 
-1. **Landing page** (`/`) — replace the placeholder: hero with animated
-   gradient/background treatment, product narrative sections, feature
-   grid, social-proof placeholder section, CTA sections, footer with
-   real information architecture, sticky glass navbar.
-2. **Pricing page** (`/pricing`) — plan cards (Free / Pro / Team,
-   content-driven from a typed data module so M7 billing can bind to the
-   same source), feature comparison, FAQ.
-3. **Feature pages** (`/features/[slug]`) — one template + typed content
-   modules for: text generation, code generation, image/video/audio
-   (marked "coming soon" honestly), collaboration.
-4. **Changelog** (`/changelog`) — content-driven timeline page; entries
-   as typed data (no CMS yet).
-5. Shared marketing layout (navbar + footer), SEO metadata per page,
-   OpenGraph tags, sitemap + robots via Next conventions.
+1. **Auth rebuild** — login/register pages rewritten on the M1 API
+   client + Zustand auth store (delete the raw-`fetch` +
+   `localStorage['token']` logic), with polished error states, loading
+   states, and password visibility toggle.
+2. **Forgot-password flow** — the milestone's one backend addition:
+   password-reset tokens (hashed at rest, single-use, short expiry) +
+   a provider-agnostic mailer abstraction with a console/dev transport
+   (real email provider is a launch-time config choice), plus
+   `/auth/forgot-password` and `/auth/reset-password` pages.
+3. **Onboarding wizard** — post-registration: name → workspace creation
+   → theme preference; skippable; runs once.
+4. **Workspace creation** — first Workspace routes on the backend
+   (create + list mine + get, slug uniqueness, creator becomes OWNER)
+   and the frontend flow using them.
+5. **App shell** — replace the basic dashboard sidebar: collapsible
+   token-styled sidebar with real navigation, topbar with workspace
+   switcher + user menu (design-system DropdownMenu/Avatar), command
+   palette (⌘K) with navigation actions, keyboard shortcuts, protected-
+   route handling (redirect to login when unauthenticated, back to
+   original destination after login).
+6. **Cleanup** — remove the deprecated `token` alias from backend auth
+   responses once no consumer remains; remove `axios` (unused) from web
+   dependencies.
 
 ## Why this task exists
 
-R2's objective is a complete customer-facing platform; the public site
-is the front door and has zero dependencies on backend work, so it
-comes directly after the design-system foundation (M1) and before the
-authenticated app rebuild (M3). It also pressure-tests the design
-system against real, polished pages early.
+Everything after M3 (playground, teams, billing) lives inside the
+authenticated app; the shell, session handling, and workspace primitive
+must exist first. The marketing site (M2) now sends traffic to
+register — the flow it lands in must match its quality bar.
 
 ## Dependencies
 
-- M1 (complete): design tokens, Tailwind preset, component library,
-  fonts, theming. No backend, DB, or infra dependencies.
+- M1 API client/auth store, M2 design bar (both complete)
+- No external infrastructure. Mailer ships with a console transport;
+  real provider keys are a launch-time env choice (per the launch
+  principle: env vars only).
 
 ## Architecture decisions
 
-- Marketing pages are **static** (Server Components, `generateStaticParams`
-  for feature slugs) — no client data fetching.
-- All copy/plans/changelog entries live in typed data modules under
-  `apps/web/src/content/` so later CMS/billing integration is a data-
-  source swap, not a page rewrite.
-- Animations: CSS/token keyframes from the preset + small client
-  components only where interaction demands it; no heavy animation
-  library in M2.
-- Route groups: `(marketing)` for the public site so its layout doesn't
-  leak into auth/dashboard.
+- Mailer: `apps/backend/src/mail/` mirroring the AI abstraction —
+  descriptor registry (console transport first; SMTP/provider adapters
+  later via config only). No vendor SDK imports outside the adapter.
+- Password reset: `PasswordResetToken` model (userId, tokenHash,
+  expiresAt, usedAt) — same hash-at-rest discipline as refresh tokens;
+  reset consumes the token and revokes all refresh tokens.
+- Workspace routes enforce membership on read from day one (the
+  tenancy groundwork M5 builds on).
+- Protected routes: client-side guard component/hook on top of the auth
+  store (cookie/middleware-based guarding moves in with M5 cookie auth).
+- Command palette: design-system `CommandPalette` built on Dialog +
+  keyboard handling (add `cmdk` only if hand-rolling proves inadequate).
 
 ## Files to create
 
-- `apps/web/src/app/(marketing)/layout.tsx` (navbar/footer/theme toggle)
-- `apps/web/src/app/(marketing)/page.tsx` (landing — moves from current root)
-- `apps/web/src/app/(marketing)/pricing/page.tsx`
-- `apps/web/src/app/(marketing)/features/[slug]/page.tsx`
-- `apps/web/src/app/(marketing)/changelog/page.tsx`
-- `apps/web/src/components/marketing/*` (hero, nav, footer, plan card,
-  section primitives)
-- `apps/web/src/content/{plans,features,changelog}.ts`
-- `apps/web/src/app/sitemap.ts`, `robots.ts`
-- Tests: content-module validation + component render tests for nav,
-  plan cards, feature template, changelog list
+- Backend: `src/mail/*` (types, registry, console transport, facade),
+  `src/services/passwordReset.service.ts`, `src/routes/workspaces.ts`,
+  password-reset endpoints in `routes/auth.ts`, tests for all
+- Database: migration adding `PasswordResetToken`
+- Web: `src/app/auth/forgot-password/page.tsx`,
+  `src/app/auth/reset-password/page.tsx`,
+  `src/app/onboarding/page.tsx`,
+  `src/components/shell/*` (Sidebar, Topbar, WorkspaceSwitcher,
+  UserMenu, CommandPalette), `src/lib/api/workspaces.ts`,
+  `src/hooks/useRequireAuth.ts`, tests throughout
 
 ## Files to modify
 
-- `apps/web/src/app/page.tsx` (relocated into the marketing group)
-- `apps/web/src/app/layout.tsx` (only if shared metadata needs lifting)
-- `docs/architecture.md` frontend section + `CURRENT_STATE.md` +
-  this file, at milestone close
+- `apps/web/src/app/auth/login/page.tsx`, `register/page.tsx` (rebuild
+  on api client), `dashboard/layout.tsx` (new shell),
+  `dashboard/page.tsx` (real user via React Query `users/me`)
+- `apps/backend/src/routes/auth.ts` (reset endpoints; later drop
+  `token` alias), `src/app.ts` (mount workspaces router)
+- `apps/web/package.json` (remove axios)
+- Docs at close: `docs/api.md` (new endpoints), `docs/database.md`
+  (new model), `docs/architecture.md`, `CURRENT_STATE.md`, this file
 
 ## Database changes
 
-None.
+One additive migration: `PasswordResetToken` table (id, userId FK
+cascade, tokenHash unique, expiresAt, usedAt?, createdAt; index userId,
+index expiresAt). No changes to existing tables.
 
 ## Backend changes
 
-None. (If a "request demo/contact" form is added, it ships as a
-mailto/no-op stub — the feedback backend is M8 scope.)
+As above: mailer abstraction, password-reset service + endpoints
+(`POST /api/auth/forgot-password` — always 200, no account
+enumeration; `POST /api/auth/reset-password`), workspace routes
+(`POST /api/workspaces`, `GET /api/workspaces`, `GET /api/workspaces/:id`
+— membership-checked), all zod-validated, all rate-limited by the
+existing global limiter.
 
 ## Frontend changes
 
-As listed above. Design bar: comparable to Linear/Vercel — glass
-navbar, subtle gradients, micro-interactions on cards/CTAs, skeleton-
-free static pages (no loading states needed), fully responsive down to
-360px, dark mode first with correct light mode, keyboard-navigable,
-semantic landmarks (`nav`/`main`/`footer`), reduced-motion respected
-(`motion-safe:` variants for nontrivial animation).
+As above. Design bar unchanged from M2: token-driven, dark-first,
+responsive, accessible (focus management in the palette and dialogs
+comes from Radix), skeleton/loading states everywhere data loads.
 
 ## Testing requirements
 
-- Vitest + Testing Library: marketing nav (links render, mobile menu
-  toggles), plan card (renders plan data, highlights popular), feature
-  template (renders a content module), changelog (ordered entries).
-- Content modules: schema-validate entries in a test (zod) so a typo'd
-  entry fails CI, not production.
-- Existing 303 tests stay green; milestone gate applies.
+- Backend: reset-token lifecycle (issue/consume/expire/reuse-rejected,
+  refresh tokens revoked on reset, no-enumeration response shape),
+  workspace routes (create/list/get, membership enforcement, slug
+  collisions), mailer facade (console transport records mail in tests)
+- Web: rebuilt auth pages (submit success/error via mocked client),
+  useRequireAuth redirect behavior, workspace switcher render,
+  command palette open/navigate, onboarding step flow
+- Full workspace suite (312+) stays green; milestone gate applies
 
 ## Security requirements
 
-No new attack surface (static pages, no inputs except a stubbed form —
-if present it must not POST anywhere yet). No secrets in content
-modules. External links get `rel="noopener"`.
+- Reset tokens: cryptographically random, hashed at rest, single-use,
+  ≤1 h expiry; consuming one revokes all refresh tokens
+- Forgot-password never reveals whether an email exists
+- No mailer credentials in code; SecretsManager + catalog entry
+- Workspace reads/writes require membership — no cross-tenant leaks
 
 ## Acceptance criteria
 
-- `/`, `/pricing`, `/features/<each slug>`, `/changelog` render
-  polished, responsive, dark+light correct, no horizontal scroll at
-  360/768/1280.
-- Lighthouse-sane static output (all marketing routes prerendered in
-  `next build` route table).
-- All copy/plans/changelog sourced from `src/content/` typed modules.
-- Sitemap + robots emitted; every page has title/description/OG tags.
-- Browser-verified (screenshots at mobile + desktop, both themes).
+- Register → onboarding → workspace created → dashboard, and
+  login → dashboard, both work end-to-end against the real backend
+- Forgot/reset password works end-to-end with the console transport
+  (token visible in backend logs in dev)
+- ⌘K palette opens/navigates; sidebar/topbar responsive; protected
+  routes redirect correctly
+- Legacy raw-fetch auth code, `token` alias, and axios are gone
+- Browser-verified (screenshots, both themes, mobile + desktop)
 
 ## Definition of Done
 
-Acceptance criteria met **and** the milestone gate passed: `pnpm run
-lint`, `type-check`, `test` (with `CI=1` + `DATABASE_URL`), `build` all
-green locally → commit (conventional message) → push to
-`claude/synora-ai-platform-h5q0k2` → CI green on the pushed commit →
-`CURRENT_STATE.md` + this file updated.
+Acceptance criteria met and the milestone gate passed: lint,
+type-check, tests (CI=1 + DATABASE_URL), build green locally → commit →
+push → CI green → `docs/api.md`, `docs/database.md`,
+`docs/architecture.md`, `CURRENT_STATE.md`, and this file updated.
 
 ## Risks
 
-- **Scope creep toward M3** (auth UX, app shell) — resist; marketing
-  only.
-- **Design drift** — new one-off styles instead of tokens/components;
-  anything reusable goes into the design system, not page files.
-- **Route-group move of `/`** can break the root page test — update it
-  deliberately, don't delete it.
-- Turbo cache can mask stale design-system dist — CI builds fresh, so
-  trust CI, and use `pnpm --filter @synora/design-system build` after
-  editing the package locally.
+- **Backend surface creep** — only reset + workspaces routes; teams/
+  invitations/settings are M5.
+- **`token`-alias removal ordering** — remove only after both auth
+  pages are on the new client, in the same milestone, with tests
+  updated.
+- **Onboarding state** — track completion server-side via
+  UserPreferences (add a field only if genuinely needed; prefer
+  deriving from "has a workspace").
+- **Command palette a11y** — must trap focus and restore it on close
+  (Radix Dialog handles this; don't bypass it).
 
 ## Things that must not be changed
 
-The full list in `PROJECT_HANDOVER.md` §20 applies. Specifically here:
-no backend changes, no auth changes, no new runtime dependencies
-without need (no animation megalibs), no hardcoded colors, CI gates
-untouched.
+`PROJECT_HANDOVER.md` §20 in full. Specifically: auth token invariants
+(hash-at-rest, rotation, pinned algorithm) extend to reset tokens; no
+vendor mail SDK outside the adapter; API envelope unchanged.
 
 ## Estimated effort
 
-2–4 focused engineer-days (L on the roadmap scale).
+4–6 focused engineer-days (L–XL).
 
 ## Next task after this one
 
-**M3 — Auth UX + onboarding + app shell**: rebuild login/register on
-the M1 API client + auth store (remove the deprecated `token` alias
-consumer and the raw-fetch pages, drop `axios`), forgot-password flow
-(needs the first backend addition: password-reset tokens + mailer
-abstraction with console transport), onboarding wizard, workspace
-creation flow (first Workspace routes), authenticated app shell
-(sidebar, topbar, command palette ⌘K, keyboard shortcuts), protected-
-route handling. Details will be written into this file when M2 closes.
+**M4 — Core product surfaces**: project management UI (real CRUD flows
+on existing routes), document editor, generation history, AI playground
+(text/code) with model selector + provider management UI backed by a new
+`GET /api/ai/providers` endpoint, prompt library (new model + routes).
+Details will be written into this file when M3 closes.
