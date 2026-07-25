@@ -55,3 +55,24 @@ export {
   DropdownMenuSubTrigger,
 } from './components/DropdownMenu';
 export { Toaster, toast } from './components/Toaster';
+export {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+  BreadcrumbEllipsis,
+} from './components/Breadcrumb';
+export { EmptyState, type EmptyStateProps } from './components/EmptyState';
+export {
+  Command,
+  CommandDialog,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandSeparator,
+  CommandShortcut,
+} from './components/Command';

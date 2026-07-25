@@ -188,6 +188,9 @@ importers:
       '@testing-library/react':
         specifier: ^14.1.2
         version: 14.3.1(@types/react@18.3.31)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@testing-library/user-event':
+        specifier: ^14.5.2
+        version: 14.6.1(@testing-library/dom@9.3.4)
       '@types/node':
         specifier: ^20.10.6
         version: 20.19.43
@@ -1993,6 +1996,12 @@ packages:
     peerDependencies:
       react: ^18.0.0
       react-dom: ^18.0.0
+
+  '@testing-library/user-event@14.6.1':
+    resolution: {integrity: sha512-vq7fv0rnt+QTXgPxr5Hjc210p6YKq2kmdziLgnsZGgLJ9e6VAShx1pACLuRjd/AS/sr7phAR58OIIpf0LlmQNw==}
+    engines: {node: '>=12', npm: '>=6'}
+    peerDependencies:
+      '@testing-library/dom': '>=7.21.4'
 
   '@turbo/darwin-64@2.10.5':
     resolution: {integrity: sha512-ENvPwy3x5yS7MwNYHeWjqOBXkwIMp39Pd+/zXC6PoiNzF8EIvvLZOZZ+ny6L9x4WgS5vxUii2LM5gM+zjPdnWw==}
@@ -6261,6 +6270,10 @@ snapshots:
       react-dom: 19.2.7(react@19.2.7)
     transitivePeerDependencies:
       - '@types/react'
+
+  '@testing-library/user-event@14.6.1(@testing-library/dom@9.3.4)':
+    dependencies:
+      '@testing-library/dom': 9.3.4
 
   '@turbo/darwin-64@2.10.5':
     optional: true

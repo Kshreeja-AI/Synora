@@ -75,3 +75,56 @@ export interface SessionResponse {
   rememberMe: boolean;
   isCurrent: boolean;
 }
+
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'MEMBER' | 'VIEWER';
+
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  avatar: string | null;
+  role: WorkspaceRole;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceMemberSummary {
+  id: string;
+  role: WorkspaceRole;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string | null;
+    email: string;
+    image: string | null;
+  };
+}
+
+export interface CreateWorkspaceRequest {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateWorkspaceRequest {
+  name?: string;
+  description?: string;
+}
+
+export type NotificationType = 'SECURITY' | 'ACCOUNT' | 'WORKSPACE' | 'SYSTEM';
+
+export interface NotificationSummary {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationsResponse {
+  notifications: NotificationSummary[];
+  unreadCount: number;
+}

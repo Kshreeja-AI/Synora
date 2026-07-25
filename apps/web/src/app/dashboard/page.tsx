@@ -2,43 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Button, Card, CardContent, Skeleton } from '@synora/design-system';
+import { Building2, Users, CalendarDays, Settings } from 'lucide-react';
+import { Button, Card, CardContent, Skeleton, EmptyState } from '@synora/design-system';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
+import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
 
-const createActions = [
-  {
-    icon: '🎨',
-    title: 'Image Generation',
-    description: 'Generate stunning images from text descriptions.',
-    href: '/dashboard/create?type=image',
-    cta: 'Create Image',
-  },
-  {
-    icon: '🎬',
-    title: 'Video Generation',
-    description: 'Generate videos from prompts and scripts.',
-    href: '/dashboard/create?type=video',
-    cta: 'Create Video',
-  },
-  {
-    icon: '✍️',
-    title: 'Document Writing',
-    description: 'Write and edit documents with AI assistance.',
-    href: '/dashboard/create?type=document',
-    cta: 'Write Document',
-  },
-  {
-    icon: '💻',
-    title: 'Code Generation',
-    description: 'Generate and optimize code with AI.',
-    href: '/dashboard/create?type=code',
-    cta: 'Generate Code',
-  },
-];
-
 export default function DashboardPage(): React.JSX.Element {
-  const { data: user, isLoading } = useCurrentUser();
+  const { data: user, isLoading: isUserLoading } = useCurrentUser();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useCurrentWorkspace();
+  const openCreateWorkspace = useCreateWorkspaceStore((state) => state.open);
   const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
 
   const handleResend = async (): Promise<void> => {
@@ -51,18 +25,14 @@ export default function DashboardPage(): React.JSX.Element {
     }
   };
 
-  if (isLoading || !user) {
+  if (isUserLoading || !user || isWorkspaceLoading) {
     return (
       <div className="space-y-8">
         <div className="space-y-2">
           <Skeleton className="h-10 w-96" />
           <Skeleton className="h-5 w-72" />
         </div>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-44" />
-          ))}
-        </div>
+        <Skeleton className="h-48" />
       </div>
     );
   }
@@ -85,32 +55,67 @@ export default function DashboardPage(): React.JSX.Element {
       )}
 
       <h1 className="mb-2 text-4xl font-bold text-foreground">Welcome, {user.name || user.email}!</h1>
-      <p className="mb-8 text-muted-foreground">Start creating amazing content with Synora AI.</p>
+      <p className="mb-8 text-muted-foreground">
+        {currentWorkspace ? `Here's what's happening in ${currentWorkspace.name}.` : 'Create a workspace to get started.'}
+      </p>
 
-      <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2">
-        {createActions.map((action) => (
-          <Card key={action.title}>
-            <CardContent className="p-6">
-              <h2 className="mb-4 text-2xl font-bold text-foreground">
-                {action.icon} {action.title}
-              </h2>
-              <p className="mb-4 text-muted-foreground">{action.description}</p>
-              <Button asChild variant="primary">
-                <Link href={action.href}>{action.cta}</Link>
+      {!currentWorkspace ? (
+        <EmptyState
+          icon={<Building2 />}
+          title="Create your first workspace"
+          description="Workspaces keep your projects, members, and settings organized. You can create more later."
+          action={<Button onClick={openCreateWorkspace}>Create workspace</Button>}
+        />
+      ) : (
+        <Card>
+          <CardContent className="space-y-6 p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg font-semibold text-primary">
+                {currentWorkspace.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">{currentWorkspace.name}</h2>
+                <p className="text-sm text-muted-foreground">/{currentWorkspace.slug}</p>
+              </div>
+            </div>
+
+            <dl className="grid grid-cols-1 gap-4 border-t border-border pt-6 sm:grid-cols-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Members</dt>
+                  <dd className="text-sm font-medium text-foreground">{currentWorkspace.memberCount}</dd>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Your role</dt>
+                  <dd className="text-sm font-medium text-foreground">{currentWorkspace.role}</dd>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Created</dt>
+                  <dd className="text-sm font-medium text-foreground">
+                    {new Date(currentWorkspace.createdAt).toLocaleDateString()}
+                  </dd>
+                </div>
+              </div>
+            </dl>
+
+            <div className="border-t border-border pt-6">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/dashboard/settings/workspace" className="gap-2">
+                  <Settings className="h-4 w-4" aria-hidden />
+                  Workspace settings
+                </Link>
               </Button>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      <Card>
-        <CardContent className="p-6">
-          <h2 className="mb-4 text-2xl font-bold text-foreground">Recent Projects</h2>
-          <p className="text-muted-foreground">
-            No projects yet. Create your first project to get started!
-          </p>
-        </CardContent>
-      </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

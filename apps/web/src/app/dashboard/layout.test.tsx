@@ -1,17 +1,34 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import DashboardLayout from './layout';
 
 vi.mock('../../hooks/useRequireAuth', () => ({
   useRequireAuth: vi.fn(),
 }));
 
-vi.mock('../../lib/api/auth', () => ({
-  logout: vi.fn(),
+// The shell's sub-components each own real data-fetching (workspaces,
+// notifications, current user) that's already covered by their own unit
+// tests. Stubbing them here keeps this file focused on what the layout
+// itself is responsible for: the auth gate and the mobile overlay behavior.
+vi.mock('../../components/shell/Sidebar', () => ({
+  Sidebar: ({ open, onNavigate }: { open: boolean; onNavigate: () => void }) => (
+    <div data-testid="sidebar" data-open={open}>
+      <button onClick={onNavigate}>Dashboard</button>
+    </div>
+  ),
 }));
+vi.mock('../../components/shell/Topbar', () => ({
+  Topbar: ({ onToggleSidebar }: { onToggleSidebar: () => void }) => (
+    <button aria-label="Toggle sidebar" onClick={onToggleSidebar}>
+      Toggle
+    </button>
+  ),
+}));
+vi.mock('../../components/shell/CommandPalette', () => ({ CommandPalette: () => null }));
+vi.mock('../../components/shell/KeyboardShortcutsDialog', () => ({ KeyboardShortcutsDialog: () => null }));
+vi.mock('../../components/shell/CreateWorkspaceDialog', () => ({ CreateWorkspaceDialog: () => null }));
 
 import { useRequireAuth } from '../../hooks/useRequireAuth';
-import { logout } from '../../lib/api/auth';
 
 function setViewportWidth(width: number): void {
   Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: width });
@@ -21,10 +38,6 @@ describe('DashboardLayout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     setViewportWidth(1024);
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { ...window.location, href: '' },
-    });
   });
 
   it('shows a loading state and withholds children while auth is resolving', () => {
@@ -55,28 +68,8 @@ describe('DashboardLayout', () => {
     );
 
     expect(screen.getByText('Protected content')).toBeDefined();
-    expect(screen.getByText('Ada')).toBeDefined();
-  });
-
-  it('logs out and redirects home when Logout is clicked', async () => {
-    (useRequireAuth as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
-      data: { id: 'u1', email: 'ada@example.com', name: 'Ada', emailVerified: true },
-      isLoading: false,
-    });
-    (logout as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
-
-    render(
-      <DashboardLayout>
-        <div>Protected content</div>
-      </DashboardLayout>
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /logout/i }));
-
-    await waitFor(() => {
-      expect(logout).toHaveBeenCalled();
-      expect(window.location.href).toBe('/');
-    });
+    expect(screen.getByTestId('sidebar')).toBeDefined();
+    expect(screen.getByRole('button', { name: /toggle sidebar/i })).toBeDefined();
   });
 
   describe('mobile sidebar overlay', () => {
@@ -95,6 +88,7 @@ describe('DashboardLayout', () => {
         </DashboardLayout>
       );
       expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-open', 'false');
     });
 
     it('opens as an overlay with a backdrop when toggled, and closes on backdrop click', () => {
@@ -107,12 +101,13 @@ describe('DashboardLayout', () => {
       fireEvent.click(screen.getByRole('button', { name: /toggle sidebar/i }));
       const backdrop = container.querySelector('[aria-hidden="true"]');
       expect(backdrop).not.toBeNull();
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-open', 'true');
 
       fireEvent.click(backdrop!);
       expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
     });
 
-    it('closes the overlay after navigating to a sidebar link', () => {
+    it('closes the overlay after navigating from the sidebar', () => {
       const { container } = render(
         <DashboardLayout>
           <div>Protected content</div>
@@ -122,7 +117,7 @@ describe('DashboardLayout', () => {
       fireEvent.click(screen.getByRole('button', { name: /toggle sidebar/i }));
       expect(container.querySelector('[aria-hidden="true"]')).not.toBeNull();
 
-      fireEvent.click(screen.getByText('Settings'));
+      fireEvent.click(screen.getByText('Dashboard'));
       expect(container.querySelector('[aria-hidden="true"]')).toBeNull();
     });
   });

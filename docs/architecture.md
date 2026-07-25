@@ -85,16 +85,16 @@ deliberate Release 2+ scope (see `RELEASE_2_PLAN.md`):
 
 ### Infrastructure
 - **Database**: PostgreSQL 16
-- **Cache**: none yet — Redis is Release 2 scope (M6/R2-c), needed once the
+- **Cache**: none yet — Redis is Release 2 scope (M7/R2-c), needed once the
   app runs on more than one instance
 - **Storage**: none yet — S3-compatible object storage is Release 2 scope
-  (M6/R2-d's media generation needs it)
+  (M7/R2-d's media generation needs it)
 - **Container**: Docker (multi-stage, `node:22-bookworm-slim`)
 - **Orchestration**: none — `infrastructure/k8s/` exists but is unused,
   explicitly Release 4 (hyperscale) scope
 - **Deployment**: GitHub Actions CI (`test`/`security`/`docker` jobs);
   deploys today are manual (documented commands, no CD pipeline yet —
-  Release 2, M9/R2-e)
+  Release 2, M10/R2-e)
 
 ## File Structure
 
@@ -198,26 +198,70 @@ pluggable source chain with audit-logged reads. Full detail:
   wraps list/revoke.
 - **Token storage** (`src/lib/auth/token-storage.ts`): localStorage under
   `synora.accessToken` / `synora.refreshToken`, SSR-safe guards.
-- **Stores** (`src/stores/auth-store.ts`): Zustand store holding
-  `user` + `status` (`loading | authenticated | unauthenticated`),
-  mirrored from `useCurrentUser` (below) rather than written to directly
-  by pages.
+- **Stores** (`src/stores/`): `auth-store.ts` holds `user` + `status`
+  (`loading | authenticated | unauthenticated`), mirrored from
+  `useCurrentUser` (below) rather than written to directly by pages.
+  M4 added three small Zustand stores, each owning exactly one piece of
+  UI-only state so it can be triggered from more than one place:
+  `workspace-store.ts` (persisted `currentWorkspaceId`, via `zustand/
+  middleware`'s `persist` — only the *id* is persisted, never workspace
+  data itself, so there's no risk of serving stale workspace content from
+  localStorage), `command-palette-store.ts` and
+  `keyboard-shortcuts-store.ts` (open/close booleans for their respective
+  dialogs), and `create-workspace-store.ts` (shared so the sidebar's
+  workspace switcher and the command palette's "Create workspace" action
+  open the same `CreateWorkspaceDialog` instance).
 - **Hooks** (`src/hooks/`): `useCurrentUser` wraps `GET /api/users/me` in
   a TanStack Query (disabled with no access token; syncs the auth store
   on success, clears it on failure). `useRequireAuth` layers a redirect
   on top — `router.replace('/auth/login?next=<path>')` when there's no
   token or the query errors even after the client's refresh-retry; login
-  reads `next` back off the URL.
+  reads `next` back off the URL. M4 added `useWorkspaces` (list query),
+  `useCurrentWorkspace` (resolves the persisted id against the real list,
+  falling back to — and persisting — the first workspace if the stored id
+  is missing or stale), `useNotifications` (list + unread count, 30s
+  poll — there's no websocket/SSE infrastructure yet, so polling is the
+  honest choice rather than faking real-time behavior), and
+  `useThemePreference` (bridges `next-themes`, instant/local, with
+  `UserPreferences.theme`, server-side — hydrates from the server on
+  load, updates both together on a user-initiated change).
+- **Application shell** (`src/components/shell/`, M4): `Sidebar`
+  (collapsible, keeps the M3 mobile-overlay behavior — `fixed` + backdrop
+  below the `md` breakpoint), `Topbar` (breadcrumbs, a search-bar-styled
+  button that opens the command palette rather than a separate content
+  search that has nothing real to index yet, `NotificationsMenu`,
+  `UserMenu`), `WorkspaceSwitcher` + `CreateWorkspaceDialog`,
+  `NotificationsMenu`, `UserMenu` (profile links, a theme submenu, a
+  keyboard-shortcuts trigger, logout), `Breadcrumbs` (derived from
+  `usePathname()`), `CommandPalette` (global ⌘K/Ctrl+K via a
+  `window` keydown listener; also binds ⌘/ to the shortcuts dialog),
+  `KeyboardShortcutsDialog`. `dashboard/layout.tsx` composes these and
+  renders the three dialog-based components (`CommandPalette`,
+  `KeyboardShortcutsDialog`, `CreateWorkspaceDialog`) once, outside the
+  scrollable content area, so they're available from anywhere in the
+  shell.
 - **Pages today**: landing/pricing/features/changelog (`(marketing)`
   route group, M2), `/auth/{login,register,forgot-password,
-  reset-password,verify-email}`, `/dashboard`,
-  `/dashboard/settings/{profile,account,sessions}` — all composed from
-  design-system components on the typed API client; no page reads
-  `localStorage` directly or wires its own token logic. Pages that read a
-  URL query param (`login`, `reset-password`, `verify-email`) split into a
-  server `page.tsx` (`<Suspense>` wrapper) and a client `*Form.tsx`
-  component, per Next's requirement that `useSearchParams()` sit inside a
-  Suspense boundary.
+  reset-password,verify-email}`, `/dashboard` (real empty-state/
+  workspace-overview, M4), `/dashboard/settings/{profile,account,
+  sessions,workspace}` — all composed from design-system components on
+  the typed API client; no page reads `localStorage` directly or wires
+  its own token logic. Pages that read a URL query param (`login`,
+  `reset-password`, `verify-email`) split into a server `page.tsx`
+  (`<Suspense>` wrapper) and a client `*Form.tsx` component, per Next's
+  requirement that `useSearchParams()` sit inside a Suspense boundary.
+  `/dashboard/[...catchAll]` (M4) unconditionally calls `notFound()` so
+  the dashboard-scoped `not-found.tsx` (which keeps the sidebar/topbar
+  chrome) is reachable for any unmatched path under `/dashboard/*` — a
+  nested `not-found.tsx` is otherwise only reached from an explicit
+  `notFound()` call within a segment that already matches a route.
+- **Error boundaries** (M4): root `error.tsx`/`not-found.tsx` (safe to
+  use design-system components — the root layout's CSS is guaranteed
+  loaded by the time they render), `global-error.tsx` (replaces the
+  entire root layout on a root-layout-level crash, so it uses inline
+  styles only rather than assuming any CSS bundle loaded), and a
+  dashboard-scoped `error.tsx`/`not-found.tsx` pair that keep the shell
+  chrome visible.
 - **Tailwind pipeline**: `postcss.config.js` (tailwindcss + autoprefixer —
   added in M1; before that no postcss config existed and Tailwind never
   actually compiled) + `tailwind.config.ts` consuming the design-system
@@ -268,7 +312,7 @@ pluggable source chain with audit-logged reads. Full detail:
    `POST /api/auth/logout-all` (M3) revokes every session for the
    account, including the caller's own.
 5. **Lockout** — per-account: 5 failed attempts → 15 min lock (both
-   config-driven), DB-backed (single-instance correct; Redis in M6).
+   config-driven), DB-backed (single-instance correct; Redis in M7).
 6. **Sessions** (M3) — every `RefreshToken` row doubles as a listable
    "session" (`GET /api/auth/sessions`), with device metadata (parsed
    User-Agent, IP, last-used time) captured at issue/rotation time. The
@@ -281,7 +325,7 @@ pluggable source chain with audit-logged reads. Full detail:
 
 Storage today is `localStorage` + bearer header — **not** cookies, which
 is why CSRF protection is correctly deferred until the cookie-auth
-migration (M5/R2-b). Full detail: `docs/api.md`,
+migration (M6/R2-b). Full detail: `docs/api.md`,
 `docs/production/R1-c_REFRESH_TOKENS.md`.
 
 ## AI Engine Architecture / Provider Abstraction
@@ -312,7 +356,7 @@ routes never touch a vendor SDK directly.
 ### Multi-provider / future self-hosted models
 
 The contract is capability-based (`text-generation`, `code-generation`
-today; media capabilities join in M6). A future self-hosted Synora model
+today; media capabilities join in M7). A future self-hosted Synora model
 is just another descriptor whose `create()` points at an internal
 endpoint (the Ollama provider is the proof: it already serves
 self-hosted models via a base URL with zero special-casing). Business
@@ -355,7 +399,7 @@ launch principle) — add SMTP env vars, no code change.
 
 `apps/backend/src/storage/` (Release 2 M3) — same descriptor-registry
 shape again, used today for avatar uploads; a future S3-compatible
-provider (Release 2 M6's media pipeline) is a new descriptor, not a
+provider (Release 2 M7's media pipeline) is a new descriptor, not a
 call-site change.
 
 - **Facade** (`index.ts`): `uploadAvatar({ userId, buffer, contentType })`,
@@ -386,12 +430,12 @@ multi-step planning). When it arrives (Release 3+), it sits **above**
 `generateText()` and below routes, so it inherits provider-agnosticism
 by construction rather than needing its own provider handling.
 
-## Queue Architecture — not implemented (M6)
+## Queue Architecture — not implemented (M7)
 
 There is no job queue today; text/code generation is served
 synchronously because it fits in a request/response cycle.
 `POST /api/images/generate` currently returns a hardcoded placeholder
-URL and calls no provider. M6 (R2-c + R2-d) introduces: Redis →
+URL and calls no provider. M7 (R2-c + R2-d) introduces: Redis →
 async job queue → worker → S3-compatible object storage → 202-enqueue /
 poll-or-notify API shape for image, video, and audio generation. Do not
 read the current images route as a preview of that design.
@@ -408,16 +452,16 @@ as nonexistent until a release plan names it.
 ## Database Architecture
 
 PostgreSQL 16 via Prisma 5; schema at
-`packages/database/prisma/schema.prisma` (20 models), shared Prisma
+`packages/database/prisma/schema.prisma` (21 models), shared Prisma
 client singleton in `apps/backend/src/db/` re-exported through
 `@synora/database`.
 
 Model groups:
 - **Identity**: User (roles USER/ADMIN/MODERATOR, status, lockout
   fields), Account (OAuth placeholder), UserProfile, UserPreferences
-- **Workspaces**: Workspace, WorkspaceMember (role enum
-  OWNER→VIEWER), WorkspaceInvitation, ApiKey — schema exists; no routes
-  serve these yet (M5 scope)
+- **Workspaces**: Workspace, WorkspaceMember (role enum OWNER→VIEWER) —
+  create/list/get/rename routes shipped in M4, membership-checked;
+  WorkspaceInvitation, ApiKey remain schema-only (M6 scope)
 - **Content**: Project, Document, GeneratedImage, GeneratedVideo,
   GeneratedAudio (media rows are written by placeholder routes only)
 - **Auth/session**: RefreshToken (hash-only storage, revocation, expiry,
@@ -425,14 +469,18 @@ Model groups:
   list), PasswordResetToken, EmailVerificationToken (both M3, same
   hash-at-rest/single-use discipline), Session + VerificationToken
   (NextAuth placeholders, unused)
+- **Notifications** (M4): Notification (type enum SECURITY/ACCOUNT/
+  WORKSPACE/SYSTEM) — every row created at a real backend event, never
+  seeded
 - **Audit**: ActivityLog, MFAAuditLog (soft user reference — audit rows
   outlive users)
 
-6 migrations applied: `init`, `add_refresh_token`, `add_login_lockout`,
+7 migrations applied: `init`, `add_refresh_token`, `add_login_lockout`,
 `drop_redundant_unique_indexes`, `add_password_reset_token`,
-`add_email_verification_and_session_metadata`. Every FK column is
-indexed; no redundant indexes duplicating `@unique`. No seed script
-exists. Full column-level docs: `docs/database.md`.
+`add_email_verification_and_session_metadata`,
+`add_notification_model`. Every FK column is indexed; no redundant
+indexes duplicating `@unique`. No seed script exists. Full column-level
+docs: `docs/database.md`.
 
 ## API Flow Diagrams / Request Lifecycle
 
@@ -461,7 +509,7 @@ POST /api/ai/generate { prompt, mode?, model?, ... }
   ← { text, provider, model, usage, finishReason }
 ```
 
-### Media generation (M6 target shape — not built)
+### Media generation (M7 target shape — not built)
 
 ```
 POST /api/images/generate → 202 { jobId }
@@ -480,15 +528,15 @@ with reuse detection, Prisma parameterized queries, centralized error
 handling that hides internals outside development, secrets isolated in
 SecretsManager with audited reads, CI gates (`pnpm audit` high+,
 gitleaks, Snyk best-effort), Docker non-root user + no `.env` in image
-layers. Not yet: MFA (M5), CSRF/cookie auth (M5), Redis-shared
-rate-limit state (M6).
+layers. Not yet: MFA (M6), CSRF/cookie auth (M6), Redis-shared
+rate-limit state (M7).
 
 ## Scaling Strategy
 
 - **Today**: single backend instance, single Postgres. Lockout/rate-limit
   state is DB-backed — correct for one instance only.
-- **M6 (R2-c)**: Redis-backed shared state → horizontal scaling of the
-  API tier becomes safe; also the substrate for the M6 job queue.
+- **M7 (R2-c)**: Redis-backed shared state → horizontal scaling of the
+  API tier becomes safe; also the substrate for the M7 job queue.
 - **Release 3/4**: read replicas, Kubernetes (`infrastructure/k8s/` is a
   placeholder), multi-region — explicitly out of scope now.
 - **Design rule**: nothing added in Release 2 may assume single-instance
@@ -510,7 +558,7 @@ rate-limit state (M6).
   build image → `db:migrate` → run container → verify `/health`/`/ready`.
 - Managed Postgres (RDS/Neon/Supabase/Railway) supplies backups/PITR.
 
-### Planned (M9/R2-e) — not built
+### Planned (M10/R2-e) — not built
 Tag → staging → production CD with approval gate and rehearsed
 rollback. No blue-green, CDN, or auto-rollback exists today.
 
@@ -526,7 +574,7 @@ rollback. No blue-green, CDN, or auto-rollback exists today.
   over token rotation/reuse detection; NextAuth stays a declared future
   option for OAuth.
 - **Bearer tokens now, cookies later** — bearer isn't CSRF-vulnerable,
-  letting CSRF land together with the cookie migration (M5) instead of
+  letting CSRF land together with the cookie migration (M6) instead of
   as ceremony.
 - **Design tokens as CSS variables + shared Tailwind preset** — theming
   is a data-attribute swap with no rebuild; every app consumes one
@@ -587,7 +635,7 @@ rollback. No blue-green, CDN, or auto-rollback exists today.
 - CI runs the full suite plus coverage upload on every push.
 
 ### Not implemented
-- **E2E**: no Playwright suite yet — lands in M9 (R2-h) against the
+- **E2E**: no Playwright suite yet — lands in M10 (R2-h) against the
   finished R2 feature set.
 - **Coverage thresholds**: coverage is informational
   (`fail_ci_if_error: false`), not a gate.
@@ -602,7 +650,7 @@ rollback. No blue-green, CDN, or auto-rollback exists today.
   onboarding wizard, workspace creation, and app shell (sidebar/topbar/
   command palette) — originally scoped into M3 by `RELEASE_2_PLAN.md` —
   are deferred to a later milestone. Original register items map
-  R2-a/b→M5, R2-c/d→M6, R2-e/f/g/h→M9.
+  R2-a/b→M6, R2-c/d→M7, R2-e/f/g/h→M10.
 - **Release 3**: enterprise (workspace tenancy enforcement, SSO, audit,
   agents/memory candidates).
 - **Release 4**: hyperscale (Kubernetes, multi-region, read replicas,

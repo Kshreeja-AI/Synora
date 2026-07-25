@@ -22,6 +22,7 @@ import {
   consumeEmailVerificationToken,
 } from '../services/emailVerification.service';
 import { listSessions, revokeSession, revokeAllSessions } from '../services/session.service';
+import { createNotification } from '../services/notification.service';
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
@@ -103,6 +104,17 @@ async function sendMailBestEffort(label: string, send: () => Promise<void>): Pro
     await send();
   } catch (error) {
     logger.warn(`[auth] ${label} email failed to send`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Same best-effort discipline as mail: an in-app notification must never fail the operation it records. */
+async function notifyBestEffort(label: string, notify: () => Promise<unknown>): Promise<void> {
+  try {
+    await notify();
+  } catch (error) {
+    logger.warn(`[auth] ${label} notification failed to create`, {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -281,6 +293,13 @@ router.post('/reset-password', async (req, res, next) => {
     await sendMailBestEffort('password-changed', () =>
       sendPasswordChangedEmail({ to: user.email, name: user.name })
     );
+    await notifyBestEffort('password-reset', () =>
+      createNotification(user.id, {
+        type: 'SECURITY',
+        title: 'Password reset',
+        body: 'Your password was reset. If this wasn’t you, contact support immediately.',
+      })
+    );
 
     res.json(createApiResponse({ message: 'Password reset successfully. Please sign in.' }));
   } catch (error) {
@@ -296,6 +315,14 @@ router.post('/verify-email', async (req, res, next) => {
     if (!consumed) {
       throw new UnauthorizedException('Invalid or expired verification token');
     }
+
+    await notifyBestEffort('email-verified', () =>
+      createNotification(consumed.userId, {
+        type: 'ACCOUNT',
+        title: 'Email verified',
+        body: 'Your email address has been verified.',
+      })
+    );
 
     res.json(createApiResponse({ message: 'Email verified successfully.' }));
   } catch (error) {

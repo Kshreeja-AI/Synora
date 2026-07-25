@@ -1,4 +1,4 @@
-# NEXT TASK — Release 2, Milestone 3.5: Onboarding, Workspace Creation, App Shell
+# NEXT TASK — Release 2, Milestone 5: Core Product Surfaces
 
 **Maintenance rule:** this file always contains ONLY the exact next
 development task. When a task completes (milestone gate passed: lint,
@@ -6,143 +6,169 @@ typecheck, tests, build all green → commit → push → green CI), replace
 this file's content with the task named under "Next task after this
 one".
 
-## Why this file exists as "M3.5"
+## Why this file exists as "M5"
 
-`RELEASE_2_PLAN.md`'s original Milestone 3 bundled six deliverables:
-auth rebuild, forgot-password, onboarding wizard, workspace creation,
-app shell, and cleanup. On 2026-07-25 the founder narrowed M3's actual
-scope to auth/account UX only (auth screens, email verification,
-password reset, session management, account/profile settings, avatar
-upload — see `CURRENT_STATE.md`) and explicitly deferred onboarding,
-workspace creation, and the app shell. This task is exactly that deferred
-remainder, run as its own milestone so the gate (lint/typecheck/test/
-build → commit → push → green CI) applies to it independently rather
-than being silently folded into M4.
+`RELEASE_2_PLAN.md`'s milestone table was renumbered on 2026-07-25 when
+the founder split the original M3 into M3 (auth/account UX) + M4
+(application shell), each independently gated. What the plan originally
+called M4 ("Core product surfaces") shifted to M5 — this file — with no
+change to its content. M4 (application shell: dashboard, sidebar,
+workspace switcher/creation, command palette, notifications, settings
+navigation, 404/error handling) is complete; see `CURRENT_STATE.md`.
 
 ## Goal
 
-Turn the post-registration experience from "land directly on an
-otherwise-empty dashboard" into a real product entry flow, and replace
-the placeholder dashboard shell with a navigable one:
+Give the product something real to *do* inside a workspace. Today the
+workspace switcher and dashboard overview exist, but `Project` and
+`Document` are bare CRUD-by-userId models with no UI, and there is no way
+to actually use the 10-provider AI abstraction from the browser. This
+milestone turns that into:
 
-1. **Onboarding wizard** — post-registration: name (pre-filled from
-   registration, editable) → workspace creation → theme preference;
-   skippable; runs once. Completion is derived server-side from "the user
-   has at least one workspace" (per the original M3 spec's risk note —
-   avoid a dedicated `onboardingComplete` flag unless deriving from
-   workspace membership proves insufficient).
-2. **Workspace creation (backend)** — first `Workspace` routes: `POST
-   /api/workspaces` (create, slug uniqueness, creator becomes `OWNER`
-   via `WorkspaceMember`), `GET /api/workspaces` (list mine), `GET
-   /api/workspaces/:id` (membership-checked — 404 if the caller isn't a
-   member, never a 403 that confirms existence).
-3. **App shell** — replace `apps/web/src/app/dashboard/layout.tsx`'s
-   current placeholder sidebar (fixed nav list, no workspace concept)
-   with: a workspace switcher (design-system `DropdownMenu`) in the
-   topbar, a user menu (`DropdownMenu` + `Avatar`, now that avatar upload
-   is real — wire the actual `image` field), a command palette (⌘K) built
-   on `Dialog` with keyboard handling for navigation actions (add `cmdk`
-   only if hand-rolling proves inadequate, per the original spec), and
-   keyboard shortcuts. Keep the M3 mobile-overlay sidebar behavior
-   (`fixed` + backdrop + `md:` breakpoint split) — that part of the shell
-   is already correct and browser-verified; extend it, don't replace it.
-4. **Protected-route handling** — already exists (`useRequireAuth`,
-   shipped in M3) and needs no rework; the app shell consumes it as-is.
+1. **Project management UI** — real CRUD screens on the existing
+   `Project`/`Document` routes, now workspace-scoped rather than
+   user-scoped (the routes currently filter by `userId`; they need to
+   filter by workspace membership instead, matching M4's workspace
+   membership-check pattern — 404, not 403, for non-members).
+2. **Document editor** — a real editing surface for `Document` records
+   (the model already has a `format`/`content` shape — check
+   `packages/database/prisma/schema.prisma` before assuming a schema
+   change is needed).
+3. **AI playground (text/code)** — a real chat/completion UI hitting the
+   existing `POST /api/ai/generate` endpoint, with a model/provider
+   selector.
+4. **Provider management UI** — a new `GET /api/ai/providers` endpoint
+   exposing the registered provider descriptors (id, capabilities,
+   `isConfigured()` result) so the playground's selector reflects what's
+   actually usable, never a hardcoded list.
+5. **Generation history** — list past `/api/ai/generate` calls per
+   workspace (new model or reuse `ActivityLog` — evaluate both before
+   building a new table).
+6. **Prompt library** — save/reuse prompts (new model + routes).
 
 ## Dependencies
 
-- M1 API client/auth store, M2 design bar, M3 auth/account UX and
-  `useCurrentUser`/`useRequireAuth` hooks (all complete)
-- No external infrastructure.
+- M1–M4 complete (design system, marketing site, auth/account UX,
+  application shell — including the workspace model, `useCurrentWorkspace`,
+  and the shell's `Sidebar`/`Breadcrumbs`/`CommandPalette`, all of which
+  this milestone's new pages plug into rather than duplicate).
+- No external infrastructure (Redis/queues arrive in M7, after this).
 
 ## Architecture decisions
 
-- Workspace routes enforce membership on read from day one (the tenancy
-  groundwork M5 builds on) — mirrors how M3's session/account routes
-  scope everything to the authenticated caller.
-- Command palette: design-system `CommandPalette` built on `Dialog` +
-  keyboard handling; Radix's focus trap/restore must not be bypassed.
-- Onboarding state: derive from "has a workspace" — add a dedicated field
-  only if that proves genuinely insufficient in practice.
+- **Workspace-scope, not user-scope**: `Project`/`Document` routes must
+  become membership-checked against `workspaceId` the same way M4's
+  workspace routes are — reuse `workspace.service.ts`'s membership-check
+  pattern rather than inventing a second one. This likely means adding a
+  `workspaceId` column to `Project` (check the schema first — it may
+  already be workspace-aware and simply unused, the way `Workspace`
+  itself was before M4).
+- **`GET /api/ai/providers`**: exposes descriptor metadata only — never
+  secret values. Mirrors the existing AI descriptor-registry-resolver
+  pattern; add a read method to the registry rather than reaching into
+  `secretsManager` from a route handler.
+- **Sidebar integration**: M4 deliberately did not add "Projects" to the
+  sidebar nav because the page didn't exist yet (a dead link would have
+  violated the "no mock UI" principle). This milestone should add it now
+  that the destination is real — extend `Sidebar.tsx`'s `NAV_ITEMS`
+  array, don't rebuild the sidebar.
+- **Command palette**: add "New project", "AI playground", "Prompt
+  library" entries to the existing `CommandPalette.tsx` rather than
+  building a second palette.
 
 ## Files to create
 
-- Backend: `src/routes/workspaces.ts`, `src/services/workspace.service.ts`
-  (slug generation/uniqueness), tests for both
-- Database: migration adding nothing new if `Workspace`/`WorkspaceMember`
-  already cover it (they do — schema exists, unused until now); verify
-  before assuming a migration is needed
-- Web: `src/app/onboarding/page.tsx` (+ step components),
-  `src/components/shell/{Sidebar,Topbar,WorkspaceSwitcher,UserMenu,
-  CommandPalette}.tsx`, `src/lib/api/workspaces.ts`, tests throughout
+- Backend: `src/routes/ai.ts` extension for `GET /api/ai/providers`
+  (or a new route file if `ai.ts` is already large), prompt-library
+  model + routes, generation-history routes (model TBD per the
+  ActivityLog evaluation above), tests for all of it
+- Web: `src/app/dashboard/projects/{page.tsx,[id]/page.tsx}`,
+  `src/app/dashboard/playground/page.tsx`, `src/app/dashboard/library/
+  page.tsx` (prompt library), `src/lib/api/{projects,documents,
+  prompts}.ts`, `src/hooks/use{Projects,Documents,AiProviders}.ts`,
+  tests throughout
 
 ## Files to modify
 
-- `apps/backend/src/app.ts` (mount workspaces router)
-- `apps/web/src/app/dashboard/layout.tsx` (replace placeholder shell with
-  the components above, keeping the M3 mobile-overlay logic)
-- `apps/web/src/app/auth/register/page.tsx` or its post-register redirect
-  (send to `/onboarding` instead of straight to `/dashboard` for a user
-  with no workspace yet)
-- Docs at close: `docs/api.md` (new workspace endpoints), `docs/database.md`
-  (workspace routes now live, if that changes any documented status),
-  `docs/architecture.md`, `CURRENT_STATE.md`, this file
+- `packages/database/prisma/schema.prisma` (workspace-scope `Project`;
+  new models for prompts/generation-history if `ActivityLog` proves
+  insufficient) + migration
+- `apps/backend/src/routes/projects.ts`, `documents.ts` (membership
+  checks instead of `userId` checks)
+- `apps/web/src/components/shell/Sidebar.tsx` (add real nav items —
+  Projects, Playground, Library)
+- `apps/web/src/components/shell/CommandPalette.tsx` (add navigation/
+  action entries for the new surfaces)
+- Docs at close: `docs/api.md`, `docs/database.md`, `docs/architecture.md`,
+  `CURRENT_STATE.md`, this file
 
 ## Testing requirements
 
-- Backend: workspace routes (create/list/get, slug collisions, membership
-  enforcement — a non-member gets 404 not 403)
-- Web: onboarding step flow, workspace switcher render, command palette
-  open/navigate, shell renders correctly with the new workspace context
-- Full workspace suite (479+) stays green; milestone gate applies
+- Backend: workspace-scoped project/document CRUD (membership 404s,
+  same pattern M4's workspace tests already establish), `GET
+  /api/ai/providers` (returns real descriptor state, no secrets leaked),
+  prompt library CRUD, generation history list
+- Web: project list/create/detail, document editor save/load, playground
+  generate flow (mocked API, asserts the real provider list drives the
+  selector), prompt library CRUD, sidebar/command-palette additions
+- Full suite (577+) stays green; milestone gate applies
 
 ## Security requirements
 
-- Workspace reads/writes require membership — no cross-tenant leaks
+- Workspace-scoped reads/writes require membership — no cross-tenant
+  leaks (same discipline as M4's workspace routes)
+- `GET /api/ai/providers` must never expose secret values, only
+  descriptor metadata and a boolean `isConfigured`
 - No new secrets or credentials introduced by this milestone
 
 ## Acceptance criteria
 
-- Register → onboarding → workspace created → dashboard works end-to-end
-  against the real backend
-- ⌘K palette opens/navigates; sidebar/topbar responsive (building on the
-  M3 mobile-overlay fix, not regressing it); workspace switcher shows the
-  user's workspace(s)
+- Create a project inside a workspace → add a document → edit and save
+  it, all workspace-scoped and membership-checked
+- Playground generates real text/code via `/api/ai/generate`, with the
+  model/provider selector reflecting `GET /api/ai/providers`'s real
+  output — swapping the configured provider changes the selector with no
+  code change
+- Generation history and prompt library both round-trip against the real
+  backend — no mock UI
 - Browser-verified (screenshots, both themes, mobile + desktop) — same
-  bar M3 was held to
+  bar M3/M4 were held to
 
 ## Definition of Done
 
 Acceptance criteria met and the milestone gate passed: lint, type-check,
 tests, build green locally → commit → push → CI green → `docs/api.md`,
-`docs/architecture.md`, `CURRENT_STATE.md`, and this file updated.
+`docs/database.md`, `docs/architecture.md`, `CURRENT_STATE.md`, and this
+file updated.
 
 ## Risks
 
-- **Scope creep back into full M5 workspace features** (invitations,
-  roles beyond OWNER, settings) — out of scope here; this milestone only
-  needs create/list/get and OWNER-on-create.
-- **Command palette a11y** — must trap focus and restore it on close
-  (Radix Dialog handles this; don't bypass it).
+- **Scope creep into M6 territory** (team invitations, roles beyond
+  OWNER) — out of scope here; workspace membership is read-only context
+  for this milestone, not something it manages.
+- **Schema surprises**: `Project`/`Document` may already have more
+  workspace-awareness than expected, or less. Verify against
+  `schema.prisma` before assuming either a migration is or isn't needed
+  — the M4 workspace milestone found the `Workspace`/`WorkspaceMember`
+  models fully built and simply unused; the same could be true here, or
+  the opposite.
 
 ## Things that must not be changed
 
-`PROJECT_HANDOVER.md` §20 in full, plus everything M3 established:
-`useRequireAuth`/`useCurrentUser` hook contracts, the mobile sidebar
-overlay behavior, the API envelope, and auth token invariants
-(hash-at-rest, rotation, pinned algorithm) extending to the M3 reset/
-verification tokens.
+`PROJECT_HANDOVER.md` §20 in full, plus everything M3/M4 established:
+`useRequireAuth`/`useCurrentUser`/`useCurrentWorkspace` hook contracts,
+the mobile sidebar overlay behavior, the command palette's keyboard
+model, the API envelope, and auth token invariants (hash-at-rest,
+rotation, pinned algorithm).
 
 ## Estimated effort
 
-2–3 focused engineer-days (M–L) — smaller than the original M3 estimate
-since the auth/account portion is already done.
+3–4 focused engineer-days (L) — four real product surfaces plus a new
+backend endpoint and workspace-scoping migration.
 
 ## Next task after this one
 
-**M4 — Core product surfaces** (per `RELEASE_2_PLAN.md`'s original
-scope): project management UI (real CRUD flows on existing routes,
-now workspace-aware), document editor, generation history, AI playground
-(text/code) with model selector + provider management UI backed by a new
-`GET /api/ai/providers` endpoint, prompt library (new model + routes).
-Details will be written into this file when M3.5 closes.
+**M6 — Teams, invitations & extended security** (per `RELEASE_2_PLAN.md`'s
+renumbered scope): team invitations, roles beyond OWNER, API key
+management, extended workspace/security settings, **R2-a (MFA)** rebase
+from `recover/mfa`, **R2-b (CSRF + cookie auth)** rebase from
+`recover/csrf`. Details will be written into this file when M5 closes.

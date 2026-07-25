@@ -494,6 +494,166 @@ GET /api/users/:userId
 
 ---
 
+## Workspace Endpoints
+
+**New in M4.** Reads are membership-checked: a caller who isn't a member
+of the requested workspace gets `404`, never a `403` that would confirm
+the workspace exists. Writes additionally require the `OWNER` role — a
+non-owner member gets `403` (they already know the workspace exists).
+Invitations, roles beyond `OWNER`, and API keys are out of scope until M6.
+
+### List Workspaces
+Every workspace the caller is a member of, with their role and the
+member count.
+
+**Request**
+```http
+GET /api/workspaces
+Authorization: Bearer <token>
+```
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "ws123",
+      "name": "Acme Inc",
+      "slug": "acme-inc",
+      "description": null,
+      "avatar": null,
+      "role": "OWNER",
+      "memberCount": 1,
+      "createdAt": "2026-07-25T00:00:00Z",
+      "updatedAt": "2026-07-25T00:00:00Z"
+    }
+  ]
+}
+```
+
+### Create Workspace
+Creates a workspace and makes the caller its `OWNER`. The slug is
+generated from `name` (kebab-cased) and suffixed (`-2`, `-3`, …) on
+collision — it never changes on a later rename. Also creates a real
+`WORKSPACE`-type notification for the caller ("Workspace created").
+
+**Request**
+```http
+POST /api/workspaces
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "name": "Acme Inc", "description": "Optional" }
+```
+`201` on success, with the same shape as a list entry.
+
+### Get Workspace
+**Request**
+```http
+GET /api/workspaces/:id
+Authorization: Bearer <token>
+```
+`404` if the caller is not a member (including a nonexistent id).
+
+### Update Workspace
+OWNER-only. Renaming never changes the slug.
+
+**Request**
+```http
+PATCH /api/workspaces/:id
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "name": "New Name", "description": "Optional" }
+```
+`403` if the caller is a member but not the owner; `404` if not a member.
+
+### List Workspace Members
+Read-only.
+
+**Request**
+```http
+GET /api/workspaces/:id/members
+Authorization: Bearer <token>
+```
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "mem123",
+      "role": "OWNER",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "user": { "id": "u1", "name": "Ada", "email": "ada@example.com", "image": null }
+    }
+  ]
+}
+```
+
+---
+
+## Notification Endpoints
+
+**New in M4.** Every notification is created at a real backend event
+(password changed, password reset, email verified, workspace created) —
+there is no seeded or sample notification content.
+
+### List Notifications
+Most recent first, capped at 50, with the unread count in the same
+response.
+
+**Request**
+```http
+GET /api/notifications
+Authorization: Bearer <token>
+```
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "n1",
+        "type": "WORKSPACE",
+        "title": "Workspace created",
+        "body": "\"Acme Inc\" is ready to go.",
+        "link": "/dashboard/settings/workspace",
+        "readAt": null,
+        "createdAt": "2026-07-25T00:00:00Z"
+      }
+    ],
+    "unreadCount": 1
+  }
+}
+```
+
+### Unread Count
+```http
+GET /api/notifications/unread-count
+Authorization: Bearer <token>
+```
+```json
+{ "success": true, "data": { "unreadCount": 1 } }
+```
+
+### Mark One Read
+```http
+POST /api/notifications/:id/read
+Authorization: Bearer <token>
+```
+`404` if the notification doesn't belong to the caller. Idempotent —
+marking an already-read notification read again just returns it unchanged.
+
+### Mark All Read
+```http
+POST /api/notifications/read-all
+Authorization: Bearer <token>
+```
+```json
+{ "success": true, "data": { "count": 3 } }
+```
+
+---
+
 ## Project Endpoints
 
 ### List Projects

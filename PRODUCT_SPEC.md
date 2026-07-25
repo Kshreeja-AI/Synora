@@ -592,8 +592,8 @@ multiple workspaces with different roles.
 
 - General: name, slug, description, avatar
 - Members: invite by email, change roles, remove members
-- Billing: plan details, upgrade/downgrade (M7)
-- API keys: create/revoke workspace API keys (M5)
+- Billing: plan details, upgrade/downgrade (M8)
+- API keys: create/revoke workspace API keys (M6)
 - Danger zone: transfer ownership, delete workspace
 
 ### Roles
@@ -996,7 +996,7 @@ must be usable by people with disabilities.
 
 ### Testing
 
-- Axe accessibility audit on every page (M9 Playwright suite)
+- Axe accessibility audit on every page (M10 Playwright suite)
 - Manual screen reader testing (VoiceOver, NVDA) for critical flows:
   registration, login, generation, navigation
 - Keyboard-only navigation testing for all core workflows
@@ -1154,7 +1154,7 @@ connection. However, the offline experience must not be hostile.
 
 ### Service worker
 
-Not implemented today. When added (M9 scope), it should cache the app
+Not implemented today. When added (M10 scope), it should cache the app
 shell and static assets for instant loading, not act as a full offline
 database.
 
@@ -1208,14 +1208,14 @@ Settings are organized by scope: user-level and workspace-level.
 - **Appearance:** theme (dark/light/auto), language
 - **Notifications:** per-type toggle for in-app, email, push
 - **Sessions:** list active sessions, revoke any session
-- **Security:** MFA enrollment (M5), password change
+- **Security:** MFA enrollment (M6), password change
 - **API keys:** personal API keys (separate from workspace keys)
 
 ### Workspace settings (owner/admin)
 
 - **General:** name, slug, description, avatar
 - **Members:** invite, change roles, remove
-- **Billing:** plan, payment method, invoices (M7)
+- **Billing:** plan, payment method, invoices (M8)
 - **API keys:** workspace-scoped keys
 - **Security:** provider restrictions, SSO configuration (R3)
 

@@ -25,47 +25,74 @@ refresh token authentication system, a CSS-variable design token system
 Release 1 delivered a launchable core (auth, CRUD, AI text/code, security,
 CI, Docker). Release 2 is turning it into the complete customer-facing
 platform: design system, marketing site, auth UX, app shell, workspace
-flows, AI playground, billing, admin, and observability across 9
-milestones. As of this writing, M1 (design system foundation) and M2
-(marketing site) are complete; M3 (auth UX + onboarding + app shell) is
-next.
+flows, AI playground, billing, admin, and observability across 10
+milestones (renumbered from 9 on 2026-07-25 — see §2's note and
+`RELEASE_2_PLAN.md` §3). As of this writing, M1 (design system
+foundation), M2 (marketing site), M3 (auth/account UX), and M4
+(application shell) are complete; M5 (core product surfaces) is next.
 
 ---
 
 ## 2. Current State of Progress
 
+**Note (2026-07-25):** the milestone numbering below reflects the
+founder's split of the original M3 into M3 (auth/account UX) + M4
+(application shell), which shifted every later milestone up one slot.
+`RELEASE_2_PLAN.md` §3 has the full before/after mapping.
+
 | Area | Status |
 |---|---|
 | **Release** | Release 2 in progress |
-| **Milestones complete** | M1 (design system foundation), M2 (marketing site) |
-| **Current milestone** | M3 (auth UX + onboarding + app shell) — not started |
+| **Milestones complete** | M1 (design system foundation), M2 (marketing site), M3 (auth/account UX), M4 (application shell) |
+| **Current milestone** | M5 (core product surfaces) — not started |
 | **Branch** | `claude/synora-ai-platform-h5q0k2` |
-| **Last pushed commit** | `da8b5a1` — "docs: close M2 — update CURRENT_STATE, set NEXT_TASK to M3" |
+| **Last pushed commit** | pending push of the M4 closing commit — see `git log` |
 | **PR** | #31 → base `SYNORA`, open, not merged |
-| **CI** | Green on `da8b5a1` |
-| **Tests** | 312 total (backend 273, web 23, design-system 16) |
-| **Production readiness** | ~35-40% toward Release 2 launch |
+| **CI** | verify on push |
+| **Tests** | 577 total (backend 385, web 157, design-system 35) |
+| **Production readiness** | ~50% toward Release 2 launch |
 | **Known issues** | None open at code level |
-| **Uncommitted on disk** | `PasswordResetToken` model added to Prisma schema + migration SQL (M3 prep, NOT committed) |
+| **Uncommitted on disk** | None — working tree clean at the M4 handover |
 
 ### What is complete and working
 
-- Registration, login, token refresh (rotating, reuse-detected), logout,
-  account lockout — backend + tests
+- Full auth lifecycle: registration (+ email verification), login
+  (remember-me), token refresh (rotating, reuse-detected, `sid` session
+  claim), logout/logout-everywhere, forgot/reset-password, account
+  lockout — backend + tests, and every screen rebuilt on the design
+  system + typed API client (no raw `fetch`/`localStorage['token']`
+  anywhere in the frontend — that was fixed in M3)
+- Session management (list/revoke/logout-all), account settings
+  (password change, notification preferences, soft-delete), profile
+  settings (edit + avatar upload) — `/dashboard/settings/{profile,
+  account,sessions,workspace}`
+- **Workspaces**: `POST/GET /api/workspaces`, `GET/PATCH
+  /api/workspaces/:id`, `GET /api/workspaces/:id/members` —
+  membership-checked, OWNER-only writes, real workspace switcher +
+  creation dialog in the app shell (M4)
+- **In-app notifications**: real `Notification` model + routes, created
+  at genuine event triggers, surfaced in a real notification center (M4)
+- **Application shell**: sidebar, topbar, command palette (⌘K), profile
+  menu with a server-persisted theme submenu, breadcrumbs,
+  keyboard-shortcuts dialog, branded 404/error pages both at the root
+  and inside the dashboard shell (M4)
 - User/me, projects CRUD (list/create/get), documents CRUD
-  (list/create/get) — scoped by userId
+  (list/create/get) — scoped by userId (workspace-scoping is M5)
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
   (audited reads, pluggable sources, secret catalog)
+- Provider-agnostic mailer (`src/mail/`) and file storage (`src/storage/`)
+  — real, load-bearing (avatar uploads, transactional email), not
+  placeholders (M3)
 - CI pipeline (test / security / docker smoke) — all blocking, all green
 - Production Docker image (multi-stage, non-root, healthcheck)
 - Design tokens (dark default/light override), shared Tailwind preset,
-  17-component design-system library (Radix-based) with 16 tests
-- Working Tailwind pipeline (postcss config added in M1 — Tailwind had
-  never compiled before)
-- Typed API client with single-flight 401-refresh-retry, token storage,
-  Zustand auth store, TanStack Query + next-themes providers, Geist fonts
+  21-component design-system library (Radix-based, plus a hand-rolled
+  `Command`/`CommandDialog` palette — no `cmdk` dependency) with 35 tests
+- Typed API client with single-flight 401-refresh-retry, multipart
+  upload support, token storage, Zustand auth store, TanStack Query +
+  next-themes providers, Geist fonts
 - Marketing site: glass navbar (mobile menu, theme toggle) + footer;
   animated landing page; pricing page + FAQ; six SSG feature pages from
   one template; changelog timeline — all driven by typed content modules;
@@ -73,23 +100,24 @@ next.
 
 ### What is working but interim
 
-- Login/register/dashboard pages: styled with the design system but still
-  using their original raw `fetch` + `localStorage['token']` logic —
-  rebuilt on the new API client + auth store in M3
-- Backend auth responses carry a deprecated `token` alias for
-  `accessToken` until M3 removes the last consumer
+- None carried over from M1–M4. The legacy raw-fetch auth pages and the
+  deprecated `token` alias, both once flagged here as "interim," were
+  removed in M3.
 
 ### What is partially completed
 
-- **Workspaces/teams:** full Prisma schema exists; zero routes/UI — M3
-  creates the first workspace routes, M5 completes
+- **Workspaces/teams:** create/list/get/rename + membership-checked reads
+  are real (M4); invitations, roles beyond OWNER, and API keys remain
+  schema-only — M6
 - **MFA:** complete implementation on `recover/mfa` branch (needs rebase);
   4 MFA-adjacent services in mainline (`services/mfa/`) are tested but
-  dead code — M5
+  dead code — M6
 - **CSRF:** complete implementation on `recover/csrf` branch; lands with
-  the cookie-auth migration — M5
+  the cookie-auth migration — M6
 - **Media generation:** `POST /api/images/generate` returns a hardcoded
-  placeholder; no provider, no queue, no storage — M6
+  placeholder; no provider, no queue, no storage — M7. The M3/M4 storage
+  abstraction (`src/storage/`) is a real building block for this, not a
+  placeholder.
 
 ---
 
@@ -305,8 +333,8 @@ No seed script.
 |---|---|---|---|
 | `Workspace` | Team workspace | name, slug (unique), description, avatar | Schema only — first routes in M3 |
 | `WorkspaceMember` | Membership | userId + workspaceId (unique pair), role (OWNER/ADMIN/EDITOR/MEMBER/VIEWER) | Schema only |
-| `WorkspaceInvitation` | Invite tokens | workspaceId, email, role, token (unique), expiresAt, acceptedAt | Schema only — M5 |
-| `ApiKey` | Workspace API keys | workspaceId, name, key (unique), lastUsedAt, expiresAt | Schema only — M5 |
+| `WorkspaceInvitation` | Invite tokens | workspaceId, email, role, token (unique), expiresAt, acceptedAt | Schema only — M6 |
+| `ApiKey` | Workspace API keys | workspaceId, name, key (unique), lastUsedAt, expiresAt | Schema only — M6 |
 
 ### Content models
 
@@ -428,7 +456,7 @@ vendor SDK directly — everything goes through the facade.
 - Bedrock deliberately requires explicit `BEDROCK_REGION` so ambient AWS
   credentials never silently activate a billable provider.
 - Capabilities today: `text-generation`, `code-generation`. Media
-  capabilities join in M6.
+  capabilities join in M7.
 - No agent/orchestration layer exists. When it arrives (R3+), it sits
   above `generateText()` and below routes.
 
@@ -470,8 +498,8 @@ is replaced with Argon2id. No batch migration needed.
 
 - **Cookies/CSRF**: bearer tokens in the Authorization header are not
   CSRF-vulnerable. CSRF protection lands with the cookie-auth migration
-  in M5.
-- **MFA**: fully built on `recover/mfa` branch, not merged. Lands in M5.
+  in M6.
+- **MFA**: fully built on `recover/mfa` branch, not merged. Lands in M6.
 - **OAuth2**: `next-auth` is declared but unused — reserved for a future
   OAuth flow.
 
@@ -511,7 +539,7 @@ Data-driven pages use typed content arrays:
 - `src/content/features.ts` — `Feature` interface + `FEATURES` array (6)
 - `src/content/changelog.ts` — `ChangelogEntry` interface + `CHANGELOG`
 
-M7 billing can bind to the same plan IDs without page rewrites.
+M8 billing can bind to the same plan IDs without page rewrites.
 
 ### Current routes
 
@@ -521,9 +549,10 @@ M7 billing can bind to the same plan IDs without page rewrites.
 | `/pricing` | `(marketing)` | Plan cards + FAQ accordion |
 | `/features/[slug]` | `(marketing)` | 6 SSG feature pages |
 | `/changelog` | `(marketing)` | Timeline with dated entries |
-| `/auth/login` | Standalone | Styled but still raw-fetch (M3 rebuild) |
-| `/auth/register` | Standalone | Styled but still raw-fetch (M3 rebuild) |
-| `/dashboard` | Standalone | Basic sidebar (M3 replaces with app shell) |
+| `/auth/{login,register,forgot-password,reset-password,verify-email}` | Standalone | Rebuilt on the typed API client (M3) |
+| `/dashboard` | App shell | Real workspace overview + empty state (M4) |
+| `/dashboard/settings/{profile,account,sessions,workspace}` | App shell | Real settings, no mock UI (M3/M4) |
+| `/dashboard/[...catchAll]` | App shell | Triggers the shell-aware 404 (M4) |
 
 ---
 
@@ -551,11 +580,11 @@ M7 billing can bind to the same plan IDs without page rewrites.
 
 | Feature | Reason | When |
 |---|---|---|
-| MFA | Built on branch, not merged; launch without is standard practice | M5 |
-| CSRF | Only matters with cookie-auth; bearer tokens aren't vulnerable | M5 |
-| Redis-shared rate limits | Single-instance is correct for now | M6 |
+| MFA | Built on branch, not merged; launch without is standard practice | M6 |
+| CSRF | Only matters with cookie-auth; bearer tokens aren't vulnerable | M6 |
+| Redis-shared rate limits | Single-instance is correct for now | M7 |
 | Field-level encryption | Not needed until PII compliance work | R3 |
-| Auth-endpoint rate limiting | Global limiter covers for now | M5 |
+| Auth-endpoint rate limiting | Global limiter covers for now | M6 |
 | OAuth2 login | `next-auth` declared but unused | Future |
 
 ---
@@ -636,17 +665,17 @@ Full list: `.env.example` (root + per-app) and
 
 ### Revenue model
 
-SaaS subscription with usage-based tiers. Billing abstraction (M7) will
+SaaS subscription with usage-based tiers. Billing abstraction (M8) will
 be provider-agnostic with Stripe as the first adapter. Plan IDs in the
-content module are designed to map directly to billing plan IDs when M7
+content module are designed to map directly to billing plan IDs when M8
 ships.
 
 ### Not yet implemented
 
-- Payment processing (M7)
-- Usage metering and dashboards (M7)
-- API key enforcement for external integrations (M5)
-- Team seat management (M5)
+- Payment processing (M8)
+- Usage metering and dashboards (M8)
+- API key enforcement for external integrations (M6)
+- Team seat management (M6)
 
 ---
 
@@ -664,13 +693,14 @@ security hardening, CI pipeline, Docker production image.
 |---|---|---|---|
 | **M1** | Foundation | **Complete** | Design tokens, shared Tailwind preset, 17-component library, typed API client, auth store, TanStack Query + Zustand + next-themes |
 | **M2** | Marketing site | **Complete** | Landing, pricing, 6 feature pages, changelog, glass navbar, responsive, dark/light |
-| **M3** | Auth UX + onboarding + app shell | **Next** | Rebuild login/register on API client, forgot-password flow, onboarding wizard, workspace creation, app shell (sidebar/topbar/command palette), keyboard shortcuts |
-| **M4** | Core product surfaces | Pending | Project management UI, document editor, generation history, AI playground, prompt library |
-| **M5** | Workspace, security & account | Pending | Team management, invitations, settings, API keys, MFA (rebase `recover/mfa`), CSRF + cookie auth (rebase `recover/csrf`) |
-| **M6** | Media generation + assets | Pending | Redis, async job queue, image/video/audio generation, asset manager, file uploads, object storage |
-| **M7** | Billing, usage & notifications | Pending | Provider-agnostic billing (Stripe first), subscriptions, usage dashboard, analytics, notifications |
-| **M8** | Admin, support & content | Pending | Admin dashboard, monitoring, audit logs, feedback, support center, docs site, blog, API docs |
-| **M9** | Quality closeout & ops | Pending | CD pipeline, metrics/alerting, backups, Playwright E2E suite, accessibility pass, mobile polish |
+| **M3** | Auth/account UX | **Complete** | Login/register rebuilt on the API client, forgot/reset-password, email verification, session management, account/profile settings, avatar upload, mailer + storage abstractions |
+| **M4** | Application shell | **Complete** | Workspace routes (create/list/get/rename), notifications, sidebar/topbar/workspace switcher/command palette/keyboard shortcuts, workspace settings, 404/error boundaries |
+| **M5** | Core product surfaces | **Next** | Project management UI, document editor, generation history, AI playground, prompt library |
+| **M6** | Workspace, security & account | Pending | Team management, invitations, settings, API keys, MFA (rebase `recover/mfa`), CSRF + cookie auth (rebase `recover/csrf`) |
+| **M7** | Media generation + assets | Pending | Redis, async job queue, image/video/audio generation, asset manager, file uploads, object storage |
+| **M8** | Billing, usage & notifications | Pending | Provider-agnostic billing (Stripe first), subscriptions, usage dashboard, analytics, notifications |
+| **M9** | Admin, support & content | Pending | Admin dashboard, monitoring, audit logs, feedback, support center, docs site, blog, API docs |
+| **M10** | Quality closeout & ops | Pending | CD pipeline, metrics/alerting, backups, Playwright E2E suite, accessibility pass, mobile polish |
 
 ### Release 3 — PLANNED
 
@@ -688,12 +718,12 @@ designs on `feature/synora-infra-interfaces`).
 
 | Infra | Required before | Status |
 |---|---|---|
-| Redis (managed) | M6 | Not provisioned |
-| S3-compatible bucket | M6 | Not provisioned |
-| Stripe test keys | M7 | Not configured |
-| Email provider | M5 (invitations) | Abstracted; console transport ships with M3 |
-| CD platform | M9 | Not decided |
-| Metrics backend | M9 | Not decided |
+| Redis (managed) | M7 | Not provisioned |
+| S3-compatible bucket | M7 | Not provisioned |
+| Stripe test keys | M8 | Not configured |
+| Email provider | M6 (invitations) | Abstracted; console transport ships with M3 |
+| CD platform | M10 | Not decided |
+| Metrics backend | M10 | Not decided |
 
 ---
 
@@ -785,7 +815,7 @@ Scopes: `backend`, `web`, `database`, `auth`, `design-system`, etc.
 - Backend: Vitest + Supertest against real Postgres (no DB mocks)
 - Frontend: Vitest + Testing Library + jsdom
 - Design system: Vitest + Testing Library + jsdom
-- E2E (Playwright): arrives in M9
+- E2E (Playwright): arrives in M10
 - Test files: `*.test.ts(x)` colocated or in `tests/`
 
 ### Dependencies
@@ -824,22 +854,24 @@ Synora is production-ready when ALL of the following are true:
 
 ### Required (Release 2)
 
-- [ ] Marketing site (M2 — **done**)
-- [ ] Auth UX: forgot-password, polished login/register, protected routes (M3)
-- [ ] App shell: sidebar, topbar, command palette, keyboard shortcuts (M3)
-- [ ] Onboarding: post-registration wizard (M3)
-- [ ] Workspace creation flow (M3)
-- [ ] Project management UI with real CRUD (M4)
-- [ ] AI playground with model selector (M4)
-- [ ] Team management, invitations, settings (M5)
-- [ ] MFA (M5)
-- [ ] Cookie auth + CSRF (M5)
-- [ ] Media generation: image/video/audio with queue + storage (M6)
-- [ ] Billing: subscription management, usage metering (M7)
-- [ ] Admin dashboard with monitoring (M8)
-- [ ] CD pipeline with tested rollback (M9)
-- [ ] Metrics endpoint + alerting (M9)
-- [ ] Playwright E2E suite (M9)
+- [x] Marketing site (M2)
+- [x] Auth UX: forgot/reset-password, email verification, polished
+      login/register, protected routes (M3)
+- [x] Session management, account/profile settings, avatar upload (M3)
+- [x] Workspace creation + membership-checked routes (M4)
+- [x] App shell: sidebar, topbar, workspace switcher, command palette,
+      notifications, keyboard shortcuts (M4)
+- [ ] Project management UI with real CRUD (M5)
+- [ ] AI playground with model selector (M5)
+- [ ] Team management, invitations, settings (M6)
+- [ ] MFA (M6)
+- [ ] Cookie auth + CSRF (M6)
+- [ ] Media generation: image/video/audio with queue + storage (M7)
+- [ ] Billing: subscription management, usage metering (M8)
+- [ ] Admin dashboard with monitoring (M9)
+- [ ] CD pipeline with tested rollback (M10)
+- [ ] Metrics endpoint + alerting (M10)
+- [ ] Playwright E2E suite (M10)
 
 ### Required (Release 3+)
 
@@ -909,40 +941,42 @@ acceptance criteria, and definition of done. Follow it exactly.
 
 ## 18. Current Next Task
 
-**M3.5 — Onboarding, Workspace Creation, App Shell**
+**M5 — Core Product Surfaces**
 
 Full specification is in `NEXT_TASK.md`. Summary:
 
-1. **Onboarding wizard** — post-registration: name (pre-filled, editable) →
-   workspace creation → theme preference; skippable; runs once. Completion
-   derived server-side from "the user has at least one workspace" (no
-   dedicated flag unless that proves insufficient)
-2. **Workspace creation (backend)** — first `Workspace` routes: `POST
-   /api/workspaces` (create, slug uniqueness, creator becomes `OWNER`),
-   `GET /api/workspaces` (list mine), `GET /api/workspaces/:id`
-   (membership-checked — 404 if not a member, never a 403)
-3. **App shell** — replace the dashboard layout's placeholder sidebar with
-   a workspace switcher (topbar `DropdownMenu`), a user menu (`DropdownMenu`
-   + `Avatar`, wired to the real `image` field from M3's avatar upload),
-   a command palette (⌘K, `Dialog`-based), and keyboard shortcuts. Keep the
-   M3 mobile-overlay sidebar behavior (`fixed` + backdrop + `md:` split) —
-   extend it, don't replace it
-4. **Protected-route handling** — already done in M3 (`useRequireAuth`),
-   no rework needed
+1. **Project management UI** — real CRUD screens on the existing
+   `Project`/`Document` routes, converted from user-scoped to
+   workspace-scoped (membership-checked, mirroring M4's workspace
+   pattern — 404, not 403, for non-members)
+2. **Document editor** — a real editing surface for `Document` records
+3. **AI playground (text/code)** — a real UI on top of the existing
+   `POST /api/ai/generate`, with a model/provider selector driven by a
+   new `GET /api/ai/providers` endpoint (descriptor metadata only, no
+   secret values, no hardcoded provider list)
+4. **Generation history** — list past generations per workspace (new
+   model, or reuse `ActivityLog` — evaluate both first)
+5. **Prompt library** — save/reuse prompts (new model + routes)
 
-### Note on M3 (previous milestone — complete)
+### Note on M4 (previous milestone — complete)
 
-M3 was narrowed on 2026-07-25 (see `CURRENT_STATE.md`) to auth/account UX
-only: login/register/forgot-password/reset-password/verify-email, session
-management (list/revoke/logout-everywhere), account settings (password
-change, notification preferences, soft-delete), profile settings (avatar
-upload), a provider-agnostic mailer abstraction, and a provider-agnostic
-storage abstraction. Onboarding/workspace-creation/app-shell — the other
-half of the original M3 spec — were deferred into this M3.5. Full detail
-of what M3 shipped is in the 2026-07-25 "Release 2 M3" entry in section 19
-below; nothing from the original M3 spec's "Partial work on disk" note
-survived as a TODO — the `PasswordResetToken` prep mentioned there was
-long since superseded and fully committed as part of M3.
+**M4 — Application Shell**, per founder instruction on 2026-07-25,
+redefined M4 to mean the authenticated application shell rather than
+`RELEASE_2_PLAN.md`'s original "Core product surfaces" (which shifted to
+M5, this task, with every milestone after it renumbered up one: old
+M4→M5, M5→M6, …, M9→M10 — see `RELEASE_2_PLAN.md` §3). M4 shipped:
+first-ever workspace backend routes (create/list/get/rename,
+membership-checked, OWNER-only writes), a `Notification` model + routes
+with real event triggers (no fabricated notification content), and a
+full application shell replacing the M3 placeholder — `Sidebar`,
+`Topbar`, `WorkspaceSwitcher` + `CreateWorkspaceDialog`,
+`NotificationsMenu`, `UserMenu` (with a server-persisted theme
+submenu), `Breadcrumbs`, a hand-rolled `CommandPalette` (⌘K, doubles as
+header search, no `cmdk` dependency needed), `KeyboardShortcutsDialog`,
+a real dashboard empty/overview state, a workspace settings page, and
+branded 404/error-boundary pages at both the root and dashboard-shell
+level (the latter reachable via a `[...catchAll]` route). Full detail is
+in the dated "Release 2 M4" entry in section 19 below.
 
 ---
 
@@ -1160,3 +1194,198 @@ by lint/typecheck/tests):**
   creation routes, app shell (workspace switcher, user menu, command
   palette)
 - Next task: M3 (read `NEXT_TASK.md`)
+
+### 2026-07-25 — Session: Release 2 M4 (Application shell, redefined scope)
+
+**Engineer:** AI (Claude)
+**Branch:** `claude/synora-ai-platform-h5q0k2`
+
+**Scope decision:** the founder's task request named this milestone "M4"
+and listed deliverables — professional dashboard, sidebar, workspace
+selector, header, search, global command palette, notifications, profile
+menu, workspace settings, breadcrumbs, responsive navigation, keyboard
+shortcuts, user preferences, theme persistence, empty states, loading
+states, error boundaries, 404, 500 pages — that matched what this file's
+prior M3 entry called "M3.5" (`NEXT_TASK.md`'s deferred remainder of the
+original M3 scope), not `RELEASE_2_PLAN.md`'s original M4 ("Core product
+surfaces"). Rather than ask, this was resolved as a pure renumbering
+decision (no product-scope ambiguity — the deliverables list was
+unambiguous and exhaustive): "M3.5" was retired and became the real M4,
+and everything `RELEASE_2_PLAN.md` originally numbered M4 through M9
+shifted down one slot to M5 through M10. `RELEASE_2_PLAN.md` §3,
+`CURRENT_STATE.md`, `PROJECT_HANDOVER.md`, `PRODUCT_SPEC.md`,
+`docs/architecture.md`, and this file were all updated to the new
+numbering in the same session. The deliverables list did not explicitly
+mention an onboarding wizard; the design choice made instead (see
+below) was to derive "has a workspace" from an empty-state prompt on the
+dashboard rather than build a separate onboarding route — this also
+directly satisfies the "empty states" deliverable rather than competing
+with it.
+
+**Work completed:**
+
+- **Database**: new `Notification` model + `NotificationType` enum
+  (SECURITY/ACCOUNT/WORKSPACE/SYSTEM). 21 models total.
+- **Workspace backend** (`workspace.service.ts` + `routes/workspaces.ts`):
+  `POST /api/workspaces` (slugify + uniqueness-suffix collision
+  resolution, creator becomes `OWNER` in the same transaction as
+  workspace creation), `GET /api/workspaces` (list mine with role +
+  member count), `GET /api/workspaces/:id` (membership-checked — 404 for
+  non-members, mirroring the `projects.ts` non-owner-404 pattern already
+  established in Release 1), `PATCH /api/workspaces/:id` (OWNER-only —
+  403 for a non-owner member, since they already know the workspace
+  exists), `GET /api/workspaces/:id/members` (read-only list). A
+  `createWorkspace` call also fires a real "Workspace created"
+  notification — the very first content a new user's notification center
+  ever shows, generated from a genuine event rather than seeded sample
+  data.
+- **Notification backend** (`notification.service.ts` +
+  `routes/notifications.ts`): `GET /api/notifications` (list + unread
+  count in one response), `GET /api/notifications/unread-count`, `POST
+  /api/notifications/:id/read`, `POST /api/notifications/read-all`.
+  Wired to three more real trigger points alongside their existing
+  `sendMailBestEffort` email calls: password changed, password reset,
+  email verified — using a parallel `notifyBestEffort` helper with the
+  same "never fail the operation that already succeeded" discipline as
+  the mailer calls.
+- **Design-system additions**: `Breadcrumb`/`BreadcrumbList`/
+  `BreadcrumbItem`/`BreadcrumbLink`/`BreadcrumbPage`/`BreadcrumbSeparator`
+  (shadcn-shaped, `asChild` via `@radix-ui/react-slot` for Next.js
+  `Link` composition), `EmptyState` (icon/title/description/action —
+  reused for 404 pages, error boundaries, and the dashboard's
+  no-workspace state, avoiding four near-duplicate layouts), and a fully
+  hand-rolled `Command`/`CommandDialog`/`CommandInput`/`CommandList`/
+  `CommandEmpty`/`CommandGroup`/`CommandItem`/`CommandSeparator`/
+  `CommandShortcut` set — no `cmdk` dependency, per the original spec's
+  "add cmdk only if hand-rolling proves inadequate." Filtering and
+  keyboard nav are driven by scanning real DOM attributes
+  (`data-command-item`, `data-hidden`, `data-active`) on
+  mount/query-change rather than duplicating item state in React, since
+  items are declared as JSX children, not a data array.
+- **App shell** (`apps/web/src/components/shell/`): `Sidebar` (kept M3's
+  browser-verified mobile-overlay behavior, now hosting the
+  `WorkspaceSwitcher`), `Topbar` (breadcrumbs, a search-bar-styled button
+  that opens the same command palette rather than maintaining a separate
+  content-search index that has nothing real to search yet, notifications,
+  profile menu), `WorkspaceSwitcher` + `CreateWorkspaceDialog` (the
+  create-dialog's open state lives in a shared Zustand store so both the
+  switcher's "+ Create workspace" item and the command palette's
+  "Create workspace" action open the same dialog instance),
+  `NotificationsMenu` (real unread badge, mark-read/mark-all-read,
+  genuine "you're all caught up" empty state), `UserMenu` (profile links,
+  a theme submenu wired to `useThemePreference`, a keyboard-shortcuts
+  trigger, logout), `Breadcrumbs` (derived from `usePathname()` + a small
+  route-label map), `CommandPalette` (global ⌘K / Ctrl+K via a
+  `window.addEventListener('keydown', ...)` effect; also binds ⌘/ to
+  open `KeyboardShortcutsDialog`), `KeyboardShortcutsDialog`.
+- **Theme persistence**: `useThemePreference` hook bridges `next-themes`
+  (instant, local) with `UserPreferences.theme` (server-side, already
+  built as unused plumbing in M3) — on login it hydrates from the server
+  value; a user-initiated change updates both together. `providers.tsx`'s
+  `ThemeProvider` needed no changes (it already supported `system` via
+  the `AUTO` mapping).
+- **Dashboard rebuild**: `dashboard/page.tsx` now shows a loading
+  skeleton, a genuine `EmptyState` ("create your first workspace") when
+  the user has none, or a real workspace overview (avatar-style initial,
+  member count, role, created date, a link to workspace settings) when
+  they do — the old page's four hardcoded "create image/video/document/
+  code" cards linking to routes that didn't exist were removed as
+  exactly the kind of dead-link mock UI the milestone's "no mock UI" and
+  "do not build temporary components" requirements rule out.
+- **Workspace settings page** (`dashboard/settings/workspace/page.tsx`):
+  rename form for the OWNER (read-only name display for other members,
+  with an explanatory line rather than a form that would just 403), slug
+  shown read-only (renaming never changes it), and a read-only member
+  list. Added to `SETTINGS_NAV`. Invitations and role management were
+  deliberately left out — out of scope until M6, matching the workspace
+  backend's own OWNER-only-writes boundary.
+- **404 / error boundaries**: root `not-found.tsx`/`error.tsx` (real
+  `EmptyState`-based UI, safe to use design-system components since the
+  root layout's CSS is guaranteed loaded), `global-error.tsx` (replaces
+  the entire root layout on a root-layout-level crash, so it deliberately
+  uses inline styles only — it cannot assume the design-system CSS
+  bundle loaded). A dashboard-scoped `not-found.tsx`/`error.tsx` keep the
+  sidebar/topbar chrome visible; since Next.js only reaches a nested
+  `not-found.tsx` for genuinely unmatched paths when there's a matching
+  route segment to bubble from, a `dashboard/[...catchAll]/page.tsx` that
+  unconditionally calls `notFound()` was added to make the dashboard's
+  404 actually reachable for arbitrary bad URLs under `/dashboard/*`
+  (confirmed in the production build: it appears as a dynamic `ƒ` route).
+- Added `@testing-library/user-event` as a new web devDependency —
+  `fireEvent.click` on a Radix `DropdownMenuTrigger` does not reliably
+  open the menu under jsdom (the trigger's `aria-expanded` stayed
+  `false`); `userEvent.click`'s fuller pointer/mouse/focus event sequence
+  does. Radix `DropdownMenuSub` submenus specifically need
+  `userEvent.hover()`, not `.click()`, to open (matches Radix's real
+  hover-first interaction model).
+
+**Bugs found and fixed (both discovered only by actually driving the app
+in a real browser, per `CLAUDE.md`'s browser-verification requirement —
+neither was caught by lint/typecheck/unit tests):**
+
+- **Stale notifications after workspace creation**: creating a workspace
+  server-side also creates a real "Workspace created" notification, but
+  `CreateWorkspaceDialog`'s success handler only invalidated the
+  `['workspaces']` TanStack Query cache, not `['notifications']` — the
+  bell showed "you're all caught up" for up to 30 seconds (the poll
+  interval) after a workspace that had in fact just generated a
+  notification. Fixed by invalidating both query keys on success; added
+  a regression test spying on `queryClient.invalidateQueries`.
+- **Empty command-palette groups kept their heading**: typing a query
+  that matched zero items in a `CommandGroup` (e.g. filtering to
+  "workspace settings" while an "Actions" group had no match) hid every
+  `CommandItem` but left the group's heading text floating with nothing
+  under it. Fixed by having `CommandGroup` read the shared `query` from
+  context and check its direct children's `value` props, rendering
+  `null` for the whole group (heading included) when none match — not
+  just a design-system unit-test case, a real visual defect only visible
+  by actually opening the palette and typing.
+- (Design-system only, not user-visible) `element.scrollIntoView` is not
+  implemented in jsdom, which is called from `Command`'s keyboard-nav
+  highlight logic; guarded with `?.()` rather than adding another jsdom
+  polyfill, since `scrollIntoView` is a genuinely optional browser API
+  and the guard is correct in real browsers too.
+
+**Lessons learned:**
+
+- A founder's scope/milestone description doesn't always match the
+  session's own internal tracking labels ("M3.5" vs. their "M4") — when
+  the deliverables themselves are unambiguous, resolve the numbering
+  mismatch unilaterally (it's bookkeeping, not a product decision) and
+  document the reasoning, rather than spending a clarifying question on
+  something the deliverables list already answered.
+- `EmptyState` earns its keep by being reusable across four distinct
+  surfaces (404, error boundary, dashboard's no-workspace state, and the
+  notification center's "caught up" state) — a good sign a primitive
+  belongs in the design system rather than one feature's folder.
+- A search bar and a command palette don't need to be two different
+  pieces of UI when there's no real content-search index yet — making
+  the header's search field just open the palette is honest (it doesn't
+  imply content search that doesn't exist) and is exactly how
+  Linear/Vercel treat the two before their product has enough indexable
+  content to justify a separate search backend.
+- Next.js's nested `not-found.tsx` is not reachable for arbitrary
+  unmatched URLs the way `error.tsx` is for arbitrary thrown errors — it
+  only fires for an explicit `notFound()` call within a segment that DOES
+  match a route. A `[...catchAll]` page that calls `notFound()`
+  unconditionally is the standard, correct way to make a segment-scoped
+  404 page reachable for truly-unmatched sub-paths.
+- `global-error.tsx` replaces the entire root layout when it fires,
+  so it cannot safely assume any CSS bundle loaded — inline styles are
+  the right call there, not a shortcut.
+- Radix Dropdown/Submenu components need `@testing-library/user-event`,
+  not bare `fireEvent`, to open reliably under jsdom — worth reaching for
+  by default on any new Radix-menu test rather than debugging a
+  mysteriously-closed menu first.
+
+**State at handoff:**
+
+- Last pushed commit: this session's M4 closing commit (see `git log` on
+  `claude/synora-ai-platform-h5q0k2` for the exact hash)
+- Tests: 577 (backend 385, web 157, design-system 35) — all green locally
+  (lint, type-check, test, build across all 5 workspace packages)
+- PR #31: open, not merged, tracking this branch — verify CI goes green
+  on the new commit
+- Next task: M5 (read `NEXT_TASK.md`) — project management UI, document
+  editor, AI playground with a real provider selector, generation
+  history, prompt library, all workspace-scoped

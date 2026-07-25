@@ -8,6 +8,7 @@ const SETTINGS_NAV = [
   { href: '/dashboard/settings/profile', label: 'Profile' },
   { href: '/dashboard/settings/account', label: 'Account' },
   { href: '/dashboard/settings/sessions', label: 'Sessions' },
+  { href: '/dashboard/settings/workspace', label: 'Workspace' },
 ];
 
 export default function SettingsLayout({

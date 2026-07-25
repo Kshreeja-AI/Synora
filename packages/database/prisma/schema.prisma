@@ -50,6 +50,9 @@ model User {
   // Outstanding email-verification tokens
   emailVerificationTokens EmailVerificationToken[]
 
+  // In-app notifications
+  notifications Notification[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -442,6 +445,31 @@ model EmailVerificationToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// In-app notifications. Created at real event trigger points alongside the
+// corresponding transactional email (password changed/reset, email
+// verified, workspace created) — never fabricated for display purposes.
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+enum NotificationType {
+  SECURITY
+  ACCOUNT
+  WORKSPACE
+  SYSTEM
 }
 
 // MFA Audit Logging

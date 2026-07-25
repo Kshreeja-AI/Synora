@@ -85,7 +85,11 @@ model Account {
 - `userId`
 
 ### Workspace
-Represents a team or organization workspace.
+Represents a team or organization workspace. Schema-only through M3;
+its first routes (create/list/get/rename, membership-checked reads,
+OWNER-only writes) shipped in M4 — see `docs/api.md`'s Workspace
+Endpoints. Invitations, roles beyond `OWNER`, and `ApiKey` enforcement
+remain schema-only until M6.
 
 ```prisma
 model Workspace {
@@ -360,6 +364,28 @@ model EmailVerificationToken {
 
 **Indexes**: `tokenHash` (unique), `userId`, `expiresAt`
 
+### Notification (Release 2 M4)
+Every row is created at a real backend event (password changed,
+password reset, email verified, workspace created) — there is no seed
+data or sample content for this model. See `docs/api.md`'s Notification
+Endpoints.
+
+```prisma
+model Notification {
+  id        String            // Unique identifier
+  userId    String            // FK to User, cascades on user delete
+  type      NotificationType  // SECURITY | ACCOUNT | WORKSPACE | SYSTEM
+  title     String
+  body      String
+  link      String?           // Optional in-app destination
+  readAt    DateTime?         // Null until marked read
+  createdAt DateTime
+}
+```
+
+**Indexes**: `[userId, createdAt]` (list ordering), `[userId, readAt]`
+(unread-count queries)
+
 ### MFAAuditLog
 Audit trail for MFA-related actions. Exists in the schema and is written
 to by the (currently unwired) MFA-adjacent services in
@@ -450,6 +476,16 @@ enum WorkspaceRole {
   EDITOR      // Can create/edit content
   MEMBER      // Can view/comment
   VIEWER      // Read-only access
+}
+```
+
+### NotificationType (Release 2 M4)
+```prisma
+enum NotificationType {
+  SECURITY    // Password changed/reset
+  ACCOUNT     // Email verified, profile changes
+  WORKSPACE   // Workspace created, membership changes
+  SYSTEM      // Platform-level notices
 }
 ```
 
@@ -576,4 +612,4 @@ item (`RELEASE_2_PLAN.md`, R2-g).
 
 ---
 
-**Last Updated**: 2026-07-25 (Release 2, Milestone 3) — 20 models, 6 migrations applied.
+**Last Updated**: 2026-07-25 (Release 2, Milestone 4) — 21 models, 7 migrations applied.

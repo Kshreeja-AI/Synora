@@ -252,6 +252,19 @@ Avatar uploads are content-type-allowlisted (PNG/JPEG/WEBP/GIF) and
 size-capped (`STORAGE_MAX_UPLOAD_BYTES`, default 5MB) before ever
 reaching the storage provider.
 
+## Workspace authorization (Release 2 M4)
+
+Every workspace route (`GET/PATCH /api/workspaces/:id`, `GET
+/api/workspaces/:id/members`) requires membership, checked before any data
+is returned. A non-member gets `404 Not Found`, never `403 Forbidden` — the
+same enumeration-resistance principle as auth above: a 403 would confirm
+the workspace exists, a 404 doesn't. A member who isn't the `OWNER` gets
+`403` on write operations (`PATCH`) since they already know the workspace
+exists (they're a member of it); read operations are open to any member
+regardless of role. Notifications follow the same rule: `POST
+/api/notifications/:id/read` 404s if the notification doesn't belong to
+the requesting user, rather than leaking whether the id exists.
+
 ## API keys and audit logging — reserved, not yet wired
 
 The `ApiKey` model (workspace-scoped keys) and `ActivityLog` model
@@ -307,4 +320,4 @@ For security issues, please email: security@synora.ai
 
 ---
 
-**Last Updated**: 2026-07-25 (Release 2, Milestone 3)
+**Last Updated**: 2026-07-25 (Release 2, Milestone 4)

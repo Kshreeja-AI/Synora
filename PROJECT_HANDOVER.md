@@ -51,7 +51,7 @@ API, PostgreSQL 16 via Prisma, one pnpm workspace built with Turbo.
   config (fail-closed in staging/prod) → listen on `0.0.0.0`.
 - **Auth**: 15-min HS256 JWT access tokens + 7-day opaque, hashed,
   single-use rotating refresh tokens in Postgres; bearer header (not
-  cookies — CSRF deferred with the cookie migration to M5).
+  cookies — CSRF deferred with the cookie migration to M6).
 - **AI**: provider-agnostic abstraction, 10 providers, config-only
   selection (`AI_PROVIDER` override or first-configured priority order).
 - **Config/secrets**: two separate systems — typed zod-validated
@@ -211,7 +211,53 @@ founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
   navigation or backdrop click.
 - Onboarding wizard, workspace creation, and app shell (sidebar/topbar/
   command palette) — all originally scoped into M3 by
-  `RELEASE_2_PLAN.md` — were deferred to the task in `NEXT_TASK.md`.
+  `RELEASE_2_PLAN.md` — were deferred to M4.
+
+**Release 2 — M4: Application shell (complete):**
+- First workspace backend routes: `POST/GET /api/workspaces`, `GET/PATCH
+  /api/workspaces/:id`, `GET /api/workspaces/:id/members` — slug
+  auto-generated + uniqueness-suffixed, creator becomes `OWNER`,
+  membership-checked reads (404, not 403, for non-members), OWNER-only
+  writes (403 for a non-owner member)
+- New `Notification` model + `GET/POST /api/notifications*` — every
+  notification created at a real event trigger (password changed/reset,
+  email verified, workspace created), never fabricated for display
+- Real dashboard application shell replacing M3's placeholder:
+  `components/shell/{Sidebar,Topbar,WorkspaceSwitcher,
+  CreateWorkspaceDialog,UserMenu,NotificationsMenu,Breadcrumbs,
+  CommandPalette,KeyboardShortcutsDialog}.tsx` — workspace switching/
+  creation, a global ⌘K command palette (also the header's "search"),
+  a real notification center, a profile menu with a theme submenu
+  (persisted server-side via `UserPreferences.theme`, not just
+  `next-themes` locally), route-derived breadcrumbs, and a keyboard-
+  shortcuts dialog
+- Dashboard home page rebuilt with a genuine empty state ("create your
+  first workspace") and a real workspace overview (member count, role,
+  created date) — no onboarding wizard route; workspace creation happens
+  inline from the empty state or the switcher, matching how Linear
+  handles a user's first workspace
+- New `/dashboard/settings/workspace` page (owner-only rename, read-only
+  member list)
+- New design-system primitives: `Breadcrumb`, `EmptyState`, and a
+  hand-rolled `Command`/`CommandDialog` palette (no `cmdk` dependency —
+  hand-rolling proved adequate)
+- New 404/error-boundary pages: root `not-found.tsx`/`error.tsx`/
+  `global-error.tsx`, and a dashboard-scoped `not-found.tsx`/`error.tsx`
+  that keep the sidebar/topbar chrome — reachable for any unmatched
+  `/dashboard/*` path via a `[...catchAll]` route that calls `notFound()`
+- Full shell browser-verified (headless Chromium, both themes, desktop +
+  mobile): register → empty-state workspace creation → switcher →
+  command palette (open/filter/navigate) → notifications → profile menu
+  → workspace settings → breadcrumbs → both 404 variants → mobile
+  overlay → light theme. Two real bugs were found and fixed this way,
+  neither catchable by lint/typecheck/unit tests: the notifications
+  query cache wasn't invalidated after workspace creation (the bell
+  stayed stale until the next 30s poll), and an empty command-palette
+  group left its heading rendered with no items under it.
+- Per founder instruction, `RELEASE_2_PLAN.md`'s milestone table was
+  renumbered: everything after the original M4 ("Core product surfaces")
+  shifted down one slot (old M4→M5, …, M9→M10) — see `RELEASE_2_PLAN.md`
+  §3.
 
 ## 6. Current branch / PR / CI / Git status
 
@@ -223,7 +269,7 @@ founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
   Release 1 + Release 2 work flows through PR #31.
 - **CI**: verify on push for the current HEAD (`git log -1`); local gate
   (lint + typecheck + test + build, all 5 workspace packages) is green as
-  of the M3 close.
+  of the M4 close.
 - **Working tree**: clean at handover time (verify with `git status`)
 - Session git credentials are scoped to push only this branch; the
   `v1.0.0` tag + GitHub Release for Release 1 still need someone with
@@ -266,7 +312,7 @@ and revokes single-use; reuse is detected. Logout revokes one session;
 and email verification (`EmailVerificationToken`, 24h expiry) are real,
 hash-at-rest, single-use flows (M3). The API client automates the 401 →
 refresh → retry cycle single-flight. Bearer-not-cookies is deliberate
-(CSRF lands with the cookie migration, M5). The deprecated `token`
+(CSRF lands with the cookie migration, M6). The deprecated `token`
 response alias was removed in M3.
 Detail: `docs/api.md`, `docs/production/R1-c_REFRESH_TOKENS.md`.
 
@@ -305,7 +351,7 @@ examples: `docs/api.md`.
 | `/api/users/:id` | GET | — | public profile |
 | `/api/projects` `/`, `/:id` | GET/POST/GET | Bearer | scoped by userId |
 | `/api/documents` `/`, `/:id` | GET/POST/GET | Bearer | scoped by userId |
-| `/api/images` `/`, `/generate`, `/:id` | GET/POST/GET | Bearer | `/generate` is a **placeholder** (hardcoded URL, no provider call) until M6 |
+| `/api/images` `/`, `/generate`, `/:id` | GET/POST/GET | Bearer | `/generate` is a **placeholder** (hardcoded URL, no provider call) until M7 |
 | `/api/ai/generate` | POST | Bearer | real text/code generation, synchronous |
 
 ## 11. Frontend architecture & design system
@@ -327,7 +373,7 @@ styled controls.
 ## 12. Current deployment strategy
 
 Manual, backend-only Docker image (the web app is not yet part of the
-deploy story — that decision lands with M9/CD):
+deploy story — that decision lands with M10/CD):
 
 ```bash
 docker build -t synora-backend:latest -f Dockerfile .
@@ -339,7 +385,7 @@ curl -f http://<host>:3001/health && curl -f http://<host>:3001/ready
 ```
 
 Managed Postgres (RDS/Neon/Supabase/Railway) supplies backups/PITR. No
-CD until M9 (R2-e). Dockerfile subtleties that must not be "cleaned up":
+CD until M10 (R2-e). Dockerfile subtleties that must not be "cleaned up":
 no `pnpm prune --prod` (corrupts workspace symlinks), explicit OpenSSL
 install (Prisma on bookworm-slim), non-root user, `0.0.0.0` bind — all
 documented in `RELEASE_1_VERIFICATION_REPORT.md`.
@@ -375,8 +421,8 @@ tokens with reuse detection → hashed single-use password-reset/
 email-verification tokens (M3, same discipline) → Prisma parameterized
 queries → error handler hiding internals → audited secret reads → CI
 security gates (audit high+, gitleaks, Snyk best-effort) → non-root
-Docker, no `.env` in layers. Deliberately not yet: MFA (M5), CSRF/cookies
-(M5), Redis-shared limits (M6). Full doc: `docs/security.md`.
+Docker, no `.env` in layers. Deliberately not yet: MFA (M6), CSRF/cookies
+(M6), Redis-shared limits (M7). Full doc: `docs/security.md`.
 
 ## 15. Testing status
 
@@ -391,7 +437,7 @@ Docker, no `.env` in layers. Deliberately not yet: MFA (M5), CSRF/cookies
   sidebar overlay), every settings page
 - **Design system**: 20 tests (components + cn, incl. M3's Checkbox)
 - **Total: 479, green locally** — verify CI on push
-- E2E (Playwright): none yet — M9 (R2-h). Coverage uploaded, not gated.
+- E2E (Playwright): none yet — M10 (R2-h). Coverage uploaded, not gated.
 - Local run needs `DATABASE_URL` exported (CI value:
   `postgresql://synora:synora@localhost:5432/synora`) and `CI=1` to
   stop vitest watch mode. The web suite additionally needs
@@ -413,25 +459,26 @@ roadmap + release docs.
 ## 17. Known limitations
 
 - MFA not wired (code on `recover/mfa` + 4 dead mainline services under
-  `services/mfa/`) — M5
-- No CSRF (bearer tokens make it moot until cookie auth) — M5
-- Single-instance only (DB-backed lockout/rate-limit state) — M6
+  `services/mfa/`) — M6
+- No CSRF (bearer tokens make it moot until cookie auth) — M6
+- Single-instance only (DB-backed lockout/rate-limit state) — M7
 - Media generation is a placeholder route; no queue, no object storage
-  yet — M6. The M3 storage abstraction (`src/storage/`) is a real,
+  yet — M7. The M3 storage abstraction (`src/storage/`) is a real,
   working building block for this, not a placeholder — it's already used
   for avatar uploads.
-- Manual deploys; no CD, no `/metrics`, no alerting — M9
-- No workspace-tenancy route enforcement — schema exists but has no
-  routes at all yet (onboarding + workspace creation deferred out of M3,
-  see `NEXT_TASK.md`)
+- Manual deploys; no CD, no `/metrics`, no alerting — M10
+- Workspace tenancy enforcement covers create/list/get/rename/members
+  only (M4) — invitations, roles beyond OWNER, and API keys remain
+  schema-only until M6
 - Mailer defaults to the console transport everywhere (logs, doesn't
   deliver) until `MAIL_TRANSPORT=smtp` + SMTP credentials are configured
   — a real provider is a launch-time env choice, per the launch principle
 - `next-auth` declared but unused (reserved for a possible future OAuth
   flow); `axios` was removed in M3
-- No onboarding wizard, workspace creation UI, or app shell
-  (sidebar/topbar/command palette) yet — deferred from M3's original
-  scope, see `NEXT_TASK.md`
+- No real product surfaces yet (project management UI, document editor,
+  AI playground, prompt library, generation history) — that's M5, see
+  `NEXT_TASK.md`. The application shell that hosts them (sidebar, command
+  palette, workspace switching) shipped in M4.
 - `infrastructure/k8s/` is an unused placeholder — R4
 
 ## 18. Production readiness
@@ -440,20 +487,22 @@ Backend is production-ready **for a single-instance, text/code-only
 launch** (that was Release 1's bar — see `PRODUCTION_READINESS_AUDIT.md`),
 and the customer-facing auth/account surface (real auth screens, email
 verification, password reset, session management, profile/account
-settings, avatar upload) reached that same bar in M3. The full
-customer-facing platform is **not yet** launch-ready: onboarding/
-workspace creation/app shell, billing, teams, media generation, admin,
-observability remain ahead. Track precise per-area status in
+settings, avatar upload) reached that same bar in M3, followed by the
+authenticated application shell (dashboard, workspace switching/
+creation, command palette, notifications, settings navigation, 404/error
+handling) in M4. The full customer-facing platform is **not yet**
+launch-ready: real product surfaces, billing, teams, media generation,
+admin, observability remain ahead. Track precise per-area status in
 `CURRENT_STATE.md`.
 
 ## 19. Exact next task
 
-**M3.5 — Onboarding, workspace creation, app shell.** Always read
-`NEXT_TASK.md` (single source of truth for the next task); it currently
-specifies this in full — the three deliverables `RELEASE_2_PLAN.md`
-originally scoped into M3 but the founder deferred on 2026-07-25 (see
-`CURRENT_STATE.md`), with the milestone gate
-(lint/typecheck/test/build → commit → push → green CI) before M4.
+**M5 — Core product surfaces.** Always read `NEXT_TASK.md` (single
+source of truth for the next task); it currently specifies this in
+full — project management UI, document editor, AI playground, provider
+management UI, generation history, and a prompt library, all
+workspace-scoped on top of M4's application shell — with the milestone
+gate (lint/typecheck/test/build → commit → push → green CI) before M6.
 
 ## 20. Things that must never be changed
 
@@ -490,7 +539,7 @@ Per `CLAUDE.md` (authoritative): TypeScript strict, explicit return
 types, no `any` (use `unknown`); conventional commits
 (`type(scope): description`); components PascalCase files, utils
 camelCase; tests colocated (`*.test.ts(x)`) or in `tests/`; every
-feature ships with unit + integration tests (E2E suite arrives M9);
+feature ships with unit + integration tests (E2E suite arrives M10);
 accessibility required (the design system's Radix base helps but
 doesn't absolve page-level semantics); update the relevant `docs/*` file
 whenever a change touches it.
@@ -509,14 +558,16 @@ provider pattern (M3).
 
 - **R1** ✅ launchable core (frozen: `RELEASE_1_FINAL.md`)
 - **R2** ▶ complete customer-facing platform. `RELEASE_2_PLAN.md`'s
-  original 9-milestone plan was M1 foundation; M2 marketing site; M3 auth
-  UX/onboarding/app shell; M4 projects/playground/prompt library; M5
-  teams/settings/API keys + MFA + CSRF; M6 Redis/queue/media/assets; M7
-  billing/usage/notifications; M8 admin/support/docs-site/blog; M9
+  milestone table, after the founder's 2026-07-25 renumbering, is: M1
+  foundation; M2 marketing site; M3 auth/account UX; M4 application
+  shell; M5 projects/playground/prompt library; M6 teams/settings/API
+  keys + MFA + CSRF; M7 Redis/queue/media/assets; M8
+  billing/usage/analytics; M9 admin/support/docs-site/blog; M10
   E2E/CD/observability/closeout. **Actual status**: M1 ✅, M2 ✅, M3 ✅
-  (narrowed to auth/account UX only — see `CURRENT_STATE.md`), with its
-  onboarding/workspace/app-shell deliverables now the M3.5 task in
-  `NEXT_TASK.md`, ahead of M4.
+  (auth/account UX — see `CURRENT_STATE.md`), M4 ✅ (application shell —
+  dashboard, workspace switching/creation, command palette,
+  notifications, settings navigation, 404/error handling), M5 next (see
+  `NEXT_TASK.md`).
 - **R3** enterprise: workspace tenancy enforcement, SSO, deeper audit,
   agent/memory candidates
 - **R4** hyperscale: Kubernetes, multi-region, read replicas,

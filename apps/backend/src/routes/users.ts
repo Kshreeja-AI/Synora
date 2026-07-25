@@ -8,6 +8,7 @@ import { hashPassword, verifyPassword, fakeVerifyPassword } from '../services/pa
 import { revokeAllUserTokens, revokeAllUserTokensExcept } from '../services/token.service';
 import { uploadAvatar, deleteAvatar, avatarKeyFromUrl, isAllowedAvatarContentType } from '../storage';
 import { sendPasswordChangedEmail, sendAccountDeletedEmail } from '../mail';
+import { createNotification } from '../services/notification.service';
 import { getConfig } from '../config';
 import { logger } from '../utils/logger';
 
@@ -48,6 +49,17 @@ async function sendMailBestEffort(label: string, send: () => Promise<void>): Pro
     await send();
   } catch (error) {
     logger.warn(`[users] ${label} email failed to send`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+/** Same best-effort discipline as mail: an in-app notification must never fail the operation it records. */
+async function notifyBestEffort(label: string, notify: () => Promise<unknown>): Promise<void> {
+  try {
+    await notify();
+  } catch (error) {
+    logger.warn(`[users] ${label} notification failed to create`, {
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -223,6 +235,13 @@ router.post('/me/password', authMiddleware, async (req: AuthRequest, res, next) 
 
     await sendMailBestEffort('password-changed', () =>
       sendPasswordChangedEmail({ to: user.email, name: user.name })
+    );
+    await notifyBestEffort('password-changed', () =>
+      createNotification(user.id, {
+        type: 'SECURITY',
+        title: 'Password changed',
+        body: 'Your password was changed. If this wasn’t you, contact support immediately.',
+      })
     );
 
     res.json(createApiResponse({ message: 'Password changed successfully.' }));
