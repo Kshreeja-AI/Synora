@@ -8,24 +8,24 @@ export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
-}) {
+}): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const handleLogout = () => {
+  const handleLogout = (): void => {
     localStorage.removeItem('token');
     window.location.href = '/';
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-background">
       {/* Sidebar */}
       <aside
         className={`${
           sidebarOpen ? 'w-64' : 'w-20'
-        } bg-gray-900 text-white transition-all duration-300 overflow-hidden`}
+        } relative overflow-hidden border-r border-border bg-card text-card-foreground transition-all duration-300`}
       >
-        <div className="p-6 border-b border-gray-800">
-          <h1 className={`text-2xl font-bold ${!sidebarOpen && 'hidden'}`}>Synora</h1>
+        <div className="border-b border-border p-6">
+          <h1 className={`text-2xl font-bold text-primary ${!sidebarOpen && 'hidden'}`}>Synora</h1>
         </div>
 
         <nav className="mt-8">
@@ -36,35 +36,29 @@ export default function DashboardLayout({
           <SidebarLink href="/dashboard/settings" label="Settings" icon="⚙️" show={sidebarOpen} />
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
-          <Button
-            variant="danger"
-            size="sm"
-            className="w-full"
-            onClick={handleLogout}
-          >
+        <div className="absolute bottom-0 left-0 right-0 border-t border-border p-4">
+          <Button variant="danger" size="sm" className="w-full" onClick={handleLogout}>
             {sidebarOpen ? 'Logout' : '🚪'}
           </Button>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <header className="flex items-center justify-between border-b border-border bg-background px-6 py-4">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-600 hover:text-gray-900"
+            aria-label="Toggle sidebar"
+            className="text-muted-foreground transition-colors hover:text-foreground"
           >
             ☰
           </button>
-          <div className="text-sm text-gray-600">Welcome back!</div>
+          <div className="text-sm text-muted-foreground">Welcome back!</div>
         </header>
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6">
-            {children}
-          </div>
+          <div className="p-6">{children}</div>
         </main>
       </div>
     </div>
@@ -81,11 +75,11 @@ function SidebarLink({
   label: string;
   icon: string;
   show: boolean;
-}) {
+}): React.JSX.Element {
   return (
     <Link
       href={href}
-      className="flex items-center gap-4 px-6 py-3 hover:bg-gray-800 transition-colors"
+      className="flex items-center gap-4 px-6 py-3 text-foreground transition-colors hover:bg-accent"
     >
       <span className="text-xl">{icon}</span>
       {show && <span>{label}</span>}

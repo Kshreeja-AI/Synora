@@ -8,9 +8,10 @@ Release 2/3 scope (see `RELEASE_2_PLAN.md`):
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Frontend (Next.js)                   │
-│           raw fetch + useState + localStorage           │
-│  (next-auth/react-query/zustand/axios declared, unused — │
-│   see PROJECT_HANDOVER.md §11)                            │
+│  TanStack Query + Zustand + typed API client (fetch     │
+│  wrapper w/ single-flight refresh rotation), tokens in  │
+│  localStorage; UI from @synora/design-system (dark-first │
+│  token theme). next-auth/axios still declared-unused.    │
 └────────────────────┬────────────────────────────────────┘
                      │ HTTPS, Authorization: Bearer <jwt>
 ┌────────────────────▼────────────────────────────────────┐
@@ -36,12 +37,22 @@ Release 2/3 scope (see `RELEASE_2_PLAN.md`):
 ### Frontend
 - **Framework**: Next.js 15 with App Router
 - **Language**: TypeScript
-- **State Management**: `next-auth`, `@tanstack/react-query`, `zustand`,
-  and `axios` are declared dependencies (matching this document's
-  intended stack) but not yet wired into any page — actual code uses raw
-  `fetch` + `useState` + `localStorage`. See `PROJECT_HANDOVER.md` §11.
-- **Styling**: Tailwind CSS
-- **Components**: React 19 + a small internal `@synora/design-system` package
+- **State Management**: TanStack Query (server state, provider in
+  `src/app/providers.tsx`) + Zustand (`src/stores/`). The typed API
+  client (`src/lib/api/client.ts`) wraps `fetch` with the backend's
+  response envelope, bearer-token attachment, and single-flight
+  refresh-token rotation on 401. `next-auth` and `axios` remain declared
+  but unused (`next-auth` reserved for a possible future OAuth flow).
+- **Styling**: Tailwind CSS, configured via the shared preset
+  `@synora/design-system/tailwind-preset` over CSS-variable design
+  tokens (`@synora/design-system/styles.css`, dark theme is the
+  default; light via `[data-theme="light"]`). Theme switching via
+  `next-themes`. Typography: Geist Sans/Mono (bundled, no build-time
+  network fetch).
+- **Components**: React 19 + `@synora/design-system` (Radix-primitive
+  based: Button, Input, Card, Dialog, Tabs, DropdownMenu, Tooltip,
+  Avatar, Switch, Toaster/sonner, etc.), tested with Vitest +
+  Testing Library
 - **Testing**: Vitest
 
 ### Backend

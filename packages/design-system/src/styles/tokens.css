@@ -1,0 +1,82 @@
+/*
+ * Synora design tokens. Dark is the default theme (:root); light is the
+ * override. Every color is an HSL triple consumed by the shared Tailwind
+ * preset (tailwind-preset.cjs) as `hsl(var(--token) / <alpha-value>)`.
+ */
+:root {
+  --background: 240 10% 4%;
+  --foreground: 240 6% 96%;
+
+  --card: 240 8% 6%;
+  --card-foreground: 240 6% 96%;
+
+  --popover: 240 8% 7%;
+  --popover-foreground: 240 6% 96%;
+
+  --primary: 252 92% 68%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 12%;
+  --secondary-foreground: 240 6% 96%;
+
+  --muted: 240 5% 12%;
+  --muted-foreground: 240 5% 64%;
+
+  --accent: 240 5% 14%;
+  --accent-foreground: 240 6% 96%;
+
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 152 60% 44%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 38 92% 50%;
+  --warning-foreground: 240 10% 4%;
+
+  --border: 240 6% 14%;
+  --input: 240 6% 16%;
+  --ring: 252 92% 68%;
+
+  --radius: 0.625rem;
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  --background: 0 0% 100%;
+  --foreground: 240 10% 8%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 8%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 8%;
+
+  --primary: 252 82% 58%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 10% 8%;
+
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 42%;
+
+  --accent: 240 5% 94%;
+  --accent-foreground: 240 10% 8%;
+
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+
+  --success: 152 60% 34%;
+  --success-foreground: 0 0% 100%;
+
+  --warning: 32 95% 44%;
+  --warning-foreground: 0 0% 100%;
+
+  --border: 240 6% 90%;
+  --input: 240 6% 88%;
+  --ring: 252 82% 58%;
+
+  color-scheme: light;
+}

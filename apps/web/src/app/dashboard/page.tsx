@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@synora/design-system';
+import { Button, Card, CardContent, Skeleton } from '@synora/design-system';
 
 interface User {
   id: string;
@@ -10,12 +10,43 @@ interface User {
   name?: string;
 }
 
-export default function DashboardPage() {
+const createActions = [
+  {
+    icon: '🎨',
+    title: 'Image Generation',
+    description: 'Generate stunning images from text descriptions.',
+    href: '/dashboard/create?type=image',
+    cta: 'Create Image',
+  },
+  {
+    icon: '🎬',
+    title: 'Video Generation',
+    description: 'Generate videos from prompts and scripts.',
+    href: '/dashboard/create?type=video',
+    cta: 'Create Video',
+  },
+  {
+    icon: '✍️',
+    title: 'Document Writing',
+    description: 'Write and edit documents with AI assistance.',
+    href: '/dashboard/create?type=document',
+    cta: 'Write Document',
+  },
+  {
+    icon: '💻',
+    title: 'Code Generation',
+    description: 'Generate and optimize code with AI.',
+    href: '/dashboard/create?type=code',
+    cta: 'Generate Code',
+  },
+];
+
+export default function DashboardPage(): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUser = async (): Promise<void> => {
       const token = localStorage.getItem('token');
       if (!token) {
         window.location.href = '/auth/login';
@@ -45,52 +76,52 @@ export default function DashboardPage() {
   }, []);
 
   if (loading) {
-    return <div className="text-center py-12">Loading...</div>;
+    return (
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-96" />
+          <Skeleton className="h-5 w-72" />
+        </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-44" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
     <div>
-      <h1 className="text-4xl font-bold mb-2">Welcome, {user?.name || user?.email}!</h1>
-      <p className="text-gray-600 mb-8">Start creating amazing content with Synora AI.</p>
+      <h1 className="mb-2 text-4xl font-bold text-foreground">
+        Welcome, {user?.name || user?.email}!
+      </h1>
+      <p className="mb-8 text-muted-foreground">Start creating amazing content with Synora AI.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">🎨 Image Generation</h2>
-          <p className="text-gray-600 mb-4">Generate stunning images from text descriptions.</p>
-          <Link href="/dashboard/create?type=image">
-            <Button variant="primary">Create Image</Button>
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">🎬 Video Generation</h2>
-          <p className="text-gray-600 mb-4">Generate videos from prompts and scripts.</p>
-          <Link href="/dashboard/create?type=video">
-            <Button variant="primary">Create Video</Button>
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">✍️ Document Writing</h2>
-          <p className="text-gray-600 mb-4">Write and edit documents with AI assistance.</p>
-          <Link href="/dashboard/create?type=document">
-            <Button variant="primary">Write Document</Button>
-          </Link>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">💻 Code Generation</h2>
-          <p className="text-gray-600 mb-4">Generate and optimize code with AI.</p>
-          <Link href="/dashboard/create?type=code">
-            <Button variant="primary">Generate Code</Button>
-          </Link>
-        </div>
+      <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2">
+        {createActions.map((action) => (
+          <Card key={action.title}>
+            <CardContent className="p-6">
+              <h2 className="mb-4 text-2xl font-bold text-foreground">
+                {action.icon} {action.title}
+              </h2>
+              <p className="mb-4 text-muted-foreground">{action.description}</p>
+              <Button asChild variant="primary">
+                <Link href={action.href}>{action.cta}</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold mb-4">Recent Projects</h2>
-        <p className="text-gray-600">No projects yet. Create your first project to get started!</p>
-      </div>
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="mb-4 text-2xl font-bold text-foreground">Recent Projects</h2>
+          <p className="text-muted-foreground">
+            No projects yet. Create your first project to get started!
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

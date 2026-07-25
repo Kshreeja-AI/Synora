@@ -1,22 +1,30 @@
 import React from 'react';
+import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import clsx from 'clsx';
+import { Loader2 } from 'lucide-react';
+import { cn } from '../lib/cn';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center font-medium rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
-        primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
-        secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500',
-        danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
-        ghost: 'text-gray-700 hover:bg-gray-100 focus:ring-gray-500',
-        outline: 'border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-gray-500',
+        primary:
+          'bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 active:scale-[0.98]',
+        secondary:
+          'bg-secondary text-secondary-foreground hover:bg-secondary/80 active:scale-[0.98]',
+        danger:
+          'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 active:scale-[0.98]',
+        ghost: 'text-foreground hover:bg-accent hover:text-accent-foreground',
+        outline:
+          'border border-border bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground',
+        link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        sm: 'px-3 py-1.5 text-sm',
-        md: 'px-4 py-2 text-base',
-        lg: 'px-6 py-3 text-lg',
+        sm: 'h-8 px-3 text-xs',
+        md: 'h-9 px-4',
+        lg: 'h-11 px-6 text-base',
+        icon: 'h-9 w-9',
       },
     },
     defaultVariants: {
@@ -26,16 +34,39 @@ const buttonVariants = cva(
   }
 );
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {}
+interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  /** Render as the child element (e.g. a Next.js Link) instead of a <button>. */
+  asChild?: boolean;
+  /** Show a spinner and disable interaction. */
+  loading?: boolean;
+}
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, ...props }, ref) => (
-    <button
-      className={clsx(buttonVariants({ variant, size }), className)}
-      ref={ref}
-      {...props}
-    />
-  )
+  (
+    { className, variant, size, asChild = false, loading = false, disabled, children, ...props },
+    ref
+  ) => {
+    const Comp = asChild ? Slot : 'button';
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size }), className)}
+        ref={ref}
+        disabled={asChild ? undefined : disabled || loading}
+        {...props}
+      >
+        {asChild ? (
+          children
+        ) : (
+          <>
+            {loading && <Loader2 aria-hidden className="animate-spin" />}
+            {children}
+          </>
+        )}
+      </Comp>
+    );
+  }
 );
 
 Button.displayName = 'Button';
