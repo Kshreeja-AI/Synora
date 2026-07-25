@@ -44,6 +44,9 @@ model User {
   // Auth sessions (refresh tokens)
   refreshTokens RefreshToken[]
 
+  // Outstanding password-reset tokens
+  passwordResetTokens PasswordResetToken[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -390,6 +393,23 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Password-reset tokens. Same hash-at-rest discipline as RefreshToken:
+// the raw token only ever appears in the reset email/link. Single-use
+// (usedAt) and short-lived (expiresAt); consuming one revokes every
+// active refresh token for the user.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
   @@index([expiresAt])
