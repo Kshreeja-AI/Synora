@@ -300,13 +300,15 @@ model Session {
 **Indexes**:
 - `userId`
 
-### RefreshToken (R1-c)
+### RefreshToken (R1-c, extended in Release 2 M3)
 Backs the refresh-token rotation described in `docs/api.md`'s Auth
-Endpoints section and `docs/production/R1-c_REFRESH_TOKENS.md`.
+Endpoints section and `docs/production/R1-c_REFRESH_TOKENS.md`. Since M3
+this row also doubles as the user-facing "session" — one row is one
+signed-in device, which is what `GET /api/auth/sessions` lists.
 
 ```prisma
 model RefreshToken {
-  id          String    // Unique identifier
+  id          String    // Unique identifier — also the access token's `sid` claim
   tokenHash   String    // SHA-256 hash of the token — the raw opaque
                          // token is never stored, so a database read
                          // alone cannot mint a session
@@ -314,6 +316,45 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime? // Set on rotation (superseded) or explicit logout
   createdAt   DateTime
+  lastUsedAt  DateTime  // Refreshed on rotation; drives "last active" in the session list
+  userAgent   String?   // Captured at issue/rotation time; parsed into a display label server-side
+  ipAddress   String?   // Captured at issue/rotation time
+  rememberMe  Boolean   // Which expiry policy produced this row's expiresAt — display only
+}
+```
+
+**Indexes**: `tokenHash` (unique), `userId`, `expiresAt`
+
+### PasswordResetToken (Release 2 M3)
+Same hash-at-rest discipline as `RefreshToken`: the raw token exists only
+in the reset email link. Consuming one revokes every active session for
+the user (see `docs/api.md`#reset-password).
+
+```prisma
+model PasswordResetToken {
+  id        String    // Unique identifier
+  tokenHash String    // SHA-256 hash — raw token never stored
+  userId    String    // FK to User, cascades on user delete
+  expiresAt DateTime  // Default 1h (PASSWORD_RESET_TOKEN_EXPIRY)
+  usedAt    DateTime? // Set on consumption; single-use
+  createdAt DateTime
+}
+```
+
+**Indexes**: `tokenHash` (unique), `userId`, `expiresAt`
+
+### EmailVerificationToken (Release 2 M3)
+Same hash-at-rest discipline as `PasswordResetToken` above — the raw
+token exists only in the verification email link.
+
+```prisma
+model EmailVerificationToken {
+  id        String    // Unique identifier
+  tokenHash String    // SHA-256 hash — raw token never stored
+  userId    String    // FK to User, cascades on user delete
+  expiresAt DateTime  // Default 24h (EMAIL_VERIFICATION_TOKEN_EXPIRY)
+  usedAt    DateTime? // Set on consumption; single-use
+  createdAt DateTime
 }
 ```
 
@@ -535,4 +576,4 @@ item (`RELEASE_2_PLAN.md`, R2-g).
 
 ---
 
-**Last Updated**: 2026-07-23 (Release 1)
+**Last Updated**: 2026-07-25 (Release 2, Milestone 3) — 20 models, 6 migrations applied.

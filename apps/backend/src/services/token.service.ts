@@ -1,14 +1,18 @@
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { prisma } from '@synora/database';
 import { secretsManager } from '../secrets';
 import { getConfig } from '../config';
+import { hashToken } from '../utils/hashToken';
 
 /**
  * Access + refresh token issuance, rotation, and revocation.
  *
  * Access token: a short-lived stateless JWT (HS256), carrying the user's id,
- * email, and role. Verified on every request by the auth middleware.
+ * email, role, and `sid` — the id of the RefreshToken row this access token
+ * was minted alongside. `sid` is what lets a signed-in user's client ask
+ * "which of my sessions is this one?" (see `session.service.ts`) without any
+ * extra round trip.
  *
  * Refresh token: a long, opaque, cryptographically-random string. Only its
  * SHA-256 hash is stored, so a database compromise cannot mint sessions. On
@@ -22,6 +26,8 @@ import { getConfig } from '../config';
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+  /** The RefreshToken row id backing this pair — the session identifier. */
+  sessionId: string;
 }
 
 export interface AccessTokenClaims {
@@ -30,8 +36,11 @@ export interface AccessTokenClaims {
   role: string;
 }
 
-function hashToken(rawToken: string): string {
-  return createHash('sha256').update(rawToken).digest('hex');
+export interface SessionMetadata {
+  userAgent?: string;
+  ipAddress?: string;
+  /** Persisted only for display in the session list; never affects verification. */
+  rememberMe?: boolean;
 }
 
 /**
@@ -57,42 +66,65 @@ export function durationToMs(duration: string): number {
   return value * unitMs[unit];
 }
 
-async function signAccessToken(claims: AccessTokenClaims): Promise<string> {
+async function signAccessToken(claims: AccessTokenClaims & { sid: string }): Promise<string> {
   const jwtSecret = await secretsManager.get('JWT_SECRET', 'backend:token-service');
-  return jwt.sign({ userId: claims.userId, email: claims.email, role: claims.role }, jwtSecret, {
-    algorithm: 'HS256',
-    expiresIn: getConfig().auth.jwtExpiry as SignOptions['expiresIn'],
-  });
+  return jwt.sign(
+    { userId: claims.userId, email: claims.email, role: claims.role, sid: claims.sid },
+    jwtSecret,
+    {
+      algorithm: 'HS256',
+      expiresIn: getConfig().auth.jwtExpiry as SignOptions['expiresIn'],
+    }
+  );
+}
+
+function refreshExpiryFor(rememberMe: boolean | undefined): Date {
+  const { jwtRefreshExpiry, jwtRefreshExpiryRememberMe } = getConfig().auth;
+  const duration = rememberMe ? jwtRefreshExpiryRememberMe : jwtRefreshExpiry;
+  return new Date(Date.now() + durationToMs(duration));
 }
 
 /**
  * Issue a fresh access + refresh token pair for a user and persist the
- * refresh token (hashed). Called on register and login.
+ * refresh token (hashed), along with device metadata for the session list.
+ * Called on register and login.
  */
-export async function issueTokens(claims: AccessTokenClaims): Promise<AuthTokens> {
-  const accessToken = await signAccessToken(claims);
-
+export async function issueTokens(
+  claims: AccessTokenClaims,
+  metadata: SessionMetadata = {}
+): Promise<AuthTokens> {
   const rawRefreshToken = randomBytes(48).toString('base64url');
-  const expiresAt = new Date(Date.now() + durationToMs(getConfig().auth.jwtRefreshExpiry));
 
-  await prisma.refreshToken.create({
+  const record = await prisma.refreshToken.create({
     data: {
       tokenHash: hashToken(rawRefreshToken),
       userId: claims.userId,
-      expiresAt,
+      expiresAt: refreshExpiryFor(metadata.rememberMe),
+      userAgent: metadata.userAgent,
+      ipAddress: metadata.ipAddress,
+      rememberMe: metadata.rememberMe ?? false,
     },
   });
 
-  return { accessToken, refreshToken: rawRefreshToken };
+  const accessToken = await signAccessToken({ ...claims, sid: record.id });
+
+  return { accessToken, refreshToken: rawRefreshToken, sessionId: record.id };
 }
 
 /**
  * Exchange a valid, unrevoked, unexpired refresh token for a new token pair,
  * rotating the refresh token (the presented one is revoked). Returns null if
  * the token is unknown, already revoked, or expired — the caller must treat
- * null as "re-authenticate", never as success.
+ * null as "re-authenticate", never as success. The new row carries forward
+ * `rememberMe` from the token being rotated (that policy is fixed at login),
+ * but refreshes `userAgent`/`ipAddress` to the current request when given —
+ * a session's displayed device/location should reflect where it was last
+ * actually used.
  */
-export async function rotateTokens(rawRefreshToken: string): Promise<AuthTokens | null> {
+export async function rotateTokens(
+  rawRefreshToken: string,
+  metadata: Pick<SessionMetadata, 'userAgent' | 'ipAddress'> = {}
+): Promise<AuthTokens | null> {
   const record = await prisma.refreshToken.findUnique({
     where: { tokenHash: hashToken(rawRefreshToken) },
     include: {
@@ -110,29 +142,31 @@ export async function rotateTokens(rawRefreshToken: string): Promise<AuthTokens 
 
   // Rotate: revoke the presented token and issue a fresh pair atomically.
   const rawNewRefreshToken = randomBytes(48).toString('base64url');
-  const expiresAt = new Date(Date.now() + durationToMs(getConfig().auth.jwtRefreshExpiry));
-
-  await prisma.$transaction([
-    prisma.refreshToken.update({
+  const newRecord = await prisma.$transaction(async (tx) => {
+    await tx.refreshToken.update({
       where: { id: record.id },
       data: { revokedAt: new Date() },
-    }),
-    prisma.refreshToken.create({
+    });
+    return tx.refreshToken.create({
       data: {
         tokenHash: hashToken(rawNewRefreshToken),
         userId: record.userId,
-        expiresAt,
+        expiresAt: refreshExpiryFor(record.rememberMe),
+        rememberMe: record.rememberMe,
+        userAgent: metadata.userAgent ?? record.userAgent,
+        ipAddress: metadata.ipAddress ?? record.ipAddress,
       },
-    }),
-  ]);
-
-  const accessToken = await signAccessToken({
-    userId: record.user.id,
-    email: record.user.email,
-    role: record.user.role,
+    });
   });
 
-  return { accessToken, refreshToken: rawNewRefreshToken };
+  const accessToken = await signAccessToken({
+    userId: newRecord.userId,
+    email: record.user.email,
+    role: record.user.role,
+    sid: newRecord.id,
+  });
+
+  return { accessToken, refreshToken: rawNewRefreshToken, sessionId: newRecord.id };
 }
 
 /**
@@ -150,11 +184,28 @@ export async function revokeRefreshToken(rawRefreshToken: string): Promise<boole
 
 /**
  * Revoke every active refresh token for a user (e.g. "log out everywhere",
- * or forced invalidation on password change). Returns the number revoked.
+ * or forced invalidation on password change/reset/account deletion).
+ * Returns the number revoked.
  */
 export async function revokeAllUserTokens(userId: string): Promise<number> {
   const result = await prisma.refreshToken.updateMany({
     where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  return result.count;
+}
+
+/**
+ * Revoke every active refresh token for a user except one session (e.g. a
+ * password change should end every *other* session while keeping the one
+ * that just made the change signed in). Returns the number revoked.
+ */
+export async function revokeAllUserTokensExcept(
+  userId: string,
+  exceptSessionId: string
+): Promise<number> {
+  const result = await prisma.refreshToken.updateMany({
+    where: { userId, revokedAt: null, id: { not: exceptSessionId } },
     data: { revokedAt: new Date() },
   });
   return result.count;

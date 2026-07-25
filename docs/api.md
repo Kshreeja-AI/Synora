@@ -61,20 +61,27 @@ Content-Type: application/json
   "data": {
     "accessToken": "eyJhbGc...",
     "refreshToken": "<opaque-refresh-token>",
-    "token": "eyJhbGc...",
     "user": {
       "id": "cuid123",
       "email": "user@example.com",
-      "name": "User Name"
+      "name": "User Name",
+      "emailVerified": false
     }
   }
 }
 ```
-`accessToken` is a 15-minute JWT (HS256, algorithm pinned). `refreshToken`
-is an opaque, single-use, 7-day token — store it, and use it with
-`POST /api/auth/refresh` to mint a new pair before the access token
-expires. `token` duplicates `accessToken` for backward compatibility with
-earlier clients; new clients should use `accessToken`/`refreshToken`.
+`accessToken` is a 15-minute JWT (HS256, algorithm pinned) that also
+carries a `sid` claim identifying the backing session (see Sessions
+below). `refreshToken` is an opaque, single-use, 7-day token — store it,
+and use it with `POST /api/auth/refresh` to mint a new pair before the
+access token expires. The deprecated `token` alias (a duplicate of
+`accessToken`) was removed in Release 2 M3 once the last raw-fetch
+frontend consumer was rebuilt on the typed API client.
+
+Registration also issues an email-verification token and sends a
+verification email (provider-agnostic mailer, see
+`docs/architecture.md`#mailer-abstraction); failure to send never fails
+registration itself (best-effort, logged).
 
 **Status Codes**
 - `201`: User created successfully
@@ -97,9 +104,15 @@ Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "SecurePass123!"
+  "password": "SecurePass123!",
+  "rememberMe": true
 }
 ```
+`rememberMe` (optional, default `false`) selects a longer refresh-token
+lifetime (`JWT_REFRESH_EXPIRY_REMEMBER_ME`, default 30d) instead of the
+normal 7d. It is recorded on the session for display in the session list
+(see below) but never affects verification — a "remembered" and a normal
+session are checked identically.
 
 **Response** — same shape as Register above.
 
@@ -125,12 +138,15 @@ Content-Type: application/json
 }
 ```
 
-**Response** — same `accessToken`/`refreshToken`/`token` shape as Login.
+**Response** — same `accessToken`/`refreshToken` shape as Login.
 
 Refresh tokens are single-use: presenting one revokes it and issues a new
 one atomically. Presenting an already-used, expired, or unknown token is
 rejected — this also means a stolen-and-reused refresh token is detected
 (the legitimate holder's subsequent refresh will fail, signaling reuse).
+The new access token's `sid` claim always points at the freshly-created
+session row — rotation effectively continues the same logical session
+under a new session id.
 
 **Status Codes**
 - `200`: New token pair issued
@@ -166,10 +182,160 @@ still returns 200.
 
 ---
 
+### Forgot Password
+Request a password-reset email. Always returns the same 200 response,
+whether or not the email belongs to an account — this closes the same
+email-enumeration side channel as register/login.
+
+**Request**
+```http
+POST /api/auth/forgot-password
+Content-Type: application/json
+
+{ "email": "user@example.com" }
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": { "message": "If an account exists for that email, a password reset link has been sent." }
+}
+```
+
+If the account exists, a single-use reset token (≤1h expiry,
+SHA-256-hashed at rest — see `docs/database.md`) is issued and emailed via
+the mailer abstraction; requesting a new one invalidates any previous
+still-unused token for that user.
+
+---
+
+### Reset Password
+Consume a reset token and set a new password.
+
+**Request**
+```http
+POST /api/auth/reset-password
+Content-Type: application/json
+
+{ "token": "<raw-reset-token>", "newPassword": "a-new-password-123" }
+```
+
+**Response**
+```json
+{ "success": true, "data": { "message": "Password reset successfully. Please sign in." } }
+```
+
+Consuming a valid token revokes **every** active session for the account
+(the reset is trusted to represent regained control, so any other live
+token — potentially an attacker's — must not survive it) and sends a
+"password changed" notification email. No new session is issued; the
+caller signs in again with the new password.
+
+**Status Codes**
+- `200`: Password reset
+- `400`: Validation error (new password too short)
+- `401`: `UNAUTHORIZED` — token is unknown, already used, or expired
+
+---
+
+### Verify Email
+Consume an email-verification token.
+
+**Request**
+```http
+POST /api/auth/verify-email
+Content-Type: application/json
+
+{ "token": "<raw-verification-token>" }
+```
+
+**Response**
+```json
+{ "success": true, "data": { "message": "Email verified successfully." } }
+```
+
+**Status Codes**
+- `200`: Verified
+- `401`: `UNAUTHORIZED` — token is unknown, already used, or expired
+
+---
+
+### Resend Verification Email
+Authenticated — resends to whoever is asking, never to an arbitrary
+address.
+
+**Request**
+```http
+POST /api/auth/resend-verification
+Authorization: Bearer <token>
+```
+
+**Response**
+```json
+{ "success": true, "data": { "message": "Verification email sent." } }
+```
+Returns `{ "message": "Email is already verified." }` (still 200) if the
+account is already verified, without sending mail again.
+
+---
+
+### Sessions (device/session management)
+Backed by the same `RefreshToken` rows described in
+`docs/database.md` — a "session" is a live refresh token, with device
+metadata captured at issue/rotation time.
+
+**List active sessions**
+```http
+GET /api/auth/sessions
+Authorization: Bearer <token>
+```
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "sess123",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "lastUsedAt": "2026-07-25T10:00:00Z",
+      "expiresAt": "2026-08-01T00:00:00Z",
+      "ipAddress": "203.0.113.5",
+      "deviceLabel": "Chrome on macOS",
+      "rememberMe": false,
+      "isCurrent": true
+    }
+  ]
+}
+```
+`isCurrent` is derived from the requesting access token's `sid` claim.
+`deviceLabel` is parsed server-side from the stored `User-Agent`.
+
+**Revoke one session**
+```http
+DELETE /api/auth/sessions/:id
+Authorization: Bearer <token>
+```
+Only revokes a session owned by the caller — `404` otherwise (never
+reveals whether the id belongs to someone else).
+
+**Log out everywhere**
+```http
+POST /api/auth/logout-all
+Authorization: Bearer <token>
+```
+```json
+{ "success": true, "data": { "revokedCount": 3 } }
+```
+Revokes every active session for the account, **including the caller's
+own** — a literal "log out everywhere."
+
+---
+
 ## User Endpoints
 
 ### Get Current User
-Retrieve authenticated user's profile.
+Retrieve authenticated user's profile, including verification status,
+profile fields, and notification preferences.
 
 **Request**
 ```http
@@ -187,15 +353,121 @@ Authorization: Bearer <token>
     "name": "User Name",
     "image": "https://...",
     "role": "USER",
-    "createdAt": "2026-01-13T12:00:00Z"
+    "emailVerified": true,
+    "createdAt": "2026-01-13T12:00:00Z",
+    "profile": { "bio": null, "website": null, "location": null },
+    "preferences": {
+      "theme": "DARK",
+      "emailNotifications": true,
+      "pushNotifications": false,
+      "marketingEmails": false
+    }
   }
 }
 ```
+`preferences` always returns a value (sane defaults) even before the user
+has ever saved any — see `PATCH /api/users/me/preferences` below.
 
 **Status Codes**
 - `200`: Success
 - `401`: Unauthorized
 - `404`: User not found
+
+---
+
+### Update Profile
+Update the caller's name and/or profile fields (bio, website, location).
+Only the fields present in the body are changed.
+
+**Request**
+```http
+PATCH /api/users/me
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "name": "New Name", "bio": "...", "website": "https://...", "location": "..." }
+```
+**Response** — the updated user (same shape as `GET /api/users/me`, minus `preferences`).
+
+---
+
+### Upload / Remove Avatar
+Multipart upload through the provider-agnostic storage abstraction (see
+`docs/architecture.md`#storage-abstraction — local filesystem today,
+S3-compatible in a future release, config-only swap).
+
+```http
+POST /api/users/me/avatar
+Authorization: Bearer <token>
+Content-Type: multipart/form-data; field "avatar"
+```
+```json
+{ "success": true, "data": { "image": "http://.../uploads/avatars/<userId>/<uuid>.png" } }
+```
+PNG/JPEG/WEBP/GIF only, max size `STORAGE_MAX_UPLOAD_BYTES` (default
+5MB) — `400` otherwise. Replacing an avatar deletes the previous file.
+
+```http
+DELETE /api/users/me/avatar
+Authorization: Bearer <token>
+```
+Clears the avatar and deletes the stored file (idempotent).
+
+---
+
+### Change Password
+Requires the current password; rotates to the new one and revokes every
+**other** active session (the device making the change stays signed in).
+Sends a "password changed" notification email.
+
+```http
+POST /api/users/me/password
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "currentPassword": "...", "newPassword": "a-new-password-123" }
+```
+**Status Codes**: `200` success · `400` new password too short · `401`
+current password incorrect.
+
+---
+
+### Notification Preferences
+```http
+GET /api/users/me/preferences
+Authorization: Bearer <token>
+```
+Returns defaults (`{ theme: "DARK", emailNotifications: true,
+pushNotifications: false, marketingEmails: false }`) if the user has
+never saved preferences — no row is created until the first `PATCH`.
+
+```http
+PATCH /api/users/me/preferences
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "marketingEmails": true }
+```
+Partial update (upsert); returns the full preferences object.
+
+---
+
+### Delete Account
+Soft-deletes the account: password-confirmed, revokes every session,
+mangles the email (`deleted-<id>@deleted.synora.internal`) so the
+original address is immediately free for a new registration, and sends a
+confirmation email to the original address. The row itself is kept
+(`status: DELETED`) so owned projects/documents/activity logs retain
+referential integrity.
+
+```http
+DELETE /api/users/me
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "password": "..." }
+```
+**Status Codes**: `200` deleted · `401` password incorrect.
 
 ---
 
@@ -649,4 +921,4 @@ database is unreachable.
 
 ---
 
-**Last Updated**: 2026-07-23 (Release 1)
+**Last Updated**: 2026-07-25 (Release 2, Milestone 3)

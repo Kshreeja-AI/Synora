@@ -909,32 +909,40 @@ acceptance criteria, and definition of done. Follow it exactly.
 
 ## 18. Current Next Task
 
-**M3 — Auth UX + Onboarding + App Shell**
+**M3.5 — Onboarding, Workspace Creation, App Shell**
 
 Full specification is in `NEXT_TASK.md`. Summary:
 
-1. **Auth rebuild** — login/register pages rewritten on the M1 API client
-   + Zustand auth store (delete raw-fetch + localStorage['token'] logic)
-2. **Forgot-password flow** — password-reset tokens (hashed at rest,
-   single-use, ≤1h expiry) + provider-agnostic mailer abstraction with
-   console/dev transport + forgot/reset pages
-3. **Onboarding wizard** — post-registration: name → workspace creation →
-   theme preference; skippable; runs once
-4. **Workspace creation** — first workspace routes (create + list mine +
-   get, slug uniqueness, creator becomes OWNER)
-5. **App shell** — collapsible sidebar, topbar with workspace switcher +
-   user menu, command palette (Cmd+K), keyboard shortcuts, protected routes
-6. **Cleanup** — remove deprecated `token` alias, remove `axios` dependency
+1. **Onboarding wizard** — post-registration: name (pre-filled, editable) →
+   workspace creation → theme preference; skippable; runs once. Completion
+   derived server-side from "the user has at least one workspace" (no
+   dedicated flag unless that proves insufficient)
+2. **Workspace creation (backend)** — first `Workspace` routes: `POST
+   /api/workspaces` (create, slug uniqueness, creator becomes `OWNER`),
+   `GET /api/workspaces` (list mine), `GET /api/workspaces/:id`
+   (membership-checked — 404 if not a member, never a 403)
+3. **App shell** — replace the dashboard layout's placeholder sidebar with
+   a workspace switcher (topbar `DropdownMenu`), a user menu (`DropdownMenu`
+   + `Avatar`, wired to the real `image` field from M3's avatar upload),
+   a command palette (⌘K, `Dialog`-based), and keyboard shortcuts. Keep the
+   M3 mobile-overlay sidebar behavior (`fixed` + backdrop + `md:` split) —
+   extend it, don't replace it
+4. **Protected-route handling** — already done in M3 (`useRequireAuth`),
+   no rework needed
 
-### Partial work on disk (uncommitted)
+### Note on M3 (previous milestone — complete)
 
-- `packages/database/prisma/schema.prisma` — `PasswordResetToken` model
-  added + `passwordResetTokens` relation on `User`
-- `packages/database/prisma/migrations/20260725061000_add_password_reset_token/migration.sql`
-  — migration SQL
-
-This work was started before the user requested this document and halted.
-It should be committed as part of M3's first batch.
+M3 was narrowed on 2026-07-25 (see `CURRENT_STATE.md`) to auth/account UX
+only: login/register/forgot-password/reset-password/verify-email, session
+management (list/revoke/logout-everywhere), account settings (password
+change, notification preferences, soft-delete), profile settings (avatar
+upload), a provider-agnostic mailer abstraction, and a provider-agnostic
+storage abstraction. Onboarding/workspace-creation/app-shell — the other
+half of the original M3 spec — were deferred into this M3.5. Full detail
+of what M3 shipped is in the 2026-07-25 "Release 2 M3" entry in section 19
+below; nothing from the original M3 spec's "Partial work on disk" note
+survived as a TODO — the `PasswordResetToken` prep mentioned there was
+long since superseded and fully committed as part of M3.
 
 ---
 
@@ -999,4 +1007,156 @@ next engineer needs to know. Entries are dated and never deleted.
 - Tests: 312 (backend 273, web 23, design-system 16)
 - Working tree: uncommitted PasswordResetToken schema changes (M3 prep)
 - PR #31: open, not merged
+
+### 2026-07-25 — Session: Release 2 M3 (Auth/account UX, scope-narrowed)
+
+**Engineer:** AI (Claude)
+**Branch:** `claude/synora-ai-platform-h5q0k2`
+
+**Scope decision:** the founder's task request listed auth screens, email
+verification, password reset, session management, and account/profile
+settings, but did not mention the onboarding wizard, workspace creation,
+or app shell that `NEXT_TASK.md`'s original M3 also specified. Asked via
+`AskUserQuestion`; founder chose "auth/account only" — redefine M3 to
+exactly that scope and push onboarding/workspace/app-shell into a new
+M3.5. `NEXT_TASK.md` now carries the M3.5 spec; this entry documents what
+M3 itself shipped.
+
+**Work completed:**
+
+- **Database**: `EmailVerificationToken` model; `RefreshToken` gained
+  `userAgent`, `ipAddress`, `lastUsedAt`, `rememberMe` — every refresh
+  token row is now a listable/revocable "session." 20 models total.
+- **Mailer abstraction** (`apps/backend/src/mail/`): same
+  descriptor-registry-resolver-facade shape as the existing AI provider
+  abstraction — console transport (default, in-memory testable log) +
+  SMTP transport (`nodemailer`). Templates: verify-email, password-reset,
+  password-changed, account-deleted, all sharing one inline-CSS layout.
+  Deliberately **explicit-config-only** provider selection (never
+  auto-detected from credential presence, unlike AI providers) — reasoning
+  documented in `docs/architecture.md`: `SecretsManager`'s dev/testing/qa
+  placeholder fallback means every secret key "resolves" to something in
+  those stages, so credential presence can't signal "really configured"
+  the way it can for AI provider keys.
+- **Storage abstraction** (`apps/backend/src/storage/`): same pattern —
+  local-filesystem provider today (served via `express.static` with
+  `Cross-Origin-Resource-Policy: cross-origin`), facade exposes
+  `uploadAvatar`/`deleteAvatar`/`avatarKeyFromUrl` with a content-type
+  allowlist (png/jpeg/webp/gif).
+  Used for the new avatar-upload feature.
+- **Sessions**: `token.service.ts` rewritten — `issueTokens` creates the
+  `RefreshToken` row first, then signs the access-token JWT with a `sid`
+  claim equal to that row's id; `rotateTokens` carries `rememberMe`
+  forward and refreshes device metadata. New `session.service.ts`:
+  `listSessions`/`revokeSession`/`revokeAllSessions`/`revokeOtherSessions`,
+  plus a regex-based User-Agent parser for device/browser/OS labels.
+- **New backend routes**: `POST /api/auth/forgot-password` (no
+  enumeration), `POST /api/auth/reset-password` (revokes all sessions on
+  success), `POST /api/auth/verify-email`, `POST
+  /api/auth/resend-verification`, `GET /api/auth/sessions`, `DELETE
+  /api/auth/sessions/:id`, `POST /api/auth/logout-all`; `users.ts`
+  extended with `PATCH /me`, `POST`/`DELETE /me/avatar`, `POST
+  /me/password` (revokes every *other* session), `GET`/`PATCH
+  /me/preferences`, `DELETE /me` (soft delete — `status: DELETED`, email
+  mangled to `deleted-<id>@deleted.synora.internal`, password nulled,
+  frees the original email for reuse, confirmation email sent to the
+  original address).
+- **Removed** the deprecated `token` alias from login/register responses
+  (only `accessToken`/`refreshToken` remain) and the `axios` dependency
+  (confirmed zero usages first).
+- **Frontend**: full API client coverage (`auth.ts`, new `account.ts`,
+  new `sessions.ts`, `FormData`-aware `api.upload`); `useCurrentUser` +
+  `useRequireAuth` hooks; rebuilt login (remember-me checkbox, safe
+  `next` redirect guarding against `//` open-redirect) and register
+  pages; new forgot-password, reset-password, and verify-email pages
+  (each using the server-page + Suspense-wrapped client-form split
+  required by `useSearchParams()` in the Next.js App Router); dashboard
+  layout rewritten on `useRequireAuth`; new settings section
+  (`/dashboard/settings/{profile,account,sessions}`) covering profile
+  editing + avatar upload, password change, notification preferences,
+  account deletion (typed-"DELETE" + password confirmation dialog), and
+  session list with per-session revoke + "log out everywhere."
+  New design-system `Checkbox` component (Radix-based) added to support
+  the remember-me control.
+- **Docs**: `docs/api.md`, `docs/database.md`, `docs/architecture.md`
+  (new Mailer Abstraction and Storage Abstraction sections),
+  `docs/security.md`, `CURRENT_STATE.md`, `PROJECT_HANDOVER.md` all
+  updated; `NEXT_TASK.md` replaced with the M3.5 spec.
+
+**Bugs found and fixed (both discovered only by actually running the app,
+per `CLAUDE.md`'s browser-verification requirement — neither was caught
+by lint/typecheck/tests):**
+
+- **ESM resolution break in `pnpm dev`**: `packages/shared` and
+  `packages/database` lacked `"type": "module"`, and
+  `packages/shared/src/index.ts`'s `export * from './types/index'` (and
+  `./utils/index`) had no `.js` extension. Node's native ESM loader (used
+  by `tsx watch`, unlike the bundler-based tooling used for tests/builds)
+  enforces extension-required resolution and failed with "does not
+  provide an export named 'ApiException'." Fixed by adding the `.js`
+  extensions (TypeScript's classic "node" resolution accepts `.js`
+  pointing to `.ts` source) and adding `"type": "module"` to both
+  packages' `package.json`. Verified with direct
+  `node --input-type=module -e "import(...)"` probes and a full
+  type-check/test re-run to confirm zero regressions.
+- **Mobile sidebar never collapsed**: the dashboard sidebar had no
+  mobile-specific positioning, so it stayed docked and pushed content off
+  the mobile viewport. Fixed with a `fixed`-positioned overlay sidebar +
+  backdrop below the `md:` breakpoint (768px), auto-closing on mount for
+  narrow viewports and on navigation-link click.
+- **jsdom has no `ResizeObserver`**: Radix `Checkbox`/`Switch` construct
+  one internally; only manifested when `PasswordInput` and `Checkbox`
+  were rendered together in the same tree during test-writing (isolated
+  renders of either passed fine). Fixed with a `ResizeObserverStub`
+  polyfill in a new `apps/web/vitest.setup.ts`, wired into
+  `vitest.config.ts`'s `setupFiles`.
+- iOS user-agent strings contain "like Mac OS X," so
+  `session.service.ts`'s `parseUserAgent()` initially misclassified
+  iPhones as macOS. Fixed by checking the iOS pattern before the macOS
+  pattern.
+- A TanStack Query v5 quirk: passing a service function directly as
+  `mutationFn` (rather than wrapping it in a zero-arg arrow function)
+  causes the library to invoke it with an extra internal second argument,
+  which shows up in a `vi.fn()` mock's recorded call args and breaks a
+  naive `toHaveBeenCalledWith(x)` assertion. Worth remembering for any
+  future direct-reference `mutationFn` usage — either wrap in an arrow
+  function, or assert on `.mock.calls[0][0]` instead of the whole args
+  array.
+
+**Lessons learned:**
+
+- The provider-agnostic descriptor-registry-resolver-facade pattern (AI
+  providers → mail transports → storage providers, three for three now)
+  is Synora's default shape for "swap the backend without touching
+  callers." New provider-style abstractions should default to this shape
+  unless there's a specific reason not to.
+- Not every provider-style abstraction should auto-detect from credential
+  presence the way AI providers do — when a stage's placeholder-secret
+  fallback makes "credential present" always true, the selection must be
+  explicit config instead. Evaluate this per-abstraction, don't copy the
+  AI-provider auto-detection pattern reflexively.
+- Soft-delete (mangled email, nulled password, status flag) beats hard
+  delete when other rows (projects, documents, activity logs) hold a
+  foreign key to the user and the product needs the vacated email address
+  to become reusable immediately.
+- `useSearchParams()` in a Next.js App Router client component needs a
+  `<Suspense>` boundary above it; the clean way to structure this is a
+  thin server `page.tsx` that renders `<Suspense><XForm /></Suspense>`,
+  with the real logic in a sibling client component.
+- Running `pnpm dev` and actually clicking through the app caught two real
+  bugs that a fully green lint/typecheck/test/build gate did not — the
+  browser-verification step in `CLAUDE.md` is not redundant with
+  automated checks.
+
+**State at handoff:**
+
+- Last pushed commit: this session's M3 closing commit (see `git log` on
+  `claude/synora-ai-platform-h5q0k2` for the exact hash)
+- Tests: 479 (backend 361, web 98, design-system 20) — all green locally
+  (lint, type-check, test, build across all 5 workspace packages)
+- PR #31: open, not merged, tracking this branch — verify CI goes green
+  on the new commit
+- Next task: M3.5 (read `NEXT_TASK.md`) — onboarding wizard, workspace
+  creation routes, app shell (workspace switcher, user menu, command
+  palette)
 - Next task: M3 (read `NEXT_TASK.md`)

@@ -113,6 +113,22 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     requiredIn: [],
   },
   {
+    key: 'SMTP_USER',
+    description:
+      'SMTP username used by the mail SMTP transport. Only required when MAIL_TRANSPORT=smtp is explicitly set.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'SMTP_PASSWORD',
+    description:
+      'SMTP password used by the mail SMTP transport. Only required when MAIL_TRANSPORT=smtp is explicitly set.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
     key: 'SNYK_TOKEN',
     description: 'Snyk auth token used by the security-scan GitHub Actions job.',
     owner: 'platform',

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Synora Database Schema, Migrations & Shared Prisma Client",
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

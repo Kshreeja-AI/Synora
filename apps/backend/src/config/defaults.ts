@@ -21,8 +21,11 @@ export interface StageDefaults {
   auth: {
     jwtExpiry: string;
     jwtRefreshExpiry: string;
+    jwtRefreshExpiryRememberMe: string;
     maxFailedLoginAttempts: number;
     lockoutDurationMinutes: number;
+    passwordResetTokenExpiry: string;
+    emailVerificationTokenExpiry: string;
   };
   urls: {
     backendUrl: string;
@@ -39,6 +42,19 @@ export interface StageDefaults {
     azureOpenAIApiVersion: string;
     bedrockModelId: string;
     ollamaModel: string;
+  };
+  mail: {
+    transport: 'console' | 'smtp';
+    fromAddress: string;
+    fromName: string;
+    smtpPort: number;
+    smtpSecure: boolean;
+  };
+  storage: {
+    provider: 'local';
+    localDirectory: string;
+    publicBasePath: string;
+    maxUploadBytes: number;
   };
 }
 
@@ -57,8 +73,11 @@ const BASE_DEFAULTS: StageDefaults = {
   auth: {
     jwtExpiry: '15m',
     jwtRefreshExpiry: '7d',
+    jwtRefreshExpiryRememberMe: '30d',
     maxFailedLoginAttempts: 5,
     lockoutDurationMinutes: 15,
+    passwordResetTokenExpiry: '1h',
+    emailVerificationTokenExpiry: '24h',
   },
   urls: {
     backendUrl: 'http://localhost:3001',
@@ -77,6 +96,21 @@ const BASE_DEFAULTS: StageDefaults = {
     azureOpenAIApiVersion: '2024-10-21',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',
+  },
+  mail: {
+    // Console until MAIL_TRANSPORT explicitly selects a real provider — see
+    // src/mail/registry.ts. Never auto-upgrades based on credential presence.
+    transport: 'console',
+    fromAddress: 'noreply@synora.ai',
+    fromName: 'Synora',
+    smtpPort: 587,
+    smtpSecure: false,
+  },
+  storage: {
+    provider: 'local',
+    localDirectory: 'uploads',
+    publicBasePath: '/uploads',
+    maxUploadBytes: 5 * 1024 * 1024, // 5 MiB — plenty for an avatar image
   },
 };
 
@@ -128,6 +162,8 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     auth: { ...BASE_DEFAULTS.auth, ...override.auth },
     urls: { ...BASE_DEFAULTS.urls, ...override.urls },
     ai: { ...BASE_DEFAULTS.ai, ...override.ai },
+    mail: { ...BASE_DEFAULTS.mail, ...override.mail },
+    storage: { ...BASE_DEFAULTS.storage, ...override.storage },
   };
 
   return applyModeOverrides(merged, modes);

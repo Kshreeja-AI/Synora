@@ -1,14 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Button, Card, CardContent, Skeleton } from '@synora/design-system';
-
-interface User {
-  id: string;
-  email: string;
-  name?: string;
-}
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { resendVerificationEmail } from '../../lib/api/auth';
 
 const createActions = [
   {
@@ -42,40 +38,20 @@ const createActions = [
 ];
 
 export default function DashboardPage(): React.JSX.Element {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: user, isLoading } = useCurrentUser();
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
 
-  useEffect(() => {
-    const fetchUser = async (): Promise<void> => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        window.location.href = '/auth/login';
-        return;
-      }
+  const handleResend = async (): Promise<void> => {
+    setResendStatus('sending');
+    try {
+      await resendVerificationEmail();
+      setResendStatus('sent');
+    } catch {
+      setResendStatus('idle');
+    }
+  };
 
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch user');
-        }
-
-        const data = await response.json();
-        setUser(data.data);
-      } catch {
-        localStorage.removeItem('token');
-        window.location.href = '/auth/login';
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, []);
-
-  if (loading) {
+  if (isLoading || !user) {
     return (
       <div className="space-y-8">
         <div className="space-y-2">
@@ -93,9 +69,22 @@ export default function DashboardPage(): React.JSX.Element {
 
   return (
     <div>
-      <h1 className="mb-2 text-4xl font-bold text-foreground">
-        Welcome, {user?.name || user?.email}!
-      </h1>
+      {!user.emailVerified && (
+        <div className="mb-6 flex flex-col items-start justify-between gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Please verify your email address to secure your account.
+          </p>
+          {resendStatus === 'sent' ? (
+            <span className="text-sm font-medium text-success">Verification email sent.</span>
+          ) : (
+            <Button size="sm" variant="outline" loading={resendStatus === 'sending'} onClick={handleResend}>
+              Resend verification email
+            </Button>
+          )}
+        </div>
+      )}
+
+      <h1 className="mb-2 text-4xl font-bold text-foreground">Welcome, {user.name || user.email}!</h1>
       <p className="mb-8 text-muted-foreground">Start creating amazing content with Synora AI.</p>
 
       <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2">

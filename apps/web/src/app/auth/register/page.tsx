@@ -2,9 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Button, Card, CardContent, Input, Label } from '@synora/design-system';
+import { PasswordInput } from '../../../components/auth/PasswordInput';
+import { register } from '../../../lib/api/auth';
+import { ApiError } from '../../../lib/api/client';
 
 export default function RegisterPage(): React.JSX.Element {
+  const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -29,23 +34,10 @@ export default function RegisterPage(): React.JSX.Element {
     setLoading(true);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.error?.message || 'Registration failed');
-        return;
-      }
-
-      localStorage.setItem('token', data.data.token);
-      window.location.href = '/dashboard';
-    } catch {
-      setError('An error occurred. Please try again.');
+      await register(email, password, name || undefined);
+      router.push('/dashboard');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'An error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -57,17 +49,21 @@ export default function RegisterPage(): React.JSX.Element {
         <h1 className="mb-8 text-center text-3xl font-bold text-foreground">Create Account</h1>
 
         {error && (
-          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          <div
+            role="alert"
+            className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+          >
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div className="space-y-1.5">
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
               type="text"
+              autoComplete="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
@@ -79,6 +75,7 @@ export default function RegisterPage(): React.JSX.Element {
             <Input
               id="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -88,9 +85,9 @@ export default function RegisterPage(): React.JSX.Element {
 
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -100,9 +97,9 @@ export default function RegisterPage(): React.JSX.Element {
 
           <div className="space-y-1.5">
             <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
+            <PasswordInput
               id="confirmPassword"
-              type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required

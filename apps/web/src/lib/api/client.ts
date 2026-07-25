@@ -68,7 +68,10 @@ function ensureRefresh(): Promise<boolean> {
 
 async function rawRequest(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  // FormData must never get a Content-Type header set manually — the
+  // browser needs to add the multipart boundary itself.
+  if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
   if (!options.anonymous) {
     const accessToken = getAccessToken();
     if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
@@ -76,7 +79,7 @@ async function rawRequest(path: string, options: RequestOptions): Promise<Respon
   return fetch(`${getApiBaseUrl()}${path}`, {
     method: options.method ?? 'GET',
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
   });
 }
@@ -134,6 +137,15 @@ export const api = {
     body?: unknown,
     options?: Omit<RequestOptions, 'method' | 'body'>
   ): Promise<T> => apiRequest<T>(path, { ...options, method: 'PATCH', body }),
-  delete: <T>(path: string, options?: Omit<RequestOptions, 'method' | 'body'>): Promise<T> =>
-    apiRequest<T>(path, { ...options, method: 'DELETE' }),
+  delete: <T>(
+    path: string,
+    body?: unknown,
+    options?: Omit<RequestOptions, 'method' | 'body'>
+  ): Promise<T> => apiRequest<T>(path, { ...options, method: 'DELETE', body }),
+  /** Multipart upload (e.g. avatar) — same auth/refresh-retry handling as every other method. */
+  upload: <T>(
+    path: string,
+    formData: FormData,
+    options?: Omit<RequestOptions, 'method' | 'body'>
+  ): Promise<T> => apiRequest<T>(path, { ...options, method: 'POST', body: formData }),
 };

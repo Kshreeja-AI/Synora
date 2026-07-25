@@ -16,6 +16,7 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string | null;
+  emailVerified: boolean;
 }
 
 export interface AuthTokens {
@@ -24,3 +25,53 @@ export interface AuthTokens {
 }
 
 export type AuthResponse = AuthTokens & { user: AuthUser };
+
+export interface ProfileFields {
+  bio: string | null;
+  website: string | null;
+  location: string | null;
+}
+
+export interface PreferencesResponse {
+  theme: 'LIGHT' | 'DARK' | 'AUTO';
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  marketingEmails: boolean;
+}
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: string;
+  emailVerified: boolean;
+  createdAt: string;
+  profile: ProfileFields | null;
+  preferences: PreferencesResponse;
+}
+
+export interface UpdateProfileRequest {
+  name?: string;
+  bio?: string;
+  website?: string;
+  location?: string;
+}
+
+export interface UpdatePreferencesRequest {
+  theme?: PreferencesResponse['theme'];
+  emailNotifications?: boolean;
+  pushNotifications?: boolean;
+  marketingEmails?: boolean;
+}
+
+export interface SessionResponse {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  deviceLabel: string;
+  rememberMe: boolean;
+  isCurrent: boolean;
+}

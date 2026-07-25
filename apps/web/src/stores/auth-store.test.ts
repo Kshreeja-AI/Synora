@@ -13,14 +13,14 @@ describe('auth-store', () => {
   });
 
   it('setSession stores the user and marks authenticated', () => {
-    useAuthStore.getState().setSession({ id: 'u1', email: 'a@b.co', name: 'Ada' });
+    useAuthStore.getState().setSession({ id: 'u1', email: 'a@b.co', name: 'Ada', emailVerified: true });
     const { user, status } = useAuthStore.getState();
     expect(user?.email).toBe('a@b.co');
     expect(status).toBe('authenticated');
   });
 
   it('clearSession resets the user and marks unauthenticated', () => {
-    useAuthStore.getState().setSession({ id: 'u1', email: 'a@b.co', name: null });
+    useAuthStore.getState().setSession({ id: 'u1', email: 'a@b.co', name: null, emailVerified: false });
     useAuthStore.getState().clearSession();
     const { user, status } = useAuthStore.getState();
     expect(user).toBeNull();

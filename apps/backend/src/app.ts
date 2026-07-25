@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -113,6 +114,23 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
       });
     }
   });
+
+  // Locally-stored uploads (avatars). Only mounted for the `local` storage
+  // provider — an object-storage provider (M6) serves files from its own
+  // CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
+  // Policy is relaxed for this path only: the web app runs on a different
+  // origin/port and needs to load these images directly in <img> tags,
+  // while the rest of the API keeps helmet's stricter default.
+  if (config.storage.provider === 'local') {
+    app.use(
+      config.storage.publicBasePath,
+      (req, res, next) => {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        next();
+      },
+      express.static(resolve(process.cwd(), config.storage.localDirectory))
+    );
+  }
 
   // API Routes
   app.use('/api/auth', authRoutes);

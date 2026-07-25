@@ -1,4 +1,4 @@
-# NEXT TASK — Release 2, Milestone 3: Auth UX + Onboarding + App Shell
+# NEXT TASK — Release 2, Milestone 3.5: Onboarding, Workspace Creation, App Shell
 
 **Maintenance rule:** this file always contains ONLY the exact next
 development task. When a task completes (milestone gate passed: lint,
@@ -6,173 +6,143 @@ typecheck, tests, build all green → commit → push → green CI), replace
 this file's content with the task named under "Next task after this
 one".
 
+## Why this file exists as "M3.5"
+
+`RELEASE_2_PLAN.md`'s original Milestone 3 bundled six deliverables:
+auth rebuild, forgot-password, onboarding wizard, workspace creation,
+app shell, and cleanup. On 2026-07-25 the founder narrowed M3's actual
+scope to auth/account UX only (auth screens, email verification,
+password reset, session management, account/profile settings, avatar
+upload — see `CURRENT_STATE.md`) and explicitly deferred onboarding,
+workspace creation, and the app shell. This task is exactly that deferred
+remainder, run as its own milestone so the gate (lint/typecheck/test/
+build → commit → push → green CI) applies to it independently rather
+than being silently folded into M4.
+
 ## Goal
 
-Turn the authenticated side of Synora from a skeleton into a real
-product entry experience:
+Turn the post-registration experience from "land directly on an
+otherwise-empty dashboard" into a real product entry flow, and replace
+the placeholder dashboard shell with a navigable one:
 
-1. **Auth rebuild** — login/register pages rewritten on the M1 API
-   client + Zustand auth store (delete the raw-`fetch` +
-   `localStorage['token']` logic), with polished error states, loading
-   states, and password visibility toggle.
-2. **Forgot-password flow** — the milestone's one backend addition:
-   password-reset tokens (hashed at rest, single-use, short expiry) +
-   a provider-agnostic mailer abstraction with a console/dev transport
-   (real email provider is a launch-time config choice), plus
-   `/auth/forgot-password` and `/auth/reset-password` pages.
-3. **Onboarding wizard** — post-registration: name → workspace creation
-   → theme preference; skippable; runs once.
-4. **Workspace creation** — first Workspace routes on the backend
-   (create + list mine + get, slug uniqueness, creator becomes OWNER)
-   and the frontend flow using them.
-5. **App shell** — replace the basic dashboard sidebar: collapsible
-   token-styled sidebar with real navigation, topbar with workspace
-   switcher + user menu (design-system DropdownMenu/Avatar), command
-   palette (⌘K) with navigation actions, keyboard shortcuts, protected-
-   route handling (redirect to login when unauthenticated, back to
-   original destination after login).
-6. **Cleanup** — remove the deprecated `token` alias from backend auth
-   responses once no consumer remains; remove `axios` (unused) from web
-   dependencies.
-
-## Why this task exists
-
-Everything after M3 (playground, teams, billing) lives inside the
-authenticated app; the shell, session handling, and workspace primitive
-must exist first. The marketing site (M2) now sends traffic to
-register — the flow it lands in must match its quality bar.
+1. **Onboarding wizard** — post-registration: name (pre-filled from
+   registration, editable) → workspace creation → theme preference;
+   skippable; runs once. Completion is derived server-side from "the user
+   has at least one workspace" (per the original M3 spec's risk note —
+   avoid a dedicated `onboardingComplete` flag unless deriving from
+   workspace membership proves insufficient).
+2. **Workspace creation (backend)** — first `Workspace` routes: `POST
+   /api/workspaces` (create, slug uniqueness, creator becomes `OWNER`
+   via `WorkspaceMember`), `GET /api/workspaces` (list mine), `GET
+   /api/workspaces/:id` (membership-checked — 404 if the caller isn't a
+   member, never a 403 that confirms existence).
+3. **App shell** — replace `apps/web/src/app/dashboard/layout.tsx`'s
+   current placeholder sidebar (fixed nav list, no workspace concept)
+   with: a workspace switcher (design-system `DropdownMenu`) in the
+   topbar, a user menu (`DropdownMenu` + `Avatar`, now that avatar upload
+   is real — wire the actual `image` field), a command palette (⌘K) built
+   on `Dialog` with keyboard handling for navigation actions (add `cmdk`
+   only if hand-rolling proves inadequate, per the original spec), and
+   keyboard shortcuts. Keep the M3 mobile-overlay sidebar behavior
+   (`fixed` + backdrop + `md:` breakpoint split) — that part of the shell
+   is already correct and browser-verified; extend it, don't replace it.
+4. **Protected-route handling** — already exists (`useRequireAuth`,
+   shipped in M3) and needs no rework; the app shell consumes it as-is.
 
 ## Dependencies
 
-- M1 API client/auth store, M2 design bar (both complete)
-- No external infrastructure. Mailer ships with a console transport;
-  real provider keys are a launch-time env choice (per the launch
-  principle: env vars only).
+- M1 API client/auth store, M2 design bar, M3 auth/account UX and
+  `useCurrentUser`/`useRequireAuth` hooks (all complete)
+- No external infrastructure.
 
 ## Architecture decisions
 
-- Mailer: `apps/backend/src/mail/` mirroring the AI abstraction —
-  descriptor registry (console transport first; SMTP/provider adapters
-  later via config only). No vendor SDK imports outside the adapter.
-- Password reset: `PasswordResetToken` model (userId, tokenHash,
-  expiresAt, usedAt) — same hash-at-rest discipline as refresh tokens;
-  reset consumes the token and revokes all refresh tokens.
-- Workspace routes enforce membership on read from day one (the
-  tenancy groundwork M5 builds on).
-- Protected routes: client-side guard component/hook on top of the auth
-  store (cookie/middleware-based guarding moves in with M5 cookie auth).
-- Command palette: design-system `CommandPalette` built on Dialog +
-  keyboard handling (add `cmdk` only if hand-rolling proves inadequate).
+- Workspace routes enforce membership on read from day one (the tenancy
+  groundwork M5 builds on) — mirrors how M3's session/account routes
+  scope everything to the authenticated caller.
+- Command palette: design-system `CommandPalette` built on `Dialog` +
+  keyboard handling; Radix's focus trap/restore must not be bypassed.
+- Onboarding state: derive from "has a workspace" — add a dedicated field
+  only if that proves genuinely insufficient in practice.
 
 ## Files to create
 
-- Backend: `src/mail/*` (types, registry, console transport, facade),
-  `src/services/passwordReset.service.ts`, `src/routes/workspaces.ts`,
-  password-reset endpoints in `routes/auth.ts`, tests for all
-- Database: migration adding `PasswordResetToken`
-- Web: `src/app/auth/forgot-password/page.tsx`,
-  `src/app/auth/reset-password/page.tsx`,
-  `src/app/onboarding/page.tsx`,
-  `src/components/shell/*` (Sidebar, Topbar, WorkspaceSwitcher,
-  UserMenu, CommandPalette), `src/lib/api/workspaces.ts`,
-  `src/hooks/useRequireAuth.ts`, tests throughout
+- Backend: `src/routes/workspaces.ts`, `src/services/workspace.service.ts`
+  (slug generation/uniqueness), tests for both
+- Database: migration adding nothing new if `Workspace`/`WorkspaceMember`
+  already cover it (they do — schema exists, unused until now); verify
+  before assuming a migration is needed
+- Web: `src/app/onboarding/page.tsx` (+ step components),
+  `src/components/shell/{Sidebar,Topbar,WorkspaceSwitcher,UserMenu,
+  CommandPalette}.tsx`, `src/lib/api/workspaces.ts`, tests throughout
 
 ## Files to modify
 
-- `apps/web/src/app/auth/login/page.tsx`, `register/page.tsx` (rebuild
-  on api client), `dashboard/layout.tsx` (new shell),
-  `dashboard/page.tsx` (real user via React Query `users/me`)
-- `apps/backend/src/routes/auth.ts` (reset endpoints; later drop
-  `token` alias), `src/app.ts` (mount workspaces router)
-- `apps/web/package.json` (remove axios)
-- Docs at close: `docs/api.md` (new endpoints), `docs/database.md`
-  (new model), `docs/architecture.md`, `CURRENT_STATE.md`, this file
-
-## Database changes
-
-One additive migration: `PasswordResetToken` table (id, userId FK
-cascade, tokenHash unique, expiresAt, usedAt?, createdAt; index userId,
-index expiresAt). No changes to existing tables.
-
-## Backend changes
-
-As above: mailer abstraction, password-reset service + endpoints
-(`POST /api/auth/forgot-password` — always 200, no account
-enumeration; `POST /api/auth/reset-password`), workspace routes
-(`POST /api/workspaces`, `GET /api/workspaces`, `GET /api/workspaces/:id`
-— membership-checked), all zod-validated, all rate-limited by the
-existing global limiter.
-
-## Frontend changes
-
-As above. Design bar unchanged from M2: token-driven, dark-first,
-responsive, accessible (focus management in the palette and dialogs
-comes from Radix), skeleton/loading states everywhere data loads.
+- `apps/backend/src/app.ts` (mount workspaces router)
+- `apps/web/src/app/dashboard/layout.tsx` (replace placeholder shell with
+  the components above, keeping the M3 mobile-overlay logic)
+- `apps/web/src/app/auth/register/page.tsx` or its post-register redirect
+  (send to `/onboarding` instead of straight to `/dashboard` for a user
+  with no workspace yet)
+- Docs at close: `docs/api.md` (new workspace endpoints), `docs/database.md`
+  (workspace routes now live, if that changes any documented status),
+  `docs/architecture.md`, `CURRENT_STATE.md`, this file
 
 ## Testing requirements
 
-- Backend: reset-token lifecycle (issue/consume/expire/reuse-rejected,
-  refresh tokens revoked on reset, no-enumeration response shape),
-  workspace routes (create/list/get, membership enforcement, slug
-  collisions), mailer facade (console transport records mail in tests)
-- Web: rebuilt auth pages (submit success/error via mocked client),
-  useRequireAuth redirect behavior, workspace switcher render,
-  command palette open/navigate, onboarding step flow
-- Full workspace suite (312+) stays green; milestone gate applies
+- Backend: workspace routes (create/list/get, slug collisions, membership
+  enforcement — a non-member gets 404 not 403)
+- Web: onboarding step flow, workspace switcher render, command palette
+  open/navigate, shell renders correctly with the new workspace context
+- Full workspace suite (479+) stays green; milestone gate applies
 
 ## Security requirements
 
-- Reset tokens: cryptographically random, hashed at rest, single-use,
-  ≤1 h expiry; consuming one revokes all refresh tokens
-- Forgot-password never reveals whether an email exists
-- No mailer credentials in code; SecretsManager + catalog entry
 - Workspace reads/writes require membership — no cross-tenant leaks
+- No new secrets or credentials introduced by this milestone
 
 ## Acceptance criteria
 
-- Register → onboarding → workspace created → dashboard, and
-  login → dashboard, both work end-to-end against the real backend
-- Forgot/reset password works end-to-end with the console transport
-  (token visible in backend logs in dev)
-- ⌘K palette opens/navigates; sidebar/topbar responsive; protected
-  routes redirect correctly
-- Legacy raw-fetch auth code, `token` alias, and axios are gone
-- Browser-verified (screenshots, both themes, mobile + desktop)
+- Register → onboarding → workspace created → dashboard works end-to-end
+  against the real backend
+- ⌘K palette opens/navigates; sidebar/topbar responsive (building on the
+  M3 mobile-overlay fix, not regressing it); workspace switcher shows the
+  user's workspace(s)
+- Browser-verified (screenshots, both themes, mobile + desktop) — same
+  bar M3 was held to
 
 ## Definition of Done
 
-Acceptance criteria met and the milestone gate passed: lint,
-type-check, tests (CI=1 + DATABASE_URL), build green locally → commit →
-push → CI green → `docs/api.md`, `docs/database.md`,
+Acceptance criteria met and the milestone gate passed: lint, type-check,
+tests, build green locally → commit → push → CI green → `docs/api.md`,
 `docs/architecture.md`, `CURRENT_STATE.md`, and this file updated.
 
 ## Risks
 
-- **Backend surface creep** — only reset + workspaces routes; teams/
-  invitations/settings are M5.
-- **`token`-alias removal ordering** — remove only after both auth
-  pages are on the new client, in the same milestone, with tests
-  updated.
-- **Onboarding state** — track completion server-side via
-  UserPreferences (add a field only if genuinely needed; prefer
-  deriving from "has a workspace").
+- **Scope creep back into full M5 workspace features** (invitations,
+  roles beyond OWNER, settings) — out of scope here; this milestone only
+  needs create/list/get and OWNER-on-create.
 - **Command palette a11y** — must trap focus and restore it on close
   (Radix Dialog handles this; don't bypass it).
 
 ## Things that must not be changed
 
-`PROJECT_HANDOVER.md` §20 in full. Specifically: auth token invariants
-(hash-at-rest, rotation, pinned algorithm) extend to reset tokens; no
-vendor mail SDK outside the adapter; API envelope unchanged.
+`PROJECT_HANDOVER.md` §20 in full, plus everything M3 established:
+`useRequireAuth`/`useCurrentUser` hook contracts, the mobile sidebar
+overlay behavior, the API envelope, and auth token invariants
+(hash-at-rest, rotation, pinned algorithm) extending to the M3 reset/
+verification tokens.
 
 ## Estimated effort
 
-4–6 focused engineer-days (L–XL).
+2–3 focused engineer-days (M–L) — smaller than the original M3 estimate
+since the auth/account portion is already done.
 
 ## Next task after this one
 
-**M4 — Core product surfaces**: project management UI (real CRUD flows
-on existing routes), document editor, generation history, AI playground
+**M4 — Core product surfaces** (per `RELEASE_2_PLAN.md`'s original
+scope): project management UI (real CRUD flows on existing routes,
+now workspace-aware), document editor, generation history, AI playground
 (text/code) with model selector + provider management UI backed by a new
 `GET /api/ai/providers` endpoint, prompt library (new model + routes).
-Details will be written into this file when M3 closes.
+Details will be written into this file when M3.5 closes.

@@ -5,6 +5,7 @@ import {
   createApiResponse,
   ValidationException,
   UnauthorizedException,
+  NotFoundException,
   LockedException,
 } from '@synora/shared';
 import {
@@ -13,8 +14,21 @@ import {
   needsRehash,
   fakeVerifyPassword,
 } from '../services/password.service';
-import { issueTokens, rotateTokens, revokeRefreshToken } from '../services/token.service';
+import { issueTokens, rotateTokens, revokeRefreshToken, revokeAllUserTokens } from '../services/token.service';
 import { checkLockout, recordFailedLogin, clearLoginLockout } from '../services/lockout.service';
+import { issuePasswordResetToken, consumePasswordResetToken } from '../services/passwordReset.service';
+import {
+  issueEmailVerificationToken,
+  consumeEmailVerificationToken,
+} from '../services/emailVerification.service';
+import { listSessions, revokeSession, revokeAllSessions } from '../services/session.service';
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendPasswordChangedEmail,
+} from '../mail';
+import { logger } from '../utils/logger';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 
 const router: Router = Router();
 
@@ -27,6 +41,7 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
+  rememberMe: z.boolean().optional(),
 });
 
 const refreshSchema = z.object({
@@ -37,18 +52,30 @@ const logoutSchema = z.object({
   refreshToken: z.string().min(1),
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
+const verifyEmailSchema = z.object({
+  token: z.string().min(1),
+});
+
 interface AuthedUser {
   id: string;
   email: string;
   name: string | null;
+  emailVerified: boolean;
 }
 
-/**
- * Shape returned on register/login/refresh. `token` is a deprecated alias for
- * `accessToken`, kept only so the current (bearer-token) frontend keeps
- * working until the R2 cookie-auth migration; new clients should read
- * `accessToken` and `refreshToken`.
- */
+function toAuthedUser(user: { id: string; email: string; name: string | null; emailVerified: Date | null }): AuthedUser {
+  return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified !== null };
+}
+
 function authPayload(
   tokens: { accessToken: string; refreshToken: string },
   user?: AuthedUser
@@ -56,9 +83,29 @@ function authPayload(
   return {
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken,
-    token: tokens.accessToken,
     ...(user ? { user } : {}),
   };
+}
+
+/** Best-effort request metadata for the session/device list — never required for a request to succeed. */
+function deviceMetadata(req: { headers: { 'user-agent'?: string }; ip?: string }) {
+  return { userAgent: req.headers['user-agent'], ipAddress: req.ip };
+}
+
+/**
+ * Mail delivery is best-effort from the caller's point of view: a mailer
+ * outage must never fail registration, login, password reset, or account
+ * changes that already succeeded on the data they're supposed to reflect.
+ * Failures are logged for operational visibility instead.
+ */
+async function sendMailBestEffort(label: string, send: () => Promise<void>): Promise<void> {
+  try {
+    await send();
+  } catch (error) {
+    logger.warn(`[auth] ${label} email failed to send`, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 router.post('/register', async (req, res, next) => {
@@ -76,13 +123,17 @@ router.post('/register', async (req, res, next) => {
       data: { email, password: hashedPassword, name },
     });
 
-    const tokens = await issueTokens({ userId: user.id, email: user.email, role: user.role });
-
-    res.status(201).json(
-      createApiResponse(
-        authPayload(tokens, { id: user.id, email: user.email, name: user.name })
-      )
+    const tokens = await issueTokens(
+      { userId: user.id, email: user.email, role: user.role },
+      deviceMetadata(req)
     );
+
+    const verificationToken = await issueEmailVerificationToken(user.id);
+    await sendMailBestEffort('verification', () =>
+      sendVerificationEmail({ to: user.email, name: user.name, token: verificationToken })
+    );
+
+    res.status(201).json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
   }
@@ -90,7 +141,7 @@ router.post('/register', async (req, res, next) => {
 
 router.post('/login', async (req, res, next) => {
   try {
-    const { email, password } = loginSchema.parse(req.body);
+    const { email, password, rememberMe } = loginSchema.parse(req.body);
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.password) {
@@ -132,13 +183,12 @@ router.post('/login', async (req, res, next) => {
       },
     });
 
-    const tokens = await issueTokens({ userId: user.id, email: user.email, role: user.role });
-
-    res.json(
-      createApiResponse(
-        authPayload(tokens, { id: user.id, email: user.email, name: user.name })
-      )
+    const tokens = await issueTokens(
+      { userId: user.id, email: user.email, role: user.role },
+      { ...deviceMetadata(req), rememberMe }
     );
+
+    res.json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
   }
@@ -153,7 +203,7 @@ router.post('/refresh', async (req, res, next) => {
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
 
-    const tokens = await rotateTokens(refreshToken);
+    const tokens = await rotateTokens(refreshToken, deviceMetadata(req));
     if (!tokens) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
@@ -175,6 +225,136 @@ router.post('/logout', async (req, res, next) => {
     const { refreshToken } = logoutSchema.parse(req.body);
     await revokeRefreshToken(refreshToken);
     res.json(createApiResponse({ message: 'Logged out successfully' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Never reveals whether an email is registered: the response shape and
+ * status code are identical whether or not a matching account exists.
+ */
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { email } = forgotPasswordSchema.parse(req.body);
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && user.password) {
+      const token = await issuePasswordResetToken(user.id);
+      await sendMailBestEffort('password-reset', () =>
+        sendPasswordResetEmail({ to: user.email, name: user.name, token })
+      );
+    }
+
+    res.json(
+      createApiResponse({
+        message: 'If an account exists for that email, a password reset link has been sent.',
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Consuming a valid reset token revokes every active session — the reset
+ * link is trusted to represent regained account control, and every other
+ * live token (potentially the attacker's, if this reset was defensive)
+ * must not survive it.
+ */
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { token, newPassword } = resetPasswordSchema.parse(req.body);
+
+    const consumed = await consumePasswordResetToken(token);
+    if (!consumed) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    const user = await prisma.user.update({
+      where: { id: consumed.userId },
+      data: { password: hashedPassword, failedLoginAttempts: 0, lockedUntil: null },
+    });
+
+    await revokeAllUserTokens(user.id);
+    await sendMailBestEffort('password-changed', () =>
+      sendPasswordChangedEmail({ to: user.email, name: user.name })
+    );
+
+    res.json(createApiResponse({ message: 'Password reset successfully. Please sign in.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/verify-email', async (req, res, next) => {
+  try {
+    const { token } = verifyEmailSchema.parse(req.body);
+
+    const consumed = await consumeEmailVerificationToken(token);
+    if (!consumed) {
+      throw new UnauthorizedException('Invalid or expired verification token');
+    }
+
+    res.json(createApiResponse({ message: 'Email verified successfully.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Requires auth: resend to whoever is asking, never to an arbitrary email address. */
+router.post('/resend-verification', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+      throw new NotFoundException('User');
+    }
+
+    if (user.emailVerified) {
+      res.json(createApiResponse({ message: 'Email is already verified.' }));
+      return;
+    }
+
+    const token = await issueEmailVerificationToken(user.id);
+    await sendMailBestEffort('verification', () =>
+      sendVerificationEmail({ to: user.email, name: user.name, token })
+    );
+
+    res.json(createApiResponse({ message: 'Verification email sent.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Active sessions/devices for the signed-in user, most recently used first. */
+router.get('/sessions', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const sessions = await listSessions(req.userId!, req.sessionId);
+    res.json(createApiResponse(sessions));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** Revoke a single session — must belong to the caller. */
+router.delete('/sessions/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const revoked = await revokeSession(req.userId!, req.params.id);
+    if (!revoked) {
+      throw new NotFoundException('Session');
+    }
+    res.json(createApiResponse({ message: 'Session revoked.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/** "Log out everywhere" — revokes every active session, including the caller's own. */
+router.post('/logout-all', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const count = await revokeAllSessions(req.userId!);
+    res.json(createApiResponse({ revokedCount: count }));
   } catch (error) {
     next(error);
   }

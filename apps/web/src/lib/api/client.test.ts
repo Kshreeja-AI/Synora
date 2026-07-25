@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { apiRequest, ApiError } from './client';
+import { apiRequest, api, ApiError } from './client';
 import { setTokens, getAccessToken, getRefreshToken, clearTokens } from '../auth/token-storage';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -116,5 +116,20 @@ describe('apiRequest', () => {
       status: 401,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends FormData bodies as-is, without a manually set Content-Type', async () => {
+    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' });
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: { ok: true } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const formData = new FormData();
+    formData.append('avatar', new Blob(['fake'], { type: 'image/png' }), 'avatar.png');
+
+    await api.upload('/api/users/me/avatar', formData);
+
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(requestInit.body).toBe(formData);
+    expect((requestInit.headers as Record<string, string>)['Content-Type']).toBeUndefined();
   });
 });

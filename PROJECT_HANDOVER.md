@@ -1,8 +1,11 @@
 # Synora — Project Handover
 
-**As of:** 2026-07-25 — Release 2 in progress, **Milestone 1 complete**
-(design system + frontend infrastructure), branch
-`claude/synora-ai-platform-h5q0k2` @ `337641c`, CI green.
+**As of:** 2026-07-25 — Release 2 in progress, **Milestones 1–3
+complete** (design system + frontend infrastructure; marketing site;
+auth/account UX rebuild — see `CURRENT_STATE.md` for the M3 scope
+change), branch `claude/synora-ai-platform-h5q0k2`, local gate
+(lint/typecheck/test/build across all 5 workspace packages) green as of
+this snapshot — verify CI on push.
 
 Written for a senior engineer (or CTO) joining with zero prior context.
 It covers vision, what exists, how it's built, how to run and deploy it,
@@ -66,33 +69,43 @@ synora/
 │   ├── backend/                # Express API
 │   │   ├── src/
 │   │   │   ├── ai/            # Provider-agnostic AI abstraction (10 providers)
+│   │   │   ├── mail/           # Provider-agnostic mailer (console/SMTP) — M3
+│   │   │   ├── storage/        # Provider-agnostic file storage (local) — M3
 │   │   │   ├── config/        # Typed config (stage-aware defaults + env, zod)
 │   │   │   ├── db/            # Prisma singleton wrapper
 │   │   │   ├── middleware/    # errorHandler, requestLogger, auth
 │   │   │   ├── routes/        # auth, users, projects, documents, images, ai
 │   │   │   ├── secrets/       # SecretsManager + sources + audit log + registry
-│   │   │   ├── services/      # password, token, lockout, mfa/* (not wired)
-│   │   │   ├── utils/         # logger, etc.
+│   │   │   ├── services/      # password, token, lockout, passwordReset,
+│   │   │   │                  # emailVerification, session, mfa/* (not wired)
+│   │   │   ├── utils/         # logger, hashToken, etc.
 │   │   │   ├── app.ts         # Express app assembly
 │   │   │   └── index.ts       # Entry: secrets→config→listen
 │   │   └── tests/
 │   └── web/                    # Next.js app (App Router)
+│       ├── vitest.setup.ts     # jest-dom + ResizeObserver polyfill — M3
 │       ├── postcss.config.js   # tailwindcss + autoprefixer (added M1 — Tailwind
 │       │                       # never compiled before this existed)
 │       ├── tailwind.config.ts  # consumes @synora/design-system/tailwind-preset
 │       └── src/
 │           ├── app/            # layout (fonts/theme/providers), page, providers.tsx,
-│           │                   # auth/{login,register}, dashboard
-│           ├── lib/api/        # client.ts, auth.ts, types.ts (+tests)
+│           │                   # auth/{login,register,forgot-password,
+│           │                   # reset-password,verify-email}, dashboard,
+│           │                   # dashboard/settings/{profile,account,sessions}
+│           ├── components/auth/ # PasswordInput (shared visibility toggle) — M3
+│           ├── hooks/          # useCurrentUser, useRequireAuth — M3
+│           ├── lib/api/        # client.ts, auth.ts, account.ts, sessions.ts,
+│           │                   # types.ts (+tests)
 │           ├── lib/auth/       # token-storage.ts (+tests)
 │           └── stores/         # auth-store.ts (+tests)
 ├── packages/
-│   ├── database/               # Prisma schema (18 models) + 4 migrations
+│   ├── database/               # Prisma schema (20 models) + 6 migrations
 │   ├── shared/                 # ApiException hierarchy, createApiResponse, types
-│   └── design-system/          # M1: tokens + preset + 17 components + 16 tests
+│   └── design-system/          # tokens + preset + 18 components + 20 tests
 │       ├── src/components/     # Button, Input, Textarea, Label, Card, Badge,
 │       │                       # Skeleton, Spinner, Separator, Kbd, Dialog, Tabs,
-│       │                       # Switch, Tooltip, Avatar, DropdownMenu, Toaster
+│       │                       # Switch, Checkbox (M3), Tooltip, Avatar,
+│       │                       # DropdownMenu, Toaster
 │       ├── src/lib/cn.ts       # clsx + tailwind-merge
 │       ├── src/styles/tokens.css
 │       └── tailwind-preset.cjs (+ .d.ts)
@@ -152,17 +165,65 @@ production image, docs consolidation.
 - Next 15 config cleanup (`swcMinify`/`appDir` removed, `remotePatterns`)
 - `RELEASE_2_PLAN.md` rewritten for the expanded full-platform scope
 
+**Release 2 — M2: Marketing site (complete):** `(marketing)` route group
+with glass navbar + footer; animated landing page; pricing page + FAQ;
+six SSG feature pages from one template; changelog timeline — all
+content-driven (`apps/web/src/content/`).
+
+**Release 2 — M3: Auth/account UX rebuild (complete, scope narrowed by
+founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
+- Every auth screen rebuilt on the design system + typed API client:
+  login (remember-me, password visibility toggle, redirect-back-to-
+  `next`), register, forgot-password, reset-password, verify-email — no
+  raw `fetch`/`localStorage['token']` remains anywhere in the frontend;
+  the deprecated `token` response alias was removed from the backend
+- Provider-agnostic mailer (`src/mail/`: console default, real SMTP
+  transport via `nodemailer`, never auto-detected) with 4 templates
+- Provider-agnostic storage (`src/storage/`: local-filesystem provider,
+  served via `express.static`) — powers avatar upload
+- Password reset (`PasswordResetToken`) and email verification
+  (`EmailVerificationToken`) — hash-at-rest, single-use, same discipline
+  as refresh tokens
+- Session management: every `RefreshToken` row now carries device
+  metadata and doubles as a listable/revocable session
+  (`GET/DELETE /api/auth/sessions`, `POST /api/auth/logout-all`); the
+  access JWT carries a `sid` claim identifying "this device"
+- Account/profile settings: `/dashboard/settings/{profile,account,
+  sessions}` — profile editing, avatar upload/removal, password change,
+  notification preferences, password-confirmed account deletion
+  (soft-delete, frees the email for reuse)
+- `useRequireAuth`/`useCurrentUser` hooks replace every page's ad-hoc
+  auth-checking logic; `axios` (unused) removed from web dependencies
+- **Fixed a pre-existing, unrelated bug**: `@synora/shared` and
+  `@synora/database` were missing `"type": "module"`, which broke
+  `pnpm --filter @synora/backend run dev` (`tsx watch`) — never surfaced
+  before because tests/builds use bundlers (tsup, Next) that don't hit
+  Node's native ESM loader the way `tsx watch` does. `pnpm dev` (backend
+  and web) now verified working end-to-end.
+- Full golden path browser-verified (headless Chromium, both themes,
+  desktop + mobile) against the real backend: register → dashboard →
+  profile edit → avatar upload → password change → session list →
+  logout → login with new password + remember-me → unauthenticated
+  redirect guard → forgot-password. Also fixed a real mobile bug found
+  during that verification: the dashboard sidebar never collapsed below
+  `md`, squeezing all content into a sliver on a phone-width viewport —
+  now a proper fixed-overlay drawer with a backdrop, closing on
+  navigation or backdrop click.
+- Onboarding wizard, workspace creation, and app shell (sidebar/topbar/
+  command palette) — all originally scoped into M3 by
+  `RELEASE_2_PLAN.md` — were deferred to the task in `NEXT_TASK.md`.
+
 ## 6. Current branch / PR / CI / Git status
 
 - **Branch**: `claude/synora-ai-platform-h5q0k2` (all work happens here)
-- **HEAD**: `337641c` — "fix(design-system): add @vitest/coverage-v8 for CI test:coverage"
 - **PR**: #31 → base `SYNORA`, **open, not merged**. Note: `SYNORA`'s tip
   is still `7bd7f5d` (a squash-merge of PR #30, an earlier parallel
   implementation); `f80cebe` on this branch merged that in with all
   conflicts resolved in favor of the verified implementation. All
   Release 1 + Release 2 work flows through PR #31.
-- **CI**: green on `337641c` — run 30145780034: `test` ✅ `security` ✅
-  `docker` ✅
+- **CI**: verify on push for the current HEAD (`git log -1`); local gate
+  (lint + typecheck + test + build, all 5 workspace packages) is green as
+  of the M3 close.
 - **Working tree**: clean at handover time (verify with `git status`)
 - Session git credentials are scoped to push only this branch; the
   `v1.0.0` tag + GitHub Release for Release 1 still need someone with
@@ -170,33 +231,43 @@ production image, docs consolidation.
 
 ## 7. Database models
 
-18 models in `packages/database/prisma/schema.prisma` (full column docs:
+20 models in `packages/database/prisma/schema.prisma` (full column docs:
 `docs/database.md`):
 
 - **Identity**: `User` (role USER/ADMIN/MODERATOR, status, lockout
   fields), `Account` (OAuth placeholder, unused), `UserProfile`,
   `UserPreferences`
-- **Workspaces** (schema ready, no routes yet — M5): `Workspace`,
-  `WorkspaceMember` (OWNER/ADMIN/EDITOR/MEMBER/VIEWER),
-  `WorkspaceInvitation`, `ApiKey`
+- **Workspaces** (schema ready, no routes yet — deferred out of M3, see
+  `NEXT_TASK.md`): `Workspace`, `WorkspaceMember`
+  (OWNER/ADMIN/EDITOR/MEMBER/VIEWER), `WorkspaceInvitation`, `ApiKey`
 - **Content**: `Project`, `Document`, `GeneratedImage`, `GeneratedVideo`,
   `GeneratedAudio` (media rows only written by placeholder routes today)
-- **Auth**: `RefreshToken` (SHA-256 hash only, revocation, expiry),
-  `Session`/`VerificationToken` (NextAuth placeholders, unused)
+- **Auth**: `RefreshToken` (SHA-256 hash only, revocation, expiry, and —
+  since M3 — device metadata doubling as the user-facing session list),
+  `PasswordResetToken`, `EmailVerificationToken` (both M3, same
+  hash-at-rest/single-use discipline), `Session`/`VerificationToken`
+  (NextAuth placeholders, unused)
 - **Audit**: `ActivityLog`, `MFAAuditLog` (soft user reference by design)
 
-Migrations applied (4): `init`, `add_refresh_token`,
-`add_login_lockout`, `drop_redundant_unique_indexes`. No seed script.
+Migrations applied (6): `init`, `add_refresh_token`,
+`add_login_lockout`, `drop_redundant_unique_indexes`,
+`add_password_reset_token`,
+`add_email_verification_and_session_metadata`. No seed script.
 
 ## 8. Authentication flow
 
-Register/login → `{ accessToken (15m JWT), refreshToken (7d opaque,
-rotating), user }` (+ deprecated `token` alias until M3 rewires the
-legacy pages). Authenticated calls use `Authorization: Bearer`. Refresh
-rotates and revokes single-use; reuse is detected. Logout revokes.
-Lockout: 5 fails → 15 min (config-driven), DB-backed. The M1 API client
-automates the 401 → refresh → retry cycle single-flight. Bearer-not-
-cookies is deliberate (CSRF lands with the cookie migration, M5).
+Register/login → `{ accessToken (15m JWT, carries a `sid` session
+claim), refreshToken (7d opaque, rotating — 30d with `rememberMe`),
+user }`. Authenticated calls use `Authorization: Bearer`. Refresh rotates
+and revokes single-use; reuse is detected. Logout revokes one session;
+`POST /api/auth/logout-all` (M3) revokes every session. Lockout: 5 fails
+→ 15 min (config-driven), DB-backed. Forgot/reset-password
+(`PasswordResetToken`, 1h expiry, revokes every session on consumption)
+and email verification (`EmailVerificationToken`, 24h expiry) are real,
+hash-at-rest, single-use flows (M3). The API client automates the 401 →
+refresh → retry cycle single-flight. Bearer-not-cookies is deliberate
+(CSRF lands with the cookie migration, M5). The deprecated `token`
+response alias was removed in M3.
 Detail: `docs/api.md`, `docs/production/R1-c_REFRESH_TOKENS.md`.
 
 ## 9. AI provider architecture
@@ -223,7 +294,15 @@ examples: `docs/api.md`.
 | `/health` | GET | — | liveness (Docker HEALTHCHECK, CI smoke test) |
 | `/ready` | GET | — | readiness, probes DB |
 | `/api/auth/register`, `/login`, `/refresh`, `/logout` | POST | — | see §8 |
-| `/api/users/me`, `/api/users/:id` | GET | Bearer | |
+| `/api/auth/forgot-password`, `/reset-password`, `/verify-email` | POST | — | M3, see §8 |
+| `/api/auth/resend-verification`, `/logout-all` | POST | Bearer | M3 |
+| `/api/auth/sessions`, `/sessions/:id` | GET/DELETE | Bearer | M3 — list/revoke sessions |
+| `/api/users/me` | GET/PATCH | Bearer | M3: PATCH updates name/profile fields |
+| `/api/users/me/avatar` | POST/DELETE | Bearer | M3 — multipart upload/removal |
+| `/api/users/me/password` | POST | Bearer | M3 — change password |
+| `/api/users/me/preferences` | GET/PATCH | Bearer | M3 — notification preferences |
+| `/api/users/me` | DELETE | Bearer | M3 — password-confirmed account deletion |
+| `/api/users/:id` | GET | — | public profile |
 | `/api/projects` `/`, `/:id` | GET/POST/GET | Bearer | scoped by userId |
 | `/api/documents` `/`, `/:id` | GET/POST/GET | Bearer | scoped by userId |
 | `/api/images` `/`, `/generate`, `/:id` | GET/POST/GET | Bearer | `/generate` is a **placeholder** (hardcoded URL, no provider call) until M6 |
@@ -234,11 +313,16 @@ examples: `docs/api.md`.
 See `docs/architecture.md` §Frontend and §Design System for the full
 description. Key points: dark-first token theming (`data-theme`
 attribute, next-themes), shared Tailwind preset, typed API client with
-automatic refresh rotation, TanStack Query/Zustand wired, 4 pages today
-(landing placeholder, login, register, dashboard) — the login/register/
-dashboard pages still run their original raw-fetch logic and are rebuilt
-on the new client in M3. The design system is the only sanctioned way to
-build UI from M2 onward; do not hand-roll one-off styled controls.
+automatic refresh rotation and multipart upload support, TanStack Query/
+Zustand wired, `useCurrentUser`/`useRequireAuth` hooks. 15 routes as of
+M3: marketing pages, `/auth/{login,register,forgot-password,
+reset-password,verify-email}`, `/dashboard`,
+`/dashboard/settings/{profile,account,sessions}` — no page reads
+`localStorage` directly or hand-rolls its own token logic; the M3 gate
+required removing every remaining raw-fetch consumer before the
+deprecated `token` alias could be dropped from the backend. The design
+system is the only sanctioned way to build UI; do not hand-roll one-off
+styled controls.
 
 ## 12. Current deployment strategy
 
@@ -274,30 +358,45 @@ Authoritative list: `.env.example` (root + per-app) and
   `AZURE_OPENAI_API_KEY`(+endpoint/deployment), AWS pair +
   `BEDROCK_REGION`, `OLLAMA_BASE_URL`; `AI_PROVIDER` to force one
 - **Frontend**: `NEXT_PUBLIC_API_URL`
+- **Mail (M3)**: `MAIL_TRANSPORT` (default `console`), `MAIL_FROM_ADDRESS`,
+  `MAIL_FROM_NAME`, `SMTP_HOST`/`SMTP_PORT`/`SMTP_SECURE` + secrets
+  `SMTP_USER`/`SMTP_PASSWORD` (only required if `MAIL_TRANSPORT=smtp`)
+- **Storage (M3)**: `STORAGE_PROVIDER` (default `local`),
+  `STORAGE_LOCAL_DIRECTORY`, `STORAGE_PUBLIC_BASE_PATH`,
+  `STORAGE_MAX_UPLOAD_BYTES`
 - Secret catalog with owners/rotation: `apps/backend/src/secrets/registry.ts`
 
 ## 14. Security architecture
 
 Layered: helmet → CORS allowlist → IP rate limiting → zod validation →
-pinned-algorithm JWT → per-account lockout → Argon2id (+bcrypt
-migration) → hashed single-use refresh tokens with reuse detection →
-Prisma parameterized queries → error handler hiding internals → audited
-secret reads → CI security gates (audit high+, gitleaks, Snyk
-best-effort) → non-root Docker, no `.env` in layers. Deliberately not
-yet: MFA (M5), CSRF/cookies (M5), Redis-shared limits (M6). Full doc:
-`docs/security.md`.
+pinned-algorithm JWT (now carrying a `sid` session claim) → per-account
+lockout → Argon2id (+bcrypt migration) → hashed single-use refresh
+tokens with reuse detection → hashed single-use password-reset/
+email-verification tokens (M3, same discipline) → Prisma parameterized
+queries → error handler hiding internals → audited secret reads → CI
+security gates (audit high+, gitleaks, Snyk best-effort) → non-root
+Docker, no `.env` in layers. Deliberately not yet: MFA (M5), CSRF/cookies
+(M5), Redis-shared limits (M6). Full doc: `docs/security.md`.
 
 ## 15. Testing status
 
-- **Backend**: 273 tests (vitest + supertest, real Postgres)
-- **Web**: 14 tests (API client incl. 401-refresh-retry and
-  single-flight, token storage, auth store, page smoke)
-- **Design system**: 16 tests (components + cn)
-- **Total: 303, all green in CI** on `337641c`
+- **Backend**: 361 tests (vitest + supertest, real Postgres) — includes
+  M3's mail (console transport log, SMTP transport mocked, registry/
+  resolver), storage (local provider against a real temp dir), password
+  reset, email verification, session service, and every new/extended
+  auth+users route
+- **Web**: 98 tests — API client (incl. 401-refresh-retry, single-flight,
+  multipart upload), token storage, auth store, `useCurrentUser`/
+  `useRequireAuth`, every auth page, dashboard shell (incl. mobile
+  sidebar overlay), every settings page
+- **Design system**: 20 tests (components + cn, incl. M3's Checkbox)
+- **Total: 479, green locally** — verify CI on push
 - E2E (Playwright): none yet — M9 (R2-h). Coverage uploaded, not gated.
 - Local run needs `DATABASE_URL` exported (CI value:
   `postgresql://synora:synora@localhost:5432/synora`) and `CI=1` to
-  stop vitest watch mode.
+  stop vitest watch mode. The web suite additionally needs
+  `apps/web/vitest.setup.ts`'s `ResizeObserver` polyfill (jsdom doesn't
+  implement it; Radix Checkbox/Switch construct one on mount).
 
 ## 16. Documentation hierarchy
 
@@ -317,31 +416,44 @@ roadmap + release docs.
   `services/mfa/`) — M5
 - No CSRF (bearer tokens make it moot until cookie auth) — M5
 - Single-instance only (DB-backed lockout/rate-limit state) — M6
-- Media generation is a placeholder route; no queue, no object storage — M6
+- Media generation is a placeholder route; no queue, no object storage
+  yet — M6. The M3 storage abstraction (`src/storage/`) is a real,
+  working building block for this, not a placeholder — it's already used
+  for avatar uploads.
 - Manual deploys; no CD, no `/metrics`, no alerting — M9
-- No workspace-tenancy route enforcement (schema only) — M5/R3
-- Legacy pages (login/register/dashboard) still on raw fetch +
-  `localStorage['token']` — rebuilt in M3
-- `next-auth` + `axios` declared but unused (axios removal is queued for
-  M3 when the last raw-fetch pages die)
+- No workspace-tenancy route enforcement — schema exists but has no
+  routes at all yet (onboarding + workspace creation deferred out of M3,
+  see `NEXT_TASK.md`)
+- Mailer defaults to the console transport everywhere (logs, doesn't
+  deliver) until `MAIL_TRANSPORT=smtp` + SMTP credentials are configured
+  — a real provider is a launch-time env choice, per the launch principle
+- `next-auth` declared but unused (reserved for a possible future OAuth
+  flow); `axios` was removed in M3
+- No onboarding wizard, workspace creation UI, or app shell
+  (sidebar/topbar/command palette) yet — deferred from M3's original
+  scope, see `NEXT_TASK.md`
 - `infrastructure/k8s/` is an unused placeholder — R4
 
 ## 18. Production readiness
 
 Backend is production-ready **for a single-instance, text/code-only
-launch** (that was Release 1's bar — see `PRODUCTION_READINESS_AUDIT.md`).
-The customer-facing platform is **not** launch-ready: marketing site,
-real auth UX, billing, teams, media generation, admin, observability all
-arrive across M2–M9. Track precise per-area status in
+launch** (that was Release 1's bar — see `PRODUCTION_READINESS_AUDIT.md`),
+and the customer-facing auth/account surface (real auth screens, email
+verification, password reset, session management, profile/account
+settings, avatar upload) reached that same bar in M3. The full
+customer-facing platform is **not yet** launch-ready: onboarding/
+workspace creation/app shell, billing, teams, media generation, admin,
+observability remain ahead. Track precise per-area status in
 `CURRENT_STATE.md`.
 
 ## 19. Exact next task
 
-**M2 — Marketing site.** Always read `NEXT_TASK.md` (single source of
-truth for the next task); it currently specifies M2 in full: premium
-animated landing page, pricing page, feature pages, changelog, built
-exclusively from the design system, with the milestone gate
-(lint/typecheck/test/build → commit → push → green CI) before M3.
+**M3.5 — Onboarding, workspace creation, app shell.** Always read
+`NEXT_TASK.md` (single source of truth for the next task); it currently
+specifies this in full — the three deliverables `RELEASE_2_PLAN.md`
+originally scoped into M3 but the founder deferred on 2026-07-25 (see
+`CURRENT_STATE.md`), with the milestone gate
+(lint/typecheck/test/build → commit → push → green CI) before M4.
 
 ## 20. Things that must never be changed
 
@@ -352,7 +464,14 @@ exclusively from the design system, with the milestone gate
 3. **Secrets discipline**: credentials are read only via SecretsManager;
    never from `process.env` at call sites; never logged.
 4. **Auth invariants**: refresh tokens stored hashed only; single-use
-   rotation with reuse detection; JWT algorithm stays pinned.
+   rotation with reuse detection; JWT algorithm stays pinned. Extends to
+   password-reset and email-verification tokens (M3): hashed at rest,
+   single-use, short expiry.
+4a. **Mailer/storage provider-agnosticism** (M3): no route or service may
+   import a mail SDK (`nodemailer`) or storage SDK outside their one
+   adapter file under `apps/backend/src/mail/`/`src/storage/`; transport/
+   provider selection is config-only (`MAIL_TRANSPORT`/
+   `STORAGE_PROVIDER`), never auto-detected from credential presence.
 5. **Dockerfile load-bearing decisions**: no `pnpm prune --prod`;
    explicit OpenSSL; non-root user; `0.0.0.0` bind; `.env*` excluded.
 6. **CI gates stay blocking** (test, security, docker smoke test) — never
@@ -382,17 +501,22 @@ Consolidated with rationale in `docs/architecture.md` §"Architectural
 Decisions" — monorepo, REST-first, Prisma, custom JWT over NextAuth,
 bearer-now/cookies-later, CSS-variable tokens + shared preset, Radix
 primitives, Geist-via-npm (no build-time font fetch), dist-consumed
-design system, config/secrets separation, sync-text/async-media split.
+design system, config/secrets separation, sync-text/async-media split,
+mailer/storage as descriptor-registry abstractions mirroring the AI
+provider pattern (M3).
 
 ## 23. Release roadmap / future roadmap
 
 - **R1** ✅ launchable core (frozen: `RELEASE_1_FINAL.md`)
-- **R2** ▶ complete customer-facing platform — 9 milestones in
-  `RELEASE_2_PLAN.md`: M1 ✅ foundation; M2 marketing site; M3 auth
+- **R2** ▶ complete customer-facing platform. `RELEASE_2_PLAN.md`'s
+  original 9-milestone plan was M1 foundation; M2 marketing site; M3 auth
   UX/onboarding/app shell; M4 projects/playground/prompt library; M5
   teams/settings/API keys + MFA + CSRF; M6 Redis/queue/media/assets; M7
   billing/usage/notifications; M8 admin/support/docs-site/blog; M9
-  E2E/CD/observability/closeout
+  E2E/CD/observability/closeout. **Actual status**: M1 ✅, M2 ✅, M3 ✅
+  (narrowed to auth/account UX only — see `CURRENT_STATE.md`), with its
+  onboarding/workspace/app-shell deliverables now the M3.5 task in
+  `NEXT_TASK.md`, ahead of M4.
 - **R3** enterprise: workspace tenancy enforcement, SSO, deeper audit,
   agent/memory candidates
 - **R4** hyperscale: Kubernetes, multi-region, read replicas,

@@ -31,6 +31,7 @@ export {
 } from './components/Dialog';
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/Tabs';
 export { Switch } from './components/Switch';
+export { Checkbox } from './components/Checkbox';
 export {
   Tooltip,
   TooltipTrigger,

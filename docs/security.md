@@ -33,19 +33,39 @@ class of vulnerability). Payload:
 
 ### Refresh tokens
 
-Opaque, 7-day, single-use, rotating refresh tokens — not JWTs. Only a
-SHA-256 hash is stored (`RefreshToken.tokenHash`); a database read alone
-cannot mint a session. Presenting a refresh token revokes it and issues a
-new pair atomically, so reuse of an already-consumed token is detected
-and rejected. Logout revokes the presented refresh token; this is what
-makes "log out" actually end a session, since the short-lived access
-token can't be individually revoked but becomes useless once no refresh
-token can renew it. Full detail: `docs/production/R1-c_REFRESH_TOKENS.md`.
+Opaque, 7-day (30-day if the login requested `rememberMe`), single-use,
+rotating refresh tokens — not JWTs. Only a SHA-256 hash is stored
+(`RefreshToken.tokenHash`); a database read alone cannot mint a session.
+Presenting a refresh token revokes it and issues a new pair atomically,
+so reuse of an already-consumed token is detected and rejected. Logout
+revokes the presented refresh token; `POST /api/auth/logout-all`
+(Release 2 M3) revokes every refresh token for the account at once. This
+is what makes "log out" actually end a session, since the short-lived
+access token can't be individually revoked but becomes useless once no
+refresh token can renew it. The access token carries a `sid` claim (the
+backing `RefreshToken.id`) so a signed-in user can identify "this device"
+in their own session list without an extra round trip. Full detail:
+`docs/production/R1-c_REFRESH_TOKENS.md`, `docs/api.md`#sessions.
 
 There is no cookie-based session (`Session` model in the schema exists
 for a possible future NextAuth-style flow but is not used by the current
 auth system — don't follow it as a reference for how sessions actually
 work today).
+
+### Password-reset and email-verification tokens (Release 2 M3)
+
+`PasswordResetToken` and `EmailVerificationToken` follow the exact same
+invariants as refresh tokens: opaque, cryptographically random,
+SHA-256-hashed at rest (raw value only ever appears in the email link),
+single-use (`usedAt`), short-lived (1h reset / 24h verification,
+config-driven). Requesting a new one invalidates any previous
+still-unused token for that user — only the most recently requested link
+works. **Consuming a reset token revokes every active session for the
+account** — the reset is trusted to represent regained control, and any
+other live token (potentially an attacker's, if the reset is defensive)
+must not survive it. `POST /api/auth/forgot-password` never reveals
+whether the email exists (identical response either way — same
+enumeration-resistance principle as register/login below).
 
 ### Password hashing
 
@@ -210,6 +230,28 @@ real secret).
 (`docs/security/SECRET_MANAGEMENT.md`), which audit-logs every read with
 an actor tag — never logged in plaintext.
 
+## Account deletion (Release 2 M3)
+
+`DELETE /api/users/me` is password-confirmed and soft-deletes: the row is
+kept (`status: DELETED`, preserving referential integrity for owned
+projects/documents/activity), every session is revoked, the email is
+mangled to `deleted-<id>@deleted.synora.internal` so it's immediately
+free for reuse (by anyone, including the same person re-registering), and
+a confirmation email goes to the original address. A deleted account's
+mangled record has `password: null`, so login/refresh both reject it the
+same way an OAuth-only account without a password would.
+
+## Provider-agnostic mailer and storage (Release 2 M3)
+
+Both new subsystems (`src/mail/`, `src/storage/` — see
+`docs/architecture.md`) follow the same security posture as the AI
+abstraction: no vendor SDK import outside the one adapter file, real
+credentials (`SMTP_USER`/`SMTP_PASSWORD`) read only through
+SecretsManager and cataloged in `secrets/registry.ts`, never logged.
+Avatar uploads are content-type-allowlisted (PNG/JPEG/WEBP/GIF) and
+size-capped (`STORAGE_MAX_UPLOAD_BYTES`, default 5MB) before ever
+reaching the storage provider.
+
 ## API keys and audit logging — reserved, not yet wired
 
 The `ApiKey` model (workspace-scoped keys) and `ActivityLog` model
@@ -241,6 +283,10 @@ assuming it's covered.
 - [x] JWT algorithm pinned (`HS256` enforced at verification)
 - [x] Blocking CI gates: `pnpm audit --prod --audit-level=high`, gitleaks
 - [x] Database backups: satisfied by choosing a managed Postgres provider with automated backups/PITR (a deployment requirement, not app code — see `PROJECT_HANDOVER.md` §10)
+- [x] Password reset revokes every session for the account (Release 2 M3)
+- [x] "Log out everywhere" — revoke all active sessions on demand (Release 2 M3)
+- [x] Account deletion is password-confirmed and revokes every session (Release 2 M3)
+- [x] Avatar uploads are content-type-allowlisted and size-capped (Release 2 M3)
 
 ### Not yet implemented (tracked, not accidental)
 - [ ] MFA (`recover/mfa` branch exists, needs rebase — R2-a)
@@ -261,4 +307,4 @@ For security issues, please email: security@synora.ai
 
 ---
 
-**Last Updated**: 2026-07-23 (Release 1)
+**Last Updated**: 2026-07-25 (Release 2, Milestone 3)
