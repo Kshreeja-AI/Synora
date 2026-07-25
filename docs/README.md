@@ -33,6 +33,10 @@ supporting reference material those two documents point into.
 ## Root-level documents this folder supports
 
 - `PROJECT_HANDOVER.md` — start here, zero-context entry point.
+- `CURRENT_STATE.md` — exact point-in-time state of the platform,
+  refreshed at the end of every milestone.
+- `NEXT_TASK.md` — the single next development task (always current;
+  the source of truth for what to work on next).
 - `RELEASE_1_FINAL.md` — the authoritative Release 1 snapshot: features,
   API summary, database summary, deployment, environment variables,
   CI/CD, Docker, security, limitations, known issues, Release 2 starting
