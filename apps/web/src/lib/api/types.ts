@@ -208,3 +208,95 @@ export interface NotificationsResponse {
   notifications: NotificationSummary[];
   unreadCount: number;
 }
+
+export type PlanInterval = 'MONTH' | 'YEAR';
+export type SubscriptionStatus = 'ACTIVE' | 'PAST_DUE' | 'CANCELED' | 'TRIAL';
+export type InvoiceStatus = 'DRAFT' | 'OPEN' | 'PAID' | 'VOID' | 'UNCOLLECTIBLE';
+
+export interface Plan {
+  id: string;
+  key: string;
+  name: string;
+  interval: PlanInterval;
+  priceCents: number;
+  creditsPerInterval: number;
+  trialDays: number | null;
+  features: Record<string, unknown>;
+  sortOrder: number;
+  status: 'ACTIVE' | 'ARCHIVED';
+  isDefault: boolean;
+}
+
+export interface Subscription {
+  id: string;
+  workspaceId: string;
+  planId: string;
+  plan: Plan;
+  status: SubscriptionStatus;
+  externalSubscriptionId: string | null;
+  externalCustomerId: string | null;
+  provider: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  cancelAtPeriodEnd: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PaymentMethod {
+  id: string;
+  subscriptionId: string | null;
+  workspaceId: string;
+  externalPaymentMethodId: string;
+  type: 'CARD' | 'OTHER';
+  brand: string | null;
+  last4: string | null;
+  expiryMonth: number | null;
+  expiryYear: number | null;
+  isDefault: boolean;
+  createdAt: string;
+}
+
+export interface Invoice {
+  id: string;
+  subscriptionId: string | null;
+  workspaceId: string;
+  externalInvoiceId: string;
+  status: InvoiceStatus;
+  amountDueCents: number;
+  amountPaidCents: number;
+  hostedInvoiceUrl: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceCredits {
+  id: string;
+  workspaceId: string;
+  balance: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreditLedgerEntry {
+  id: string;
+  workspaceId: string;
+  type: 'GRANT' | 'DEDUCTION' | 'ADJUSTMENT';
+  amount: number;
+  balanceAfter: number;
+  reason: string;
+  actorId: string | null;
+  createdAt: string;
+}
+
+export interface UsageRecord {
+  id: string;
+  workspaceId: string;
+  userId: string | null;
+  capability: string;
+  quantity: number;
+  creditsCost: number;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
