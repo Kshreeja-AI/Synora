@@ -223,7 +223,7 @@ describe('billing webhook routes', () => {
     it('handles invalid webhook signature', async () => {
       const mockProvider = {
         isConfigured: vi.fn().mockReturnValue(true),
-        verifyAndParseWebhookEvent: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('Invalid signature')),
+        verifyAndParseWebhookEvent: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('INVALID_SIGNATURE', 'Invalid signature')),
         createCustomer: vi.fn(),
         createCheckoutSession: vi.fn(),
         updateSubscription: vi.fn(),

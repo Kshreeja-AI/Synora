@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { prisma } from '@synora/database';
 import { initializeApp } from '../../index';
-import { generateToken } from '../../services/token.service';
+import { issueTokens } from '../../services/token.service';
 import type { Express } from 'express';
 
 describe('admin billing routes', () => {
@@ -22,23 +22,22 @@ describe('admin billing routes', () => {
 
   beforeEach(async () => {
     // Create admin user
-    const adminUser = await prisma.user.create({
+    const adminUserCreated = await prisma.user.create({
       data: {
         email: `admin-${Date.now()}@test.com`,
-        hashedPassword: 'hashed',
-        isAdmin: true,
+        password: 'hashed',
       },
     });
-    adminUserId = adminUser.id;
+    adminUserId = adminUserCreated.id;
 
     // Create regular user
-    const regularUser = await prisma.user.create({
+    const regularUserCreated = await prisma.user.create({
       data: {
         email: `user-${Date.now()}@test.com`,
-        hashedPassword: 'hashed',
+        password: 'hashed',
       },
     });
-    regularUserId = regularUser.id;
+    regularUserId = regularUserCreated.id;
 
     // Create test workspace
     const workspace = await prisma.workspace.create({
@@ -77,8 +76,19 @@ describe('admin billing routes', () => {
     });
 
     // Generate tokens
-    adminToken = await generateToken(adminUserId, { workspaceId });
-    regularToken = await generateToken(regularUserId, { workspaceId });
+    const adminAuthTokens = await issueTokens({
+      userId: adminUserId,
+      email: adminUserCreated.email,
+      role: adminUserCreated.role,
+    });
+    adminToken = adminAuthTokens.accessToken;
+
+    const regularAuthTokens = await issueTokens({
+      userId: regularUserId,
+      email: regularUserCreated.email,
+      role: regularUserCreated.role,
+    });
+    regularToken = regularAuthTokens.accessToken;
   });
 
   afterEach(async () => {

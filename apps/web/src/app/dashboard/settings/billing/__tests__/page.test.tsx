@@ -3,6 +3,7 @@ import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import SettingsBillingPage from '../page';
 import * as billingApi from '../../../../../lib/api/billing';
+import { createMockSubscription, createMockWorkspaceCredits } from '../../../../../lib/api/__tests__/billing-mocks';
 
 vi.mock('../../../../../lib/api/billing');
 vi.mock('next/navigation', () => ({
@@ -39,13 +40,8 @@ describe('SettingsBillingPage', () => {
   };
 
   it('renders subscription management page', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
-
-    const mockBalance = { balance: 5000, creditsUsed: 1000, creditsGranted: 6000 };
+    const mockSubscription = createMockSubscription();
+    const mockBalance = createMockWorkspaceCredits({ balance: 5000 });
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
     vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
@@ -60,14 +56,10 @@ describe('SettingsBillingPage', () => {
   });
 
   it('displays current plan details', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
 
     const { container } = renderWithProviders(<SettingsBillingPage />);
 
@@ -79,13 +71,9 @@ describe('SettingsBillingPage', () => {
   });
 
   it('displays credits balance', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
-    const mockBalance = { balance: 7500, creditsUsed: 2500, creditsGranted: 10000 };
+    const mockBalance = createMockWorkspaceCredits({ balance: 7500 });
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
     vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
@@ -100,14 +88,10 @@ describe('SettingsBillingPage', () => {
   });
 
   it('shows plan features list', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
 
     const { container } = renderWithProviders(<SettingsBillingPage />);
 
@@ -117,14 +101,10 @@ describe('SettingsBillingPage', () => {
   });
 
   it('provides cancel subscription button', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
 
     const { container } = renderWithProviders(<SettingsBillingPage />);
 
@@ -134,14 +114,10 @@ describe('SettingsBillingPage', () => {
   });
 
   it('shows danger zone for subscription cancellation', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
 
     const { container } = renderWithProviders(<SettingsBillingPage />);
 
@@ -151,14 +127,10 @@ describe('SettingsBillingPage', () => {
   });
 
   it('handles cancel subscription click', async () => {
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: 'plan_1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.cancelSubscription).mockResolvedValue({
       ...mockSubscription,
       status: 'CANCELED' as const,

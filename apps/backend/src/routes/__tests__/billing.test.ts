@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import request from 'supertest';
 import { prisma } from '@synora/database';
 import { initializeApp } from '../../index';
-import { generateToken } from '../../services/token.service';
+import { issueTokens } from '../../services/token.service';
 import * as billingModule from '../../billing/index.js';
 import type { Express } from 'express';
 
@@ -25,7 +25,7 @@ describe('billing routes', () => {
     const user = await prisma.user.create({
       data: {
         email: `user-${Date.now()}@test.com`,
-        hashedPassword: 'hashed',
+        password: 'hashed',
       },
     });
     userId = user.id;
@@ -81,7 +81,12 @@ describe('billing routes', () => {
     });
 
     // Generate token
-    token = await generateToken(userId, { workspaceId });
+    const authTokens = await issueTokens({
+      userId,
+      email: user.email,
+      role: user.role,
+    });
+    token = authTokens.accessToken;
   });
 
   afterEach(async () => {

@@ -5,7 +5,7 @@ import type { ApiEnvelope } from '../types';
  * Mock fetch to return properly formatted ApiEnvelope responses.
  * This ensures tests properly simulate the actual API behavior.
  */
-export function createApiMock<T>(data: T, options?: { status?: number; error?: any }) {
+export function createApiMock<T>(data: T, options?: { status?: number; error?: unknown }) {
   return vi.fn().mockResolvedValue({
     ok: options?.status ? options.status >= 200 && options.status < 300 : true,
     status: options?.status ?? 200,

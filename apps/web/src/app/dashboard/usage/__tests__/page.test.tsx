@@ -3,6 +3,7 @@ import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import UsagePage from '../page';
 import * as billingApi from '../../../../lib/api/billing';
+import { createMockWorkspaceCredits, createMockCreditLedgerEntry } from '../../../../lib/api/__tests__/billing-mocks';
 
 vi.mock('../../../../lib/api/billing');
 vi.mock('next/navigation', () => ({
@@ -39,14 +40,14 @@ describe('UsagePage', () => {
   };
 
   it('renders usage analytics dashboard', async () => {
-    const mockBalance = { balance: 7500, creditsUsed: 2500, creditsGranted: 10000 };
+    const mockBalance = createMockWorkspaceCredits({ balance: 7500 });
     const mockSummary = {
       text_generation: { quantity: 50, creditsCost: 125 },
       image_generation: { quantity: 10, creditsCost: 500 },
     };
     const mockLedger = [
-      { id: '1', type: 'GRANT' as const, amount: 10000, createdAt: new Date().toISOString() },
-      { id: '2', type: 'DEDUCTION' as const, amount: -2375, createdAt: new Date().toISOString() },
+      createMockCreditLedgerEntry({ type: 'GRANT', amount: 10000 }),
+      createMockCreditLedgerEntry({ type: 'DEDUCTION', amount: -2375 }),
     ];
 
     vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
@@ -63,7 +64,7 @@ describe('UsagePage', () => {
   });
 
   it('displays credit balance card', async () => {
-    const mockBalance = { balance: 5000, creditsUsed: 1000, creditsGranted: 6000 };
+    const mockBalance = createMockWorkspaceCredits({ balance: 5000 });
 
     vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue({});
@@ -85,7 +86,7 @@ describe('UsagePage', () => {
       video_generation: { quantity: 2, creditsCost: 1000 },
     };
 
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue(mockSummary);
     vi.mocked(billingApi.listCreditLedger).mockResolvedValue([]);
 
@@ -104,7 +105,7 @@ describe('UsagePage', () => {
       image_generation: { quantity: 50, creditsCost: 1000 },
     };
 
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue(mockSummary);
     vi.mocked(billingApi.listCreditLedger).mockResolvedValue([]);
 
@@ -117,21 +118,11 @@ describe('UsagePage', () => {
 
   it('displays credit ledger table', async () => {
     const mockLedger = [
-      {
-        id: '1',
-        type: 'GRANT' as const,
-        amount: 10000,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        type: 'DEDUCTION' as const,
-        amount: -250,
-        createdAt: new Date().toISOString(),
-      },
+      createMockCreditLedgerEntry({ type: 'GRANT', amount: 10000 }),
+      createMockCreditLedgerEntry({ type: 'DEDUCTION', amount: -250 }),
     ];
 
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue({});
     vi.mocked(billingApi.listCreditLedger).mockResolvedValue(mockLedger);
 
@@ -146,12 +137,12 @@ describe('UsagePage', () => {
 
   it('displays ledger entry types', async () => {
     const mockLedger = [
-      { id: '1', type: 'GRANT' as const, amount: 5000, createdAt: new Date().toISOString() },
-      { id: '2', type: 'DEDUCTION' as const, amount: -100, createdAt: new Date().toISOString() },
-      { id: '3', type: 'ADJUSTMENT' as const, amount: -50, createdAt: new Date().toISOString() },
+      createMockCreditLedgerEntry({ type: 'GRANT', amount: 5000 }),
+      createMockCreditLedgerEntry({ type: 'DEDUCTION', amount: -100 }),
+      createMockCreditLedgerEntry({ type: 'ADJUSTMENT', amount: -50 }),
     ];
 
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue({});
     vi.mocked(billingApi.listCreditLedger).mockResolvedValue(mockLedger);
 
@@ -163,7 +154,7 @@ describe('UsagePage', () => {
   });
 
   it('handles empty usage', async () => {
-    vi.mocked(billingApi.getCreditBalance).mockResolvedValue({ balance: 5000, creditsUsed: 1000, creditsGranted: 6000 });
+    vi.mocked(billingApi.getCreditBalance).mockResolvedValue(createMockWorkspaceCredits({ balance: 5000 }));
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue({});
     vi.mocked(billingApi.listCreditLedger).mockResolvedValue([]);
 
@@ -185,7 +176,7 @@ describe('UsagePage', () => {
   });
 
   it('shows usage summary cards', async () => {
-    const mockBalance = { balance: 7500, creditsUsed: 2500, creditsGranted: 10000 };
+    const mockBalance = createMockWorkspaceCredits({ balance: 7500 });
 
     vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
     vi.mocked(billingApi.getUsageSummary).mockResolvedValue(

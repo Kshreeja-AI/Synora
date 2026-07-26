@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BillingPage from '../page';
 import * as billingApi from '../../../../lib/api/billing';
+import { createMockSubscription } from '../../../../lib/api/__tests__/billing-mocks';
 
 vi.mock('../../../../lib/api/billing');
 vi.mock('next/navigation', () => ({
@@ -68,11 +69,7 @@ describe('BillingPage', () => {
       },
     ];
 
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: '1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.listPlans).mockResolvedValue(mockPlans);
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
@@ -104,11 +101,7 @@ describe('BillingPage', () => {
       },
     ];
 
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: '1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.listPlans).mockResolvedValue(mockPlans);
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
@@ -166,11 +159,7 @@ describe('BillingPage', () => {
       },
     ];
 
-    const mockSubscription = {
-      id: 'sub_1',
-      planId: '1',
-      status: 'ACTIVE' as const,
-    };
+    const mockSubscription = createMockSubscription();
 
     vi.mocked(billingApi.listPlans).mockResolvedValue(mockPlans);
     vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
@@ -201,7 +190,7 @@ describe('BillingPage', () => {
     ];
 
     vi.mocked(billingApi.listPlans).mockResolvedValue(mockPlans);
-    vi.mocked(billingApi.getSubscription).mockResolvedValue({ planId: '2', status: 'ACTIVE' as const });
+    vi.mocked(billingApi.getSubscription).mockResolvedValue(createMockSubscription({ planId: '2' }));
 
     const { container } = renderWithProviders(<BillingPage />);
 
@@ -230,7 +219,7 @@ describe('BillingPage', () => {
     ];
 
     vi.mocked(billingApi.listPlans).mockResolvedValue(mockPlans);
-    vi.mocked(billingApi.getSubscription).mockResolvedValue({ planId: '2', status: 'ACTIVE' as const });
+    vi.mocked(billingApi.getSubscription).mockResolvedValue(createMockSubscription({ planId: '2' }));
 
     const { container } = renderWithProviders(<BillingPage />);
 

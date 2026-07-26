@@ -34,7 +34,7 @@ describe('webhook.service', () => {
     const owner = await prisma.user.create({
       data: {
         email: `owner-${Date.now()}@test.com`,
-        hashedPassword: 'hashed',
+        password: 'hashed',
       },
     });
     ownerId = owner.id;
@@ -170,7 +170,7 @@ describe('webhook.service', () => {
         isConfigured: vi.fn().mockReturnValue(true),
         verifyAndParseWebhookEvent: vi
           .fn()
-          .mockRejectedValue(new billingModule.BillingProviderError('Invalid signature')),
+          .mockRejectedValue(new billingModule.BillingProviderError('INVALID_SIGNATURE', 'Invalid signature')),
         createCustomer: vi.fn(),
         createCheckoutSession: vi.fn(),
         updateSubscription: vi.fn(),

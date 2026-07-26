@@ -12,6 +12,7 @@ import {
   useReactivateSubscription,
 } from '../useBilling';
 import * as billingApi from '../../lib/api/billing';
+import { createMockSubscription, createMockWorkspaceCredits } from '../../lib/api/__tests__/billing-mocks';
 
 vi.mock('../../lib/api/billing');
 vi.mock('../../lib/auth/token-storage', () => ({
@@ -70,11 +71,7 @@ describe('useBilling hooks', () => {
 
   describe('useSubscription', () => {
     it('fetches subscription data', async () => {
-      const mockSubscription = {
-        id: 'sub_123',
-        status: 'ACTIVE' as const,
-        planId: 'plan_1',
-      };
+      const mockSubscription = createMockSubscription();
 
       vi.mocked(billingApi.getSubscription).mockResolvedValue(mockSubscription);
 
@@ -90,7 +87,7 @@ describe('useBilling hooks', () => {
 
   describe('useCreditBalance', () => {
     it('fetches credit balance', async () => {
-      const mockBalance = { balance: 5000, creditsUsed: 1000, creditsGranted: 6000 };
+      const mockBalance = createMockWorkspaceCredits({ balance: 5000 });
 
       vi.mocked(billingApi.getCreditBalance).mockResolvedValue(mockBalance);
 
@@ -147,7 +144,7 @@ describe('useBilling hooks', () => {
 
   describe('useChangePlan', () => {
     it('changes subscription plan', async () => {
-      const mockUpdated = { id: 'sub_123', planId: 'plan_2', status: 'ACTIVE' as const };
+      const mockUpdated = createMockSubscription({ id: 'sub_123', planId: 'plan_2' });
 
       vi.mocked(billingApi.changePlan).mockResolvedValue(mockUpdated);
 
@@ -165,7 +162,7 @@ describe('useBilling hooks', () => {
 
   describe('useCancelSubscription', () => {
     it('cancels subscription', async () => {
-      const mockCanceled = { id: 'sub_123', status: 'CANCELED' as const };
+      const mockCanceled = createMockSubscription({ id: 'sub_123', status: 'CANCELED' });
 
       vi.mocked(billingApi.cancelSubscription).mockResolvedValue(mockCanceled);
 
@@ -183,7 +180,7 @@ describe('useBilling hooks', () => {
 
   describe('useReactivateSubscription', () => {
     it('reactivates subscription', async () => {
-      const mockReactivated = { id: 'sub_123', status: 'ACTIVE' as const };
+      const mockReactivated = createMockSubscription({ id: 'sub_123' });
 
       vi.mocked(billingApi.reactivateSubscription).mockResolvedValue(mockReactivated);
 

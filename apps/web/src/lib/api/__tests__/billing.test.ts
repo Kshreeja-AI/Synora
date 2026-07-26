@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as billingApi from '../billing';
-import { createSuccessResponse, createErrorResponse } from './test-utils';
+import { createSuccessResponse } from './test-utils';
 
 describe('billing API client', () => {
   beforeEach(() => {

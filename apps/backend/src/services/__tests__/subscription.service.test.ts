@@ -36,7 +36,7 @@ describe('subscription.service', () => {
     const owner = await prisma.user.create({
       data: {
         email: `owner-${Date.now()}@test.com`,
-        hashedPassword: 'hashed',
+        password: 'hashed',
       },
     });
     ownerId = owner.id;
@@ -166,7 +166,7 @@ describe('subscription.service', () => {
       const mockProvider = {
         isConfigured: vi.fn().mockResolvedValue(true),
         verifyAndParseWebhookEvent: vi.fn(),
-        createCustomer: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('Provider down')),
+        createCustomer: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('PROVIDER_ERROR', 'Provider down')),
         createCheckoutSession: vi.fn(),
         updateSubscription: vi.fn(),
         cancelSubscription: vi.fn(),
@@ -198,7 +198,6 @@ describe('subscription.service', () => {
         verifyAndParseWebhookEvent: vi.fn(),
         createCustomer: vi.fn(),
         createCheckoutSession: vi.fn().mockResolvedValue({
-          id: 'cs_test_123',
           url: 'https://checkout.stripe.com/test',
         }),
         updateSubscription: vi.fn(),
@@ -214,7 +213,7 @@ describe('subscription.service', () => {
         cancelUrl: 'https://example.com/cancel',
       });
 
-      expect(result.id).toBe('cs_test_123');
+      expect(result.url).toBe('https://checkout.stripe.com/test');
       expect(mockProvider.createCheckoutSession).toHaveBeenCalled();
 
       const auditLogs = await prisma.auditLog.findMany({
@@ -250,7 +249,7 @@ describe('subscription.service', () => {
         isConfigured: vi.fn().mockResolvedValue(true),
         verifyAndParseWebhookEvent: vi.fn(),
         createCustomer: vi.fn(),
-        createCheckoutSession: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('Provider down')),
+        createCheckoutSession: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('PROVIDER_ERROR', 'Provider down')),
         updateSubscription: vi.fn(),
         cancelSubscription: vi.fn(),
         createBillingPortalSession: vi.fn(),
@@ -479,7 +478,7 @@ describe('subscription.service', () => {
         createCheckoutSession: vi.fn(),
         updateSubscription: vi.fn(),
         cancelSubscription: vi.fn(),
-        createBillingPortalSession: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('Provider down')),
+        createBillingPortalSession: vi.fn().mockRejectedValue(new billingModule.BillingProviderError('PROVIDER_ERROR', 'Provider down')),
       };
 
       vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
