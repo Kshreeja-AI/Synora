@@ -7,6 +7,7 @@ export default defineConfig({
     // MFA service tests share the MFAAuditLog table and truncate it between
     // cases; running test files in parallel would cause cross-file clobbering.
     fileParallelism: false,
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
