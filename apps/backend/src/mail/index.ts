@@ -8,4 +8,5 @@ export {
   sendPasswordResetEmail,
   sendPasswordChangedEmail,
   sendAccountDeletedEmail,
+  sendWorkspaceInvitationEmail,
 } from './mailer';

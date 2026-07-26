@@ -120,5 +120,6 @@ export const AppConfigSchema = z.object({
     localDirectory: z.string().min(1),
     publicBasePath: z.string().min(1),
     maxUploadBytes: z.number().int().positive(),
+    maxAssetUploadBytes: z.number().int().positive(),
   }),
 });

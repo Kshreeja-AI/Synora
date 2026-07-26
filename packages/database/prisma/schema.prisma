@@ -53,6 +53,13 @@ model User {
   // In-app notifications
   notifications Notification[]
 
+  // Workspace invitations sent by this user
+  sentInvitations WorkspaceInvitation[]
+
+  // Folders created and assets uploaded by this user
+  createdFolders  Folder[]
+  uploadedAssets  Asset[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -153,6 +160,9 @@ model Workspace {
   projects      Project[]
   apiKeys       ApiKey[]
   invitations   WorkspaceInvitation[]
+  folders       Folder[]
+  assets        Asset[]
+  auditLogs     AuditLog[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -188,10 +198,13 @@ model WorkspaceInvitation {
   email         String
   role          WorkspaceRole @default(MEMBER)
   token         String    @unique
+  invitedById   String
   expiresAt     DateTime
   acceptedAt    DateTime?
+  revokedAt     DateTime?
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy     User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
 
   createdAt     DateTime  @default(now())
 
@@ -232,12 +245,90 @@ model Project {
   images        GeneratedImage[]
   videos        GeneratedVideo[]
   audios        GeneratedAudio[]
+  folders       Folder[]
+  assets        Asset[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+// A folder organizes assets within a workspace, optionally scoped to a
+// single project and optionally nested under a parent folder. Deleting a
+// folder cascades to its subfolders (recursive folder semantics) but only
+// detaches (never deletes) the assets inside it — see Asset.folder below.
+model Folder {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  parentId      String?
+  name          String
+  createdById   String
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent        Folder?   @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Folder[]  @relation("FolderChildren")
+  createdBy     User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  assets        Asset[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([parentId])
+}
+
+// A generic uploaded file, distinct from the AI-generated content models
+// above (GeneratedImage/Video/Audio) — an Asset is something a member
+// uploaded, not something Synora produced. Stored via the same
+// provider-agnostic storage abstraction used for avatars.
+model Asset {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  folderId      String?
+  name          String
+  url           String
+  key           String
+  mimeType      String
+  size          Int
+  uploadedById  String
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  uploadedBy    User      @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([folderId])
+}
+
+// Per-workspace audit trail for permission-sensitive actions (member
+// invited/removed/role-changed, project/folder/asset lifecycle, workspace
+// settings changes). actorId is a soft reference — same reasoning as
+// MFAAuditLog: the trail must remain queryable even if the actor's account
+// is later removed.
+model AuditLog {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  actorId       String
+  action        String
+  targetType    String
+  targetId      String?
+  metadata      Json?
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
 }
 
 enum ProjectStatus {

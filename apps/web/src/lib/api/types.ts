@@ -112,6 +112,86 @@ export interface UpdateWorkspaceRequest {
   description?: string;
 }
 
+export interface InvitationSummary {
+  id: string;
+  email: string;
+  role: WorkspaceRole;
+  createdAt: string;
+  expiresAt: string;
+  invitedBy: { id: string; name: string | null; email: string };
+}
+
+export interface CreateInvitationRequest {
+  email: string;
+  role: Exclude<WorkspaceRole, 'OWNER'>;
+}
+
+export interface InvitationPreview {
+  workspaceName: string;
+  role: WorkspaceRole;
+  email: string;
+  invitedBy: string | null;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  targetType: string;
+  targetId: string | null;
+  metadata: unknown;
+  createdAt: string;
+  actor: { id: string; name: string | null; email: string } | null;
+}
+
+export type ProjectStatus = 'ACTIVE' | 'ARCHIVED' | 'DELETED';
+
+export interface Project {
+  id: string;
+  userId: string;
+  workspaceId: string | null;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  description?: string;
+  workspaceId?: string;
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  description?: string;
+  status?: ProjectStatus;
+}
+
+export interface Folder {
+  id: string;
+  workspaceId: string;
+  projectId: string | null;
+  parentId: string | null;
+  name: string;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Asset {
+  id: string;
+  workspaceId: string;
+  projectId: string | null;
+  folderId: string | null;
+  name: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  uploadedById: string;
+  createdAt: string;
+}
+
 export type NotificationType = 'SECURITY' | 'ACCOUNT' | 'WORKSPACE' | 'SYSTEM';
 
 export interface NotificationSummary {

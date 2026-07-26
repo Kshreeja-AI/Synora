@@ -55,6 +55,7 @@ export interface StageDefaults {
     localDirectory: string;
     publicBasePath: string;
     maxUploadBytes: number;
+    maxAssetUploadBytes: number;
   };
 }
 
@@ -111,6 +112,7 @@ const BASE_DEFAULTS: StageDefaults = {
     localDirectory: 'uploads',
     publicBasePath: '/uploads',
     maxUploadBytes: 5 * 1024 * 1024, // 5 MiB — plenty for an avatar image
+    maxAssetUploadBytes: 25 * 1024 * 1024, // 25 MiB — workspace assets (docs, images, etc.), not just avatars
   },
 };
 

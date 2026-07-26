@@ -16,6 +16,9 @@ import imageRoutes from './routes/images';
 import aiRoutes from './routes/ai';
 import workspaceRoutes from './routes/workspaces';
 import notificationRoutes from './routes/notifications';
+import invitationRoutes from './routes/invitations';
+import folderRoutes from './routes/folders';
+import assetRoutes from './routes/assets';
 
 export interface CreateAppDeps {
   /**
@@ -117,9 +120,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
     }
   });
 
-  // Locally-stored uploads (avatars). Only mounted for the `local` storage
-  // provider — an object-storage provider (M6) serves files from its own
-  // CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
+  // Locally-stored uploads (avatars, workspace assets). Only mounted for the
+  // `local` storage provider — a future object-storage provider serves files
+  // from its own CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
   // Policy is relaxed for this path only: the web app runs on a different
   // origin/port and needs to load these images directly in <img> tags,
   // while the rest of the API keeps helmet's stricter default.
@@ -142,7 +145,10 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/images', imageRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/workspaces', folderRoutes);
+  app.use('/api/workspaces', assetRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/invitations', invitationRoutes);
 
   // 404 Handler
   app.use((req, res) => {

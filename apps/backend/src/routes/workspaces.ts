@@ -8,7 +8,11 @@ import {
   getWorkspaceForUser,
   updateWorkspace,
   listWorkspaceMembers,
+  updateMemberRole,
+  removeMember,
 } from '../services/workspace.service';
+import { createInvitation, listInvitations, revokeInvitation } from '../services/invitation.service';
+import { listAuditLog } from '../services/audit.service';
 
 const router: Router = Router();
 
@@ -20,6 +24,15 @@ const createWorkspaceSchema = z.object({
 const updateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   description: z.string().trim().max(500).optional(),
+});
+
+const updateMemberRoleSchema = z.object({
+  role: z.enum(['OWNER', 'ADMIN', 'EDITOR', 'MEMBER', 'VIEWER']),
+});
+
+const createInvitationSchema = z.object({
+  email: z.string().trim().email(),
+  role: z.enum(['ADMIN', 'EDITOR', 'MEMBER', 'VIEWER']),
 });
 
 router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
@@ -64,6 +77,63 @@ router.get('/:id/members', authMiddleware, async (req: AuthRequest, res, next) =
   try {
     const members = await listWorkspaceMembers(req.userId!, req.params.id);
     res.json(createApiResponse(members));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/:id/members/:memberId', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { role } = updateMemberRoleSchema.parse(req.body);
+    const member = await updateMemberRole(req.userId!, req.params.id, req.params.memberId, role);
+    res.json(createApiResponse(member));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id/members/:memberId', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    await removeMember(req.userId!, req.params.id, req.params.memberId);
+    res.json(createApiResponse({ message: 'Member removed.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:id/invitations', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const invitations = await listInvitations(req.userId!, req.params.id);
+    res.json(createApiResponse(invitations));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:id/invitations', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const input = createInvitationSchema.parse(req.body);
+    const invitation = await createInvitation(req.userId!, req.params.id, input);
+    res.status(201).json(createApiResponse(invitation));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id/invitations/:invitationId', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    await revokeInvitation(req.userId!, req.params.id, req.params.invitationId);
+    res.json(createApiResponse({ message: 'Invitation revoked.' }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:id/audit-log', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const before = typeof req.query.before === 'string' ? new Date(req.query.before) : undefined;
+    const logs = await listAuditLog(req.userId!, req.params.id, { before });
+    res.json(createApiResponse(logs));
   } catch (error) {
     next(error);
   }

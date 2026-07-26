@@ -151,6 +151,11 @@ export async function loadConfig(
       localDirectory: readString(env, 'STORAGE_LOCAL_DIRECTORY', defaults.storage.localDirectory),
       publicBasePath: readString(env, 'STORAGE_PUBLIC_BASE_PATH', defaults.storage.publicBasePath),
       maxUploadBytes: readNumber(env, 'STORAGE_MAX_UPLOAD_BYTES', defaults.storage.maxUploadBytes),
+      maxAssetUploadBytes: readNumber(
+        env,
+        'STORAGE_MAX_ASSET_UPLOAD_BYTES',
+        defaults.storage.maxAssetUploadBytes
+      ),
     },
   };
 

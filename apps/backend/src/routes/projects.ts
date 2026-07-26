@@ -1,23 +1,33 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { createApiResponse, NotFoundException } from '@synora/shared';
+import { createApiResponse } from '@synora/shared';
+import {
+  createProject,
+  listProjectsForUser,
+  getProjectForUser,
+  updateProject,
+  deleteProject,
+} from '../services/project.service';
 
 const router: Router = Router();
 
 const createProjectSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(2000).optional(),
+  name: z.string().trim().min(1).max(200),
+  description: z.string().trim().max(2000).optional(),
+  workspaceId: z.string().optional(),
+});
+
+const updateProjectSchema = z.object({
+  name: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(2000).optional(),
+  status: z.enum(['ACTIVE', 'ARCHIVED', 'DELETED']).optional(),
 });
 
 router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const projects = await prisma.project.findMany({
-      where: { userId: req.userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
+    const workspaceId = typeof req.query.workspaceId === 'string' ? req.query.workspaceId : undefined;
+    const projects = await listProjectsForUser(req.userId!, workspaceId);
     res.json(createApiResponse(projects));
   } catch (error) {
     next(error);
@@ -26,16 +36,8 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { name, description } = createProjectSchema.parse(req.body);
-
-    const project = await prisma.project.create({
-      data: {
-        userId: req.userId!,
-        name,
-        description,
-      },
-    });
-
+    const input = createProjectSchema.parse(req.body);
+    const project = await createProject(req.userId!, input);
     res.status(201).json(createApiResponse(project));
   } catch (error) {
     next(error);
@@ -44,15 +46,27 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const project = await prisma.project.findUnique({
-      where: { id: req.params.id },
-    });
-
-    if (!project || project.userId !== req.userId) {
-      throw new NotFoundException('Project');
-    }
-
+    const project = await getProjectForUser(req.userId!, req.params.id);
     res.json(createApiResponse(project));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const input = updateProjectSchema.parse(req.body);
+    const project = await updateProject(req.userId!, req.params.id, input);
+    res.json(createApiResponse(project));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    await deleteProject(req.userId!, req.params.id);
+    res.json(createApiResponse({ message: 'Project deleted.' }));
   } catch (error) {
     next(error);
   }
