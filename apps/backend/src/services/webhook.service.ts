@@ -1,8 +1,18 @@
 import { prisma } from '@synora/database';
 import { resolveBillingProvider, BillingProviderError } from '../billing/index.js';
 import { ServiceUnavailableException } from '@synora/shared';
-import { logger } from '../middleware/logger.js';
+import { logger } from '../utils/logger.js';
 import { createNotification } from './notification.service.js';
+
+async function notifyWorkspaceOwner(workspaceId: string, title: string, body: string) {
+  const owner = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, role: 'OWNER' },
+    select: { userId: true },
+  });
+  if (owner) {
+    await createNotification(owner.userId, { type: 'BILLING', title, body });
+  }
+}
 
 export async function handleBillingWebhook(rawBody: Buffer, signatureHeader: string): Promise<void> {
   try {
@@ -236,12 +246,7 @@ async function handleInvoicePaid(data: Record<string, unknown>) {
         },
       });
 
-      await createNotification(
-        subscription.workspaceId,
-        'BILLING',
-        'Credits Granted',
-        `${plan.creditsPerInterval} credits have been added to your account`
-      );
+      await notifyWorkspaceOwner(subscription.workspaceId, 'Credits Granted', `${plan.creditsPerInterval} credits have been added to your account`);
     }
   }
 
@@ -287,12 +292,7 @@ async function handleInvoicePaymentFailed(data: Record<string, unknown>) {
     },
   });
 
-  await createNotification(
-    subscription.workspaceId,
-    'BILLING',
-    'Payment Failed',
-    'Your payment could not be processed. Please update your payment method.'
-  );
+  await notifyWorkspaceOwner(subscription.workspaceId, 'Payment Failed', 'Your payment could not be processed. Please update your payment method.');
 
   logger.info('Invoice payment failed, subscription marked past due', { invoiceId, subscriptionId });
 }

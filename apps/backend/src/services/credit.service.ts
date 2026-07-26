@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database';
-import { logger } from '../middleware/logger.js';
+import { logger } from '../utils/logger.js';
 import { NotFoundException } from '@synora/shared';
 import { recordAuditEvent } from './audit.service.js';
 
@@ -70,7 +70,7 @@ export async function grantCredits(
     },
   });
 
-  await recordAuditEvent(workspaceId, actorUserId, 'credits_granted', 'CREDITS', null, {
+  await recordAuditEvent(workspaceId, actorUserId, 'credits_granted', 'CREDITS', undefined, {
     amount: input.amount,
     reason: input.reason,
   });
@@ -116,7 +116,7 @@ export async function adjustCredits(
     },
   });
 
-  await recordAuditEvent(workspaceId, actorUserId, 'credits_adjusted', 'CREDITS', null, {
+  await recordAuditEvent(workspaceId, actorUserId, 'credits_adjusted', 'CREDITS', undefined, {
     amount: input.amount,
     reason: input.reason,
   });
@@ -156,7 +156,7 @@ export async function recordUsage(
       capability: input.capability,
       quantity: input.quantity,
       creditsCost: input.creditsCost,
-      metadata: input.metadata,
+      metadata: input.metadata as any,
     },
   });
 

@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { handleBillingWebhook } from '../services/webhook.service.js';
 import { createApiResponse } from '@synora/shared';
-import { logger } from '../middleware/logger.js';
+import { logger } from '../utils/logger.js';
 
-const router = Router();
+const router: Router = Router();
 
 // POST /api/billing/webhook (raw body)
 router.post('/webhook', async (req, res, next) => {

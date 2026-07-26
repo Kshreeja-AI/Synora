@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
 import { BillingProvider, BillingProviderError, PaymentMethodSummary, WebhookEvent } from '../types.js';
-import { PlaceholderSecretSource } from '../../secrets/sources/placeholder.js';
+import { PlaceholderSecretSource } from '../../secrets/sources/placeholderSource.js';
 
 export class StripeProvider implements BillingProvider {
   private stripe: Stripe;
@@ -10,7 +10,7 @@ export class StripeProvider implements BillingProvider {
   constructor(config: { secretKey: string; webhookSecret: string }) {
     this.secretKey = config.secretKey;
     this.webhookSecret = config.webhookSecret;
-    this.stripe = new Stripe(config.secretKey, { apiVersion: '2024-04-10' });
+    this.stripe = new Stripe(config.secretKey, { apiVersion: '2023-10-16' });
   }
 
   isConfigured(): boolean {
@@ -115,7 +115,7 @@ export class StripeProvider implements BillingProvider {
       if (input.atPeriodEnd) {
         await this.stripe.subscriptions.update(input.subscriptionId, { cancel_at_period_end: true });
       } else {
-        await this.stripe.subscriptions.del(input.subscriptionId);
+        await this.stripe.subscriptions.cancel(input.subscriptionId);
       }
     } catch (error) {
       throw new BillingProviderError('CANCEL_FAILED', `Failed to cancel subscription: ${error}`);

@@ -1,24 +1,43 @@
-import { Router } from 'express';
+import { Router, NextFunction } from 'express';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth.js';
-import { requireMembership } from '../middleware/requireMembership.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { requirePermission } from '../services/permissions.js';
 import * as subscriptionService from '../services/subscription.service.js';
 import * as paymentMethodService from '../services/paymentMethod.service.js';
 import * as invoiceService from '../services/invoice.service.js';
 import * as creditService from '../services/credit.service.js';
-import { createApiResponse, createApiError, ValidationException } from '@synora/shared';
+import { createApiResponse, NotFoundException } from '@synora/shared';
+import { prisma } from '@synora/database';
 
-const router = Router({ mergeParams: true });
+const router: Router = Router({ mergeParams: true });
 
 router.use(authMiddleware);
-router.use(requireMembership);
 
-// GET /api/workspaces/:id/billing/subscription
-router.get('/:id/billing/subscription', async (req, res, next) => {
+// Middleware to inject userRole for workspace-scoped billing routes
+router.use(async (req: AuthRequest, res, next: NextFunction) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:view');
+    if (workspaceId) {
+      const member = await prisma.workspaceMember.findUnique({
+        where: { userId_workspaceId: { userId: req.userId!, workspaceId } },
+        select: { role: true },
+      });
+      if (!member) {
+        throw new NotFoundException('You are not a member of this workspace');
+      }
+      (req as any).userRole = member.role;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/workspaces/:id/billing/subscription
+router.get('/:id/billing/subscription', async (req: AuthRequest, res, next) => {
+  try {
+    const workspaceId = req.params.id;
+    requirePermission((req as any).userRole, 'billing:view');
 
     const subscription = await subscriptionService.getSubscriptionForWorkspace(
       req.userId!,
@@ -32,10 +51,10 @@ router.get('/:id/billing/subscription', async (req, res, next) => {
 });
 
 // POST /api/workspaces/:id/billing/checkout
-router.post('/:id/billing/checkout', async (req, res, next) => {
+router.post('/:id/billing/checkout', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ planId: z.string(), successUrl: z.string(), cancelUrl: z.string() });
     const input = schema.parse(req.body);
@@ -48,10 +67,10 @@ router.post('/:id/billing/checkout', async (req, res, next) => {
 });
 
 // PATCH /api/workspaces/:id/billing/subscription
-router.patch('/:id/billing/subscription', async (req, res, next) => {
+router.patch('/:id/billing/subscription', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ planId: z.string() });
     const input = schema.parse(req.body);
@@ -64,10 +83,10 @@ router.patch('/:id/billing/subscription', async (req, res, next) => {
 });
 
 // POST /api/workspaces/:id/billing/subscription/cancel
-router.post('/:id/billing/subscription/cancel', async (req, res, next) => {
+router.post('/:id/billing/subscription/cancel', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ atPeriodEnd: z.boolean() });
     const input = schema.parse(req.body);
@@ -80,10 +99,10 @@ router.post('/:id/billing/subscription/cancel', async (req, res, next) => {
 });
 
 // POST /api/workspaces/:id/billing/subscription/reactivate
-router.post('/:id/billing/subscription/reactivate', async (req, res, next) => {
+router.post('/:id/billing/subscription/reactivate', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const updated = await subscriptionService.reactivateSubscription(req.userId!, workspaceId);
     res.json(createApiResponse(updated));
@@ -93,10 +112,10 @@ router.post('/:id/billing/subscription/reactivate', async (req, res, next) => {
 });
 
 // POST /api/workspaces/:id/billing/portal
-router.post('/:id/billing/portal', async (req, res, next) => {
+router.post('/:id/billing/portal', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ returnUrl: z.string() });
     const input = schema.parse(req.body);
@@ -113,10 +132,10 @@ router.post('/:id/billing/portal', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/invoices
-router.get('/:id/billing/invoices', async (req, res, next) => {
+router.get('/:id/billing/invoices', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:view');
+    requirePermission((req as any).userRole, 'billing:view');
 
     const before = req.query.before ? new Date(req.query.before as string) : undefined;
     const invoices = await invoiceService.listInvoices(req.userId!, workspaceId, { before });
@@ -128,11 +147,11 @@ router.get('/:id/billing/invoices', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/invoices/:invoiceId
-router.get('/:id/billing/invoices/:invoiceId', async (req, res, next) => {
+router.get('/:id/billing/invoices/:invoiceId', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
     const invoiceId = req.params.invoiceId;
-    requirePermission(req.userRole, 'billing:view');
+    requirePermission((req as any).userRole, 'billing:view');
 
     const invoice = await invoiceService.getInvoice(req.userId!, workspaceId, invoiceId);
     res.json(createApiResponse(invoice));
@@ -142,10 +161,10 @@ router.get('/:id/billing/invoices/:invoiceId', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/payment-methods
-router.get('/:id/billing/payment-methods', async (req, res, next) => {
+router.get('/:id/billing/payment-methods', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const methods = await paymentMethodService.listPaymentMethods(req.userId!, workspaceId);
     res.json(createApiResponse(methods));
@@ -155,10 +174,10 @@ router.get('/:id/billing/payment-methods', async (req, res, next) => {
 });
 
 // POST /api/workspaces/:id/billing/payment-methods/setup
-router.post('/:id/billing/payment-methods/setup', async (req, res, next) => {
+router.post('/:id/billing/payment-methods/setup', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ successUrl: z.string(), cancelUrl: z.string() });
     const input = schema.parse(req.body);
@@ -171,11 +190,11 @@ router.post('/:id/billing/payment-methods/setup', async (req, res, next) => {
 });
 
 // PATCH /api/workspaces/:id/billing/payment-methods/:pmId
-router.patch('/:id/billing/payment-methods/:pmId', async (req, res, next) => {
+router.patch('/:id/billing/payment-methods/:pmId', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
     const pmId = req.params.pmId;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     const schema = z.object({ isDefault: z.boolean() });
     const input = schema.parse(req.body);
@@ -194,11 +213,11 @@ router.patch('/:id/billing/payment-methods/:pmId', async (req, res, next) => {
 });
 
 // DELETE /api/workspaces/:id/billing/payment-methods/:pmId
-router.delete('/:id/billing/payment-methods/:pmId', async (req, res, next) => {
+router.delete('/:id/billing/payment-methods/:pmId', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
     const pmId = req.params.pmId;
-    requirePermission(req.userRole, 'billing:manage');
+    requirePermission((req as any).userRole, 'billing:manage');
 
     await paymentMethodService.removePaymentMethod(req.userId!, workspaceId, pmId);
     res.json(createApiResponse({ success: true }));
@@ -208,10 +227,10 @@ router.delete('/:id/billing/payment-methods/:pmId', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/credits
-router.get('/:id/billing/credits', async (req, res, next) => {
+router.get('/:id/billing/credits', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:view');
+    requirePermission((req as any).userRole, 'billing:view');
 
     const balance = await creditService.getCreditBalance(req.userId!, workspaceId);
     res.json(createApiResponse({ balance }));
@@ -221,10 +240,10 @@ router.get('/:id/billing/credits', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/credits/ledger
-router.get('/:id/billing/credits/ledger', async (req, res, next) => {
+router.get('/:id/billing/credits/ledger', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:view');
+    requirePermission((req as any).userRole, 'billing:view');
 
     const before = req.query.before ? new Date(req.query.before as string) : undefined;
     const ledger = await creditService.listCreditLedger(req.userId!, workspaceId, { before });
@@ -236,10 +255,10 @@ router.get('/:id/billing/credits/ledger', async (req, res, next) => {
 });
 
 // GET /api/workspaces/:id/billing/usage
-router.get('/:id/billing/usage', async (req, res, next) => {
+router.get('/:id/billing/usage', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.id;
-    requirePermission(req.userRole, 'billing:view');
+    requirePermission((req as any).userRole, 'billing:view');
 
     const from = req.query.from ? new Date(req.query.from as string) : undefined;
     const to = req.query.to ? new Date(req.query.to as string) : undefined;

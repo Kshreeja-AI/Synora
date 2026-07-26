@@ -1,9 +1,18 @@
 import { prisma } from '@synora/database';
 import { resolveBillingProvider, BillingProviderError } from '../billing/index.js';
 import { ServiceUnavailableException, NotFoundException } from '@synora/shared';
-import { logger } from '../middleware/logger.js';
 import { recordAuditEvent } from './audit.service.js';
 import { createNotification } from './notification.service.js';
+
+async function notifyWorkspaceOwner(workspaceId: string, title: string, body: string) {
+  const owner = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, role: 'OWNER' },
+    select: { userId: true },
+  });
+  if (owner) {
+    await createNotification(owner.userId, { type: 'BILLING', title, body });
+  }
+}
 
 export async function getSubscriptionForWorkspace(actorId: string, workspaceId: string) {
   const subscription = await prisma.subscription.findUnique({
@@ -78,7 +87,7 @@ export async function createCheckoutSession(
       cancelUrl: input.cancelUrl,
     });
 
-    await recordAuditEvent(workspaceId, actorId, 'checkout_initiated', 'SUBSCRIPTION', null, {
+    await recordAuditEvent(workspaceId, actorId, 'checkout_initiated', 'SUBSCRIPTION', undefined, {
       planId: input.planId,
     });
 
@@ -120,17 +129,12 @@ export async function changePlan(
       include: { plan: true },
     });
 
-    await recordAuditEvent(workspaceId, actorId, 'plan_changed', 'SUBSCRIPTION', null, {
+    await recordAuditEvent(workspaceId, actorId, 'plan_changed', 'SUBSCRIPTION', undefined, {
       fromPlanId: subscription.planId,
       toPlanId: input.planId,
     });
 
-    await createNotification(
-      workspaceId,
-      'BILLING',
-      'Plan Changed',
-      `Your plan has been updated to ${plan.name}`
-    );
+    await notifyWorkspaceOwner(workspaceId, 'Plan Changed', `Your plan has been updated to ${plan.name}`);
 
     return updated;
   } catch (error) {
@@ -168,7 +172,7 @@ export async function cancelSubscription(
       include: { plan: true },
     });
 
-    await recordAuditEvent(workspaceId, actorId, 'subscription_canceled', 'SUBSCRIPTION', null, {
+    await recordAuditEvent(workspaceId, actorId, 'subscription_canceled', 'SUBSCRIPTION', undefined, {
       atPeriodEnd: input.atPeriodEnd,
     });
 
@@ -176,7 +180,7 @@ export async function cancelSubscription(
       ? 'Your subscription will be canceled at the end of the current billing period'
       : 'Your subscription has been canceled immediately';
 
-    await createNotification(workspaceId, 'BILLING', 'Subscription Canceled', message);
+    await notifyWorkspaceOwner(workspaceId, 'Subscription Canceled', message);
 
     return updated;
   } catch (error) {
@@ -200,14 +204,9 @@ export async function reactivateSubscription(actorId: string, workspaceId: strin
     include: { plan: true },
   });
 
-  await recordAuditEvent(workspaceId, actorId, 'subscription_reactivated', 'SUBSCRIPTION', null);
+  await recordAuditEvent(workspaceId, actorId, 'subscription_reactivated', 'SUBSCRIPTION');
 
-  await createNotification(
-    workspaceId,
-    'BILLING',
-    'Subscription Reactivated',
-    'Your subscription cancellation has been canceled'
-  );
+  await notifyWorkspaceOwner(workspaceId, 'Subscription Reactivated', 'Your subscription cancellation has been canceled');
 
   return updated;
 }

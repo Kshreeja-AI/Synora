@@ -2,7 +2,7 @@ import { Router } from 'express';
 import * as planService from '../services/plan.service.js';
 import { createApiResponse } from '@synora/shared';
 
-const router = Router();
+const router: Router = Router();
 
 // GET /api/billing/plans
 router.get('/plans', async (req, res, next) => {

@@ -1,7 +1,7 @@
 import { prisma } from '@synora/database';
 import { resolveBillingProvider, BillingProviderError } from '../billing/index.js';
 import { ServiceUnavailableException, NotFoundException } from '@synora/shared';
-import { logger } from '../middleware/logger.js';
+import { logger } from '../utils/logger.js';
 
 export async function listPaymentMethods(actorId: string, workspaceId: string) {
   const methods = await prisma.paymentMethod.findMany({

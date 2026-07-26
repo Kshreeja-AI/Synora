@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import * as planService from '../services/plan.service.js';
 import * as creditService from '../services/credit.service.js';
-import { createApiResponse, NotFoundException } from '@synora/shared';
+import { createApiResponse } from '@synora/shared';
 
-const router = Router();
+const router: Router = Router();
 
 router.use(authMiddleware);
 router.use(requireAdminRole);
 
 // GET /api/admin/plans
-router.get('/plans', async (req, res, next) => {
+router.get('/plans', async (req: AuthRequest, res, next) => {
   try {
     const plans = await planService.listAllPlans();
     res.json(createApiResponse(plans));
@@ -22,7 +22,7 @@ router.get('/plans', async (req, res, next) => {
 });
 
 // POST /api/admin/plans
-router.post('/plans', async (req, res, next) => {
+router.post('/plans', async (req: AuthRequest, res, next) => {
   try {
     const schema = z.object({
       key: z.string(),
@@ -45,7 +45,7 @@ router.post('/plans', async (req, res, next) => {
 });
 
 // PATCH /api/admin/plans/:planId
-router.patch('/plans/:planId', async (req, res, next) => {
+router.patch('/plans/:planId', async (req: AuthRequest, res, next) => {
   try {
     const planId = req.params.planId;
 
@@ -68,7 +68,7 @@ router.patch('/plans/:planId', async (req, res, next) => {
 });
 
 // POST /api/admin/plans/:planId/archive
-router.post('/plans/:planId/archive', async (req, res, next) => {
+router.post('/plans/:planId/archive', async (req: AuthRequest, res, next) => {
   try {
     const planId = req.params.planId;
     const plan = await planService.archivePlan(req.userId!, planId);
@@ -80,7 +80,7 @@ router.post('/plans/:planId/archive', async (req, res, next) => {
 });
 
 // POST /api/admin/plans/:planId/set-default
-router.post('/plans/:planId/set-default', async (req, res, next) => {
+router.post('/plans/:planId/set-default', async (req: AuthRequest, res, next) => {
   try {
     const planId = req.params.planId;
     const plan = await planService.setDefaultPlan(req.userId!, planId);
@@ -92,7 +92,7 @@ router.post('/plans/:planId/set-default', async (req, res, next) => {
 });
 
 // GET /api/admin/workspaces/:workspaceId/billing
-router.get('/workspaces/:workspaceId/billing', async (req, res, next) => {
+router.get('/workspaces/:workspaceId/billing', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.workspaceId;
 
@@ -104,7 +104,7 @@ router.get('/workspaces/:workspaceId/billing', async (req, res, next) => {
 });
 
 // POST /api/admin/workspaces/:workspaceId/credits/grant
-router.post('/workspaces/:workspaceId/credits/grant', async (req, res, next) => {
+router.post('/workspaces/:workspaceId/credits/grant', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.workspaceId;
 
@@ -123,7 +123,7 @@ router.post('/workspaces/:workspaceId/credits/grant', async (req, res, next) => 
 });
 
 // POST /api/admin/workspaces/:workspaceId/credits/adjust
-router.post('/workspaces/:workspaceId/credits/adjust', async (req, res, next) => {
+router.post('/workspaces/:workspaceId/credits/adjust', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.workspaceId;
 
