@@ -397,6 +397,190 @@ deleted.
 
 **Indexes**: `(userId, timestamp)`, `(action, timestamp)`, `timestamp`
 
+### Billing Models (M6)
+
+#### Plan
+Billing plan definitions for subscription tiers.
+
+```prisma
+model Plan {
+  id                  String      // Unique identifier (CUID)
+  key                 String      // URL-safe key (e.g., "pro", "enterprise")
+  name                String      // Display name
+  interval            String      // "MONTH" or "YEAR"
+  priceCents          Int         // Price in cents
+  creditsPerInterval  Int         // Credits granted per billing period
+  trialDays           Int?        // Free trial duration (days)
+  features            Json        // Feature flags/quotas (e.g., { "text_generation": true })
+  sortOrder           Int         // Display order on pricing page
+  status              String      // "ACTIVE" or "ARCHIVED"
+  isDefault           Boolean     // Default plan for new workspaces
+  
+  // Relations
+  subscriptions       Subscription[]
+  
+  // Timestamps
+  createdAt           DateTime
+  updatedAt           DateTime
+}
+```
+
+#### Subscription
+Workspace billing subscription.
+
+```prisma
+model Subscription {
+  id                      String      // Unique identifier
+  workspaceId             String      // FK to Workspace (unique)
+  planId                  String      // FK to Plan
+  status                  String      // "ACTIVE", "PAST_DUE", "CANCELED", "TRIAL"
+  externalSubscriptionId  String?     // Stripe subscription ID
+  externalCustomerId      String?     // Stripe customer ID
+  provider                String?     // "stripe"
+  currentPeriodStart      DateTime?   // Billing period start
+  currentPeriodEnd        DateTime?   // Billing period end
+  cancelAtPeriodEnd       Boolean     // Scheduled for cancellation
+  
+  // Relations
+  workspace               Workspace
+  plan                    Plan
+  invoices                Invoice[]
+  paymentMethods          PaymentMethod[]
+  
+  // Timestamps
+  createdAt               DateTime
+  updatedAt               DateTime
+}
+```
+
+#### WorkspaceCredits
+Credit balance tracking per workspace.
+
+```prisma
+model WorkspaceCredits {
+  id            String      // Unique identifier
+  workspaceId   String      // FK to Workspace (unique)
+  balance       Int         // Current credit balance
+  
+  // Relations
+  workspace     Workspace
+  
+  // Timestamps
+  createdAt     DateTime
+  updatedAt     DateTime
+}
+```
+
+#### CreditLedgerEntry
+Credit transaction history.
+
+```prisma
+model CreditLedgerEntry {
+  id            String      // Unique identifier
+  workspaceId   String      // FK to Workspace
+  type          String      // "GRANT", "DEDUCTION", "ADJUSTMENT"
+  amount        Int         // Credit delta (can be negative)
+  balanceAfter  Int         // Balance after transaction
+  reason        String      // Human-readable reason
+  actorId       String?     // User who triggered (if admin action)
+  
+  // Relations
+  workspace     Workspace
+  
+  // Timestamps
+  createdAt     DateTime
+}
+```
+
+#### UsageRecord
+Tracks capability usage for billing.
+
+```prisma
+model UsageRecord {
+  id            String      // Unique identifier
+  workspaceId   String      // FK to Workspace
+  userId        String?     // FK to User (optional, for per-user tracking)
+  capability    String      // Capability name (e.g., "text_generation")
+  quantity      Int         // Number of uses
+  creditsCost   Int         // Credits charged
+  metadata      Json?       // Additional data (e.g., model used, tokens)
+  
+  // Relations
+  workspace     Workspace
+  user          User?
+  
+  // Timestamps
+  createdAt     DateTime
+}
+```
+
+#### Invoice
+Billing invoices from payment provider.
+
+```prisma
+model Invoice {
+  id                  String      // Unique identifier
+  subscriptionId      String?     // FK to Subscription
+  workspaceId         String      // FK to Workspace
+  externalInvoiceId   String      // Stripe invoice ID (unique per provider)
+  status              String      // "DRAFT", "OPEN", "PAID", "VOID", "UNCOLLECTIBLE"
+  amountDueCents      Int         // Amount due in cents
+  amountPaidCents     Int         // Amount paid in cents
+  hostedInvoiceUrl    String?     // URL to hosted invoice PDF
+  paidAt              DateTime?   // Payment timestamp
+  
+  // Relations
+  subscription        Subscription?
+  workspace           Workspace
+  
+  // Timestamps
+  createdAt           DateTime
+  updatedAt           DateTime
+}
+```
+
+#### PaymentMethod
+Stored payment methods for subscriptions.
+
+```prisma
+model PaymentMethod {
+  id                      String      // Unique identifier
+  subscriptionId          String?     // FK to Subscription
+  workspaceId             String      // FK to Workspace
+  externalPaymentMethodId String      // Stripe payment method ID
+  type                    String      // "CARD", "OTHER"
+  brand                   String?     // Card brand (e.g., "visa")
+  last4                   String?     // Last 4 digits
+  expiryMonth             Int?        // Card expiry month
+  expiryYear              Int?        // Card expiry year
+  isDefault               Boolean     // Default payment method
+  
+  // Relations
+  subscription            Subscription?
+  workspace               Workspace
+  
+  // Timestamps
+  createdAt               DateTime
+}
+```
+
+#### ProcessedWebhookEvent
+Webhook event deduplication for idempotency.
+
+```prisma
+model ProcessedWebhookEvent {
+  id                String      // Unique identifier
+  provider          String      // "stripe"
+  externalEventId   String      // Provider's event ID
+  
+  // Timestamps
+  createdAt         DateTime
+  
+  // Constraints
+  @@unique([provider, externalEventId])
+}
+```
+
 ### Other models
 The following exist in `packages/database/prisma/schema.prisma` and
 aren't reproduced in full here — treat the schema file as the definitive
@@ -612,4 +796,4 @@ item (`RELEASE_2_PLAN.md`, R2-g).
 
 ---
 
-**Last Updated**: 2026-07-25 (Release 2, Milestone 4) — 21 models, 7 migrations applied.
+**Last Updated**: 2026-07-26 (Release 2, Milestone 6) — 29 models, 11 migrations applied.
