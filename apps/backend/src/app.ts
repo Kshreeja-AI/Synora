@@ -19,6 +19,10 @@ import notificationRoutes from './routes/notifications';
 import invitationRoutes from './routes/invitations';
 import folderRoutes from './routes/folders';
 import assetRoutes from './routes/assets';
+import billingRoutes from './routes/billing';
+import billingPlansRoutes from './routes/billingPlans';
+import billingWebhookRoutes from './routes/billingWebhook';
+import adminBillingRoutes from './routes/adminBilling';
 
 export interface CreateAppDeps {
   /**
@@ -61,6 +65,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   });
 
   app.use('/api/', limiter);
+
+  // Billing webhook route (must be before express.json to access raw body)
+  app.use('/api/billing', express.raw({ type: 'application/json' }), billingWebhookRoutes);
 
   // Body Parser
   app.use(express.json({ limit: '10mb' }));
@@ -145,10 +152,13 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/images', imageRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/workspaces', billingRoutes);
   app.use('/api/workspaces', folderRoutes);
   app.use('/api/workspaces', assetRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
+  app.use('/api/billing', billingPlansRoutes);
+  app.use('/api/admin', adminBillingRoutes);
 
   // 404 Handler
   app.use((req, res) => {

@@ -21,7 +21,9 @@ export type Permission =
   | 'folder:manage'
   | 'asset:upload'
   | 'asset:delete'
-  | 'audit:view';
+  | 'audit:view'
+  | 'billing:view'
+  | 'billing:manage';
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
   OWNER: new Set<Permission>([
@@ -37,6 +39,8 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'asset:upload',
     'asset:delete',
     'audit:view',
+    'billing:view',
+    'billing:manage',
   ]),
   ADMIN: new Set<Permission>([
     'workspace:update',
@@ -50,6 +54,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'asset:upload',
     'asset:delete',
     'audit:view',
+    'billing:view',
   ]),
   EDITOR: new Set<Permission>([
     'project:create',
@@ -57,9 +62,10 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'folder:manage',
     'asset:upload',
     'asset:delete',
+    'billing:view',
   ]),
-  MEMBER: new Set<Permission>(['asset:upload']),
-  VIEWER: new Set<Permission>([]),
+  MEMBER: new Set<Permission>(['asset:upload', 'billing:view']),
+  VIEWER: new Set<Permission>(['billing:view']),
 };
 
 export function hasPermission(role: WorkspaceRole, permission: Permission): boolean {

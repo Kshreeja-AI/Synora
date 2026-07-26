@@ -164,6 +164,14 @@ model Workspace {
   assets        Asset[]
   auditLogs     AuditLog[]
 
+  // Billing relations (M6)
+  subscription  Subscription?
+  invoices      Invoice[]
+  paymentMethods PaymentMethod[]
+  credits       WorkspaceCredits?
+  creditLedger  CreditLedgerEntry[]
+  usageRecords  UsageRecord[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -561,6 +569,7 @@ enum NotificationType {
   ACCOUNT
   WORKSPACE
   SYSTEM
+  BILLING
 }
 
 // MFA Audit Logging
@@ -577,4 +586,214 @@ model MFAAuditLog {
   @@index([userId, timestamp])
   @@index([action, timestamp])
   @@index([timestamp])
+}
+
+// Billing Models
+// Admin-editable plan catalog. Each plan defines pricing, credits, trial period,
+// and feature set. One plan marked as default for new workspaces.
+model Plan {
+  id                String      @id @default(cuid())
+  key               String      @unique
+  name              String
+  status            PlanStatus  @default(ACTIVE)
+  interval          BillingInterval
+  priceCents        Int
+  creditsPerInterval Int         @default(0)
+  trialDays         Int?
+  features          Json?
+  isDefault         Boolean     @default(false)
+  sortOrder         Int         @default(0)
+  providerPriceIds  Json?
+
+  subscriptions     Subscription[]
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status])
+  @@index([isDefault])
+}
+
+enum PlanStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+}
+
+// Exactly one subscription per workspace. Tracks the current plan,
+// subscription status, billing periods, and external provider IDs.
+model Subscription {
+  id                      String              @id @default(cuid())
+  workspaceId             String              @unique
+  planId                  String
+  provider                String?
+  externalCustomerId      String?
+  externalSubscriptionId  String?
+  status                  SubscriptionStatus  @default(ACTIVE)
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean             @default(false)
+  trialEndsAt             DateTime?
+
+  workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan                    Plan                @relation(fields: [planId], references: [id])
+
+  invoices                Invoice[]
+  paymentMethods          PaymentMethod[]
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIAL
+}
+
+// Invoice records synced from the payment provider via webhooks.
+// Only reads come from local DB; external-sync happens via webhooks only.
+model Invoice {
+  id                String          @id @default(cuid())
+  subscriptionId    String
+  workspaceId       String
+  provider          String
+  externalInvoiceId String          @unique
+  status            InvoiceStatus
+  amountDueCents    Int
+  amountPaidCents   Int
+  currency          String          @default("USD")
+  hostedInvoiceUrl  String?
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  issuedAt          DateTime?
+  paidAt            DateTime?
+
+  subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+  @@index([subscriptionId])
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+// Payment methods synced from provider via webhooks. Supports multiple
+// payment methods per subscription; one marked as default.
+model PaymentMethod {
+  id                      String              @id @default(cuid())
+  subscriptionId          String
+  workspaceId             String
+  provider                String
+  externalPaymentMethodId String              @unique
+  type                    PaymentMethodType
+  brand                   String?
+  last4                   String?
+  expiryMonth             Int?
+  expiryYear              Int?
+  isDefault               Boolean             @default(false)
+
+  subscription            Subscription        @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([workspaceId])
+  @@index([subscriptionId])
+}
+
+enum PaymentMethodType {
+  CARD
+  BANK_ACCOUNT
+  OTHER
+}
+
+// Credit balance per workspace. Denormalized for fast reads;
+// source of truth for available balance.
+model WorkspaceCredits {
+  id            String          @id @default(cuid())
+  workspaceId   String          @unique
+  balance       Int             @default(0)
+  updatedAt     DateTime        @updatedAt
+
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+// Append-only credit transaction log. Every grant, deduction, adjustment,
+// expiration, or refund creates one entry. Never updated after creation.
+model CreditLedgerEntry {
+  id            String                  @id @default(cuid())
+  workspaceId   String
+  type          CreditTransactionType
+  amount        Int
+  balanceAfter  Int
+  reason        String
+  actorId       String?
+  metadata      Json?
+  createdAt     DateTime                @default(now())
+
+  workspace     Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+enum CreditTransactionType {
+  GRANT
+  DEDUCTION
+  ADJUSTMENT
+  EXPIRATION
+  REFUND
+}
+
+// Usage records for audit and future analytics. Records when capabilities
+// are invoked and how many credits they consume. Callable today (M6),
+// first call sites added in M7.
+model UsageRecord {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  userId        String?
+  capability    String
+  quantity      Int       @default(1)
+  creditsCost   Int
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([capability, createdAt])
+}
+
+// Webhook event deduplication table. Prevents duplicate processing of
+// the same webhook event replayed by the provider.
+model ProcessedWebhookEvent {
+  id            String    @id @default(cuid())
+  provider      String
+  externalEventId String
+
+  createdAt     DateTime  @default(now())
+
+  @@unique([provider, externalEventId])
+  @@index([provider, createdAt])
 }
