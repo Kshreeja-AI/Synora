@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -13,6 +14,8 @@ import projectRoutes from './routes/projects';
 import documentRoutes from './routes/documents';
 import imageRoutes from './routes/images';
 import aiRoutes from './routes/ai';
+import workspaceRoutes from './routes/workspaces';
+import notificationRoutes from './routes/notifications';
 
 export interface CreateAppDeps {
   /**
@@ -114,6 +117,23 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
     }
   });
 
+  // Locally-stored uploads (avatars). Only mounted for the `local` storage
+  // provider — an object-storage provider (M6) serves files from its own
+  // CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
+  // Policy is relaxed for this path only: the web app runs on a different
+  // origin/port and needs to load these images directly in <img> tags,
+  // while the rest of the API keeps helmet's stricter default.
+  if (config.storage.provider === 'local') {
+    app.use(
+      config.storage.publicBasePath,
+      (req, res, next) => {
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        next();
+      },
+      express.static(resolve(process.cwd(), config.storage.localDirectory))
+    );
+  }
+
   // API Routes
   app.use('/api/auth', authRoutes);
   app.use('/api/users', userRoutes);
@@ -121,6 +141,8 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/documents', documentRoutes);
   app.use('/api/images', imageRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/notifications', notificationRoutes);
 
   // 404 Handler
   app.use((req, res) => {

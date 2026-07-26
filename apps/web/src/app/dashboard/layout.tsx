@@ -1,94 +1,73 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Button } from '@synora/design-system';
+import { useEffect, useState } from 'react';
+import { Skeleton } from '@synora/design-system';
+import { useRequireAuth } from '../../hooks/useRequireAuth';
+import { Sidebar } from '../../components/shell/Sidebar';
+import { Topbar } from '../../components/shell/Topbar';
+import { CommandPalette } from '../../components/shell/CommandPalette';
+import { KeyboardShortcutsDialog } from '../../components/shell/KeyboardShortcutsDialog';
+import { CreateWorkspaceDialog } from '../../components/shell/CreateWorkspaceDialog';
+
+const MOBILE_BREAKPOINT_PX = 768; // matches Tailwind's `md` breakpoint
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
-}) {
+}): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { data: user, isLoading } = useRequireAuth();
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    window.location.href = '/';
+  // Below `md`, the sidebar becomes a full-height overlay rather than a
+  // permanent column — defaulting it open there would cover the entire
+  // viewport on first load with no visible content behind it, so it starts
+  // closed on narrow screens only.
+  useEffect(() => {
+    if (window.innerWidth < MOBILE_BREAKPOINT_PX) {
+      setSidebarOpen(false);
+    }
+  }, []);
+
+  // On mobile the sidebar is a full-screen overlay, so picking a
+  // destination should close it; on desktop it's a permanent column and
+  // must stay exactly as the user left it (open or icon-only).
+  const closeOverlayOnMobile = (): void => {
+    if (window.innerWidth < MOBILE_BREAKPOINT_PX) {
+      setSidebarOpen(false);
+    }
   };
 
+  if (isLoading || !user) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Skeleton className="h-10 w-10 rounded-full" />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside
-        className={`${
-          sidebarOpen ? 'w-64' : 'w-20'
-        } bg-gray-900 text-white transition-all duration-300 overflow-hidden`}
-      >
-        <div className="p-6 border-b border-gray-800">
-          <h1 className={`text-2xl font-bold ${!sidebarOpen && 'hidden'}`}>Synora</h1>
-        </div>
+    <div className="flex h-screen bg-background">
+      {sidebarOpen && (
+        <div
+          aria-hidden
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+        />
+      )}
 
-        <nav className="mt-8">
-          <SidebarLink href="/dashboard" label="Dashboard" icon="📊" show={sidebarOpen} />
-          <SidebarLink href="/dashboard/projects" label="Projects" icon="📁" show={sidebarOpen} />
-          <SidebarLink href="/dashboard/create" label="Create" icon="➕" show={sidebarOpen} />
-          <SidebarLink href="/dashboard/library" label="Library" icon="📚" show={sidebarOpen} />
-          <SidebarLink href="/dashboard/settings" label="Settings" icon="⚙️" show={sidebarOpen} />
-        </nav>
+      <Sidebar open={sidebarOpen} onNavigate={closeOverlayOnMobile} />
 
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
-          <Button
-            variant="danger"
-            size="sm"
-            className="w-full"
-            onClick={handleLogout}
-          >
-            {sidebarOpen ? 'Logout' : '🚪'}
-          </Button>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
-        <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-600 hover:text-gray-900"
-          >
-            ☰
-          </button>
-          <div className="text-sm text-gray-600">Welcome back!</div>
-        </header>
-
-        {/* Main Content */}
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <Topbar onToggleSidebar={() => setSidebarOpen((open) => !open)} />
         <main className="flex-1 overflow-auto">
-          <div className="p-6">
-            {children}
-          </div>
+          <div className="p-6">{children}</div>
         </main>
       </div>
-    </div>
-  );
-}
 
-function SidebarLink({
-  href,
-  label,
-  icon,
-  show,
-}: {
-  href: string;
-  label: string;
-  icon: string;
-  show: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className="flex items-center gap-4 px-6 py-3 hover:bg-gray-800 transition-colors"
-    >
-      <span className="text-xl">{icon}</span>
-      {show && <span>{label}</span>}
-    </Link>
+      <CommandPalette />
+      <KeyboardShortcutsDialog />
+      <CreateWorkspaceDialog />
+    </div>
   );
 }

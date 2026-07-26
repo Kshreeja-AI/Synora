@@ -5,8 +5,12 @@
 #
 # Multi-stage: a builder stage installs the full pnpm workspace, generates the
 # Prisma client, and compiles the backend and its workspace dependencies
-# (@synora/database, @synora/shared); the runtime stage carries only what is
-# needed to run `node apps/backend/dist/index.js` as a non-root user.
+# (@synora/database, @synora/shared); the runtime stage copies the builder's
+# entire /app (including dev dependencies — see the comment above the COPY
+# below for why) and runs `node apps/backend/dist/index.js` as a non-root
+# user. The separate stage still keeps the base-image layer and any
+# builder-only OS packages out of the shipped image, even though node_modules
+# itself is not pruned.
 #
 # bookworm-slim (glibc), not alpine (musl): the argon2 native addon and the
 # Prisma query engine are far less troublesome on glibc.
@@ -19,6 +23,15 @@ ARG NODE_IMAGE=node:22-bookworm-slim
 FROM ${NODE_IMAGE} AS builder
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
+# bookworm-slim ships with no OpenSSL at all. Prisma's query engine dynamically
+# links against libssl, and without it present, `prisma generate`'s platform
+# detection can't determine the real OpenSSL version (3.x on bookworm) and
+# silently falls back to a stale default (debian-openssl-1.1.x) — bundling an
+# engine that then can't load anywhere, including right here at generate time
+# in the exact same image. Installing openssl before generate runs makes
+# detection see the real version and bundle the matching engine.
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 # Enable corepack so the exact pnpm from packageManager is used.
 RUN corepack enable
 WORKDIR /app
@@ -36,12 +49,6 @@ RUN pnpm install --frozen-lockfile
 # generated Prisma client under node_modules.
 RUN pnpm run build --filter=@synora/backend...
 
-# Drop dev dependencies from node_modules so the runtime image doesn't ship
-# compilers, eslint, vitest, etc. The generated Prisma client and the argon2
-# native binary live under node_modules and are preserved by prune.
-# CI=true disables interactive prompts in non-TTY environments (Docker CI).
-RUN CI=true pnpm prune --prod
-
 # --- Runtime ---------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production
@@ -49,9 +56,28 @@ ENV NODE_ENV=production
 ENV PORT=3001
 WORKDIR /app
 
-# Carry over the pruned workspace: the pnpm symlink layout under node_modules
-# is what resolves @synora/database and @synora/shared, so the whole tree is
-# copied to preserve those links and the generated Prisma client.
+# Prisma's query engine binary dynamically links against libssl at request
+# time, not just at `prisma generate` time — needed here too, independent of
+# the builder stage's copy (see the builder stage's comment for why this is
+# required at all on bookworm-slim).
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Carry over the full workspace as-is, dev dependencies included. Both
+# `pnpm prune --prod` and `pnpm deploy` were tried here and rejected: in this
+# workspace's node_modules layout, `pnpm prune --prod` run at the workspace
+# root deletes every symlink under apps/backend/node_modules — including
+# production dependencies like `dotenv` — while leaving the packages
+# themselves in the .pnpm store, so `node dist/index.js` fails at the very
+# first import with ERR_MODULE_NOT_FOUND. `pnpm deploy` avoids that, but
+# performs a fresh install into a new virtual store that does not carry over
+# Prisma's already-generated client, breaking `@prisma/client` in a
+# different way. Shipping the full, already-correct node_modules the builder
+# stage produced sidesteps both failure modes; the extra image size (dev
+# tooling: eslint, vitest, typescript, tsup, turbo) is an accepted, explicit
+# R1 tradeoff — see docs/production/R1-f_DOCKERFILE.md — revisit with a
+# properly-verified `pnpm deploy` (including a post-deploy `prisma generate`)
+# in Release 2 if image size becomes a real constraint.
 COPY --from=builder /app ./
 
 # Run as the unprivileged `node` user that the base image already provides.

@@ -2,7 +2,11 @@
 
 ## Security Overview
 
-Security is built into every layer of Synora AI, from authentication to data protection.
+This document describes what Release 1 actually implements, verified
+against the current source — not a generic security-best-practices
+template. Sections marked **Not yet implemented** describe real,
+tracked gaps (with a pointer to where the work is planned), not
+aspirational examples presented as if they exist.
 
 > **Secret management** (how JWT signing keys, database credentials, and
 > API keys are stored, rotated, versioned, and audited across every
@@ -11,10 +15,13 @@ Security is built into every layer of Synora AI, from authentication to data pro
 
 ## Authentication & Authorization
 
-### JWT Implementation
+### JWT access tokens
 
-**Token Structure**
-```
+15-minute, `HS256`-signed access tokens with the signing algorithm
+explicitly pinned in verification (closes the classic `alg: none` bypass
+class of vulnerability). Payload:
+
+```json
 {
   "userId": "user_id",
   "email": "user@example.com",
@@ -24,437 +31,286 @@ Security is built into every layer of Synora AI, from authentication to data pro
 }
 ```
 
-**Token Lifecycle**
-- Access token: 15 minutes
-- Refresh token: 7 days
-- Session: HTTP-only, Secure, SameSite=Strict
+### Refresh tokens
 
-### Password Security
+Opaque, 7-day (30-day if the login requested `rememberMe`), single-use,
+rotating refresh tokens — not JWTs. Only a SHA-256 hash is stored
+(`RefreshToken.tokenHash`); a database read alone cannot mint a session.
+Presenting a refresh token revokes it and issues a new pair atomically,
+so reuse of an already-consumed token is detected and rejected. Logout
+revokes the presented refresh token; `POST /api/auth/logout-all`
+(Release 2 M3) revokes every refresh token for the account at once. This
+is what makes "log out" actually end a session, since the short-lived
+access token can't be individually revoked but becomes useless once no
+refresh token can renew it. The access token carries a `sid` claim (the
+backing `RefreshToken.id`) so a signed-in user can identify "this device"
+in their own session list without an extra round trip. Full detail:
+`docs/production/R1-c_REFRESH_TOKENS.md`, `docs/api.md`#sessions.
 
-```typescript
-// Password hashing with bcryptjs
-const hashedPassword = await bcryptjs.hash(password, 12);
+There is no cookie-based session (`Session` model in the schema exists
+for a possible future NextAuth-style flow but is not used by the current
+auth system — don't follow it as a reference for how sessions actually
+work today).
 
-// Password validation
-const isValid = await bcryptjs.compare(inputPassword, hashedPassword);
-```
+### Password-reset and email-verification tokens (Release 2 M3)
 
-**Password Requirements**
-- Minimum 8 characters
-- Must contain uppercase letter
-- Must contain lowercase letter
-- Must contain number
-- Must contain special character
+`PasswordResetToken` and `EmailVerificationToken` follow the exact same
+invariants as refresh tokens: opaque, cryptographically random,
+SHA-256-hashed at rest (raw value only ever appears in the email link),
+single-use (`usedAt`), short-lived (1h reset / 24h verification,
+config-driven). Requesting a new one invalidates any previous
+still-unused token for that user — only the most recently requested link
+works. **Consuming a reset token revokes every active session for the
+account** — the reset is trusted to represent regained control, and any
+other live token (potentially an attacker's, if the reset is defensive)
+must not survive it. `POST /api/auth/forgot-password` never reveals
+whether the email exists (identical response either way — same
+enumeration-resistance principle as register/login below).
 
-### Session Management
+### Password hashing
 
-```typescript
-// Session timeout
-const SESSION_TIMEOUT = 7 * 24 * 60 * 60 * 1000; // 7 days
+Argon2id (not bcrypt) via the `argon2` package, with the parameters
+`services/password.service.ts` sets. Password hashes created before this
+migration (bcrypt) are transparently re-hashed to Argon2id on the user's
+next successful login — no forced reset, no downtime. Full detail:
+`docs/production/P0-11_ARGON2_PASSWORD_HASHING.md`.
 
-// Session invalidation on logout
-await prisma.session.delete({ where: { sessionToken } });
-```
+**Password requirement enforced today:** minimum 8 characters
+(`z.string().min(8)` in the registration schema). There is no complexity
+requirement (uppercase/lowercase/number/special character) enforced —
+if the product needs one, it belongs in that same zod schema.
+
+### Login lockout
+
+Per-account, not just per-IP: 5 failed attempts locks the account for 15
+minutes (both `MAX_FAILED_LOGIN_ATTEMPTS`/`LOCKOUT_DURATION_MINUTES`,
+config-driven), tracked on `User.failedLoginAttempts`/`lockedUntil`,
+reset on the next successful login. Full detail:
+`docs/production/R1-d_ACCOUNT_LOCKOUT.md`.
+
+### Email-enumeration prevention
+
+Register and login return an identical response shape (and status code)
+for "email already exists" as for "wrong password" — an attacker cannot
+distinguish the two to enumerate which emails have accounts. Full detail:
+`docs/production/R1-a_EMAIL_ENUMERATION.md`.
+
+### MFA — Not yet implemented
+
+A complete TOTP-based MFA implementation exists on the `recover/mfa`
+branch (challenge/setup/recovery-code services, `routes/mfa.ts`, frontend
+components, RFC 4226/6238 test vectors) but is not merged or wired into
+the running app. Four MFA-*adjacent* services (audit, rate-limiter,
+monitoring, alerting logging) already sit unwired in mainline at
+`apps/backend/src/services/mfa/`. Landing both halves is Release 2, R2-a
+— see `RELEASE_2_PLAN.md`.
+
+### OAuth2 — Not yet implemented
+
+The `Account` model exists in the schema for future OAuth provider
+linkage, and `apps/web`'s declared dependencies include `next-auth`, but
+no OAuth provider is currently wired into either the backend or frontend.
+Registration/login today is email+password only.
 
 ## API Security
 
-### Rate Limiting
+### Rate limiting
+
+One global, IP-based limiter across all of `/api/*`:
 
 ```typescript
 import rateLimit from 'express-rate-limit';
 
-// Standard API rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later'
-});
-
-// Stricter limiting for auth endpoints
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  skipSuccessfulRequests: true // only count failed requests
+  windowMs: config.rateLimit.windowMs,   // default 15 minutes
+  max: config.rateLimit.maxRequests,     // default 100
 });
 
 app.use('/api/', limiter);
-app.use('/api/auth/', authLimiter);
 ```
 
-### CORS Configuration
+There is **no separate, stricter limiter on auth endpoints** — brute-force
+protection against password guessing is the per-account lockout above,
+not a tighter IP rate limit. A Redis-backed limiter shared across
+multiple instances is planned for Release 2 (R2-c); today's in-process
+limiter is correct for Release 1's single-instance deployment target.
+
+### CORS
 
 ```typescript
 app.use(
   cors({
-    origin: ['https://yourdomain.com', 'https://app.yourdomain.com'],
+    origin: config.server.corsOrigins,  // explicit allowlist, zod-validated
+                                          // as URLs — no wildcard, defaults
+                                          // to localhost only
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
   })
 );
 ```
 
-### CSRF Protection
+### CSRF — Not yet implemented
 
-```typescript
-// For state-changing requests, require CSRF token
-import csrf from 'csurf';
+A complete CSRF implementation (middleware, client hook, DB migration,
+tests) exists on the `recover/csrf` branch but is not merged. This is a
+deliberate Release 1 scope decision, not an oversight: Release 1's auth
+uses bearer tokens in the `Authorization` header, which browsers don't
+attach automatically the way they do cookies — so there's no live CSRF
+vector to close yet. CSRF becomes necessary once auth moves to
+browser-auto-sent cookies, which is why R2-b couples the CSRF work to
+that same cookie-auth migration. See `RELEASE_2_PLAN.md`.
 
-const csrfProtection = csrf({ cookie: false });
-
-app.post('/api/sensitive-action', csrfProtection, (req, res) => {
-  // Handle request
-});
-```
-
-### Security Headers
+### Security headers
 
 ```typescript
 import helmet from 'helmet';
-
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'https:'],
-      connectSrc: ["'self'", 'https://api.yourdomain.com'],
-      fontSrc: ["'self'", 'https://fonts.googleapis.com'],
-      frameSrc: ["'none'"],
-      baseUri: ["'self'"],
-      formAction: ["'self'"]
-    }
-  },
-  hsts: {
-    maxAge: 31536000, // 1 year
-    includeSubDomains: true,
-    preload: true
-  },
-  noSniff: true,
-  xssFilter: true,
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
-}));
+app.use(helmet());
 ```
+Default `helmet()` configuration — no custom CSP directives are currently
+set. If the frontend needs a specific Content-Security-Policy (e.g. to
+allow a CDN or analytics script), configure it explicitly rather than
+assuming the defaults cover it.
 
 ## Data Protection
 
-### Encryption at Rest
+### SQL injection prevention
 
-```typescript
-// For sensitive fields, encrypt before storing
-import crypto from 'crypto';
+Every database access goes through Prisma's generated client with
+parameterized queries; no `$queryRaw`/`$executeRaw` calls exist anywhere
+in the codebase. This isn't a policy to remember — it's simply how the
+codebase is written today, verified by grep, not assumed.
 
-const encryptField = (plaintext: string): string => {
-  const cipher = crypto.createCipher('aes-256-cbc', process.env.ENCRYPTION_KEY!);
-  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  return encrypted;
-};
+### Input validation
 
-const decryptField = (encrypted: string): string => {
-  const decipher = crypto.createDecipher('aes-256-cbc', process.env.ENCRYPTION_KEY!);
-  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-  decrypted += decipher.final('utf8');
-  return decrypted;
-};
-```
+Every mutating route validates its request body with a zod schema before
+it can reach Prisma; a `ZodError` maps to `400 VALIDATION_ERROR`, never a
+raw 500. Full detail: `docs/production/R1-b_INPUT_VALIDATION.md`.
 
-### SQL Injection Prevention
+### Error handling
 
-```typescript
-// Using Prisma - parameterized queries (safe by default)
-const user = await prisma.user.findUnique({
-  where: { email: userInput } // Safe - no string interpolation
-});
+`middleware/errorHandler.ts` hides internal error messages and stack
+traces outside `NODE_ENV=development` — a caught error returns a generic
+`"Internal server error"` in staging/production, with the real detail
+only in the server-side log, never the HTTP response.
 
-// ❌ NOT SAFE - Don't do this:
-// const user = await prisma.$queryRaw`SELECT * FROM "User" WHERE email = ${userInput}`;
-```
+### Encryption at rest, XSS sanitization, field-level encryption — Not implemented, no current requirement
 
-### XSS Prevention
+No field-level encryption, no `ENCRYPTION_KEY`-based cipher, and no
+HTML-sanitization library (e.g. DOMPurify) exist anywhere in this
+codebase today. Add them if and when a real requirement appears (e.g. a
+feature that renders user-supplied HTML, or a field with a specific
+compliance requirement to encrypt at the application layer) — don't
+treat their absence as an oversight; Postgres-level encryption at rest
+(via the managed hosting provider) is the current baseline.
 
-```typescript
-// Validate and sanitize all user inputs
-import DOMPurify from 'isomorphic-dompurify';
+## Dependency & Secret Security
 
-const sanitizedContent = DOMPurify.sanitize(userProvidedHTML);
-```
-
-### Input Validation
-
-```typescript
-import { z } from 'zod';
-
-const createDocumentSchema = z.object({
-  title: z.string().min(1).max(255),
-  content: z.string().max(1000000), // 1MB max
-  format: z.enum(['MARKDOWN', 'HTML', 'PLAIN_TEXT']),
-  projectId: z.string().cuid().optional()
-});
-
-// Validate at route handler
-const validated = createDocumentSchema.parse(req.body);
-```
-
-## API Security Best Practices
-
-### API Key Management
-
-```typescript
-// Generate API keys
-const generateApiKey = (): string => {
-  return crypto.randomBytes(32).toString('hex');
-};
-
-// Verify API key (hash stored in DB)
-const verifyApiKey = async (key: string): Promise<boolean> => {
-  const hash = crypto.createHash('sha256').update(key).digest('hex');
-  const record = await prisma.apiKey.findUnique({ where: { key: hash } });
-  return !!record;
-};
-```
-
-### Rate Limiting by API Key
-
-```typescript
-const apiKeyLimiter = rateLimit({
-  keyGenerator: (req) => req.headers['x-api-key'] as string,
-  windowMs: 60 * 60 * 1000, // 1 hour
-  max: 10000 // 10k requests per hour
-});
-```
-
-## Authentication Best Practices
-
-### MFA (Multi-Factor Authentication)
-
-```typescript
-// Generate TOTP secret
-import speakeasy from 'speakeasy';
-
-const secret = speakeasy.generateSecret({
-  name: `Synora (${email})`,
-  issuer: 'Synora'
-});
-
-// Verify TOTP code
-const verified = speakeasy.totp.verify({
-  secret: secret.base32,
-  encoding: 'base32',
-  token: userProvidedToken,
-  window: 2
-});
-```
-
-### OAuth2 Implementation
-
-```typescript
-// NextAuth.js configuration
-export const authOptions: NextAuthOptions = {
-  providers: [
-    GithubProvider({
-      clientId: process.env.GITHUB_ID,
-      clientSecret: process.env.GITHUB_SECRET
-    }),
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET
-    })
-  ],
-  callbacks: {
-    async signIn({ user, account }) {
-      // Validate user data
-      return true;
-    },
-    async session({ session, token }) {
-      // Add custom fields to session
-      session.user.role = token.role;
-      return session;
-    }
-  }
-};
-```
-
-## Logging & Monitoring
-
-### Sensitive Data Logging
-
-```typescript
-// Never log sensitive data
-// ❌ WRONG
-logger.info('User login:', { email, password }); // DO NOT DO THIS
-
-// ✅ CORRECT
-logger.info('User login:', { email, userId });
-
-// Redact sensitive fields
-const redactedUser = {
-  ...user,
-  password: '***',
-  apiKey: '***'
-};
-```
-
-### Audit Logging
-
-```typescript
-// Log all sensitive actions
-const logActivity = async (userId: string, action: string, resource: string) => {
-  await prisma.activityLog.create({
-    data: {
-      userId,
-      action,
-      resource,
-      ipAddress: req.ip,
-      userAgent: req.get('user-agent')
-    }
-  });
-};
-
-// Usage
-await logActivity(userId, 'UPDATE_PASSWORD', 'USER');
-await logActivity(userId, 'DELETE_DOCUMENT', `document_${docId}`);
-```
-
-## Dependency Security
-
-### Vulnerability Scanning
+### Vulnerability scanning (real, CI-enforced)
 
 ```bash
-# Check for vulnerabilities
-npm audit
-
-# Fix vulnerabilities
-npm audit fix
-
-# Use Snyk for continuous monitoring
-npm install -g snyk
-snyk test
-snyk monitor
+# What CI actually runs, blocking, on every push (.github/workflows/ci.yml):
+pnpm audit --prod --audit-level=high
 ```
+This gate is not theoretical — it has already caught and blocked a real
+set of freshly-disclosed CVEs once in this repository's history (see
+`PRODUCTION_READINESS_AUDIT.md`). Package manager is pnpm; `npm audit`
+commands from generic guides don't apply here.
 
-### Dependency Updates
+### Secret scanning (real, CI-enforced)
 
-```bash
-# Update dependencies regularly
-npm outdated
-npm update
+Gitleaks (official OSS Docker image, no license, no token) scans the full
+tree and git history on every push, blocking on any match not explicitly
+allowlisted in `.gitleaksignore` (each entry there is a verified false
+positive — an RFC test vector, a documentation placeholder — never a
+real secret).
 
-# Use npm-check-updates for major versions
-npm install -g npm-check-updates
-ncu -u
-```
+### Secrets never hit git
 
-## Environment Variable Security
+`.dockerignore` and `.gitignore` both exclude every `.env*` file except
+`.env.example`. Every real secret value is read through `SecretsManager`
+(`docs/security/SECRET_MANAGEMENT.md`), which audit-logs every read with
+an actor tag — never logged in plaintext.
 
-```bash
-# ✅ CORRECT - Use environment variables
-DATABASE_URL=postgresql://...
-JWT_SECRET=your-secret-key
-API_KEY=your-api-key
+## Account deletion (Release 2 M3)
 
-# ❌ WRONG - Never hardcode secrets
-const JWT_SECRET = "hardcoded_secret";
-```
+`DELETE /api/users/me` is password-confirmed and soft-deletes: the row is
+kept (`status: DELETED`, preserving referential integrity for owned
+projects/documents/activity), every session is revoked, the email is
+mangled to `deleted-<id>@deleted.synora.internal` so it's immediately
+free for reuse (by anyone, including the same person re-registering), and
+a confirmation email goes to the original address. A deleted account's
+mangled record has `password: null`, so login/refresh both reject it the
+same way an OAuth-only account without a password would.
 
-### .env File Security
+## Provider-agnostic mailer and storage (Release 2 M3)
 
-```bash
-# Add to .gitignore
-echo ".env.local" >> .gitignore
-echo ".env.*.local" >> .gitignore
+Both new subsystems (`src/mail/`, `src/storage/` — see
+`docs/architecture.md`) follow the same security posture as the AI
+abstraction: no vendor SDK import outside the one adapter file, real
+credentials (`SMTP_USER`/`SMTP_PASSWORD`) read only through
+SecretsManager and cataloged in `secrets/registry.ts`, never logged.
+Avatar uploads are content-type-allowlisted (PNG/JPEG/WEBP/GIF) and
+size-capped (`STORAGE_MAX_UPLOAD_BYTES`, default 5MB) before ever
+reaching the storage provider.
 
-# Use strong permissions
-chmod 600 .env.local
+## Workspace authorization (Release 2 M4)
 
-# Never commit .env files
-git rm --cached .env.local
-```
+Every workspace route (`GET/PATCH /api/workspaces/:id`, `GET
+/api/workspaces/:id/members`) requires membership, checked before any data
+is returned. A non-member gets `404 Not Found`, never `403 Forbidden` — the
+same enumeration-resistance principle as auth above: a 403 would confirm
+the workspace exists, a 404 doesn't. A member who isn't the `OWNER` gets
+`403` on write operations (`PATCH`) since they already know the workspace
+exists (they're a member of it); read operations are open to any member
+regardless of role. Notifications follow the same rule: `POST
+/api/notifications/:id/read` 404s if the notification doesn't belong to
+the requesting user, rather than leaking whether the id exists.
 
-## GDPR & Privacy Compliance
+## API keys and audit logging — reserved, not yet wired
 
-### Data Retention
+The `ApiKey` model (workspace-scoped keys) and `ActivityLog` model
+(per-user action audit trail) both exist in the Prisma schema but no
+route currently creates, verifies, or queries either — they're
+provisioned for a future feature, not a gap in an existing one. Don't
+reference either as if it's currently protecting anything.
 
-```typescript
-// Delete user data after 30 days of account deletion
-const deleteOldUsers = async () => {
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  
-  await prisma.user.deleteMany({
-    where: {
-      status: 'DELETED',
-      updatedAt: { lt: thirtyDaysAgo }
-    }
-  });
-};
-```
+## GDPR & Privacy — no current implementation
 
-### Data Export
-
-```typescript
-// Allow users to export their data
-export const exportUserData = async (userId: string) => {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      documents: true,
-      images: true,
-      videos: true
-    }
-  });
-
-  return JSON.stringify(user);
-};
-```
-
-### Right to be Forgotten
-
-```typescript
-// Anonymize instead of delete
-export const anonymizeUser = async (userId: string) => {
-  await prisma.user.update({
-    where: { id: userId },
-    data: {
-      email: `deleted-${userId}@deleted.local`,
-      name: 'Deleted User',
-      status: 'DELETED',
-      password: null
-    }
-  });
-};
-```
+There is no data-export or right-to-be-forgotten (anonymization) code in
+this repository today. If GDPR/CCPA compliance is a near-term
+requirement, scope it explicitly (likely Release 2 or 3) rather than
+assuming it's covered.
 
 ## Security Checklist
 
-### Pre-Production
-- [ ] All secrets in environment variables
-- [ ] HTTPS enabled
-- [ ] CORS properly configured
-- [ ] Rate limiting enabled
-- [ ] Input validation on all endpoints
-- [ ] SQL injection prevention (using parameterized queries)
-- [ ] XSS prevention (sanitize outputs)
-- [ ] CSRF protection for state-changing requests
-- [ ] Security headers configured
-- [ ] API keys hashed and salted
-- [ ] Passwords hashed with bcryptjs
-- [ ] Error messages don't leak sensitive info
-- [ ] Logging doesn't log sensitive data
-- [ ] Database backups configured
-- [ ] WAF (Web Application Firewall) enabled
-- [ ] SSL/TLS certificate valid
-- [ ] Dependencies scanned for vulnerabilities
+### Verified true today (Release 1)
+- [x] Secrets never committed (`.gitignore`/`.dockerignore` exclude every `.env*` except `.env.example`; gitleaks scans every push)
+- [x] CORS explicitly allowlisted, no wildcard
+- [x] Global rate limiting enabled on `/api/*`
+- [x] Input validation (zod) on every mutating route
+- [x] SQL injection prevented structurally (Prisma only, no raw queries)
+- [x] Security headers via `helmet()`
+- [x] Passwords hashed with Argon2id (bcrypt legacy hashes migrate transparently)
+- [x] Error messages don't leak internals outside `development`
+- [x] Per-account login lockout
+- [x] Refresh-token rotation with reuse detection; real, revocable logout
+- [x] JWT algorithm pinned (`HS256` enforced at verification)
+- [x] Blocking CI gates: `pnpm audit --prod --audit-level=high`, gitleaks
+- [x] Database backups: satisfied by choosing a managed Postgres provider with automated backups/PITR (a deployment requirement, not app code — see `PROJECT_HANDOVER.md` §10)
+- [x] Password reset revokes every session for the account (Release 2 M3)
+- [x] "Log out everywhere" — revoke all active sessions on demand (Release 2 M3)
+- [x] Account deletion is password-confirmed and revokes every session (Release 2 M3)
+- [x] Avatar uploads are content-type-allowlisted and size-capped (Release 2 M3)
 
-### Production Monitoring
-- [ ] Error tracking (Sentry)
-- [ ] Performance monitoring
-- [ ] Security headers verified
-- [ ] Rate limiting monitored
-- [ ] Failed login attempts tracked
-- [ ] Unusual API activity alerted
-- [ ] Daily security log reviews
-- [ ] Weekly penetration testing
+### Not yet implemented (tracked, not accidental)
+- [ ] MFA (`recover/mfa` branch exists, needs rebase — R2-a)
+- [ ] CSRF protection (`recover/csrf` branch exists, coupled to cookie-auth migration — R2-b)
+- [ ] OAuth2 provider login
+- [ ] Password complexity requirements beyond minimum length
+- [ ] Auth-endpoint-specific rate limiting (mitigated today by per-account lockout)
+- [ ] Redis-backed shared rate-limit/lockout state for multi-instance deployments (R2-c)
+- [ ] Field-level encryption at rest
+- [ ] Data export / right-to-be-forgotten (GDPR)
+- [ ] `/metrics` endpoint and alerting beyond `/health`/`/ready` (R2-f)
 
 ## Security Contact
 
@@ -464,4 +320,4 @@ For security issues, please email: security@synora.ai
 
 ---
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-07-25 (Release 2, Milestone 4)

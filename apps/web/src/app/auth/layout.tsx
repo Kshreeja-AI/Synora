@@ -2,12 +2,10 @@ export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
-}) {
+}): React.JSX.Element {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
-      <div className="w-full max-w-md">
-        {children}
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-md animate-fade-up">{children}</div>
     </div>
   );
 }

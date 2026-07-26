@@ -1,96 +1,121 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
-import { Button } from '@synora/design-system';
+import { Building2, Users, CalendarDays, Settings } from 'lucide-react';
+import { Button, Card, CardContent, Skeleton, EmptyState } from '@synora/design-system';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
+import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
+import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
+import { resendVerificationEmail } from '../../lib/api/auth';
 
-interface User {
-  id: string;
-  email: string;
-  name?: string;
-}
+export default function DashboardPage(): React.JSX.Element {
+  const { data: user, isLoading: isUserLoading } = useCurrentUser();
+  const { currentWorkspace, isLoading: isWorkspaceLoading } = useCurrentWorkspace();
+  const openCreateWorkspace = useCreateWorkspaceStore((state) => state.open);
+  const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
 
-export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const handleResend = async (): Promise<void> => {
+    setResendStatus('sending');
+    try {
+      await resendVerificationEmail();
+      setResendStatus('sent');
+    } catch {
+      setResendStatus('idle');
+    }
+  };
 
-  useEffect(() => {
-    const fetchUser = async () => {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        window.location.href = '/auth/login';
-        return;
-      }
-
-      try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch user');
-        }
-
-        const data = await response.json();
-        setUser(data.data);
-      } catch {
-        localStorage.removeItem('token');
-        window.location.href = '/auth/login';
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchUser();
-  }, []);
-
-  if (loading) {
-    return <div className="text-center py-12">Loading...</div>;
+  if (isUserLoading || !user || isWorkspaceLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <Skeleton className="h-10 w-96" />
+          <Skeleton className="h-5 w-72" />
+        </div>
+        <Skeleton className="h-48" />
+      </div>
+    );
   }
 
   return (
     <div>
-      <h1 className="text-4xl font-bold mb-2">Welcome, {user?.name || user?.email}!</h1>
-      <p className="text-gray-600 mb-8">Start creating amazing content with Synora AI.</p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">🎨 Image Generation</h2>
-          <p className="text-gray-600 mb-4">Generate stunning images from text descriptions.</p>
-          <Link href="/dashboard/create?type=image">
-            <Button variant="primary">Create Image</Button>
-          </Link>
+      {!user.emailVerified && (
+        <div className="mb-6 flex flex-col items-start justify-between gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center">
+          <p className="text-sm text-muted-foreground">
+            Please verify your email address to secure your account.
+          </p>
+          {resendStatus === 'sent' ? (
+            <span className="text-sm font-medium text-success">Verification email sent.</span>
+          ) : (
+            <Button size="sm" variant="outline" loading={resendStatus === 'sending'} onClick={handleResend}>
+              Resend verification email
+            </Button>
+          )}
         </div>
+      )}
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">🎬 Video Generation</h2>
-          <p className="text-gray-600 mb-4">Generate videos from prompts and scripts.</p>
-          <Link href="/dashboard/create?type=video">
-            <Button variant="primary">Create Video</Button>
-          </Link>
-        </div>
+      <h1 className="mb-2 text-4xl font-bold text-foreground">Welcome, {user.name || user.email}!</h1>
+      <p className="mb-8 text-muted-foreground">
+        {currentWorkspace ? `Here's what's happening in ${currentWorkspace.name}.` : 'Create a workspace to get started.'}
+      </p>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">✍️ Document Writing</h2>
-          <p className="text-gray-600 mb-4">Write and edit documents with AI assistance.</p>
-          <Link href="/dashboard/create?type=document">
-            <Button variant="primary">Write Document</Button>
-          </Link>
-        </div>
+      {!currentWorkspace ? (
+        <EmptyState
+          icon={<Building2 />}
+          title="Create your first workspace"
+          description="Workspaces keep your projects, members, and settings organized. You can create more later."
+          action={<Button onClick={openCreateWorkspace}>Create workspace</Button>}
+        />
+      ) : (
+        <Card>
+          <CardContent className="space-y-6 p-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg font-semibold text-primary">
+                {currentWorkspace.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">{currentWorkspace.name}</h2>
+                <p className="text-sm text-muted-foreground">/{currentWorkspace.slug}</p>
+              </div>
+            </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-bold mb-4">💻 Code Generation</h2>
-          <p className="text-gray-600 mb-4">Generate and optimize code with AI.</p>
-          <Link href="/dashboard/create?type=code">
-            <Button variant="primary">Generate Code</Button>
-          </Link>
-        </div>
-      </div>
+            <dl className="grid grid-cols-1 gap-4 border-t border-border pt-6 sm:grid-cols-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Members</dt>
+                  <dd className="text-sm font-medium text-foreground">{currentWorkspace.memberCount}</dd>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Your role</dt>
+                  <dd className="text-sm font-medium text-foreground">{currentWorkspace.role}</dd>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <div>
+                  <dt className="text-xs text-muted-foreground">Created</dt>
+                  <dd className="text-sm font-medium text-foreground">
+                    {new Date(currentWorkspace.createdAt).toLocaleDateString()}
+                  </dd>
+                </div>
+              </div>
+            </dl>
 
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-2xl font-bold mb-4">Recent Projects</h2>
-        <p className="text-gray-600">No projects yet. Create your first project to get started!</p>
-      </div>
+            <div className="border-t border-border pt-6">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/dashboard/settings/workspace" className="gap-2">
+                  <Settings className="h-4 w-4" aria-hidden />
+                  Workspace settings
+                </Link>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

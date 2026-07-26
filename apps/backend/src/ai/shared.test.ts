@@ -28,12 +28,12 @@ describe('resolveSystemPrompt', () => {
     expect(result).toContain('code');
   });
 
-  it('returns text mode system prompt when mode is text', () => {
+  it('returns undefined for text mode (no default system prompt)', () => {
     const result = resolveSystemPrompt({
       prompt: 'write a story',
       mode: 'text' as TextGenerationMode,
     });
-    expect(result).toBeDefined();
+    expect(result).toBeUndefined();
   });
 
   it('prioritizes custom systemPrompt over mode default', () => {

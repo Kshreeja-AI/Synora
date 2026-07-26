@@ -16,7 +16,9 @@
     "clean": "turbo clean && rm -rf node_modules",
     "db:generate": "turbo run db:generate",
     "db:migrate": "turbo run db:migrate",
-    "db:seed": "turbo run db:seed",
+    "db:migrate:dev": "turbo run db:migrate:dev",
+    "db:reset": "turbo run db:reset",
+    "db:studio": "turbo run db:studio",
     "secrets:check": "node scripts/check-no-client-secrets.mjs"
   },
   "devDependencies": {
@@ -27,7 +29,8 @@
   },
   "pnpm": {
     "overrides": {
-      "sharp": ">=0.35.0"
+      "sharp": ">=0.35.0",
+      "postcss": ">=8.5.12"
     }
   },
   "engines": {

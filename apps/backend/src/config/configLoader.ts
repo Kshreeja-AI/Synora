@@ -68,6 +68,11 @@ export async function loadConfig(
     auth: {
       jwtExpiry: readString(env, 'JWT_EXPIRY', defaults.auth.jwtExpiry),
       jwtRefreshExpiry: readString(env, 'JWT_REFRESH_EXPIRY', defaults.auth.jwtRefreshExpiry),
+      jwtRefreshExpiryRememberMe: readString(
+        env,
+        'JWT_REFRESH_EXPIRY_REMEMBER_ME',
+        defaults.auth.jwtRefreshExpiryRememberMe
+      ),
       maxFailedLoginAttempts: readNumber(
         env,
         'MAX_FAILED_LOGIN_ATTEMPTS',
@@ -77,6 +82,16 @@ export async function loadConfig(
         env,
         'LOCKOUT_DURATION_MINUTES',
         defaults.auth.lockoutDurationMinutes
+      ),
+      passwordResetTokenExpiry: readString(
+        env,
+        'PASSWORD_RESET_TOKEN_EXPIRY',
+        defaults.auth.passwordResetTokenExpiry
+      ),
+      emailVerificationTokenExpiry: readString(
+        env,
+        'EMAIL_VERIFICATION_TOKEN_EXPIRY',
+        defaults.auth.emailVerificationTokenExpiry
       ),
     },
     urls: {
@@ -111,10 +126,31 @@ export async function loadConfig(
         'AZURE_OPENAI_API_VERSION',
         defaults.ai.azureOpenAIApiVersion
       ),
-      bedrockRegion: readString(env, 'BEDROCK_REGION', defaults.ai.bedrockRegion),
+      // No default: unlike every other field here, AWS_ACCESS_KEY_ID/
+      // AWS_SECRET_ACCESS_KEY are extremely common ambient env vars in any
+      // AWS-hosted deployment (ECS task roles, EC2 instance profiles, CI/CD)
+      // for reasons entirely unrelated to AI generation. Requiring an
+      // explicit BEDROCK_REGION (no fallback) is what makes Bedrock
+      // opt-in rather than silently auto-activated by unrelated AWS
+      // credentials — see bedrock.provider.ts's isConfigured().
+      bedrockRegion: env.BEDROCK_REGION || undefined,
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
+    },
+    mail: {
+      transport: readString(env, 'MAIL_TRANSPORT', defaults.mail.transport) as AppConfig['mail']['transport'],
+      fromAddress: readString(env, 'MAIL_FROM_ADDRESS', defaults.mail.fromAddress),
+      fromName: readString(env, 'MAIL_FROM_NAME', defaults.mail.fromName),
+      smtpHost: env.SMTP_HOST || undefined,
+      smtpPort: readNumber(env, 'SMTP_PORT', defaults.mail.smtpPort),
+      smtpSecure: readString(env, 'SMTP_SECURE', String(defaults.mail.smtpSecure)) === 'true',
+    },
+    storage: {
+      provider: readString(env, 'STORAGE_PROVIDER', defaults.storage.provider) as AppConfig['storage']['provider'],
+      localDirectory: readString(env, 'STORAGE_LOCAL_DIRECTORY', defaults.storage.localDirectory),
+      publicBasePath: readString(env, 'STORAGE_PUBLIC_BASE_PATH', defaults.storage.publicBasePath),
+      maxUploadBytes: readNumber(env, 'STORAGE_MAX_UPLOAD_BYTES', defaults.storage.maxUploadBytes),
     },
   };
 

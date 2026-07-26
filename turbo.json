@@ -44,8 +44,15 @@
     "db:migrate": {
       "cache": false
     },
-    "db:seed": {
+    "db:migrate:dev": {
       "cache": false
+    },
+    "db:reset": {
+      "cache": false
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
     }
   }
 }

@@ -44,6 +44,15 @@ model User {
   // Auth sessions (refresh tokens)
   refreshTokens RefreshToken[]
 
+  // Outstanding password-reset tokens
+  passwordResetTokens PasswordResetToken[]
+
+  // Outstanding email-verification tokens
+  emailVerificationTokens EmailVerificationToken[]
+
+  // In-app notifications
+  notifications Notification[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -55,7 +64,6 @@ model User {
   failedLoginAttempts Int       @default(0)
   lockedUntil         DateTime?
 
-  @@index([email])
   @@index([status])
 }
 
@@ -148,8 +156,6 @@ model Workspace {
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-
-  @@index([slug])
 }
 
 model WorkspaceMember {
@@ -385,6 +391,12 @@ model VerificationToken {
 // new one is issued; logout revokes the token, which is what makes "log out"
 // actually end the session (the short-lived access token expires within
 // minutes, and no new one can be minted without a live refresh token).
+//
+// userAgent/ipAddress/lastUsedAt are device-session metadata captured at
+// issue time (and refreshed on rotation) so a signed-in user can see and
+// individually revoke their active sessions ("this device", "logout
+// everywhere"). rememberMe records which expiry policy produced this
+// token's expiresAt, purely for display — it never changes verification.
 model RefreshToken {
   id          String    @id @default(cuid())
   tokenHash   String    @unique
@@ -393,9 +405,71 @@ model RefreshToken {
   expiresAt   DateTime
   revokedAt   DateTime?
   createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  userAgent   String?
+  ipAddress   String?
+  rememberMe  Boolean   @default(false)
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+// Password-reset tokens. Same hash-at-rest discipline as RefreshToken:
+// the raw token only ever appears in the reset email/link. Single-use
+// (usedAt) and short-lived (expiresAt); consuming one revokes every
+// active refresh token for the user.
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// Email-verification tokens. Same hash-at-rest discipline as
+// PasswordResetToken: the raw token only ever appears in the verification
+// email/link. Single-use (usedAt) and short-lived (expiresAt).
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// In-app notifications. Created at real event trigger points alongside the
+// corresponding transactional email (password changed/reset, email
+// verified, workspace created) — never fabricated for display purposes.
+model Notification {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime           @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+}
+
+enum NotificationType {
+  SECURITY
+  ACCOUNT
+  WORKSPACE
+  SYSTEM
 }
 
 // MFA Audit Logging

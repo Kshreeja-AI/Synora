@@ -5,46 +5,66 @@
 ![CI Pipeline](https://github.com/kshreeja-ai/synora/actions/workflows/ci.yml/badge.svg)
 [![License: BUSL-1.1](https://img.shields.io/badge/License-BUSL--1.1-yellow.svg)](https://github.com/kshreeja-ai/synora/blob/main/LICENSE)
 
-## 🚀 Features
+**Status: Release 1 complete.** Real authentication (JWT + rotating
+refresh tokens, per-account lockout), real AI text/code generation across
+10 providers, a production Docker image, and blocking CI security gates
+are all shipped and verified. See `RELEASE_1_FINAL.md` for the full
+snapshot, or `PROJECT_HANDOVER.md` if you're new here and want the
+zero-context tour.
 
-- **🎨 AI Image Generation** - Create stunning images from text descriptions
-- **🎬 AI Video Generation** - Generate videos automatically from prompts
-- **🎵 AI Audio & Music** - Create voiceovers, music, and sound effects
-- **✍️ AI Writing Assistant** - Write, edit, and improve content with AI
-- **💻 AI Coding Assistant** - Generate, debug, and optimize code
-- **📄 Document Management** - Create and organize content projects
-- **🤝 Team Collaboration** - Work together in shared workspaces
-- **📊 Analytics Dashboard** - Track usage and performance
-- **🔐 Enterprise Security** - End-to-end encryption and compliance ready
+## Features
 
-## 🛠️ Technology Stack
+Shipped in Release 1:
+- **✍️ AI Text & Code Generation** — 10 providers (Anthropic, OpenAI,
+  Gemini, xAI, OpenRouter, DeepSeek, Together, Azure OpenAI, Bedrock,
+  Ollama) behind one provider-agnostic API, auto-selected by whichever
+  API key is configured
+- **🔐 Real Authentication** — JWT access + rotating refresh tokens,
+  Argon2id password hashing, per-account login lockout, email-enumeration
+  protection
+- **📄 Document & Project Management** — CRUD with per-user isolation
+- **🛡️ Blocking CI Security Gates** — dependency vulnerability scanning
+  and secret scanning on every push
+
+Not yet shipped (see `RELEASE_2_PLAN.md`):
+- 🎨 Image/video/audio generation (routes exist, currently return
+  placeholders — needs an async job queue + object storage)
+- MFA and CSRF protection (both fully built on `recover/mfa` /
+  `recover/csrf` branches, not yet rebased onto mainline)
+- Team workspaces beyond the schema (no route currently uses them)
+
+## Technology Stack
 
 ### Frontend
-- **Next.js 15+** - React framework with App Router
-- **React 19** - Modern UI library
-- **TypeScript** - Type-safe development
-- **Tailwind CSS** - Utility-first styling
-- **TanStack Query** - Data synchronization
-- **Zustand** - State management
+- **Next.js 15** — React framework with App Router
+- **React 19**
+- **TypeScript**
+- **Tailwind CSS**
+- `next-auth`, `@tanstack/react-query`, `zustand`, `axios` are declared
+  dependencies for a planned future state-management layer — not yet
+  wired into any page (current code uses raw `fetch` + `useState` +
+  `localStorage`; see `PROJECT_HANDOVER.md` §11)
 
 ### Backend
-- **Node.js 20+** - JavaScript runtime
-- **Express.js** - Minimal web framework
-- **Prisma** - Type-safe ORM
-- **PostgreSQL 16** - Relational database
-- **JWT** - Token-based authentication
-- **Winston** - Structured logging
+- **Node.js 20+/22** — ESM
+- **Express 4** with TypeScript (strict)
+- **Prisma 5** — type-safe ORM
+- **PostgreSQL 16**
+- **JWT + opaque rotating refresh tokens** — custom, not NextAuth.js
+- **Argon2id** — password hashing (`argon2` package)
+- **Winston** — structured logging
 
 ### Infrastructure
-- **Docker** - Containerization
-- **GitHub Actions** - CI/CD pipeline
-- **Vercel / Railway** - Deployment platforms
+- **Docker** — multi-stage production image
+- **GitHub Actions** — CI (`test`/`security`/`docker`); no CD yet
+- Frontend hosting and CD platform: not yet decided/documented
 
-## 📋 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Node.js 20+
-- npm 10+
+- **pnpm 10+** (this is a pnpm workspace monorepo — not npm; corepack
+  will pick up the pinned version automatically)
 - PostgreSQL 16+
 - Docker & Docker Compose (optional, for local DB)
 
@@ -58,187 +78,157 @@ cd synora
 
 2. **Install dependencies**
 ```bash
-npm install
+pnpm install
 ```
 
 3. **Configure environment**
 ```bash
 cp .env.example .env.local
-cp apps/backend/.env.example apps/backend/.env.local
-cp apps/web/.env.example apps/web/.env.local
 ```
+See `RELEASE_1_LAUNCH_READINESS.md` §2 for the full, currently-accurate
+list of required vs. optional variables.
 
 4. **Start PostgreSQL** (using Docker Compose)
 ```bash
 docker-compose -f docker-compose.dev.yml up -d
 ```
 
-5. **Setup database**
+5. **Set up the database**
 ```bash
-npm run db:generate
-npm run db:migrate
-npm run db:seed
+pnpm run db:generate
+pnpm run db:migrate
 ```
+There is no seed script — Release 1 ships with no seed data.
 
 6. **Start development servers**
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 - Frontend: http://localhost:3000
 - Backend: http://localhost:3001
 
-## 📚 Documentation
+## Documentation
 
-- **[Architecture](./docs/architecture.md)** - System design and components
-- **[Database Schema](./docs/database.md)** - Data models and relationships
-- **[API Reference](./docs/api.md)** - REST API endpoints
-- **[Development Guide](./CLAUDE.md)** - Setup, workflow, and standards
-- **[Deployment Guide](./docs/deployment.md)** - Production deployment (coming soon)
-- **[Security Policy](./docs/security.md)** - Security practices (coming soon)
+Start with `PROJECT_HANDOVER.md` (zero-context entry point) or
+`RELEASE_1_FINAL.md` (the authoritative Release 1 snapshot). See
+`docs/README.md` for the full documentation hierarchy — current reference
+docs live in `docs/`, historical point-in-time reports live in
+`docs/archive/`.
 
-## 🧪 Testing
+- **[Project Handover](./PROJECT_HANDOVER.md)** — start here
+- **[Release 1 Final Summary](./RELEASE_1_FINAL.md)** — architecture, API, database, deployment, security, all in one place
+- **[Architecture](./docs/architecture.md)**
+- **[Database Schema](./docs/database.md)**
+- **[API Reference](./docs/api.md)**
+- **[Deployment Guide](./docs/deployment.md)**
+- **[Security Policy](./docs/security.md)**
+- **[Release Roadmap](./RELEASE_ROADMAP.md)** — what's done, what's next
+- **[Release 2 Plan](./RELEASE_2_PLAN.md)**
+
+## Testing
 
 ```bash
-# Run all tests
-npm run test
+# Run all tests (all workspaces)
+pnpm run test
 
 # Watch mode
-npm run test:watch
+pnpm run test:watch
 
-# Coverage report
-npm run test:coverage
+# Coverage report (uploaded to Codecov, not currently a CI gate)
+pnpm run test:coverage
 
-# Run tests for specific app
-npm run test --scope=backend
-npm run test --scope=web
+# Run tests for one workspace only
+pnpm --filter @synora/backend test
+pnpm --filter @synora/web test
 ```
 
-## 📦 Project Structure
+## Project Structure
 
 ```
 synora/
 ├── apps/
-│   ├── backend/          # Node.js Express API
-│   └── web/              # Next.js frontend application
+│   ├── backend/          # Express API
+│   └── web/              # Next.js frontend
 ├── packages/
 │   ├── database/         # Prisma schema and migrations
 │   ├── shared/           # Shared types and utilities
 │   └── design-system/    # Reusable React components
-├── infrastructure/       # Docker, deployment configs
-├── docs/                 # Documentation
-└── .github/workflows/    # CI/CD pipelines
+├── infrastructure/       # Docker, k8s (unused, Release 4 scope)
+├── docs/                 # Documentation (see docs/README.md)
+└── .github/workflows/    # CI pipeline
 ```
 
-## 🔐 Security & Privacy
+## Security & Privacy
 
-- **Authentication**: JWT + NextAuth.js v5
-- **Encryption**: TLS/HTTPS, bcryptjs for passwords
-- **Data Protection**: GDPR-ready, audit logging
-- **Rate Limiting**: API rate limiting enabled
-- **Input Validation**: Zod schema validation
+- **Authentication**: custom JWT (access) + rotating refresh tokens (not NextAuth.js)
+- **Password hashing**: Argon2id (bcrypt legacy hashes migrate transparently)
+- **Rate limiting**: global, IP-based, on all of `/api/*`
+- **Input validation**: Zod schema validation on every mutating route
+- **CI gates**: blocking dependency audit (`pnpm audit --prod --audit-level=high`) and secret scanning (gitleaks) on every push
 
-See [Security Policy](./docs/security.md) for details.
+MFA and CSRF are not yet enforced — see `docs/security.md` for the full,
+verified-against-source picture, including what's deliberately deferred
+to Release 2 and why.
 
-## 🚢 Deployment
+## Deployment
 
 ### Development
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ### Production Build
 ```bash
-npm run build
-npm run start
+pnpm run build
 ```
 
 ### Docker
 ```bash
-docker build -t synora .
-docker run -p 3001:3001 synora
+docker build -t synora-backend -f Dockerfile .
+docker run -p 3001:3001 synora-backend
 ```
+See `docs/deployment.md` for the full procedure including required
+environment variables and health-check verification.
 
-## 📊 Project Status
-
-**Current Milestone**: Milestone 1 - Foundation & Architecture ✅
-
-- ✅ Repository structure
-- ✅ Database schema (Prisma)
-- ✅ Authentication system
-- ✅ Backend API foundation
-- ✅ Frontend structure
-- ✅ Design system
-- ✅ CI/CD pipeline
-- ✅ Documentation
-- 🔄 Testing framework (in progress)
-- ⏳ AI provider integration (next)
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
+## Contributing
 
 ### Development Workflow
 
 1. Create feature branch: `git checkout -b feature/description`
 2. Make changes and commit: `git commit -m "type(scope): description"`
-3. Push to branch: `git push origin feature/description`
-4. Open a Pull Request
+3. Run `pnpm run lint && pnpm run type-check && pnpm run test` before pushing
+4. Push to branch: `git push origin feature/description`
+5. Open a Pull Request
 
 ### Code Standards
 
 - **TypeScript**: Strict mode enabled
 - **Formatting**: Prettier
 - **Linting**: ESLint
-- **Testing**: >80% coverage for business logic
 
-## 📄 License
+## License
 
 Licensed under BUSL-1.1 (Business Source License). See [LICENSE](./LICENSE) for details.
 
-## 🙋 Support
+## Support
 
 - **Documentation**: [docs/](./docs/)
 - **Issues**: [GitHub Issues](https://github.com/kshreeja-ai/synora/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/kshreeja-ai/synora/discussions)
 
-## 🎯 Roadmap
+## What's next
 
-### Q1 2026
-- [ ] Complete core API endpoints
-- [ ] Implement AI provider integrations
-- [ ] Build image generation feature
-- [ ] Set up Redis caching
-- [ ] Write comprehensive tests
+Release 2 (production hardening — MFA, CSRF/cookie auth, Redis-backed
+shared state, media generation, CD pipeline, observability) is planned
+but not started. See `RELEASE_2_PLAN.md` for objectives, priorities,
+milestones, and dependencies.
 
-### Q2 2026
-- [ ] Video generation
-- [ ] Audio generation
-- [ ] Team collaboration features
-- [ ] Workspace management
-- [ ] Advanced analytics
-
-### Q3 2026
-- [ ] Mobile app (React Native)
-- [ ] Desktop app (Electron)
-- [ ] Marketplace for extensions
-- [ ] API webhook support
-
-### Q4 2026+
-- [ ] Microservices architecture
-- [ ] Kubernetes deployment
-- [ ] Custom model training
-- [ ] Enterprise SSO/SAML
-
-## 👥 Authors
+## Authors
 
 Created by the Synora AI Team
 
-## ⭐ Acknowledgments
-
-Built with modern web technologies and inspired by the best practices from leading AI platforms.
-
 ---
 
-**Status**: Early Development (Alpha)  
-**Last Updated**: January 13, 2026
+**Status**: Release 1 complete
+**Last Updated**: 2026-07-23

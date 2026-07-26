@@ -24,7 +24,7 @@ describe('input validation on mutating routes (R1-b)', () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    token = res.body.data.token;
+    token = res.body.data.accessToken;
   });
 
   afterAll(async () => {

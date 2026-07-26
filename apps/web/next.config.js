@@ -4,13 +4,14 @@ const nextConfig = {
     tsconfigPath: './tsconfig.json',
   },
   reactStrictMode: true,
-  swcMinify: true,
   experimental: {
-    appDir: true,
     optimizePackageImports: ['@synora/design-system', '@synora/shared'],
   },
   images: {
-    domains: ['via.placeholder.com', 'localhost'],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'via.placeholder.com' },
+      { protocol: 'http', hostname: 'localhost' },
+    ],
   },
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',

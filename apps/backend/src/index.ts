@@ -13,7 +13,13 @@ async function bootstrap() {
 
   const app = createApp(config);
 
-  app.listen(config.server.port, () => {
+  // Bind explicitly to 0.0.0.0: leaving the host argument out lets Node
+  // pick a default that isn't guaranteed reachable through Docker's port
+  // forwarding in every environment (observed: the server logged as running
+  // inside the CI container, but the host-side health check never reached
+  // it — no request ever hit the logging middleware). Binding to all IPv4
+  // interfaces explicitly removes that ambiguity.
+  app.listen(config.server.port, '0.0.0.0', () => {
     logger.info(`🚀 Server running at http://localhost:${config.server.port}`);
     logger.info(`📚 API available at http://localhost:${config.server.port}/api`);
     logger.info(`🔐 Stage: ${config.stage} | Modes: ${JSON.stringify(config.modes)}`);

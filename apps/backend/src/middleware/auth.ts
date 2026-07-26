@@ -5,6 +5,8 @@ import { secretsManager } from '../secrets';
 
 export interface AuthRequest extends Request {
   userId?: string;
+  /** The RefreshToken row id backing the current access token — see token.service.ts. */
+  sessionId?: string;
   user?: {
     id: string;
     email: string;
@@ -16,6 +18,7 @@ interface JwtPayload {
   userId: string;
   email: string;
   role: string;
+  sid: string;
 }
 
 /**
@@ -53,6 +56,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
   try {
     const decoded = await verifyToken(token);
     req.userId = decoded.userId;
+    req.sessionId = decoded.sid;
     req.user = { id: decoded.userId, email: decoded.email, role: decoded.role };
     next();
   } catch {
@@ -68,6 +72,7 @@ export async function optionalAuthMiddleware(req: AuthRequest, res: Response, ne
     try {
       const decoded = await verifyToken(token);
       req.userId = decoded.userId;
+      req.sessionId = decoded.sid;
       req.user = { id: decoded.userId, email: decoded.email, role: decoded.role };
     } catch {
       // If token is invalid, continue without authentication

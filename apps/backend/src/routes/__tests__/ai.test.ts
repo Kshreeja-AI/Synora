@@ -1,16 +1,21 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi, afterEach } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import express, { json } from 'express';
 import aiRouter from '../ai';
+import { errorHandler } from '../../middleware/errorHandler';
+import { initConfig } from '../../config';
 
-// Store a reference to the mocked function
-let mockGenerateText: ReturnType<typeof vi.fn>;
+// vi.mock() factories are hoisted above the rest of the module, so the
+// mock function itself must be created inside vi.hoisted() — referencing a
+// plain `let` here would be accessed before its initialization.
+const { mockGenerateText } = vi.hoisted(() => ({
+  mockGenerateText: vi.fn(),
+}));
 
 // Mock the generateText function
 vi.mock('../../ai', async () => {
   const actual = await vi.importActual('../../ai');
-  mockGenerateText = vi.fn();
   return {
     ...actual,
     generateText: mockGenerateText,
@@ -20,19 +25,19 @@ vi.mock('../../ai', async () => {
 describe('AI Routes', () => {
   let app: Express;
 
+  beforeAll(async () => {
+    await initConfig();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     app = express();
     app.use(json());
     app.use('/api', aiRouter);
 
-    // Error handling middleware
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-      const status = err.status || 500;
-      const message = err.message || 'Internal server error';
-      res.status(status).json({ error: message });
-    });
+    // The real error middleware, so ZodError -> 400 VALIDATION_ERROR is
+    // exercised exactly as it is in production (see middleware/errorHandler.ts).
+    app.use(errorHandler);
   });
 
   afterEach(() => {

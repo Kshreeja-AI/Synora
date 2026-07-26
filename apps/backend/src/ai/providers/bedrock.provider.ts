@@ -11,14 +11,25 @@ import {
 import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
 import { AIProviderDescriptor } from '../registry';
 
+/** Used only once BEDROCK_REGION has confirmed operator intent (see below). */
+const DEFAULT_BEDROCK_REGION = 'us-east-1';
+
 /**
  * AWS Bedrock, via the model-agnostic Converse API (works across every
  * foundation model Bedrock hosts — Anthropic, Meta, Amazon, etc. — with one
- * request shape). Activated by setting `AWS_ACCESS_KEY_ID` and
- * `AWS_SECRET_ACCESS_KEY`. Model is `BEDROCK_MODEL_ID` (config:
- * `ai.bedrockModelId`), defaulting to a Claude 3.5 Sonnet Bedrock model id;
- * region is `BEDROCK_REGION` (config: `ai.bedrockRegion`), defaulting to
- * `us-east-1`.
+ * request shape). Model is `BEDROCK_MODEL_ID` (config: `ai.bedrockModelId`),
+ * defaulting to a Claude 3.5 Sonnet Bedrock model id.
+ *
+ * Deliberately requires `BEDROCK_REGION` to be explicitly set (no default)
+ * in addition to `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` before this
+ * provider is considered configured. Those two credential env vars are the
+ * single most common ambient convention in AWS-hosted deployments (ECS task
+ * roles, EC2 instance profiles, CI/CD pipelines) for reasons that have
+ * nothing to do with AI generation — auto-detecting Bedrock from their mere
+ * presence would silently activate a real, billable provider the operator
+ * never chose. Requiring one Bedrock-specific env var makes activation an
+ * explicit choice, the same way `ollama.provider.ts` requires an explicit
+ * `OLLAMA_BASE_URL` with no default.
  */
 export class BedrockTextProvider implements TextGenerationProvider {
   readonly id = 'bedrock';
@@ -78,7 +89,7 @@ export const bedrockDescriptor: AIProviderDescriptor = {
   async isConfigured() {
     const accessKeyId = await secretsManager.tryGet('AWS_ACCESS_KEY_ID', 'ai:bedrock');
     const secretAccessKey = await secretsManager.tryGet('AWS_SECRET_ACCESS_KEY', 'ai:bedrock');
-    return Boolean(accessKeyId && secretAccessKey);
+    return Boolean(accessKeyId && secretAccessKey && getConfig().ai.bedrockRegion);
   },
   async create() {
     const accessKeyId = await secretsManager.get('AWS_ACCESS_KEY_ID', 'ai:bedrock');
@@ -86,7 +97,7 @@ export const bedrockDescriptor: AIProviderDescriptor = {
     const { bedrockRegion, bedrockModelId } = getConfig().ai;
 
     const client = new BedrockRuntimeClient({
-      region: bedrockRegion,
+      region: bedrockRegion ?? DEFAULT_BEDROCK_REGION,
       credentials: { accessKeyId, secretAccessKey },
     });
 

@@ -148,13 +148,15 @@ jobs:
         run: pnpm audit --prod --audit-level=high
 
       # BLOCKING gate: fail the build if any secret material is detected in the
-      # tree or git history. Uses the official OSS gitleaks CLI (no license required).
+      # tree or git history. Runs the official gitleaks OSS Docker image
+      # directly (ghcr.io/gitleaks/gitleaks) — no GitHub Action license,
+      # no GITHUB_TOKEN, no account. `detect` scans git history by default
+      # (not passing --no-git), which is why the checkout step above uses
+      # fetch-depth: 0.
       - name: Secret scan (gitleaks)
         run: |
-          # Install official gitleaks CLI
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s v8.21.2
-          # Run gitleaks on the full history (including git log)
-          ./gitleaks detect --source . --exit-code 1 --verbose
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            detect --source=/repo --exit-code 1 --verbose
 
       # Best-effort deeper scan. Non-blocking because it requires an account
       # token that a fresh clone will not have; the blocking gates above do not.

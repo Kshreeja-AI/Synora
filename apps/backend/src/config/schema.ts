@@ -40,8 +40,11 @@ export const AppConfigSchema = z.object({
   auth: z.object({
     jwtExpiry: z.string().min(1),
     jwtRefreshExpiry: z.string().min(1),
+    jwtRefreshExpiryRememberMe: z.string().min(1),
     maxFailedLoginAttempts: z.number().int().positive(),
     lockoutDurationMinutes: z.number().int().positive(),
+    passwordResetTokenExpiry: z.string().min(1),
+    emailVerificationTokenExpiry: z.string().min(1),
   }),
 
   urls: z.object({
@@ -85,9 +88,37 @@ export const AppConfigSchema = z.object({
     azureOpenAIEndpoint: z.string().optional(),
     azureOpenAIDeployment: z.string().optional(),
     azureOpenAIApiVersion: z.string().min(1),
-    bedrockRegion: z.string().min(1),
+    bedrockRegion: z.string().min(1).optional(),
     bedrockModelId: z.string().min(1),
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),
+  }),
+
+  /**
+   * Provider-agnostic mailer (src/mail/**). `transport` is the one explicit
+   * selection switch, mirroring `ai.provider` — real SMTP credentials never
+   * live here, only in SecretsManager (SMTP_USER / SMTP_PASSWORD), read
+   * directly by src/mail/transports/smtp.transport.ts.
+   */
+  mail: z.object({
+    transport: z.enum(['console', 'smtp']),
+    fromAddress: z.string().email(),
+    fromName: z.string().min(1),
+    smtpHost: z.string().optional(),
+    smtpPort: z.number().int().positive(),
+    smtpSecure: z.boolean(),
+  }),
+
+  /**
+   * Provider-agnostic file storage (src/storage/**), used today for avatar
+   * uploads. `provider` is the one explicit selection switch, mirroring
+   * `ai.provider` / `mail.transport` — adding an S3-compatible provider
+   * later is a new descriptor, never a call-site change.
+   */
+  storage: z.object({
+    provider: z.enum(['local']),
+    localDirectory: z.string().min(1),
+    publicBasePath: z.string().min(1),
+    maxUploadBytes: z.number().int().positive(),
   }),
 });

@@ -70,7 +70,6 @@ describe('POST /api/auth/register and /api/auth/login — password hashing', () 
     const loginRes = await request(app).post('/api/auth/login').send({ email, password });
 
     expect(loginRes.status).toBe(200);
-    expect(loginRes.body.data.token).toBeDefined();
     expect(loginRes.body.data.accessToken).toBeDefined();
     expect(loginRes.body.data.refreshToken).toBeDefined();
 

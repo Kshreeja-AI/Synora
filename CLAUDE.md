@@ -11,11 +11,11 @@ A unified platform that integrates AI-powered tools for content creation, automa
 - **Backend**: Node.js 20+, Express.js, TypeScript
 - **Frontend**: Next.js 15+, React 19+, TypeScript
 - **Database**: PostgreSQL 16+
-- **Authentication**: NextAuth.js v5 + JWT + OAuth2
+- **Authentication**: Custom JWT + rotating refresh tokens (`next-auth` is a declared frontend dependency for a possible future OAuth2 flow, not yet wired in)
 - **ORM**: Prisma
 - **Design System**: React components with Tailwind CSS, shadcn/ui
-- **Testing**: Jest, Playwright, Vitest
-- **Package Manager**: npm workspaces (monorepo)
+- **Testing**: Vitest (Jest and Playwright are named here as an original intent; the actual test suite is Vitest + Supertest, no Playwright E2E suite exists yet — see `RELEASE_2_PLAN.md`, R2-h)
+- **Package Manager**: pnpm workspaces (monorepo)
 - **Build Tool**: Turbo
 - **Deployment**: Docker, Vercel, Railway, or self-hosted
 
@@ -24,70 +24,53 @@ A unified platform that integrates AI-powered tools for content creation, automa
 ```
 synora/
 ├── apps/
-│   ├── backend/              # Node.js REST API
+│   ├── backend/              # Express REST API
 │   │   ├── src/
-│   │   │   ├── api/         # Route handlers
-│   │   │   ├── services/    # Business logic
-│   │   │   ├── middleware/  # Auth, logging, etc.
+│   │   │   ├── ai/          # Provider-agnostic AI abstraction (10 providers)
+│   │   │   ├── config/      # Typed, stage-aware config
+│   │   │   ├── db/          # Prisma client singleton
+│   │   │   ├── middleware/  # Auth, error handling, logging
+│   │   │   ├── routes/      # auth, users, projects, documents, images, ai
+│   │   │   ├── secrets/     # SecretsManager + audited reads
+│   │   │   ├── services/    # password, token, lockout, mfa/* (unwired)
 │   │   │   ├── utils/       # Helpers
 │   │   │   └── index.ts     # Server entry
 │   │   ├── tests/
 │   │   └── package.json
-│   └── web/                  # Next.js frontend
-│       ├── src/
-│       │   ├── app/         # App router pages
-│       │   ├── components/  # React components
-│       │   ├── hooks/       # Custom hooks
-│       │   ├── lib/         # Client utilities
-│       │   ├── styles/      # Global styles
-│       │   └── types/       # Type definitions
-│       ├── tests/
+│   └── web/                  # Next.js frontend (App Router)
+│       ├── src/app/
 │       └── package.json
 ├── packages/
-│   ├── database/             # Database schema & migrations
-│   │   ├── schema/
-│   │   ├── migrations/
+│   ├── database/             # Prisma schema & migrations
 │   │   ├── prisma/
 │   │   └── package.json
-│   ├── shared/              # Shared types & utilities
-│   │   ├── src/
-│   │   │   ├── types/       # Shared type definitions
-│   │   │   ├── utils/       # Shared utilities
-│   │   │   └── constants/   # Shared constants
+│   ├── shared/                # Shared types, utilities, ApiException hierarchy
 │   │   └── package.json
-│   └── design-system/       # Reusable React components
-│       ├── src/
-│       │   ├── components/  # Shared UI components
-│       │   ├── hooks/       # Shared hooks
-│       │   ├── styles/      # Design tokens
-│       │   └── index.ts
+│   └── design-system/         # Reusable React components
 │       └── package.json
-├── infrastructure/          # Deployment & DevOps
+├── infrastructure/
 │   ├── docker/
-│   ├── k8s/                # Kubernetes manifests (future)
-│   └── terraform/          # IaC (future)
-├── docs/                   # Documentation
-│   ├── architecture.md
-│   ├── api.md
-│   ├── database.md
-│   ├── deployment.md
-│   ├── security.md
-│   └── changelog.md
-├── .github/
-│   ├── workflows/          # GitHub Actions CI/CD
-│   └── ISSUE_TEMPLATE/
-├── turbo.json             # Turbo configuration
-├── tsconfig.json          # Root TypeScript config
-├── package.json           # Root workspace config
-├── .env.example           # Environment variables template
-└── README.md              # Project overview
+│   └── k8s/                  # present but unused — Release 4 scope
+├── docs/                     # See docs/README.md for the full hierarchy
+│   ├── architecture.md, api.md, database.md, deployment.md, security.md
+│   ├── operations/, security/, production/  # living reference docs
+│   └── archive/              # historical, point-in-time reports
+├── .github/workflows/ci.yml  # test, security, docker jobs
+├── turbo.json                # Turbo configuration
+├── package.json               # Root workspace config, packageManager pin
+├── .env.example               # Environment variables template
+├── PROJECT_HANDOVER.md        # Zero-context entry point
+├── RELEASE_1_FINAL.md         # Authoritative Release 1 snapshot
+└── README.md                  # Project overview
 ```
 
 ## Environment Setup
 
 ### Prerequisites
 - Node.js 20+ (LTS)
-- npm 10+
+- pnpm 10+ (this is a pnpm workspace monorepo — corepack picks up the
+  pinned version from the root `package.json`'s `packageManager` field
+  automatically)
 - PostgreSQL 16+
 - Docker (for local development)
 - Git
@@ -100,28 +83,29 @@ git clone <repo-url>
 cd synora
 
 # Install dependencies
-npm install
+pnpm install
 
 # Generate database types
-npm run db:generate
+pnpm run db:generate
 
 # Create environment files
 cp .env.example .env.local
 cp apps/backend/.env.example apps/backend/.env.local
 cp apps/web/.env.example apps/web/.env.local
 
-# Start PostgreSQL (Docker)
-docker-compose up -d postgres
+# Start PostgreSQL (Docker) — docker-compose.dev.yml also provisions Redis
+# for future use; it isn't consumed by the app yet (see RELEASE_2_PLAN.md,
+# R2-c), so starting just postgres is enough for local development today
+docker-compose -f docker-compose.dev.yml up -d postgres
 
 # Run database migrations
-npm run db:migrate
-
-# Seed database (optional)
-npm run db:seed
+pnpm run db:migrate
 
 # Start development servers
-npm run dev
+pnpm run dev
 ```
+
+There is no seed script — Release 1 ships with no seed data.
 
 ### Environment Variables
 
@@ -155,33 +139,32 @@ NEXTAUTH_URL=http://localhost:3000
 
 ```bash
 # Development
-npm run dev              # Start all apps in development mode
+pnpm run dev              # Start all apps in development mode
 
 # Building
-npm run build            # Build all apps
-npm run build --scope=backend   # Build specific app
+pnpm run build            # Build all apps
+pnpm --filter @synora/backend build   # Build specific app
 
 # Testing
-npm run test             # Run all tests
-npm run test:watch       # Run tests in watch mode
-npm run test:coverage    # Generate coverage report
+pnpm run test             # Run all tests
+pnpm run test:watch       # Run tests in watch mode
+pnpm run test:coverage    # Generate coverage report
 
 # Code Quality
-npm run lint             # Run linters
-npm run format           # Format code with Prettier
-npm run type-check       # Type check all TypeScript
+pnpm run lint             # Run linters
+pnpm run format           # Format code with Prettier
+pnpm run type-check       # Type check all TypeScript
 
 # Database
-npm run db:generate      # Generate Prisma types
-npm run db:migrate       # Run pending migrations
-npm run db:seed          # Seed database
+pnpm run db:generate      # Generate Prisma types
+pnpm run db:migrate       # Run pending migrations
 ```
 
 ### Git Workflow
 
 1. Create a feature branch: `git checkout -b feature/description`
 2. Make changes following the coding standards (see below)
-3. Run tests and linting: `npm run lint && npm run test`
+3. Run tests and linting: `pnpm run lint && pnpm run test`
 4. Commit with descriptive messages: `git commit -m "type(scope): description"`
 5. Push and create a Pull Request
 
@@ -279,16 +262,16 @@ feat(auth): add two-factor authentication support
 
 ```bash
 # All tests
-npm run test
+pnpm run test
 
 # Watch mode
-npm run test:watch
+pnpm run test:watch
 
 # Coverage report
-npm run test:coverage
+pnpm run test:coverage
 
 # Specific package
-npm run test --scope=backend
+pnpm --filter @synora/backend test
 ```
 
 ### Test Structure
@@ -361,21 +344,28 @@ See `docs/security.md` for comprehensive security guidelines.
 
 ## Documentation
 
-All documentation is kept in sync with code:
+Start at `PROJECT_HANDOVER.md` (zero-context entry point) or
+`RELEASE_1_FINAL.md` (the authoritative Release 1 snapshot). See
+`docs/README.md` for the full hierarchy. The five core reference docs
+below live in `docs/` and are kept in sync with code — update the
+relevant one whenever a change touches it:
 
-- **`architecture.md`**: System design and component relationships
-- **`api.md`**: API endpoints, authentication, examples
-- **`database.md`**: Schema documentation, relationships
-- **`deployment.md`**: Deployment procedures
-- **`security.md`**: Security practices and guidelines
-- **`changelog.md`**: Version history and breaking changes
+- **`docs/architecture.md`**: System design and component relationships
+- **`docs/api.md`**: API endpoints, authentication, examples
+- **`docs/database.md`**: Schema documentation, relationships
+- **`docs/deployment.md`**: Deployment procedures
+- **`docs/security.md`**: Security practices and guidelines
+
+There is no `changelog.md` — release-level history lives in
+`RELEASE_ROADMAP.md` and the per-release summary docs
+(`RELEASE_1_FINAL.md`, etc.) instead.
 
 ## Contributing
 
 1. Follow the code standards and style guide above
 2. Write tests for new features
-3. Ensure all tests pass: `npm run test`
-4. Run linters: `npm run lint`
+3. Ensure all tests pass: `pnpm run test`
+4. Run linters: `pnpm run lint`
 5. Update documentation
 6. Create clear commit messages
 7. Submit PR for review
@@ -397,5 +387,5 @@ For questions or issues:
 
 ---
 
-**Last Updated**: 2026-01-13  
-**Status**: Active Development - Milestone 1
+**Last Updated**: 2026-07-23
+**Status**: Release 1 complete — see `RELEASE_1_FINAL.md` and `RELEASE_ROADMAP.md`

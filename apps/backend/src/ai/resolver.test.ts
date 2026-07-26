@@ -1,8 +1,24 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { resolveTextGenerationProvider } from './resolver';
 import { PROVIDER_REGISTRY } from './registry';
+import { initConfig, __resetConfigForTests } from '../config';
 
 describe('resolveTextGenerationProvider', () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+
+  beforeAll(async () => {
+    // No SDK call is made by resolution itself — descriptor.create() only
+    // constructs the vendor client. A fake key is enough to exercise real
+    // fallback-to-first-configured-provider selection with no network I/O.
+    process.env.ANTHROPIC_API_KEY = 'test-key-not-real';
+    await initConfig();
+  });
+
+  afterAll(() => {
+    process.env.ANTHROPIC_API_KEY = previousKey;
+    __resetConfigForTests();
+  });
+
   it('returns a text generation provider', async () => {
     const provider = await resolveTextGenerationProvider();
     expect(provider).toBeDefined();
