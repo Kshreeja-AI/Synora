@@ -60,8 +60,8 @@ export class ConversationFolderService {
         parentId: parentId || null,
       },
       include: {
-        children: true,
-        conversations: { select: { id: true, title: true } },
+        children: { take: 100, orderBy: { name: 'asc' } },
+        conversations: { take: 100, orderBy: { title: 'asc' }, select: { id: true, title: true } },
         _count: { select: { conversations: true, children: true } },
       },
       orderBy: { name: 'asc' },

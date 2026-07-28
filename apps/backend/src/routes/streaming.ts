@@ -135,30 +135,21 @@ router.get(
             data: { content: result.text },
           });
 
-          // Update conversation usage if tracking exists
-          const usage = await prisma.conversationUsage.findUnique({
+          // Update conversation usage (create if not exists)
+          await prisma.conversationUsage.upsert({
             where: { conversationId },
+            create: {
+              conversationId,
+              inputTokens,
+              outputTokens,
+              totalTokens: inputTokens + outputTokens,
+            },
+            update: {
+              inputTokens: { increment: inputTokens },
+              outputTokens: { increment: outputTokens },
+              totalTokens: { increment: inputTokens + outputTokens },
+            },
           });
-
-          if (usage) {
-            await prisma.conversationUsage.update({
-              where: { conversationId },
-              data: {
-                inputTokens: usage.inputTokens + inputTokens,
-                outputTokens: usage.outputTokens + outputTokens,
-                totalTokens: usage.totalTokens + inputTokens + outputTokens,
-              },
-            });
-          } else {
-            await prisma.conversationUsage.create({
-              data: {
-                conversationId,
-                inputTokens,
-                outputTokens,
-                totalTokens: inputTokens + outputTokens,
-              },
-            });
-          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Generation failed';
           sendEvent('error', { error: errorMessage });

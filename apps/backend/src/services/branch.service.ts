@@ -124,19 +124,10 @@ export class BranchService {
     }
 
     if (message.parentId) {
-      const siblings = await prisma.message.findMany({
-        where: { parentId: message.parentId, conversationId },
-        include: { branch: true },
+      await prisma.messageBranch.updateMany({
+        where: { message: { parentId: message.parentId, conversationId } },
+        data: { isMainBranch: false },
       })
-
-      for (const sibling of siblings) {
-        if (sibling.branch) {
-          await prisma.messageBranch.update({
-            where: { id: sibling.branch.id },
-            data: { isMainBranch: sibling.id === messageId },
-          })
-        }
-      }
     }
 
     if (!message.branch) {
@@ -207,9 +198,11 @@ export class BranchService {
       include: {
         branch: true,
         children: {
+          take: 1000,
           orderBy: { createdAt: 'asc' },
         },
       },
+      take: 1000,
       orderBy: { createdAt: 'asc' },
     })
   }
