@@ -6,7 +6,7 @@ import * as subscriptionService from '../services/subscription.service.js';
 import * as paymentMethodService from '../services/paymentMethod.service.js';
 import * as invoiceService from '../services/invoice.service.js';
 import * as creditService from '../services/credit.service.js';
-import { createApiResponse, NotFoundException } from '@synora/shared';
+import { NotFoundException } from '@synora/shared';
 import { prisma } from '@synora/database';
 
 const router: Router = Router({ mergeParams: true });
@@ -44,7 +44,7 @@ router.get('/:id/billing/subscription', async (req: AuthRequest, res, next) => {
       workspaceId
     );
 
-    res.json(createApiResponse(subscription));
+    res.json(subscription);
   } catch (error) {
     next(error);
   }
@@ -60,7 +60,7 @@ router.post('/:id/billing/checkout', async (req: AuthRequest, res, next) => {
     const input = schema.parse(req.body);
 
     const session = await subscriptionService.createCheckoutSession(req.userId!, workspaceId, input);
-    res.json(createApiResponse(session));
+    res.json(session);
   } catch (error) {
     next(error);
   }
@@ -76,7 +76,7 @@ router.patch('/:id/billing/subscription', async (req: AuthRequest, res, next) =>
     const input = schema.parse(req.body);
 
     const updated = await subscriptionService.changePlan(req.userId!, workspaceId, input);
-    res.json(createApiResponse(updated));
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -92,7 +92,7 @@ router.post('/:id/billing/subscription/cancel', async (req: AuthRequest, res, ne
     const input = schema.parse(req.body);
 
     const updated = await subscriptionService.cancelSubscription(req.userId!, workspaceId, input);
-    res.json(createApiResponse(updated));
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -105,7 +105,7 @@ router.post('/:id/billing/subscription/reactivate', async (req: AuthRequest, res
     requirePermission((req as any).userRole, 'billing:manage');
 
     const updated = await subscriptionService.reactivateSubscription(req.userId!, workspaceId);
-    res.json(createApiResponse(updated));
+    res.json(updated);
   } catch (error) {
     next(error);
   }
@@ -125,7 +125,7 @@ router.post('/:id/billing/portal', async (req: AuthRequest, res, next) => {
       workspaceId,
       input.returnUrl
     );
-    res.json(createApiResponse(session));
+    res.json(session);
   } catch (error) {
     next(error);
   }
@@ -140,7 +140,7 @@ router.get('/:id/billing/invoices', async (req: AuthRequest, res, next) => {
     const before = req.query.before ? new Date(req.query.before as string) : undefined;
     const invoices = await invoiceService.listInvoices(req.userId!, workspaceId, { before });
 
-    res.json(createApiResponse(invoices));
+    res.json(invoices);
   } catch (error) {
     next(error);
   }
@@ -154,7 +154,7 @@ router.get('/:id/billing/invoices/:invoiceId', async (req: AuthRequest, res, nex
     requirePermission((req as any).userRole, 'billing:view');
 
     const invoice = await invoiceService.getInvoice(req.userId!, workspaceId, invoiceId);
-    res.json(createApiResponse(invoice));
+    res.json(invoice);
   } catch (error) {
     next(error);
   }
@@ -167,7 +167,7 @@ router.get('/:id/billing/payment-methods', async (req: AuthRequest, res, next) =
     requirePermission((req as any).userRole, 'billing:manage');
 
     const methods = await paymentMethodService.listPaymentMethods(req.userId!, workspaceId);
-    res.json(createApiResponse(methods));
+    res.json(methods);
   } catch (error) {
     next(error);
   }
@@ -183,7 +183,7 @@ router.post('/:id/billing/payment-methods/setup', async (req: AuthRequest, res, 
     const input = schema.parse(req.body);
 
     const session = await paymentMethodService.createSetupSession(req.userId!, workspaceId, input);
-    res.json(createApiResponse(session));
+    res.json(session);
   } catch (error) {
     next(error);
   }
@@ -205,7 +205,7 @@ router.patch('/:id/billing/payment-methods/:pmId', async (req: AuthRequest, res,
         workspaceId,
         pmId
       );
-      res.json(createApiResponse(updated));
+      res.json(updated);
     }
   } catch (error) {
     next(error);
@@ -220,7 +220,7 @@ router.delete('/:id/billing/payment-methods/:pmId', async (req: AuthRequest, res
     requirePermission((req as any).userRole, 'billing:manage');
 
     await paymentMethodService.removePaymentMethod(req.userId!, workspaceId, pmId);
-    res.json(createApiResponse({ success: true }));
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }
@@ -233,7 +233,7 @@ router.get('/:id/billing/credits', async (req: AuthRequest, res, next) => {
     requirePermission((req as any).userRole, 'billing:view');
 
     const balance = await creditService.getCreditBalance(req.userId!, workspaceId);
-    res.json(createApiResponse({ balance }));
+    res.json({ balance });
   } catch (error) {
     next(error);
   }
@@ -248,7 +248,7 @@ router.get('/:id/billing/credits/ledger', async (req: AuthRequest, res, next) =>
     const before = req.query.before ? new Date(req.query.before as string) : undefined;
     const ledger = await creditService.listCreditLedger(req.userId!, workspaceId, { before });
 
-    res.json(createApiResponse(ledger));
+    res.json(ledger);
   } catch (error) {
     next(error);
   }
@@ -264,7 +264,7 @@ router.get('/:id/billing/usage', async (req: AuthRequest, res, next) => {
     const to = req.query.to ? new Date(req.query.to as string) : undefined;
     const summary = await creditService.getUsageSummary(req.userId!, workspaceId, { from, to });
 
-    res.json(createApiResponse(summary));
+    res.json(summary);
   } catch (error) {
     next(error);
   }
