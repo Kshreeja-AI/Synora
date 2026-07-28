@@ -1081,4 +1081,305 @@ database is unreachable.
 
 ---
 
-**Last Updated**: 2026-07-25 (Release 2, Milestone 3)
+## Billing Endpoints
+
+### List Available Plans
+Get all active billing plans.
+
+**Request**
+```http
+GET /api/billing/plans
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "plan_123",
+      "key": "pro",
+      "name": "Professional",
+      "interval": "MONTH",
+      "priceCents": 2999,
+      "creditsPerInterval": 10000,
+      "trialDays": 14,
+      "features": { "text_generation": true, "image_generation": true },
+      "sortOrder": 1,
+      "status": "ACTIVE",
+      "isDefault": false
+    }
+  ]
+}
+```
+
+---
+
+### Get Subscription
+Get the current subscription for a workspace.
+
+**Request**
+```http
+GET /api/workspaces/{workspaceId}/billing/subscription
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "sub_123",
+    "workspaceId": "ws_123",
+    "planId": "plan_123",
+    "plan": { /* plan object */ },
+    "status": "ACTIVE",
+    "externalSubscriptionId": "sub_stripe_123",
+    "externalCustomerId": "cus_stripe_123",
+    "provider": "stripe",
+    "currentPeriodStart": "2026-07-01T00:00:00Z",
+    "currentPeriodEnd": "2026-08-01T00:00:00Z",
+    "cancelAtPeriodEnd": false,
+    "createdAt": "2026-07-01T12:00:00Z",
+    "updatedAt": "2026-07-01T12:00:00Z"
+  }
+}
+```
+
+---
+
+### Create Checkout Session
+Initiate a checkout session for plan purchase.
+
+**Request**
+```http
+POST /api/workspaces/{workspaceId}/billing/checkout
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "planId": "plan_123",
+  "successUrl": "https://app.example.com/billing/success",
+  "cancelUrl": "https://app.example.com/billing/plans"
+}
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://checkout.stripe.com/pay/cs_test_...",
+    "sessionId": "cs_test_..."
+  }
+}
+```
+
+Redirects to external payment provider (Stripe). Session is valid for 24 hours.
+
+---
+
+### Change Plan
+Change the current subscription plan.
+
+**Request**
+```http
+POST /api/workspaces/{workspaceId}/billing/subscription/change-plan
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "planId": "plan_456"
+}
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": { /* updated subscription object */ }
+}
+```
+
+**Status Codes**
+- `200`: Plan changed successfully
+- `400`: Invalid plan or subscription state
+- `404`: Workspace or plan not found
+- `503`: Billing provider unavailable
+
+---
+
+### Cancel Subscription
+Cancel the current subscription.
+
+**Request**
+```http
+POST /api/workspaces/{workspaceId}/billing/subscription/cancel
+Authorization: Bearer <jwt_token>
+Content-Type: application/json
+
+{
+  "atPeriodEnd": true
+}
+```
+
+If `atPeriodEnd` is `true`, subscription cancels at the end of the current billing period. If `false`, cancellation is immediate.
+
+**Response**
+```json
+{
+  "success": true,
+  "data": { /* updated subscription object */ }
+}
+```
+
+---
+
+### Get Credit Balance
+Get the current credit balance for a workspace.
+
+**Request**
+```http
+GET /api/workspaces/{workspaceId}/billing/credits
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "credits_123",
+    "workspaceId": "ws_123",
+    "balance": 5250,
+    "createdAt": "2026-07-01T12:00:00Z",
+    "updatedAt": "2026-07-15T14:30:00Z"
+  }
+}
+```
+
+---
+
+### List Credit Ledger
+Get recent credit transactions.
+
+**Request**
+```http
+GET /api/workspaces/{workspaceId}/billing/credits/ledger
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "ledger_123",
+      "workspaceId": "ws_123",
+      "type": "GRANT",
+      "amount": 10000,
+      "balanceAfter": 15000,
+      "reason": "Monthly subscription grant",
+      "actorId": null,
+      "createdAt": "2026-07-01T00:00:00Z"
+    },
+    {
+      "id": "ledger_124",
+      "workspaceId": "ws_123",
+      "type": "DEDUCTION",
+      "amount": -750,
+      "balanceAfter": 14250,
+      "reason": "Usage: text_generation",
+      "actorId": null,
+      "createdAt": "2026-07-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+Returns up to 50 most recent ledger entries sorted by date descending.
+
+---
+
+### Get Usage Summary
+Get usage breakdown by capability.
+
+**Request**
+```http
+GET /api/workspaces/{workspaceId}/billing/usage
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "text_generation": {
+      "quantity": 1234,
+      "creditsCost": 1850
+    },
+    "image_generation": {
+      "quantity": 456,
+      "creditsCost": 2280
+    }
+  }
+}
+```
+
+---
+
+### List Invoices
+Get billing invoices for a workspace.
+
+**Request**
+```http
+GET /api/workspaces/{workspaceId}/billing/invoices
+Authorization: Bearer <jwt_token>
+```
+
+**Response**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "invoice_123",
+      "subscriptionId": "sub_123",
+      "workspaceId": "ws_123",
+      "externalInvoiceId": "inv_stripe_123",
+      "status": "PAID",
+      "amountDueCents": 2999,
+      "amountPaidCents": 2999,
+      "hostedInvoiceUrl": "https://invoice.stripe.com/...",
+      "paidAt": "2026-07-01T15:00:00Z",
+      "createdAt": "2026-07-01T12:00:00Z",
+      "updatedAt": "2026-07-01T15:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+## Billing Webhooks
+
+### Stripe Webhook Handler
+The platform listens for Stripe webhook events at `POST /api/billing/webhook` (signature header: `stripe-signature`).
+
+Handled event types:
+- `checkout.session.completed` — Creates/updates subscription
+- `customer.subscription.updated` — Updates subscription status and billing period
+- `customer.subscription.deleted` — Reverts to default plan
+- `invoice.paid` — Records payment and grants credits
+- `invoice.payment_failed` — Marks subscription as past due
+- `payment_method.attached` — Stores payment method
+- `payment_method.detached` — Removes payment method
+
+All webhook events are idempotent (deduplicated by external event ID). Webhook processing failures are logged but do not cause the endpoint to return an error (retry is provider's responsibility).
+
+---
+
+**Last Updated**: 2026-07-26 (Release 2, Milestone 6)

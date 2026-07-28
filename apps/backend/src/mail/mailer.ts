@@ -4,6 +4,7 @@ import { verifyEmailTemplate } from './templates/verifyEmail';
 import { passwordResetTemplate } from './templates/passwordReset';
 import { passwordChangedTemplate } from './templates/passwordChanged';
 import { accountDeletedTemplate } from './templates/accountDeleted';
+import { workspaceInvitationTemplate } from './templates/workspaceInvitation';
 import type { MailContent } from './types';
 
 /**
@@ -54,4 +55,23 @@ export async function sendAccountDeletedEmail(params: {
   name: string | null;
 }): Promise<void> {
   await deliver(params.to, accountDeletedTemplate({ name: params.name }));
+}
+
+export async function sendWorkspaceInvitationEmail(params: {
+  to: string;
+  workspaceName: string;
+  inviterName: string | null;
+  role: string;
+  token: string;
+}): Promise<void> {
+  const acceptUrl = `${getConfig().urls.frontendUrl}/invite/${encodeURIComponent(params.token)}`;
+  await deliver(
+    params.to,
+    workspaceInvitationTemplate({
+      workspaceName: params.workspaceName,
+      inviterName: params.inviterName,
+      role: params.role,
+      acceptUrl,
+    })
+  );
 }

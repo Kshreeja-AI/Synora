@@ -37,4 +37,11 @@ describe('Sidebar', () => {
     render(<Sidebar open={false} onNavigate={vi.fn()} />);
     expect(screen.queryByText('Synora')).toBeNull();
   });
+
+  it('marks Projects active on a project detail sub-route without marking Dashboard active', () => {
+    pathname = '/dashboard/projects/abc123';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^projects$/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /^dashboard$/i })).not.toHaveAttribute('aria-current');
+  });
 });

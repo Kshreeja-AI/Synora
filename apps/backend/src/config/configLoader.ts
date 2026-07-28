@@ -151,6 +151,16 @@ export async function loadConfig(
       localDirectory: readString(env, 'STORAGE_LOCAL_DIRECTORY', defaults.storage.localDirectory),
       publicBasePath: readString(env, 'STORAGE_PUBLIC_BASE_PATH', defaults.storage.publicBasePath),
       maxUploadBytes: readNumber(env, 'STORAGE_MAX_UPLOAD_BYTES', defaults.storage.maxUploadBytes),
+      maxAssetUploadBytes: readNumber(
+        env,
+        'STORAGE_MAX_ASSET_UPLOAD_BYTES',
+        defaults.storage.maxAssetUploadBytes
+      ),
+    },
+    billing: {
+      provider: readString(env, 'BILLING_PROVIDER', defaults.billing.provider) as AppConfig['billing']['provider'],
+      defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),
+      trialDays: readNumber(env, 'BILLING_TRIAL_DAYS', defaults.billing.trialDays),
     },
   };
 

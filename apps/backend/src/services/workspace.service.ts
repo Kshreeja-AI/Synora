@@ -2,17 +2,20 @@ import { prisma } from '@synora/database';
 import type { WorkspaceRole } from '@synora/database';
 import { ForbiddenException, NotFoundException } from '@synora/shared';
 import { createNotification } from './notification.service';
+import { requirePermission, requireOwnerForOwnershipChange } from './permissions';
+import { recordAuditEvent } from './audit.service';
 
 /**
- * Workspace create/list/get/update, and the read-only member listing that
- * backs the workspace settings page. Reads are membership-checked — a
- * caller who isn't a member gets a 404, never a 403 that would confirm the
- * workspace exists. Writes additionally require the OWNER role; a member
- * who isn't the owner gets a 403 (they already know the workspace exists).
+ * Workspace create/list/get/update, membership listing, and member role
+ * management. Reads are membership-checked — a caller who isn't a member
+ * gets a 404, never a 403 that would confirm the workspace exists. Writes
+ * are checked against the central permission matrix in `./permissions`
+ * (never trusted from the client) and, for anything touching ownership,
+ * also against `requireOwnerForOwnershipChange`.
  *
- * Invitations, additional roles, and member management are out of scope
- * here (see NEXT_TASK.md) — this only covers create/list/get/rename and
- * OWNER-on-create.
+ * Every workspace must retain at least one OWNER: `updateMemberRole` and
+ * `removeMember` both refuse an action that would leave the workspace
+ * without one.
  */
 
 export interface WorkspaceSummary {
@@ -90,6 +93,9 @@ export async function createWorkspace(
     body: `"${workspace.name}" is ready to go.`,
     link: `/dashboard/settings/workspace`,
   });
+  await recordAuditEvent(workspace.id, userId, 'workspace.created', 'workspace', workspace.id, {
+    name: workspace.name,
+  });
 
   return {
     id: workspace.id,
@@ -126,10 +132,10 @@ export async function listWorkspacesForUser(userId: string): Promise<WorkspaceSu
   }));
 }
 
-async function requireMembership(
+export async function requireMembership(
   userId: string,
   workspaceId: string
-): Promise<{ role: WorkspaceRole }> {
+): Promise<{ id: string; role: WorkspaceRole }> {
   const membership = await prisma.workspaceMember.findUnique({
     where: { userId_workspaceId: { userId, workspaceId } },
   });
@@ -172,10 +178,7 @@ export async function updateWorkspace(
   input: { name?: string; description?: string }
 ): Promise<WorkspaceSummary> {
   const membership = await requireMembership(userId, workspaceId);
-
-  if (membership.role !== 'OWNER') {
-    throw new ForbiddenException('Only the workspace owner can update workspace settings.');
-  }
+  requirePermission(membership.role, 'workspace:update');
 
   const workspace = await prisma.workspace.update({
     where: { id: workspaceId },
@@ -185,6 +188,8 @@ export async function updateWorkspace(
     },
     include: { _count: { select: { members: true } } },
   });
+
+  await recordAuditEvent(workspaceId, userId, 'workspace.updated', 'workspace', workspaceId, input);
 
   return {
     id: workspace.id,
@@ -217,4 +222,74 @@ export async function listWorkspaceMembers(
     createdAt: member.createdAt,
     user: member.user,
   }));
+}
+
+async function countOwners(workspaceId: string): Promise<number> {
+  return prisma.workspaceMember.count({ where: { workspaceId, role: 'OWNER' } });
+}
+
+export async function updateMemberRole(
+  actorId: string,
+  workspaceId: string,
+  memberId: string,
+  role: WorkspaceRole
+): Promise<WorkspaceMemberSummary> {
+  const actorMembership = await requireMembership(actorId, workspaceId);
+  requirePermission(actorMembership.role, 'member:role:update');
+
+  const target = await prisma.workspaceMember.findFirst({
+    where: { id: memberId, workspaceId },
+    include: { user: { select: { id: true, name: true, email: true, image: true } } },
+  });
+  if (!target) {
+    throw new NotFoundException('Member');
+  }
+
+  requireOwnerForOwnershipChange(actorMembership.role, role === 'OWNER' || target.role === 'OWNER');
+
+  if (target.role === 'OWNER' && role !== 'OWNER' && (await countOwners(workspaceId)) <= 1) {
+    throw new ForbiddenException('A workspace must have at least one owner.');
+  }
+
+  const updated = await prisma.workspaceMember.update({
+    where: { id: memberId },
+    data: { role },
+    include: { user: { select: { id: true, name: true, email: true, image: true } } },
+  });
+
+  await recordAuditEvent(workspaceId, actorId, 'member.role_changed', 'member', target.userId, {
+    from: target.role,
+    to: role,
+  });
+
+  return { id: updated.id, role: updated.role, createdAt: updated.createdAt, user: updated.user };
+}
+
+export async function removeMember(actorId: string, workspaceId: string, memberId: string): Promise<void> {
+  const actorMembership = await requireMembership(actorId, workspaceId);
+
+  const target = await prisma.workspaceMember.findFirst({ where: { id: memberId, workspaceId } });
+  if (!target) {
+    throw new NotFoundException('Member');
+  }
+
+  const isSelf = target.userId === actorId;
+  if (!isSelf) {
+    requirePermission(actorMembership.role, 'member:remove');
+    requireOwnerForOwnershipChange(actorMembership.role, target.role === 'OWNER');
+  }
+
+  if (target.role === 'OWNER' && (await countOwners(workspaceId)) <= 1) {
+    throw new ForbiddenException(
+      isSelf
+        ? 'You are the last owner. Transfer ownership before leaving this workspace.'
+        : 'A workspace must have at least one owner.'
+    );
+  }
+
+  await prisma.workspaceMember.delete({ where: { id: memberId } });
+
+  await recordAuditEvent(workspaceId, actorId, isSelf ? 'member.left' : 'member.removed', 'member', target.userId, {
+    role: target.role,
+  });
 }

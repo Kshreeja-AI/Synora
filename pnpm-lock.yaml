@@ -78,6 +78,9 @@ importers:
       openai:
         specifier: ^6.48.0
         version: 6.48.0(@aws-sdk/credential-provider-node@3.972.71)(@smithy/signature-v4@5.6.8)(ws@8.21.1)(zod@3.25.76)
+      stripe:
+        specifier: ^14.21.0
+        version: 14.25.0
       winston:
         specifier: ^3.11.0
         version: 3.19.0
@@ -4426,6 +4429,10 @@ packages:
 
   strip-literal@2.1.1:
     resolution: {integrity: sha512-631UJ6O00eNGfMiWG78ck80dfBab8X6IVFB51jZK5Icd7XAs60Z5y7QdSd/wGIklnWvRbUNloVzhOKKmutxQ6Q==}
+
+  stripe@14.25.0:
+    resolution: {integrity: sha512-wQS3GNMofCXwH8TSje8E1SE8zr6ODiGtHQgPtO95p9Mb4FhKC9jvXR2NUTpZ9ZINlckJcFidCmaTFV4P6vsb9g==}
+    engines: {node: '>=12.*'}
 
   styled-jsx@5.1.6:
     resolution: {integrity: sha512-qSVyDTeMotdvQYoHWLNGwRFJHC+i+ZvdBRYosOFgC+Wg1vx4frN2/RG/NA7SYqqvKNLf39P2LSRA2pu6n0XYZA==}
@@ -9089,6 +9096,11 @@ snapshots:
   strip-literal@2.1.1:
     dependencies:
       js-tokens: 9.0.1
+
+  stripe@14.25.0:
+    dependencies:
+      '@types/node': 20.19.43
+      qs: 6.15.3
 
   styled-jsx@5.1.6(@babel/core@7.29.7)(react@19.2.7):
     dependencies:

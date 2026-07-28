@@ -161,3 +161,10 @@ export class LockedException extends ApiException {
     this.name = 'LockedException';
   }
 }
+
+export class ServiceUnavailableException extends ApiException {
+  constructor(message = 'Service temporarily unavailable') {
+    super('SERVICE_UNAVAILABLE', message, 503);
+    this.name = 'ServiceUnavailableException';
+  }
+}

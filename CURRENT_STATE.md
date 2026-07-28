@@ -1,6 +1,6 @@
 # Synora — Current State
 
-**Snapshot date:** 2026-07-25
+**Snapshot date:** 2026-07-26 (updated after M5 completion)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
 verified against the repository, not assumed.
@@ -9,25 +9,17 @@ verified against the repository, not assumed.
 
 - **Current release:** Release 2 — "Complete customer-facing platform"
   (`RELEASE_2_PLAN.md`)
-- **Current milestone:** M4 (Application shell) **complete**. Per
-  founder instruction (2026-07-25), M4 was redefined to mean the
-  authenticated application shell — dashboard, sidebar, workspace
-  switcher, header/search, global command palette, notifications,
-  profile menu, workspace settings, breadcrumbs, responsive nav,
-  keyboard shortcuts, theme persistence, empty/loading states, error
-  boundaries, 404/500 pages — with the first-ever workspace backend
-  routes (create/list/get/rename, membership-checked) built to support
-  it. `RELEASE_2_PLAN.md`'s milestone table has been renumbered
-  accordingly: everything after the old M4 ("Core product surfaces")
-  shifted down one slot (old M4→M5, M5→M6, …, M9→M10); see
-  `RELEASE_2_PLAN.md` §3 for the full mapping and rationale.
+- **Current milestone:** M6 (Billing) **in progress**. Prior completion: M5
+  (Workspace members, projects, folders, assets, invitations) — workspace-scoped
+  CRUD, folder hierarchy, asset multipart upload, email invitations, audit logging,
+  permission system, all tests passing, PR #37 CI green. M4 milestone was redefined
+  to mean the authenticated application shell (per founder 2026-07-25); `RELEASE_2_PLAN.md`'s
+  milestone table was renumbered accordingly (old M4→M5, M5→M6, …, M9→M10).
 - **Current branch:** `claude/synora-ai-platform-h5q0k2`
-- **Current commit:** pending push of this milestone's work (M4 closing
-  commit) — see `git log` for the exact hash once pushed
-- **Current PR:** #31 → `SYNORA`, open, not merged
-- **Current CI status:** verify on push; local gate (lint + typecheck +
-  test + build across all 5 workspace packages) is green as of this
-  snapshot
+- **Current commit:** M5 closing commit (dd359e7), PR #37 created and CI green
+  (test ✅, security ✅, docker ✅). Ready to rebase onto merged M5 and continue M6.
+- **Current PR:** #37 (M5) → `SYNORA`, draft, CI green; #31 (M4) merged
+- **Current CI status:** M5 all green; M6 implementation starting from fresh working tree
 
 ## Completed features (working end-to-end)
 
@@ -63,7 +55,24 @@ verified against the repository, not assumed.
 - Provider-agnostic mailer (`src/mail/`) and file storage (`src/storage/`)
   — unchanged from M3, still real and load-bearing (avatar uploads,
   transactional email)
-- User/me, projects CRUD, documents CRUD — scoped by userId
+- **Workspace-scoped projects & documents (new in M5):** all CRUD ops now
+  membership-checked, 404 for non-members (same pattern M4 established for
+  workspace routes) — full test coverage
+- **Workspace folders (new in M5):** hierarchical folder support with
+  recursive cascade delete, nested parent/child relationships, full CRUD
+  with permission checks
+- **Workspace assets (new in M5):** multipart file upload via storage abstraction,
+  `POST/GET /api/workspaces/:id/assets`, DELETE with permission checks
+- **Workspace invitations (new in M5):** email-based with token acceptance,
+  `POST /api/workspaces/:id/invitations`, `POST /api/invitations/:token/accept`,
+  `GET` preview, DELETE revoke — full lifecycle with mail template
+- **Workspace audit logging (new in M5):** `AuditLog` model, `recordAuditEvent()`
+  service, all mutations logged, queryable via workspace settings page
+- **Permissions system (new in M5):** role-based enforcement (VIEWER/MEMBER/EDITOR/ADMIN/OWNER),
+  `requireMembership()` and `requirePermission()` middleware pattern across all new routes
+- **Frontend M5 additions:** Projects/Folders/Assets pages, invite acceptance page,
+  workspace settings tabs (members, invitations, activity), Sidebar Projects nav
+  with active-state logic, all real CRUD with real API wiring
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
@@ -130,14 +139,14 @@ verified against the repository, not assumed.
 
 ## Pending features (not started)
 
-AI playground, prompt library, model selector UI, provider management
-UI, generation history, real project-management UI (M5); team
-invitations, roles, API keys, extended workspace/security settings, MFA,
-CSRF (M6); image/video/audio generation + asset manager + uploads (M7);
-billing, subscriptions, usage dashboard, analytics (M8); admin +
-monitoring dashboards, audit log viewer, feedback, support center, docs
-site, blog, API docs (M9); Playwright E2E, CD, `/metrics`, alerting,
-backups (M10).
+**M6** (in progress): Billing (Stripe abstraction, subscriptions, plans, credits,
+invoices, payment methods, admin controls, webhook processing).
+**M7**: image/video/audio generation + asset manager + uploads (Redis, queues).
+**M8**: AI playground, prompt library, model selector UI, provider management UI,
+generation history.
+**M9**: admin + monitoring dashboards, audit log viewer, feedback, support center,
+docs site, blog, API docs.
+**M10**: Playwright E2E, CD, `/metrics`, alerting, backups.
 
 ## Current UI
 

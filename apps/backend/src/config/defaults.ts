@@ -55,6 +55,12 @@ export interface StageDefaults {
     localDirectory: string;
     publicBasePath: string;
     maxUploadBytes: number;
+    maxAssetUploadBytes: number;
+  };
+  billing: {
+    provider: 'stripe';
+    defaultCurrency: string;
+    trialDays: number;
   };
 }
 
@@ -111,6 +117,12 @@ const BASE_DEFAULTS: StageDefaults = {
     localDirectory: 'uploads',
     publicBasePath: '/uploads',
     maxUploadBytes: 5 * 1024 * 1024, // 5 MiB — plenty for an avatar image
+    maxAssetUploadBytes: 25 * 1024 * 1024, // 25 MiB — workspace assets (docs, images, etc.), not just avatars
+  },
+  billing: {
+    provider: 'stripe',
+    defaultCurrency: 'USD',
+    trialDays: 14,
   },
 };
 
@@ -164,6 +176,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     ai: { ...BASE_DEFAULTS.ai, ...override.ai },
     mail: { ...BASE_DEFAULTS.mail, ...override.mail },
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
+    billing: { ...BASE_DEFAULTS.billing, ...override.billing },
   };
 
   return applyModeOverrides(merged, modes);

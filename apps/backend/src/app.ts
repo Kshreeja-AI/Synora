@@ -16,6 +16,13 @@ import imageRoutes from './routes/images';
 import aiRoutes from './routes/ai';
 import workspaceRoutes from './routes/workspaces';
 import notificationRoutes from './routes/notifications';
+import invitationRoutes from './routes/invitations';
+import folderRoutes from './routes/folders';
+import assetRoutes from './routes/assets';
+import billingRoutes from './routes/billing';
+import billingPlansRoutes from './routes/billingPlans';
+import billingWebhookRoutes from './routes/billingWebhook';
+import adminBillingRoutes from './routes/adminBilling';
 
 export interface CreateAppDeps {
   /**
@@ -59,7 +66,17 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   app.use('/api/', limiter);
 
-  // Body Parser
+  // Billing webhook needs raw body to verify Stripe signature (must be before json parsing)
+  app.use('/api/billing', (req, res, next) => {
+    if (req.path === '/webhook') {
+      return express.raw({ type: 'application/json' })(req, res, () => {
+        billingWebhookRoutes(req, res, next);
+      });
+    }
+    next();
+  });
+
+  // Body Parser (for all other routes)
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
@@ -117,9 +134,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
     }
   });
 
-  // Locally-stored uploads (avatars). Only mounted for the `local` storage
-  // provider — an object-storage provider (M6) serves files from its own
-  // CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
+  // Locally-stored uploads (avatars, workspace assets). Only mounted for the
+  // `local` storage provider — a future object-storage provider serves files
+  // from its own CDN/bucket URL instead, never through this app. Cross-Origin-Resource-
   // Policy is relaxed for this path only: the web app runs on a different
   // origin/port and needs to load these images directly in <img> tags,
   // while the rest of the API keeps helmet's stricter default.
@@ -142,7 +159,13 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/images', imageRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/workspaces', billingRoutes);
+  app.use('/api/workspaces', folderRoutes);
+  app.use('/api/workspaces', assetRoutes);
   app.use('/api/notifications', notificationRoutes);
+  app.use('/api/invitations', invitationRoutes);
+  app.use('/api/billing', billingPlansRoutes);
+  app.use('/api/admin', adminBillingRoutes);
 
   // 404 Handler
   app.use((req, res) => {

@@ -53,6 +53,13 @@ model User {
   // In-app notifications
   notifications Notification[]
 
+  // Workspace invitations sent by this user
+  sentInvitations WorkspaceInvitation[]
+
+  // Folders created and assets uploaded by this user
+  createdFolders  Folder[]
+  uploadedAssets  Asset[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -153,6 +160,17 @@ model Workspace {
   projects      Project[]
   apiKeys       ApiKey[]
   invitations   WorkspaceInvitation[]
+  folders       Folder[]
+  assets        Asset[]
+  auditLogs     AuditLog[]
+
+  // Billing relations (M6)
+  subscription  Subscription?
+  invoices      Invoice[]
+  paymentMethods PaymentMethod[]
+  credits       WorkspaceCredits?
+  creditLedger  CreditLedgerEntry[]
+  usageRecords  UsageRecord[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -188,10 +206,13 @@ model WorkspaceInvitation {
   email         String
   role          WorkspaceRole @default(MEMBER)
   token         String    @unique
+  invitedById   String
   expiresAt     DateTime
   acceptedAt    DateTime?
+  revokedAt     DateTime?
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedBy     User      @relation(fields: [invitedById], references: [id], onDelete: Cascade)
 
   createdAt     DateTime  @default(now())
 
@@ -232,12 +253,90 @@ model Project {
   images        GeneratedImage[]
   videos        GeneratedVideo[]
   audios        GeneratedAudio[]
+  folders       Folder[]
+  assets        Asset[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+// A folder organizes assets within a workspace, optionally scoped to a
+// single project and optionally nested under a parent folder. Deleting a
+// folder cascades to its subfolders (recursive folder semantics) but only
+// detaches (never deletes) the assets inside it — see Asset.folder below.
+model Folder {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  parentId      String?
+  name          String
+  createdById   String
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent        Folder?   @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Folder[]  @relation("FolderChildren")
+  createdBy     User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  assets        Asset[]
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([parentId])
+}
+
+// A generic uploaded file, distinct from the AI-generated content models
+// above (GeneratedImage/Video/Audio) — an Asset is something a member
+// uploaded, not something Synora produced. Stored via the same
+// provider-agnostic storage abstraction used for avatars.
+model Asset {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  projectId     String?
+  folderId      String?
+  name          String
+  url           String
+  key           String
+  mimeType      String
+  size          Int
+  uploadedById  String
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder        Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  uploadedBy    User      @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([projectId])
+  @@index([folderId])
+}
+
+// Per-workspace audit trail for permission-sensitive actions (member
+// invited/removed/role-changed, project/folder/asset lifecycle, workspace
+// settings changes). actorId is a soft reference — same reasoning as
+// MFAAuditLog: the trail must remain queryable even if the actor's account
+// is later removed.
+model AuditLog {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  actorId       String
+  action        String
+  targetType    String
+  targetId      String?
+  metadata      Json?
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
 }
 
 enum ProjectStatus {
@@ -470,6 +569,7 @@ enum NotificationType {
   ACCOUNT
   WORKSPACE
   SYSTEM
+  BILLING
 }
 
 // MFA Audit Logging
@@ -486,4 +586,214 @@ model MFAAuditLog {
   @@index([userId, timestamp])
   @@index([action, timestamp])
   @@index([timestamp])
+}
+
+// Billing Models
+// Admin-editable plan catalog. Each plan defines pricing, credits, trial period,
+// and feature set. One plan marked as default for new workspaces.
+model Plan {
+  id                String      @id @default(cuid())
+  key               String      @unique
+  name              String
+  status            PlanStatus  @default(ACTIVE)
+  interval          BillingInterval
+  priceCents        Int
+  creditsPerInterval Int         @default(0)
+  trialDays         Int?
+  features          Json?
+  isDefault         Boolean     @default(false)
+  sortOrder         Int         @default(0)
+  providerPriceIds  Json?
+
+  subscriptions     Subscription[]
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([status])
+  @@index([isDefault])
+}
+
+enum PlanStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+}
+
+// Exactly one subscription per workspace. Tracks the current plan,
+// subscription status, billing periods, and external provider IDs.
+model Subscription {
+  id                      String              @id @default(cuid())
+  workspaceId             String              @unique
+  planId                  String
+  provider                String?
+  externalCustomerId      String?
+  externalSubscriptionId  String?
+  status                  SubscriptionStatus  @default(ACTIVE)
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  cancelAtPeriodEnd       Boolean             @default(false)
+  trialEndsAt             DateTime?
+
+  workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  plan                    Plan                @relation(fields: [planId], references: [id])
+
+  invoices                Invoice[]
+  paymentMethods          PaymentMethod[]
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIAL
+}
+
+// Invoice records synced from the payment provider via webhooks.
+// Only reads come from local DB; external-sync happens via webhooks only.
+model Invoice {
+  id                String          @id @default(cuid())
+  subscriptionId    String
+  workspaceId       String
+  provider          String
+  externalInvoiceId String          @unique
+  status            InvoiceStatus
+  amountDueCents    Int
+  amountPaidCents   Int
+  currency          String          @default("USD")
+  hostedInvoiceUrl  String?
+  periodStart       DateTime?
+  periodEnd         DateTime?
+  issuedAt          DateTime?
+  paidAt            DateTime?
+
+  subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+  @@index([subscriptionId])
+  @@index([status])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+// Payment methods synced from provider via webhooks. Supports multiple
+// payment methods per subscription; one marked as default.
+model PaymentMethod {
+  id                      String              @id @default(cuid())
+  subscriptionId          String
+  workspaceId             String
+  provider                String
+  externalPaymentMethodId String              @unique
+  type                    PaymentMethodType
+  brand                   String?
+  last4                   String?
+  expiryMonth             Int?
+  expiryYear              Int?
+  isDefault               Boolean             @default(false)
+
+  subscription            Subscription        @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([workspaceId])
+  @@index([subscriptionId])
+}
+
+enum PaymentMethodType {
+  CARD
+  BANK_ACCOUNT
+  OTHER
+}
+
+// Credit balance per workspace. Denormalized for fast reads;
+// source of truth for available balance.
+model WorkspaceCredits {
+  id            String          @id @default(cuid())
+  workspaceId   String          @unique
+  balance       Int             @default(0)
+  updatedAt     DateTime        @updatedAt
+
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
+}
+
+// Append-only credit transaction log. Every grant, deduction, adjustment,
+// expiration, or refund creates one entry. Never updated after creation.
+model CreditLedgerEntry {
+  id            String                  @id @default(cuid())
+  workspaceId   String
+  type          CreditTransactionType
+  amount        Int
+  balanceAfter  Int
+  reason        String
+  actorId       String?
+  metadata      Json?
+  createdAt     DateTime                @default(now())
+
+  workspace     Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+}
+
+enum CreditTransactionType {
+  GRANT
+  DEDUCTION
+  ADJUSTMENT
+  EXPIRATION
+  REFUND
+}
+
+// Usage records for audit and future analytics. Records when capabilities
+// are invoked and how many credits they consume. Callable today (M6),
+// first call sites added in M7.
+model UsageRecord {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  userId        String?
+  capability    String
+  quantity      Int       @default(1)
+  creditsCost   Int
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, createdAt])
+  @@index([capability, createdAt])
+}
+
+// Webhook event deduplication table. Prevents duplicate processing of
+// the same webhook event replayed by the provider.
+model ProcessedWebhookEvent {
+  id            String    @id @default(cuid())
+  provider      String
+  externalEventId String
+
+  createdAt     DateTime  @default(now())
+
+  @@unique([provider, externalEventId])
+  @@index([provider, createdAt])
 }

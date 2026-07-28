@@ -58,3 +58,30 @@ export async function deleteAvatar(key: string): Promise<void> {
   const provider = await resolveStorageProvider();
   await provider.delete(key);
 }
+
+function sanitizeFilename(filename: string): string {
+  const trimmed = filename.trim().replace(/[^a-zA-Z0-9._-]/g, '-');
+  return trimmed.length > 0 ? trimmed.slice(-100) : 'file';
+}
+
+/**
+ * Uploads a workspace asset (a member-provided file, as opposed to an
+ * AI-generated result) and returns its public URL + storage key. Unlike
+ * `uploadAvatar`, this accepts any content type — assets are generic
+ * documents/images/etc., not a fixed set of avatar formats.
+ */
+export async function uploadWorkspaceAsset(params: {
+  workspaceId: string;
+  filename: string;
+  buffer: Buffer;
+  contentType: string;
+}): Promise<StoredFile> {
+  const provider = await resolveStorageProvider();
+  const key = `assets/${params.workspaceId}/${randomUUID()}-${sanitizeFilename(params.filename)}`;
+  return provider.upload({ key, buffer: params.buffer, contentType: params.contentType });
+}
+
+export async function deleteWorkspaceAsset(key: string): Promise<void> {
+  const provider = await resolveStorageProvider();
+  await provider.delete(key);
+}

@@ -35,7 +35,7 @@ foundation), M2 (marketing site), M3 (auth/account UX), and M4
 
 ## 2. Current State of Progress
 
-**Note (2026-07-25):** the milestone numbering below reflects the
+**Note (2026-07-26):** the milestone numbering below reflects the
 founder's split of the original M3 into M3 (auth/account UX) + M4
 (application shell), which shifted every later milestone up one slot.
 `RELEASE_2_PLAN.md` §3 has the full before/after mapping.
@@ -43,16 +43,16 @@ founder's split of the original M3 into M3 (auth/account UX) + M4
 | Area | Status |
 |---|---|
 | **Release** | Release 2 in progress |
-| **Milestones complete** | M1 (design system foundation), M2 (marketing site), M3 (auth/account UX), M4 (application shell) |
-| **Current milestone** | M5 (core product surfaces) — not started |
+| **Milestones complete** | M1 (design system foundation), M2 (marketing site), M3 (auth/account UX), M4 (application shell), M5 (workspace members, projects, folders, assets, invitations) |
+| **Current milestone** | M6 (billing) — in progress |
 | **Branch** | `claude/synora-ai-platform-h5q0k2` |
-| **Last pushed commit** | pending push of the M4 closing commit — see `git log` |
-| **PR** | #31 → base `SYNORA`, open, not merged |
-| **CI** | verify on push |
-| **Tests** | 577 total (backend 385, web 157, design-system 35) |
-| **Production readiness** | ~50% toward Release 2 launch |
+| **Last pushed commit** | M5 closing commit (dd359e7), PR #37 created and CI green (test, security, docker all passed) |
+| **PR** | #37 (M5) → base `SYNORA`, draft, waiting for auto-merge; #31 (M4) merged |
+| **CI** | M5 CI all green ✅ |
+| **Tests** | 632 total (backend 432, web 200, design-system varies by count) — all passing |
+| **Production readiness** | ~60% toward Release 2 launch (M5/6 billing are core data model + payment integration) |
 | **Known issues** | None open at code level |
-| **Uncommitted on disk** | None — working tree clean at the M4 handover |
+| **Uncommitted on disk** | None — working tree clean, M5 fully committed and pushed |
 
 ### What is complete and working
 
@@ -76,8 +76,33 @@ founder's split of the original M3 into M3 (auth/account UX) + M4
   menu with a server-persisted theme submenu, breadcrumbs,
   keyboard-shortcuts dialog, branded 404/error pages both at the root
   and inside the dashboard shell (M4)
-- User/me, projects CRUD (list/create/get), documents CRUD
-  (list/create/get) — scoped by userId (workspace-scoping is M5)
+- **Workspace-scoped projects & documents (new in M5):** `POST/GET
+  /api/projects`, `GET/PATCH/DELETE /api/projects/:id`,
+  `POST/GET /api/documents`, `GET/PATCH/DELETE /api/documents/:id`
+  — all membership-checked, 404 for non-members (matching M4 pattern).
+  Projects optionally scoped to workspaceId, all tests passing.
+- **Workspace folders (new in M5):** hierarchical folder support with
+  recursive cascade delete, nested parent/child relationships, 
+  `POST/GET /api/workspaces/:id/folders`, PATCH/DELETE with project
+  and parent filtering — workspace-scoped and fully tested.
+- **Workspace assets (new in M5):** multipart file upload, storage
+  integration, `POST/GET /api/workspaces/:id/assets`, DELETE with
+  permission checks — workspace-scoped, fully integrated with storage
+  abstraction from M3.
+- **Workspace invitations (new in M5):** email-based invitations with
+  token acceptance, `POST /api/workspaces/:id/invitations`, `POST
+  /api/invitations/:token/accept`, `GET /api/invitations/:token`
+  (preview), `DELETE` revoke — full lifecycle with mail template.
+- **Workspace audit logging (new in M5):** `AuditLog` model,
+  `recordAuditEvent()` service, all mutations logged — audit trail
+  queryable via workspace settings page.
+- **Permissions system (new in M5):** role-based enforcement
+  (VIEWER/MEMBER/EDITOR/ADMIN/OWNER), `requireMembership()` and
+  `requirePermission()` middleware pattern, tested across all new routes.
+- **Frontend M5 additions:** Projects/Folders/Assets pages, invite
+  acceptance page, workspace settings tabs (members, invitations,
+  activity), Sidebar Projects nav item with active-state logic, all
+  real CRUD with real API wiring, no mock UI.
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
@@ -941,29 +966,34 @@ acceptance criteria, and definition of done. Follow it exactly.
 
 ## 18. Current Next Task
 
-**M5 — Core Product Surfaces**
+**M6 — Billing (Stripe abstraction, subscriptions, plans, credits, invoices, payment methods)**
 
-Full specification is in `NEXT_TASK.md`. Summary:
+Full specification is in the M6 billing design plan and `NEXT_TASK.md` (will be updated at M6 close). Summary:
 
-1. **Project management UI** — real CRUD screens on the existing
-   `Project`/`Document` routes, converted from user-scoped to
-   workspace-scoped (membership-checked, mirroring M4's workspace
-   pattern — 404, not 403, for non-members)
-2. **Document editor** — a real editing surface for `Document` records
-3. **AI playground (text/code)** — a real UI on top of the existing
-   `POST /api/ai/generate`, with a model/provider selector driven by a
-   new `GET /api/ai/providers` endpoint (descriptor metadata only, no
-   secret values, no hardcoded provider list)
-4. **Generation history** — list past generations per workspace (new
-   model, or reuse `ActivityLog` — evaluate both first)
-5. **Prompt library** — save/reuse prompts (new model + routes)
+1. **Provider-agnostic billing abstraction** — `src/billing/` with types, registry, resolver, Stripe provider (first adapter)
+2. **Schema additions** — `Plan`, `Subscription`, `Invoice`, `PaymentMethod`, `WorkspaceCredits`, `CreditLedgerEntry`, `UsageRecord`, `ProcessedWebhookEvent` + migration
+3. **Services** — plan, subscription, paymentMethod, invoice, credit, webhook
+4. **Routes** — workspace-scoped (`/api/workspaces/:id/billing/*`), admin (`/api/admin/billing/*`), webhook (`/api/billing/webhook`)
+5. **Frontend** — billing settings tab (plan/payment-methods/invoices/usage), admin pages, design-system `Progress` component
+6. **Tests** — provider unit, registry, resolver, service, route, webhook, admin layers
+7. **Documentation** — architecture, api, database, security, billing.md, .env updates
+
+### Note on M5 (previous milestone — complete)
+
+**M5 — Workspace Members, Projects, Folders, Assets, Invitations**, shipped:
+workspace-scoped project/document CRUD, folder hierarchy with recursion support,
+asset multipart upload integration, email-based workspace invitations with token
+acceptance, audit logging for all mutations, permission system (VIEWER/MEMBER/EDITOR/ADMIN/OWNER),
+frontend pages for projects/folders/assets/invitations/audit, Sidebar Projects nav
+with active-state logic, 47 new backend integration tests, 19 new frontend tests
+(632 total backend + web), all verification gates green, PR #37 CI passing.
 
 ### Note on M4 (previous milestone — complete)
 
 **M4 — Application Shell**, per founder instruction on 2026-07-25,
 redefined M4 to mean the authenticated application shell rather than
 `RELEASE_2_PLAN.md`'s original "Core product surfaces" (which shifted to
-M5, this task, with every milestone after it renumbered up one: old
+M5, with every milestone after it renumbered up one: old
 M4→M5, M5→M6, …, M9→M10 — see `RELEASE_2_PLAN.md` §3). M4 shipped:
 first-ever workspace backend routes (create/list/get/rename,
 membership-checked, OWNER-only writes), a `Notification` model + routes
