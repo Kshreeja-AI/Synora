@@ -27,9 +27,5 @@
     "test": "echo 'Shared package utilities - tested via backend tests'",
     "format": "prettier --write \"src/**/*.{ts,tsx}\""
   },
-  "devDependencies": {
-    "@types/node": "^20.10.6",
-    "eslint": "^8.56.0",
-    "typescript": "^5.3.3"
-  }
+  "devDependencies": {}
 }
