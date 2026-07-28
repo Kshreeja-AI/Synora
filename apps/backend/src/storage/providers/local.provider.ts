@@ -2,7 +2,7 @@ import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { getConfig } from '../../config';
 import { StorageError, type StorageProvider, type StoredFile, type UploadInput } from '../types';
-import type { StorageProviderDescriptor } from '../registry';
+import type { StorageProviderDescriptor } from '../types/descriptor';
 
 /**
  * Writes uploaded files to a directory on the local filesystem, served back

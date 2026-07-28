@@ -1,11 +1,7 @@
-import type { StorageProvider } from './types';
+import type { StorageProviderDescriptor } from './types/descriptor';
 
-export interface StorageProviderDescriptor {
-  readonly id: string;
-  readonly displayName: string;
-  isConfigured(): Promise<boolean>;
-  create(): Promise<StorageProvider>;
-}
+// Re-export for backwards compatibility
+export type { StorageProviderDescriptor };
 
 import { localStorageDescriptor } from './providers/local.provider';
 
