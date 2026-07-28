@@ -115,7 +115,7 @@ router.post('/workspaces/:workspaceId/credits/grant', async (req: AuthRequest, r
     const input = schema.parse(req.body);
     const credits = await creditService.grantCredits(req.userId!, workspaceId, input);
 
-    res.json(createApiResponse(credits));
+    res.json(credits);
   } catch (error) {
     next(error);
   }
@@ -134,7 +134,7 @@ router.post('/workspaces/:workspaceId/credits/adjust', async (req: AuthRequest, 
     const input = schema.parse(req.body);
     const credits = await creditService.adjustCredits(req.userId!, workspaceId, input);
 
-    res.json(createApiResponse(credits));
+    res.json(credits);
   } catch (error) {
     next(error);
   }

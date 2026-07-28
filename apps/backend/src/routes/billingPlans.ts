@@ -223,7 +223,7 @@ router.post('/billing-portal', async (req: AuthRequest, res, next) => {
     const session = await subscriptionService.createBillingPortalSession(
       req.userId!,
       workspace.id,
-      { returnUrl: body.returnUrl }
+      body.returnUrl
     );
 
     res.json({ url: session.url });
