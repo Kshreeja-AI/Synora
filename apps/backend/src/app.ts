@@ -28,7 +28,8 @@ import messageRoutes from './routes/messages';
 import streamingRoutes from './routes/streaming';
 import branchRoutes from './routes/branches';
 import promptTemplateRoutes from './routes/promptTemplates';
-import conversationTemplateRoutes from './routes/conversationTemplates';
+import conversationTemplateRoutes from './routes/conversationTemplates'
+import conversationFolderRoutes from './routes/conversationFolders';
 
 export interface CreateAppDeps {
   /**
@@ -174,6 +175,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', branchRoutes);
   app.use('/api/workspaces', promptTemplateRoutes);
   app.use('/api/workspaces', conversationTemplateRoutes);
+  app.use('/api/workspaces', conversationFolderRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);

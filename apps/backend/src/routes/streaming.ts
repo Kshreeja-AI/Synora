@@ -1,7 +1,6 @@
 import { Router, type Response } from 'express';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { prisma } from '@synora/database';
-import { NotFoundException } from '@synora/shared';
 import { logger } from '../utils/logger';
 import { generateText } from '../ai';
 
@@ -137,7 +136,7 @@ router.get(
           });
 
           // Update conversation usage if tracking exists
-          let usage = await prisma.conversationUsage.findUnique({
+          const usage = await prisma.conversationUsage.findUnique({
             where: { conversationId },
           });
 
