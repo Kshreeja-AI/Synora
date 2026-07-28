@@ -96,9 +96,10 @@ CREATE TABLE "PromptTemplate" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "workspaceId" TEXT,
   "name" TEXT NOT NULL,
-  "description" TEXT,
   "content" TEXT NOT NULL,
   "category" TEXT,
+  "tags" TEXT[],
+  "isPublic" BOOLEAN NOT NULL DEFAULT false,
   "usageCount" INTEGER NOT NULL DEFAULT 0,
   "isFavorite" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -112,19 +113,20 @@ CREATE TABLE "ConversationTemplate" (
   "workspaceId" TEXT,
   "name" TEXT NOT NULL,
   "description" TEXT,
-  "category" TEXT,
   "initialMessages" JSONB NOT NULL,
-  "systemPrompt" TEXT,
+  "category" TEXT,
+  "isPublic" BOOLEAN NOT NULL DEFAULT false,
   "usageCount" INTEGER NOT NULL DEFAULT 0,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "ConversationTemplate_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE
 );
 
 -- AI Memory model
 CREATE TABLE "AIMemory" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "workspaceId" TEXT NOT NULL UNIQUE,
-  "userId" TEXT NOT NULL,
-  "context" TEXT NOT NULL,
+  "context" JSONB NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "AIMemory_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE
@@ -135,13 +137,12 @@ CREATE TABLE "SharedConversation" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
   "shareToken" TEXT NOT NULL UNIQUE,
-  "createdById" TEXT NOT NULL,
-  "isPublic" BOOLEAN NOT NULL DEFAULT false,
-  "allowEditing" BOOLEAN NOT NULL DEFAULT false,
   "expiresAt" TIMESTAMP(3),
+  "isPublic" BOOLEAN NOT NULL DEFAULT false,
+  "permissions" TEXT NOT NULL DEFAULT 'VIEW',
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "SharedConversation_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE,
-  CONSTRAINT "SharedConversation_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User" ("id") ON DELETE CASCADE
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "SharedConversation_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
 );
 
 -- Conversation Collaborator model
@@ -149,15 +150,16 @@ CREATE TABLE "ConversationCollaborator" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
-  "role" TEXT NOT NULL DEFAULT 'VIEWER',
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  "role" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "ConversationCollaborator_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
 );
 
 -- Conversation Activity model
 CREATE TABLE "ConversationActivity" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
-  "userId" TEXT NOT NULL,
   "action" TEXT NOT NULL,
   "metadata" JSONB,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -168,10 +170,7 @@ CREATE TABLE "ConversationActivity" (
 CREATE TABLE "ConversationVersion" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
-  "version" INTEGER NOT NULL,
-  "snapshotJson" JSONB NOT NULL,
-  "createdById" TEXT NOT NULL,
-  "reason" TEXT,
+  "content" JSONB NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "ConversationVersion_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
 );
@@ -180,22 +179,20 @@ CREATE TABLE "ConversationVersion" (
 CREATE TABLE "StreamingJob" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
-  "messageId" TEXT,
   "status" TEXT NOT NULL DEFAULT 'PENDING',
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "completedAt" TIMESTAMP(3),
-  CONSTRAINT "StreamingJob_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  "completedAt" TIMESTAMP(3)
 );
 
 -- Tool model
 CREATE TABLE "Tool" (
   "id" TEXT NOT NULL PRIMARY KEY,
-  "workspaceId" TEXT NOT NULL,
+  "workspaceId" TEXT,
   "name" TEXT NOT NULL,
   "description" TEXT,
-  "inputSchema" JSONB NOT NULL,
-  "isBuiltin" BOOLEAN NOT NULL DEFAULT false,
-  "provider" TEXT,
+  "definition" JSONB NOT NULL,
+  "isPublic" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "Tool_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE
@@ -204,15 +201,11 @@ CREATE TABLE "Tool" (
 -- Tool Call model
 CREATE TABLE "ToolCall" (
   "id" TEXT NOT NULL PRIMARY KEY,
-  "messageId" TEXT NOT NULL,
   "toolId" TEXT NOT NULL,
-  "name" TEXT NOT NULL,
-  "inputJson" JSONB NOT NULL,
-  "resultJson" JSONB,
-  "status" TEXT NOT NULL DEFAULT 'PENDING',
+  "input" JSONB NOT NULL,
+  "output" JSONB,
+  "error" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "executedAt" TIMESTAMP(3),
-  CONSTRAINT "ToolCall_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message" ("id") ON DELETE CASCADE,
   CONSTRAINT "ToolCall_toolId_fkey" FOREIGN KEY ("toolId") REFERENCES "Tool" ("id") ON DELETE CASCADE
 );
 
@@ -240,12 +233,13 @@ CREATE INDEX "Message_conversationId_createdAt_idx" ON "Message"("conversationId
 CREATE INDEX "Message_conversationId_idx" ON "Message"("conversationId");
 CREATE INDEX "Message_parentMessageId_idx" ON "Message"("parentMessageId");
 
-CREATE INDEX "MessageBranch_conversationId_idx" ON "MessageBranch"("conversationId");
+CREATE INDEX "MessageBranch_messageId_idx" ON "MessageBranch"("messageId");
 
 CREATE INDEX "MessageAttachment_messageId_idx" ON "MessageAttachment"("messageId");
 
 CREATE INDEX "ConversationFolder_workspaceId_idx" ON "ConversationFolder"("workspaceId");
 CREATE INDEX "ConversationFolder_parentId_idx" ON "ConversationFolder"("parentId");
+CREATE INDEX "ConversationFolder_createdById_idx" ON "ConversationFolder"("createdById");
 
 CREATE INDEX "ConversationTag_workspaceId_idx" ON "ConversationTag"("workspaceId");
 CREATE UNIQUE INDEX "ConversationTag_workspaceId_name_idx" ON "ConversationTag"("workspaceId", "name");
@@ -269,16 +263,14 @@ CREATE UNIQUE INDEX "ConversationCollaborator_conversationId_userId_idx" ON "Con
 
 CREATE INDEX "ConversationActivity_conversationId_createdAt_idx" ON "ConversationActivity"("conversationId", "createdAt");
 
-CREATE INDEX "ConversationVersion_conversationId_version_idx" ON "ConversationVersion"("conversationId", "version");
 CREATE INDEX "ConversationVersion_conversationId_createdAt_idx" ON "ConversationVersion"("conversationId", "createdAt");
 
 CREATE INDEX "StreamingJob_conversationId_idx" ON "StreamingJob"("conversationId");
-CREATE INDEX "StreamingJob_messageId_idx" ON "StreamingJob"("messageId");
+CREATE INDEX "StreamingJob_status_idx" ON "StreamingJob"("status");
 
 CREATE INDEX "Tool_workspaceId_idx" ON "Tool"("workspaceId");
 CREATE UNIQUE INDEX "Tool_workspaceId_name_idx" ON "Tool"("workspaceId", "name");
 
-CREATE INDEX "ToolCall_messageId_idx" ON "ToolCall"("messageId");
 CREATE INDEX "ToolCall_toolId_idx" ON "ToolCall"("toolId");
 
 CREATE INDEX "ConversationUsage_conversationId_idx" ON "ConversationUsage"("conversationId");
