@@ -157,6 +157,11 @@ export async function loadConfig(
         defaults.storage.maxAssetUploadBytes
       ),
     },
+    billing: {
+      provider: readString(env, 'BILLING_PROVIDER', defaults.billing.provider) as AppConfig['billing']['provider'],
+      defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),
+      trialDays: readNumber(env, 'BILLING_TRIAL_DAYS', defaults.billing.trialDays),
+    },
   };
 
   const result = AppConfigSchema.safeParse(candidate);
