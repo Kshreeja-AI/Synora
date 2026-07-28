@@ -1,13 +1,25 @@
 -- AlterEnum: Add BILLING to NotificationType
 ALTER TYPE "NotificationType" ADD VALUE 'BILLING';
 
+-- CreateEnum: PlanStatus
+CREATE TYPE "PlanStatus" AS ENUM ('ACTIVE', 'ARCHIVED');
+
+-- CreateEnum: BillingInterval
+CREATE TYPE "BillingInterval" AS ENUM ('MONTH', 'YEAR');
+
+-- CreateEnum: SubscriptionStatus
+CREATE TYPE "SubscriptionStatus" AS ENUM ('ACTIVE', 'PAST_DUE', 'CANCELED', 'TRIAL');
+
+-- CreateEnum: CreditTransactionType
+CREATE TYPE "CreditTransactionType" AS ENUM ('GRANT', 'DEDUCTION', 'ADJUSTMENT', 'EXPIRATION', 'REFUND');
+
 -- CreateTable: Plan
 CREATE TABLE "Plan" (
     "id" TEXT NOT NULL,
     "key" TEXT NOT NULL,
     "name" TEXT NOT NULL,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "interval" TEXT NOT NULL,
+    "status" "PlanStatus" NOT NULL DEFAULT 'ACTIVE',
+    "interval" "BillingInterval" NOT NULL,
     "priceCents" INTEGER NOT NULL,
     "creditsPerInterval" INTEGER NOT NULL DEFAULT 0,
     "trialDays" INTEGER,
@@ -29,7 +41,7 @@ CREATE TABLE "Subscription" (
     "provider" TEXT,
     "externalCustomerId" TEXT,
     "externalSubscriptionId" TEXT,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "status" "SubscriptionStatus" NOT NULL DEFAULT 'ACTIVE',
     "currentPeriodStart" TIMESTAMP(3),
     "currentPeriodEnd" TIMESTAMP(3),
     "cancelAtPeriodEnd" BOOLEAN NOT NULL DEFAULT false,
@@ -95,7 +107,7 @@ CREATE TABLE "WorkspaceCredits" (
 CREATE TABLE "CreditLedgerEntry" (
     "id" TEXT NOT NULL,
     "workspaceId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
+    "type" "CreditTransactionType" NOT NULL,
     "amount" INTEGER NOT NULL,
     "balanceAfter" INTEGER NOT NULL,
     "reason" TEXT NOT NULL,
