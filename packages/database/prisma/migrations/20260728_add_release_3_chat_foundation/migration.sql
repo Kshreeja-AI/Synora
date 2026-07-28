@@ -1,5 +1,12 @@
 -- Release 3: Universal AI Workspace - Chat Foundation Schema
 
+-- Enum types
+CREATE TYPE "ConversationStatus" AS ENUM ('ACTIVE', 'ARCHIVED', 'DELETED');
+CREATE TYPE "MessageRole" AS ENUM ('USER', 'ASSISTANT', 'SYSTEM');
+CREATE TYPE "SharePermission" AS ENUM ('VIEW', 'COMMENT', 'EDIT');
+CREATE TYPE "CollaboratorRole" AS ENUM ('VIEWER', 'EDITOR', 'OWNER');
+CREATE TYPE "StreamingJobStatus" AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELED');
+
 -- Conversation Folder model (must come first - referenced by Conversation)
 CREATE TABLE "ConversationFolder" (
   "id" TEXT NOT NULL PRIMARY KEY,
@@ -22,7 +29,7 @@ CREATE TABLE "Conversation" (
   "description" TEXT,
   "provider" TEXT NOT NULL,
   "model" TEXT NOT NULL,
-  "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+  "status" "ConversationStatus" NOT NULL DEFAULT 'ACTIVE',
   "isArchived" BOOLEAN NOT NULL DEFAULT false,
   "isPinned" BOOLEAN NOT NULL DEFAULT false,
   "folderId" TEXT,
@@ -36,7 +43,7 @@ CREATE TABLE "Conversation" (
 CREATE TABLE "Message" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
-  "role" TEXT NOT NULL DEFAULT 'user',
+  "role" "MessageRole" NOT NULL,
   "content" TEXT NOT NULL,
   "isStreaming" BOOLEAN NOT NULL DEFAULT false,
   "streamingJobId" TEXT,
@@ -139,7 +146,7 @@ CREATE TABLE "SharedConversation" (
   "shareToken" TEXT NOT NULL UNIQUE,
   "expiresAt" TIMESTAMP(3),
   "isPublic" BOOLEAN NOT NULL DEFAULT false,
-  "permissions" TEXT NOT NULL DEFAULT 'VIEW',
+  "permissions" "SharePermission" NOT NULL DEFAULT 'VIEW',
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "SharedConversation_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
@@ -150,7 +157,7 @@ CREATE TABLE "ConversationCollaborator" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
   "userId" TEXT NOT NULL,
-  "role" TEXT NOT NULL,
+  "role" "CollaboratorRole" NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "ConversationCollaborator_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
@@ -179,7 +186,7 @@ CREATE TABLE "ConversationVersion" (
 CREATE TABLE "StreamingJob" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "conversationId" TEXT NOT NULL,
-  "status" TEXT NOT NULL DEFAULT 'PENDING',
+  "status" "StreamingJobStatus" NOT NULL DEFAULT 'PENDING',
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   "completedAt" TIMESTAMP(3)
