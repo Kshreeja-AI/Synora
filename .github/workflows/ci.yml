@@ -42,6 +42,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Wait for database to be ready
+        run: |
+          echo "Waiting for PostgreSQL to accept connections..."
+          for i in {1..30}; do
+            if nc -z localhost 5432 2>/dev/null; then
+              echo "PostgreSQL port is open, waiting for it to fully initialize..."
+              sleep 2
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            if [ $i -lt 30 ]; then
+              echo "Attempt $i/30: PostgreSQL not ready yet, retrying in 1 second..."
+              sleep 1
+            fi
+          done
+          echo "PostgreSQL failed to become ready after 30 seconds"
+          exit 1
+
       - name: Generate database types
         run: pnpm run db:generate
         env:
