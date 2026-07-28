@@ -2,8 +2,10 @@ import { describe, it, expect, beforeEach, beforeAll, vi, afterEach } from 'vite
 import request from 'supertest';
 import type { Express } from 'express';
 import express, { json } from 'express';
+import * as jwt from 'jsonwebtoken';
 import aiRouter from '../ai';
 import { errorHandler } from '../../middleware/errorHandler';
+import { authMiddleware } from '../../middleware/auth';
 import { initConfig } from '../../config';
 
 // vi.mock() factories are hoisted above the rest of the module, so the
@@ -24,6 +26,7 @@ vi.mock('../../ai', async () => {
 
 describe('AI Routes', () => {
   let app: Express;
+  let token: string;
 
   beforeAll(async () => {
     await initConfig();
@@ -31,8 +34,12 @@ describe('AI Routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    token = jwt.sign({ userId: 'test-user-id', workspaceId: 'test-workspace-id' }, process.env.JWT_SECRET || 'test-secret', {
+      expiresIn: '24h',
+    });
     app = express();
     app.use(json());
+    app.use(authMiddleware);
     app.use('/api', aiRouter);
 
     // The real error middleware, so ZodError -> 400 VALIDATION_ERROR is
@@ -58,6 +65,7 @@ describe('AI Routes', () => {
 
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Write hello world',
         });
@@ -82,6 +90,7 @@ describe('AI Routes', () => {
 
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Write code',
           mode: 'code',
@@ -107,6 +116,7 @@ describe('AI Routes', () => {
     it('rejects request without prompt', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           model: 'claude-sonnet-5',
         });
@@ -117,6 +127,7 @@ describe('AI Routes', () => {
     it('rejects empty prompt', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: '',
         });
@@ -127,6 +138,7 @@ describe('AI Routes', () => {
     it('rejects invalid mode', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
           mode: 'invalid-mode',
@@ -138,6 +150,7 @@ describe('AI Routes', () => {
     it('rejects invalid maxTokens (non-integer)', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
           maxTokens: 2048.5,
@@ -149,6 +162,7 @@ describe('AI Routes', () => {
     it('rejects maxTokens out of range', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
           maxTokens: 1000000,
@@ -160,6 +174,7 @@ describe('AI Routes', () => {
     it('rejects invalid temperature', async () => {
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
           temperature: 3.0,
@@ -175,6 +190,7 @@ describe('AI Routes', () => {
 
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
         });
@@ -189,6 +205,7 @@ describe('AI Routes', () => {
 
       const response = await request(app)
         .post('/api/generate')
+        .set('Authorization', `Bearer ${token}`)
         .send({
           prompt: 'Test',
         });

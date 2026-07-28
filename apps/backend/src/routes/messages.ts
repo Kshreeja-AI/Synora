@@ -34,9 +34,12 @@ router.get('/:workspaceId/conversations/:conversationId/messages', authMiddlewar
     const { conversationId } = req.params
     const { skip, take } = req.query
 
+    const skipNum = skip ? Math.max(0, parseInt(skip as string)) : undefined
+    const takeNum = take ? Math.max(1, Math.min(100, parseInt(take as string))) : undefined
+
     const messages = await messageService.getConversationHistory(req.userId!, conversationId, {
-      skip: skip ? parseInt(skip as string) : undefined,
-      take: take ? parseInt(take as string) : undefined,
+      skip: skipNum,
+      take: takeNum,
     })
 
     res.json(createApiResponse(messages))
