@@ -88,14 +88,15 @@ router.delete('/:workspaceId/conversations/:conversationId/messages/:messageId',
 router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/attachments', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { messageId } = req.params
-    const { url, mimeType, name, size } = req.body
-
-    const attachment = await messageService.addAttachment(req.userId!, messageId, {
-      url,
-      mimeType,
-      name,
-      size,
+    const schema = z.object({
+      url: z.string().url(),
+      mimeType: z.string().min(1),
+      name: z.string().min(1),
+      size: z.number().positive(),
     })
+    const input = schema.parse(req.body)
+
+    const attachment = await messageService.addAttachment(req.userId!, messageId, input)
 
     res.status(201).json(createApiResponse(attachment))
   } catch (error) {

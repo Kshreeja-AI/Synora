@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, ValidationException } from '@synora/shared';
 import { uploadAsset, listAssets, deleteAsset } from '../services/asset.service';
@@ -30,12 +31,18 @@ router.post('/:workspaceId/assets', authMiddleware, upload.single('file'), async
       throw new ValidationException('No file provided.');
     }
 
+    const schema = z.object({
+      projectId: z.string().optional(),
+      folderId: z.string().optional(),
+    })
+    const input = schema.parse(req.body)
+
     const asset = await uploadAsset(req.userId!, req.params.workspaceId, {
       buffer: file.buffer,
       contentType: file.mimetype,
       filename: file.originalname,
-      projectId: typeof req.body.projectId === 'string' ? req.body.projectId : undefined,
-      folderId: typeof req.body.folderId === 'string' ? req.body.folderId : undefined,
+      projectId: input.projectId,
+      folderId: input.folderId,
     });
 
     res.status(201).json(createApiResponse(asset));

@@ -1,8 +1,10 @@
+import { Express } from 'express';
 import { logger } from './utils/logger';
 import { prisma } from '@synora/database';
 import { initializeApp } from './index';
+import { AppConfig } from './config';
 
-async function startServer(app: any, config: any) {
+async function startServer(app: Express, config: AppConfig) {
   return new Promise<void>((resolve) => {
     app.listen(config.server.port, '0.0.0.0', () => {
       logger.info(`🚀 Server running at http://localhost:${config.server.port}`);
