@@ -4,7 +4,6 @@ import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import * as planService from '../services/plan.service.js';
 import * as creditService from '../services/credit.service.js';
-import { createApiResponse } from '@synora/shared';
 
 const router: Router = Router();
 
@@ -15,7 +14,7 @@ router.use(requireAdminRole);
 router.get('/plans', async (req: AuthRequest, res, next) => {
   try {
     const plans = await planService.listAllPlans();
-    res.json(createApiResponse(plans));
+    res.json(plans);
   } catch (error) {
     next(error);
   }
@@ -38,7 +37,7 @@ router.post('/plans', async (req: AuthRequest, res, next) => {
     const input = schema.parse(req.body);
     const plan = await planService.createPlan(req.userId!, input);
 
-    res.status(201).json(createApiResponse(plan));
+    res.status(201).json(plan);
   } catch (error) {
     next(error);
   }
@@ -61,7 +60,7 @@ router.patch('/plans/:planId', async (req: AuthRequest, res, next) => {
     const input = schema.parse(req.body);
     const plan = await planService.updatePlan(req.userId!, planId, input);
 
-    res.json(createApiResponse(plan));
+    res.json(plan);
   } catch (error) {
     next(error);
   }
@@ -73,7 +72,7 @@ router.post('/plans/:planId/archive', async (req: AuthRequest, res, next) => {
     const planId = req.params.planId;
     const plan = await planService.archivePlan(req.userId!, planId);
 
-    res.json(createApiResponse(plan));
+    res.json(plan);
   } catch (error) {
     next(error);
   }
@@ -85,7 +84,7 @@ router.post('/plans/:planId/set-default', async (req: AuthRequest, res, next) =>
     const planId = req.params.planId;
     const plan = await planService.setDefaultPlan(req.userId!, planId);
 
-    res.json(createApiResponse(plan));
+    res.json(plan);
   } catch (error) {
     next(error);
   }
@@ -97,7 +96,7 @@ router.get('/workspaces/:workspaceId/billing', async (req: AuthRequest, res, nex
     const workspaceId = req.params.workspaceId;
 
     // Placeholder: in production, compose subscription + credits + recent invoices
-    res.json(createApiResponse({ workspaceId, message: 'Support view not yet implemented' }));
+    res.json({ workspaceId, message: 'Support view not yet implemented' });
   } catch (error) {
     next(error);
   }

@@ -210,4 +210,26 @@ router.post('/reactivate', async (req: AuthRequest, res, next) => {
   }
 });
 
+// POST /api/billing/billing-portal (create billing portal session)
+router.post('/billing-portal', async (req: AuthRequest, res, next) => {
+  try {
+    const schema = z.object({
+      returnUrl: z.string().url(),
+    });
+
+    const body = schema.parse(req.body);
+    const workspace = await getUserWorkspace(req.userId!);
+
+    const session = await subscriptionService.createBillingPortalSession(
+      req.userId!,
+      workspace.id,
+      { returnUrl: body.returnUrl }
+    );
+
+    res.json({ url: session.url });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
