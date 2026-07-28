@@ -60,7 +60,7 @@ export function createCheckoutSession(
 }
 
 export function changePlan(workspaceId: string, input: ChangePlanRequest): Promise<Subscription> {
-  return api.post<Subscription>(`/api/workspaces/${workspaceId}/billing/subscription/change-plan`, input);
+  return api.patch<Subscription>(`/api/workspaces/${workspaceId}/billing/subscription`, input);
 }
 
 export function cancelSubscription(
