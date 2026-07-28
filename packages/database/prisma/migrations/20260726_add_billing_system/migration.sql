@@ -13,6 +13,12 @@ CREATE TYPE "SubscriptionStatus" AS ENUM ('ACTIVE', 'PAST_DUE', 'CANCELED', 'TRI
 -- CreateEnum: CreditTransactionType
 CREATE TYPE "CreditTransactionType" AS ENUM ('GRANT', 'DEDUCTION', 'ADJUSTMENT', 'EXPIRATION', 'REFUND');
 
+-- CreateEnum: InvoiceStatus
+CREATE TYPE "InvoiceStatus" AS ENUM ('DRAFT', 'OPEN', 'PAID', 'VOID', 'UNCOLLECTIBLE');
+
+-- CreateEnum: PaymentMethodType
+CREATE TYPE "PaymentMethodType" AS ENUM ('CARD', 'BANK_ACCOUNT', 'OTHER');
+
 -- CreateTable: Plan
 CREATE TABLE "Plan" (
     "id" TEXT NOT NULL,
@@ -59,7 +65,7 @@ CREATE TABLE "Invoice" (
     "workspaceId" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "externalInvoiceId" TEXT NOT NULL,
-    "status" TEXT NOT NULL,
+    "status" "InvoiceStatus" NOT NULL,
     "amountDueCents" INTEGER NOT NULL,
     "amountPaidCents" INTEGER NOT NULL,
     "currency" TEXT NOT NULL DEFAULT 'USD',
@@ -81,7 +87,7 @@ CREATE TABLE "PaymentMethod" (
     "workspaceId" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "externalPaymentMethodId" TEXT NOT NULL,
-    "type" TEXT NOT NULL,
+    "type" "PaymentMethodType" NOT NULL,
     "brand" TEXT,
     "last4" TEXT,
     "expiryMonth" INTEGER,
