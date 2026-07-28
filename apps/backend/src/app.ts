@@ -25,6 +25,8 @@ import billingWebhookRoutes from './routes/billingWebhook';
 import adminBillingRoutes from './routes/adminBilling';
 import conversationRoutes from './routes/conversations';
 import messageRoutes from './routes/messages';
+import streamingRoutes from './routes/streaming';
+import branchRoutes from './routes/branches';
 
 export interface CreateAppDeps {
   /**
@@ -166,6 +168,8 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', assetRoutes);
   app.use('/api/workspaces', conversationRoutes);
   app.use('/api/workspaces', messageRoutes);
+  app.use('/api/workspaces', streamingRoutes);
+  app.use('/api/workspaces', branchRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
