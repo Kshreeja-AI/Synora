@@ -47,7 +47,7 @@ router.get(
       res.setHeader('X-Accel-Buffering', 'no');
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const sendEvent = (eventType: string, data: any) => {
+      const sendEvent = (eventType: string, data: unknown) => {
         res.write(`event: ${eventType}\n`);
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };

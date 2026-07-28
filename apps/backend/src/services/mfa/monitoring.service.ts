@@ -5,7 +5,7 @@ export interface SecurityAlert {
   userId: string;
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
   message: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   timestamp: Date;
 }
 

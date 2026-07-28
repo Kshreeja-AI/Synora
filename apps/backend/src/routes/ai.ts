@@ -1,4 +1,4 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { generateText } from '../ai';

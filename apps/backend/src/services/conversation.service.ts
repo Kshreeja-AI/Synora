@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { Conversation, ConversationStatus } from '@prisma/client'
+import { Conversation, ConversationStatus, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 
 export interface CreateConversationInput {
@@ -89,7 +89,7 @@ export class ConversationService {
       throw new ForbiddenException('You do not have access to this workspace')
     }
 
-    const where: any = {
+    const where: Prisma.ConversationWhereInput = {
       workspaceId,
       status: options.archived ? ConversationStatus.ARCHIVED : ConversationStatus.ACTIVE,
     }

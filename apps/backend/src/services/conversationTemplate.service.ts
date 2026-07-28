@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { ConversationTemplate } from '@prisma/client'
+import { ConversationTemplate, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 
 export interface CreateConversationTemplateInput {
@@ -85,7 +85,7 @@ export class ConversationTemplateService {
       throw new ForbiddenException('You do not have access to this workspace')
     }
 
-    const where: any = {
+    const where: Prisma.ConversationTemplateWhereInput = {
       OR: [
         { workspaceId },
         { isPublic: true },

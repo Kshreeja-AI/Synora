@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { Message, MessageRole } from '@prisma/client'
+import { Message, MessageRole, MessageAttachment } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 
 export interface CreateMessageInput {
@@ -171,7 +171,7 @@ export class MessageService {
     userId: string,
     messageId: string,
     input: { url: string; mimeType: string; name: string; size: number }
-  ): Promise<any> {
+  ): Promise<MessageAttachment> {
     const message = await prisma.message.findUnique({
       where: { id: messageId },
       include: { conversation: true },

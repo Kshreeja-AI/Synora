@@ -1,4 +1,5 @@
 import { prisma } from '@synora/database';
+import { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 import { NotFoundException } from '@synora/shared';
 
@@ -70,7 +71,7 @@ export async function createPlan(actorUserId: string, input: CreatePlanInput) {
       priceCents: input.priceCents,
       creditsPerInterval: input.creditsPerInterval || 0,
       trialDays: input.trialDays,
-      features: input.features as any,
+      features: input.features as Prisma.InputJsonValue,
       sortOrder: input.sortOrder || 0,
       status: 'ACTIVE',
     },
@@ -96,7 +97,7 @@ export async function updatePlan(actorUserId: string, planId: string, input: Upd
       priceCents: input.priceCents ?? plan.priceCents,
       creditsPerInterval: input.creditsPerInterval ?? plan.creditsPerInterval,
       trialDays: input.trialDays ?? plan.trialDays,
-      features: (input.features ?? plan.features) as any,
+      features: (input.features ?? plan.features) as Prisma.InputJsonValue,
       sortOrder: input.sortOrder ?? plan.sortOrder,
     },
   });

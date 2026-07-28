@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { PromptTemplate } from '@prisma/client'
+import { PromptTemplate, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 
 export interface CreatePromptTemplateInput {
@@ -87,7 +87,7 @@ export class PromptTemplateService {
       throw new ForbiddenException('You do not have access to this workspace')
     }
 
-    const where: any = {
+    const where: Prisma.PromptTemplateWhereInput = {
       OR: [
         { workspaceId },
         { isPublic: true },

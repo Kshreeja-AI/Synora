@@ -156,7 +156,7 @@ export async function recordUsage(
       capability: input.capability,
       quantity: input.quantity,
       creditsCost: input.creditsCost,
-      metadata: input.metadata as any,
+      metadata: input.metadata as unknown,
     },
   });
 
