@@ -16,7 +16,10 @@ router.use(authMiddleware);
 // Middleware to inject userRole for workspace-scoped billing routes
 router.use(async (req: AuthRequest, res, next: NextFunction) => {
   try {
-    const workspaceId = req.params.id;
+    // Extract workspaceId from path: /{id}/billing/...
+    const pathSegments = req.path.split('/').filter(Boolean);
+    const workspaceId = pathSegments[0];
+
     if (workspaceId) {
       const member = await prisma.workspaceMember.findUnique({
         where: { userId_workspaceId: { userId: req.userId!, workspaceId } },
@@ -257,7 +260,8 @@ router.get('/:id/billing/credits/ledger', async (req: AuthRequest, res, next) =>
 // GET /api/workspaces/:id/billing/usage
 router.get('/:id/billing/usage', async (req: AuthRequest, res, next) => {
   try {
-    const workspaceId = req.params.id;
+    const pathSegments = req.path.split('/').filter(Boolean);
+    const workspaceId = pathSegments[0];
     requirePermission((req as any).userRole, 'billing:view');
 
     const from = req.query.from ? new Date(req.query.from as string) : undefined;
