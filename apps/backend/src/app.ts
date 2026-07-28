@@ -2,11 +2,13 @@ import { resolve } from 'node:path';
 import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { csrfProtection } from './middleware/csrf';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -88,6 +90,12 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   // Body Parser (for all other routes)
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+  // Cookie Parser (required for CSRF protection)
+  app.use(cookieParser());
+
+  // CSRF Protection (must be after body parser and cookie parser)
+  app.use(csrfProtection);
 
   // Logging Middleware
   app.use(requestLogger);
