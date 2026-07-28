@@ -126,10 +126,10 @@ describe('billing routes', () => {
     }
   });
 
-  describe('GET /api/billing/subscription', () => {
+  describe('GET /api/workspaces/:id/billing/subscription', () => {
     it('returns current subscription', async () => {
       const res = await request(app)
-        .get('/api/billing/subscription')
+        .get(`/api/workspaces/${workspaceId}/billing/subscription`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -139,16 +139,16 @@ describe('billing routes', () => {
     });
 
     it('returns 401 without token', async () => {
-      const res = await request(app).get('/api/billing/subscription');
+      const res = await request(app).get(`/api/workspaces/${workspaceId}/billing/subscription`);
 
       expect(res.status).toBe(401);
     });
   });
 
-  describe('GET /api/billing/credits', () => {
+  describe('GET /api/workspaces/:id/billing/credits', () => {
     it('returns credit balance', async () => {
       const res = await request(app)
-        .get('/api/billing/credits')
+        .get(`/api/workspaces/${workspaceId}/billing/credits`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -157,10 +157,10 @@ describe('billing routes', () => {
     });
   });
 
-  describe('GET /api/billing/credit-ledger', () => {
+  describe('GET /api/workspaces/:id/billing/credits/ledger', () => {
     it('returns credit ledger entries', async () => {
       const res = await request(app)
-        .get('/api/billing/credit-ledger')
+        .get(`/api/workspaces/${workspaceId}/billing/credits/ledger`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -168,10 +168,10 @@ describe('billing routes', () => {
     });
   });
 
-  describe('GET /api/billing/usage', () => {
+  describe('GET /api/workspaces/:id/billing/usage', () => {
     it('returns usage summary', async () => {
       const res = await request(app)
-        .get('/api/billing/usage')
+        .get(`/api/workspaces/${workspaceId}/billing/usage`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -179,10 +179,10 @@ describe('billing routes', () => {
     });
   });
 
-  describe('GET /api/billing/payment-methods', () => {
+  describe('GET /api/workspaces/:id/billing/payment-methods', () => {
     it('returns empty payment methods', async () => {
       const res = await request(app)
-        .get('/api/billing/payment-methods')
+        .get(`/api/workspaces/${workspaceId}/billing/payment-methods`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -190,10 +190,10 @@ describe('billing routes', () => {
     });
   });
 
-  describe('GET /api/billing/invoices', () => {
+  describe('GET /api/workspaces/:id/billing/invoices', () => {
     it('returns empty invoices list', async () => {
       const res = await request(app)
-        .get('/api/billing/invoices')
+        .get(`/api/workspaces/${workspaceId}/billing/invoices`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -201,7 +201,7 @@ describe('billing routes', () => {
     });
   });
 
-  describe('POST /api/billing/checkout', () => {
+  describe('POST /api/workspaces/:id/billing/checkout', () => {
     it('creates checkout session', async () => {
       const mockProvider = {
         isConfigured: vi.fn().mockResolvedValue(true),
@@ -219,7 +219,7 @@ describe('billing routes', () => {
       vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
 
       const res = await request(app)
-        .post('/api/billing/checkout')
+        .post(`/api/workspaces/${workspaceId}/billing/checkout`)
         .set('Authorization', `Bearer ${token}`)
         .send({
           planId,
@@ -232,7 +232,7 @@ describe('billing routes', () => {
     });
   });
 
-  describe('POST /api/billing/change-plan', () => {
+  describe('PATCH /api/workspaces/:id/billing/subscription', () => {
     it('changes subscription plan', async () => {
       const newPlan = await prisma.plan.create({
         data: {
@@ -264,7 +264,7 @@ describe('billing routes', () => {
       vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
 
       const res = await request(app)
-        .post('/api/billing/change-plan')
+        .patch(`/api/workspaces/${workspaceId}/billing/subscription`)
         .set('Authorization', `Bearer ${token}`)
         .send({ planId: newPlan.id });
 
@@ -273,7 +273,7 @@ describe('billing routes', () => {
     });
   });
 
-  describe('POST /api/billing/cancel', () => {
+  describe('POST /api/workspaces/:id/billing/subscription/cancel', () => {
     it('cancels subscription', async () => {
       await prisma.subscription.update({
         where: { workspaceId },
@@ -293,7 +293,7 @@ describe('billing routes', () => {
       vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
 
       const res = await request(app)
-        .post('/api/billing/cancel')
+        .post(`/api/workspaces/${workspaceId}/billing/subscription/cancel`)
         .set('Authorization', `Bearer ${token}`)
         .send({ atPeriodEnd: false });
 
@@ -302,7 +302,7 @@ describe('billing routes', () => {
     });
   });
 
-  describe('POST /api/billing/reactivate', () => {
+  describe('POST /api/workspaces/:id/billing/subscription/reactivate', () => {
     it('reactivates subscription', async () => {
       await prisma.subscription.update({
         where: { workspaceId },
@@ -310,7 +310,7 @@ describe('billing routes', () => {
       });
 
       const res = await request(app)
-        .post('/api/billing/reactivate')
+        .post(`/api/workspaces/${workspaceId}/billing/subscription/reactivate`)
         .set('Authorization', `Bearer ${token}`);
 
       expect(res.status).toBe(200);
@@ -318,7 +318,7 @@ describe('billing routes', () => {
     });
   });
 
-  describe('POST /api/billing/billing-portal', () => {
+  describe('POST /api/workspaces/:id/billing/portal', () => {
     it('creates billing portal session', async () => {
       await prisma.subscription.update({
         where: { workspaceId },
@@ -340,7 +340,7 @@ describe('billing routes', () => {
       vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
 
       const res = await request(app)
-        .post('/api/billing/billing-portal')
+        .post(`/api/workspaces/${workspaceId}/billing/portal`)
         .set('Authorization', `Bearer ${token}`)
         .send({ returnUrl: 'https://example.com/dashboard' });
 
