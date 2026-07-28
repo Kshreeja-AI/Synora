@@ -50,7 +50,7 @@ describe('subscription.service', () => {
       },
     });
 
-    // Create test plan
+    // Create test plan with Stripe price ID
     const plan = await prisma.plan.create({
       data: {
         key: `test-plan-${Date.now()}`,
@@ -59,6 +59,9 @@ describe('subscription.service', () => {
         priceCents: 9999,
         creditsPerInterval: 5000,
         status: 'ACTIVE',
+        providerPriceIds: {
+          stripe: 'price_test_123',
+        },
       },
     });
     planId = plan.id;
@@ -284,6 +287,9 @@ describe('subscription.service', () => {
           priceCents: 19999,
           creditsPerInterval: 10000,
           status: 'ACTIVE',
+          providerPriceIds: {
+            stripe: 'price_test_456',
+          },
         },
       });
       testPlanIds.push(newPlan.id);
