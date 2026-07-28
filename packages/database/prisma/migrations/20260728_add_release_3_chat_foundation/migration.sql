@@ -1,5 +1,19 @@
 -- Release 3: Universal AI Workspace - Chat Foundation Schema
 
+-- Conversation Folder model (must come first - referenced by Conversation)
+CREATE TABLE "ConversationFolder" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "workspaceId" TEXT NOT NULL,
+  "parentId" TEXT,
+  "name" TEXT NOT NULL,
+  "createdById" TEXT NOT NULL,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "ConversationFolder_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE,
+  CONSTRAINT "ConversationFolder_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "ConversationFolder" ("id") ON DELETE CASCADE,
+  CONSTRAINT "ConversationFolder_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User" ("id") ON DELETE CASCADE
+);
+
 -- Core Conversation model
 CREATE TABLE "Conversation" (
   "id" TEXT NOT NULL PRIMARY KEY,
@@ -62,20 +76,6 @@ CREATE TABLE "MessageAttachment" (
   "fileSize" INTEGER NOT NULL,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "MessageAttachment_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message" ("id") ON DELETE CASCADE
-);
-
--- Conversation Folder model
-CREATE TABLE "ConversationFolder" (
-  "id" TEXT NOT NULL PRIMARY KEY,
-  "workspaceId" TEXT NOT NULL,
-  "parentId" TEXT,
-  "name" TEXT NOT NULL,
-  "createdById" TEXT NOT NULL,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP(3) NOT NULL,
-  CONSTRAINT "ConversationFolder_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE,
-  CONSTRAINT "ConversationFolder_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "ConversationFolder" ("id") ON DELETE CASCADE,
-  CONSTRAINT "ConversationFolder_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User" ("id") ON DELETE CASCADE
 );
 
 -- Conversation Tag model
