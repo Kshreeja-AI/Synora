@@ -66,10 +66,17 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   app.use('/api/', limiter);
 
-  // Billing webhook route (must be before express.json to access raw body)
-  app.use('/api/billing', express.raw({ type: 'application/json' }), billingWebhookRoutes);
+  // Billing webhook needs raw body to verify Stripe signature (must be before json parsing)
+  app.use('/api/billing', (req, res, next) => {
+    if (req.path === '/webhook') {
+      return express.raw({ type: 'application/json' })(req, res, () => {
+        billingWebhookRoutes(req, res, next);
+      });
+    }
+    next();
+  });
 
-  // Body Parser
+  // Body Parser (for all other routes)
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
