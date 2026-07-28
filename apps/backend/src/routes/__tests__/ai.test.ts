@@ -27,14 +27,17 @@ vi.mock('../../ai', async () => {
 describe('AI Routes', () => {
   let app: Express;
   let token: string;
+  const TEST_JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret-key-for-testing-only';
 
   beforeAll(async () => {
+    // Ensure JWT_SECRET is set for the test environment
+    process.env.JWT_SECRET = TEST_JWT_SECRET;
     await initConfig();
   });
 
   beforeEach(() => {
     vi.clearAllMocks();
-    token = jwt.sign({ userId: 'test-user-id', workspaceId: 'test-workspace-id' }, process.env.JWT_SECRET || 'test-secret', {
+    token = jwt.sign({ userId: 'test-user-id', workspaceId: 'test-workspace-id' }, TEST_JWT_SECRET, {
       expiresIn: '24h',
     });
     app = express();
