@@ -6,7 +6,7 @@ import * as subscriptionService from '../services/subscription.service.js';
 import * as creditService from '../services/credit.service.js';
 import * as invoiceService from '../services/invoice.service.js';
 import * as paymentMethodService from '../services/paymentMethod.service.js';
-import { createApiResponse, NotFoundException } from '@synora/shared';
+import { NotFoundException } from '@synora/shared';
 import { prisma } from '@synora/database';
 
 const router: Router = Router();
@@ -15,7 +15,7 @@ const router: Router = Router();
 router.get('/plans', async (req, res, next) => {
   try {
     const plans = await planService.listActivePlans();
-    res.json(createApiResponse(plans));
+    res.json(plans);
   } catch (error) {
     next(error);
   }
@@ -47,7 +47,7 @@ router.get('/subscription', async (req: AuthRequest, res, next) => {
       workspace.id
     );
 
-    res.json(createApiResponse(subscription));
+    res.json(subscription);
   } catch (error) {
     next(error);
   }
@@ -59,7 +59,7 @@ router.get('/credits', async (req: AuthRequest, res, next) => {
     const workspace = await getUserWorkspace(req.userId!);
     const balance = await creditService.getCreditBalance(req.userId!, workspace.id);
 
-    res.json(createApiResponse({ workspaceId: workspace.id, balance }));
+    res.json({ workspaceId: workspace.id, balance });
   } catch (error) {
     next(error);
   }
@@ -71,7 +71,7 @@ router.get('/credit-ledger', async (req: AuthRequest, res, next) => {
     const workspace = await getUserWorkspace(req.userId!);
     const entries = await creditService.listCreditLedger(req.userId!, workspace.id);
 
-    res.json(createApiResponse(entries));
+    res.json(entries);
   } catch (error) {
     next(error);
   }
@@ -83,7 +83,7 @@ router.get('/usage', async (req: AuthRequest, res, next) => {
     const workspace = await getUserWorkspace(req.userId!);
     const usage = await creditService.getUsageSummary(req.userId!, workspace.id);
 
-    res.json(createApiResponse(usage));
+    res.json(usage);
   } catch (error) {
     next(error);
   }
@@ -95,7 +95,7 @@ router.get('/payment-methods', async (req: AuthRequest, res, next) => {
     const workspace = await getUserWorkspace(req.userId!);
     const paymentMethods = await paymentMethodService.listPaymentMethods(req.userId!, workspace.id);
 
-    res.json(createApiResponse(paymentMethods ?? []));
+    res.json(paymentMethods ?? []);
   } catch (error) {
     next(error);
   }
@@ -107,7 +107,7 @@ router.get('/invoices', async (req: AuthRequest, res, next) => {
     const workspace = await getUserWorkspace(req.userId!);
     const invoices = await invoiceService.listInvoices(req.userId!, workspace.id);
 
-    res.json(createApiResponse(invoices ?? []));
+    res.json(invoices ?? []);
   } catch (error) {
     next(error);
   }
@@ -142,7 +142,7 @@ router.post('/checkout', async (req: AuthRequest, res, next) => {
       }
     );
 
-    res.json(createApiResponse({ url: session.url }));
+    res.json({ url: session.url });
   } catch (error) {
     next(error);
   }
@@ -166,7 +166,7 @@ router.post('/change-plan', async (req: AuthRequest, res, next) => {
       }
     );
 
-    res.json(createApiResponse(updatedSubscription));
+    res.json(updatedSubscription);
   } catch (error) {
     next(error);
   }
@@ -188,7 +188,7 @@ router.post('/cancel', async (req: AuthRequest, res, next) => {
       { atPeriodEnd: body.atPeriodEnd }
     );
 
-    res.json(createApiResponse(canceledSubscription));
+    res.json(canceledSubscription);
   } catch (error) {
     next(error);
   }
@@ -204,7 +204,7 @@ router.post('/reactivate', async (req: AuthRequest, res, next) => {
       workspace.id
     );
 
-    res.json(createApiResponse(reactivatedSubscription));
+    res.json(reactivatedSubscription);
   } catch (error) {
     next(error);
   }
