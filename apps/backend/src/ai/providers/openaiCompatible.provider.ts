@@ -9,7 +9,7 @@ import {
   TextGenerationResult,
 } from '../types';
 import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
  * Generic adapter for any provider that exposes an OpenAI-compatible chat

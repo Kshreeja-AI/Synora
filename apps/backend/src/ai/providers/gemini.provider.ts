@@ -9,7 +9,7 @@ import {
   TextGenerationResult,
 } from '../types';
 import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
  * Google Gemini. Activated by setting `GOOGLE_AI_API_KEY`. Model is

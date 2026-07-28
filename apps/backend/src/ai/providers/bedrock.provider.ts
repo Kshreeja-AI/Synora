@@ -9,7 +9,7 @@ import {
   TextGenerationResult,
 } from '../types';
 import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /** Used only once BEDROCK_REGION has confirmed operator intent (see below). */
 const DEFAULT_BEDROCK_REGION = 'us-east-1';

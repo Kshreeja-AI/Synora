@@ -9,7 +9,7 @@ import {
   TextGenerationResult,
 } from '../types';
 import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
  * Release 1's default text/code generation provider. Activated purely by
