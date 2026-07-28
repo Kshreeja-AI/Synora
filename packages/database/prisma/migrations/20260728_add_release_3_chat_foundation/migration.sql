@@ -18,23 +18,17 @@ CREATE TABLE "ConversationFolder" (
 CREATE TABLE "Conversation" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "workspaceId" TEXT NOT NULL,
-  "userId" TEXT NOT NULL,
   "title" TEXT NOT NULL,
   "description" TEXT,
-  "provider" TEXT NOT NULL DEFAULT 'anthropic',
-  "model" TEXT NOT NULL DEFAULT 'claude-opus',
-  "temperature" DOUBLE PRECISION NOT NULL DEFAULT 0.7,
-  "maxTokens" INTEGER,
-  "systemPrompt" TEXT,
-  "folderId" TEXT,
+  "provider" TEXT NOT NULL,
+  "model" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+  "isArchived" BOOLEAN NOT NULL DEFAULT false,
   "isPinned" BOOLEAN NOT NULL DEFAULT false,
-  "archivedAt" TIMESTAMP(3),
-  "messageCount" INTEGER NOT NULL DEFAULT 0,
-  "lastMessageAt" TIMESTAMP(3),
+  "folderId" TEXT,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "Conversation_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE,
-  CONSTRAINT "Conversation_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE,
   CONSTRAINT "Conversation_folderId_fkey" FOREIGN KEY ("folderId") REFERENCES "ConversationFolder" ("id") ON DELETE SET NULL
 );
 
@@ -59,10 +53,11 @@ CREATE TABLE "Message" (
 -- Message Branch model (for alternatives)
 CREATE TABLE "MessageBranch" (
   "id" TEXT NOT NULL PRIMARY KEY,
-  "conversationId" TEXT NOT NULL,
-  "name" TEXT,
+  "messageId" TEXT NOT NULL UNIQUE,
+  "branchIndex" INTEGER NOT NULL,
+  "isMainBranch" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "MessageBranch_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
+  CONSTRAINT "MessageBranch_messageId_fkey" FOREIGN KEY ("messageId") REFERENCES "Message" ("id") ON DELETE CASCADE
 );
 
 -- Message Attachment model
@@ -224,22 +219,20 @@ CREATE TABLE "ToolCall" (
 -- Conversation Usage model
 CREATE TABLE "ConversationUsage" (
   "id" TEXT NOT NULL PRIMARY KEY,
-  "workspaceId" TEXT NOT NULL,
-  "conversationId" TEXT NOT NULL,
-  "provider" TEXT NOT NULL,
-  "model" TEXT NOT NULL,
-  "tokensInput" INTEGER NOT NULL,
-  "tokensOutput" INTEGER NOT NULL,
-  "costCents" INTEGER,
+  "conversationId" TEXT NOT NULL UNIQUE,
+  "inputTokens" INTEGER NOT NULL DEFAULT 0,
+  "outputTokens" INTEGER NOT NULL DEFAULT 0,
+  "totalTokens" INTEGER NOT NULL DEFAULT 0,
+  "estimatedCost" DOUBLE PRECISION NOT NULL DEFAULT 0,
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "ConversationUsage_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace" ("id") ON DELETE CASCADE
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "ConversationUsage_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation" ("id") ON DELETE CASCADE
 );
 
 -- Indexes for performance
 CREATE INDEX "Conversation_workspaceId_createdAt_idx" ON "Conversation"("workspaceId", "createdAt");
-CREATE INDEX "Conversation_userId_idx" ON "Conversation"("userId");
 CREATE INDEX "Conversation_folderId_idx" ON "Conversation"("folderId");
-CREATE INDEX "Conversation_archivedAt_idx" ON "Conversation"("archivedAt");
+CREATE INDEX "Conversation_isArchived_idx" ON "Conversation"("isArchived");
 CREATE INDEX "Conversation_isPinned_idx" ON "Conversation"("isPinned");
 CREATE UNIQUE INDEX "Conversation_workspaceId_title_idx" ON "Conversation"("workspaceId", "title");
 
@@ -288,6 +281,4 @@ CREATE UNIQUE INDEX "Tool_workspaceId_name_idx" ON "Tool"("workspaceId", "name")
 CREATE INDEX "ToolCall_messageId_idx" ON "ToolCall"("messageId");
 CREATE INDEX "ToolCall_toolId_idx" ON "ToolCall"("toolId");
 
-CREATE INDEX "ConversationUsage_workspaceId_createdAt_idx" ON "ConversationUsage"("workspaceId", "createdAt");
 CREATE INDEX "ConversationUsage_conversationId_idx" ON "ConversationUsage"("conversationId");
-CREATE INDEX "ConversationUsage_provider_model_idx" ON "ConversationUsage"("provider", "model");
