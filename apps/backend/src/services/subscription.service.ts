@@ -129,11 +129,22 @@ export async function changePlan(
     throw new NotFoundException('Plan');
   }
 
+  if (!plan.providerPriceIds) {
+    throw new ServiceUnavailableException('Plan pricing not configured for current billing provider');
+  }
+
   try {
     const provider = await resolveBillingProvider();
+    const priceIds = plan.providerPriceIds as Record<string, string>;
+    const priceId = priceIds.stripe;
+
+    if (!priceId) {
+      throw new ServiceUnavailableException('Stripe price ID not configured for this plan');
+    }
+
     await provider.updateSubscription({
       subscriptionId: subscription.externalSubscriptionId,
-      priceId: 'price_placeholder',
+      priceId,
     });
 
     const updated = await prisma.subscription.update({
