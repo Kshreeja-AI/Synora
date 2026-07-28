@@ -172,6 +172,15 @@ model Workspace {
   creditLedger  CreditLedgerEntry[]
   usageRecords  UsageRecord[]
 
+  // Release 3: Chat relations
+  conversations       Conversation[]
+  conversationFolders ConversationFolder[]
+  conversationTags    ConversationTag[]
+  aiMemory            AIMemory?
+  promptTemplates     PromptTemplate[]
+  conversationTemplates ConversationTemplate[]
+  tools               Tool[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -796,4 +805,319 @@ model ProcessedWebhookEvent {
 
   @@unique([provider, externalEventId])
   @@index([provider, createdAt])
+}
+
+// Release 3: Universal AI Workspace - Chat Models
+
+model Conversation {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  title             String
+  description       String?
+  provider          String
+  model             String
+  status            ConversationStatus @default(ACTIVE)
+  isArchived        Boolean   @default(false)
+  isPinned          Boolean   @default(false)
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  messages          Message[]
+  folder            ConversationFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folderId          String?
+  tags              ConversationTag[]
+  collaborators     ConversationCollaborator[]
+  versions          ConversationVersion[]
+  activity          ConversationActivity[]
+  shared            SharedConversation[]
+  usage             ConversationUsage?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([workspaceId, createdAt])
+  @@index([isArchived])
+  @@index([isPinned])
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+model Message {
+  id                String    @id @default(cuid())
+  conversationId    String
+  content           String
+  role              MessageRole
+  parentId          String?
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  parent            Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children          Message[] @relation("MessageTree")
+
+  branch            MessageBranch?
+  attachments       MessageAttachment[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([conversationId])
+  @@index([conversationId, createdAt])
+  @@index([parentId])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model MessageBranch {
+  id                String    @id @default(cuid())
+  messageId         String    @unique
+  branchIndex       Int
+  isMainBranch      Boolean   @default(false)
+
+  message           Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([messageId])
+}
+
+model MessageAttachment {
+  id                String    @id @default(cuid())
+  messageId         String
+  url               String
+  mimeType          String
+  name              String
+  size              Int
+
+  message           Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([messageId])
+}
+
+model ConversationFolder {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  parentId          String?
+  name              String
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent            ConversationFolder? @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children          ConversationFolder[] @relation("FolderTree")
+  conversations     Conversation[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([parentId])
+}
+
+model ConversationTag {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  name              String
+  color             String?
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+
+  createdAt         DateTime  @default(now())
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model PromptTemplate {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  content           String
+  category          String?
+  tags              String[]
+  isPublic          Boolean   @default(false)
+  usageCount        Int       @default(0)
+  isFavorite        Boolean   @default(false)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+model ConversationTemplate {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  description       String?
+  initialMessages   Json
+  category          String?
+  isPublic          Boolean   @default(false)
+  usageCount        Int       @default(0)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+model AIMemory {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  context           Json
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model SharedConversation {
+  id                String    @id @default(cuid())
+  conversationId    String
+  shareToken        String    @unique
+  expiresAt         DateTime?
+  isPublic          Boolean   @default(false)
+  permissions       SharePermission @default(VIEW)
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([conversationId])
+  @@index([shareToken])
+}
+
+enum SharePermission {
+  VIEW
+  COMMENT
+  EDIT
+}
+
+model ConversationCollaborator {
+  id                String    @id @default(cuid())
+  conversationId    String
+  userId            String
+  role              CollaboratorRole
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+}
+
+enum CollaboratorRole {
+  VIEWER
+  EDITOR
+  OWNER
+}
+
+model ConversationActivity {
+  id                String    @id @default(cuid())
+  conversationId    String
+  action            String
+  metadata          Json?
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model ConversationVersion {
+  id                String    @id @default(cuid())
+  conversationId    String
+  content           Json
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model StreamingJob {
+  id                String    @id @default(cuid())
+  conversationId    String
+  status            StreamingJobStatus @default(PENDING)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  completedAt       DateTime?
+
+  @@index([conversationId])
+  @@index([status])
+}
+
+enum StreamingJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+model Tool {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  description       String?
+  definition        Json
+  isPublic          Boolean   @default(false)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  calls             ToolCall[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+model ToolCall {
+  id                String    @id @default(cuid())
+  toolId            String
+  input             Json
+  output            Json?
+  error             String?
+
+  tool              Tool      @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([toolId])
+}
+
+model ConversationUsage {
+  id                String    @id @default(cuid())
+  conversationId    String    @unique
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  totalTokens       Int       @default(0)
+  estimatedCost     Float     @default(0)
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }
