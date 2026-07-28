@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { Message, MessageRole, MessageBranch } from '@prisma/client'
+import { Message, MessageRole } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 
 export interface CreateMessageInput {

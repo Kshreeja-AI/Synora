@@ -1,4 +1,4 @@
-import { Router, type Express } from 'express'
+import { Router } from 'express'
 import { z } from 'zod'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { createApiResponse } from '@synora/shared'
