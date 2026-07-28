@@ -27,12 +27,13 @@ export function generateCsrfToken(): string {
  * This validates they match, preventing CSRF attacks while allowing
  * stateless operation (no server-side token storage needed).
  *
- * Note: CSRF protection is disabled in test environments to allow
- * test suites to run without token setup complexity.
+ * Note: CSRF protection is disabled in test and development environments
+ * to allow flexibility during development and testing.
  */
 export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
-  // Skip CSRF protection entirely in test environment
-  if (process.env.NODE_ENV === 'test') {
+  // Skip CSRF protection in test and development environments
+  const skipCsrf = ['test', 'development'].includes(process.env.NODE_ENV || '');
+  if (skipCsrf) {
     return next();
   }
 
