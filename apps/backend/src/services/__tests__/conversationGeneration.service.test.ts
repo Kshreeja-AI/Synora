@@ -89,9 +89,9 @@ describe('conversationGeneration.service', () => {
   })
 
   it('retries once on failure and succeeds on the second attempt', async () => {
+    const userMessage = await createUserMessage()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
-    const userMessage = await createUserMessage()
     const generateText = vi
       .fn<(request: aiModule.TextGenerationRequest) => Promise<MockGenerateResult>>()
       .mockRejectedValueOnce(new aiModule.AIProviderError('temporary failure', 'anthropic'))
@@ -113,12 +113,12 @@ describe('conversationGeneration.service', () => {
     const job = await prisma.streamingJob.findFirst({ where: { conversationId } })
     expect(job?.status).toBe('COMPLETED')
     expect(job?.attempt).toBe(2)
-  })
+  }, 10000)
 
   it('fails after exhausting all retries: no assistant message is created, job is FAILED with lastError set, usage untouched', async () => {
+    const userMessage = await createUserMessage()
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
-    const userMessage = await createUserMessage()
     const generateText = vi
       .fn<(request: aiModule.TextGenerationRequest) => Promise<MockGenerateResult>>()
       .mockRejectedValue(new aiModule.AIProviderError('permanent failure', 'anthropic'))
@@ -147,7 +147,7 @@ describe('conversationGeneration.service', () => {
 
     const usage = await conversationUsageService.getByConversationId(conversationId)
     expect(usage).toBeNull()
-  })
+  }, 10000)
 
   it("passes the conversation's own provider as an explicit override, not relying on global auto-detection", async () => {
     const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })

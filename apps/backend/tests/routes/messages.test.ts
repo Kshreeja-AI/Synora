@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { initializeApp } from '../../src/index';
 import { prisma } from '@synora/database';
 import { MessageRole } from '@prisma/client';
+import * as aiModule from '../../src/ai/index.js';
 
 describe('Messages Routes', () => {
   let app: any;
@@ -58,6 +59,7 @@ describe('Messages Routes', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await prisma.message.deleteMany({ where: { conversationId } });
     await prisma.conversation.deleteMany({ where: { id: conversationId } });
     await prisma.workspaceMember.deleteMany({ where: { workspaceId } });
@@ -66,7 +68,18 @@ describe('Messages Routes', () => {
   });
 
   describe('POST /api/workspaces/:workspaceId/conversations/:conversationId/messages', () => {
-    it('should create a user message', async () => {
+    it('should create a user message and synchronously generate a reply', async () => {
+      vi.spyOn(aiModule, 'resolveProvider').mockResolvedValue({
+        id: 'anthropic',
+        capabilities: ['text-generation'],
+        generateText: vi.fn().mockResolvedValue({
+          text: 'Hello! How can I help?',
+          provider: 'anthropic',
+          model: 'claude-3-sonnet',
+          usage: { inputTokens: 5, outputTokens: 5 },
+        }),
+      } as unknown as aiModule.TextGenerationProvider);
+
       const response = await request(app)
         .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${token}`)
@@ -76,11 +89,15 @@ describe('Messages Routes', () => {
         });
 
       expect(response.status).toBe(201);
-      expect(response.body.data.content).toBe('Hello, Claude!');
-      expect(response.body.data.role).toBe(MessageRole.USER);
+      expect(response.body.data.userMessage.content).toBe('Hello, Claude!');
+      expect(response.body.data.userMessage.role).toBe(MessageRole.USER);
+      expect(response.body.data.assistantMessage.role).toBe(MessageRole.ASSISTANT);
     });
 
-    it('should create an assistant message', async () => {
+    // ASSISTANT is server-only (see M2_IMPLEMENTATION_PLAN.md §9): a client
+    // supplying it directly would fabricate a reply that bypasses
+    // generation, retry tracking, and token accounting entirely.
+    it('rejects a client-supplied assistant message with a 400', async () => {
       const response = await request(app)
         .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
         .set('Authorization', `Bearer ${token}`)
@@ -89,8 +106,7 @@ describe('Messages Routes', () => {
           role: MessageRole.ASSISTANT,
         });
 
-      expect(response.status).toBe(201);
-      expect(response.body.data.role).toBe(MessageRole.ASSISTANT);
+      expect(response.status).toBe(400);
     });
   });
 
@@ -209,7 +225,7 @@ describe('Messages Routes', () => {
       messageId = msg.id;
     });
 
-    it('should delete message', async () => {
+    it('should soft-delete message', async () => {
       const response = await request(app)
         .delete(
           `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}`
@@ -221,7 +237,7 @@ describe('Messages Routes', () => {
       const found = await prisma.message.findUnique({
         where: { id: messageId },
       });
-      expect(found).toBeNull();
+      expect(found?.deletedAt).not.toBeNull();
     });
   });
 
