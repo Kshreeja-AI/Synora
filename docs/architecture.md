@@ -340,9 +340,11 @@ routes never touch a vendor SDK directly.
   `isConfigured()` (checks SecretsManager/config, never throws),
   `create()` (builds the adapter). Adding a provider = adding one
   descriptor file; nothing else changes.
-- **Resolver** (`resolver.ts`): explicit `AI_PROVIDER` env override wins;
-  otherwise the first *configured* provider in a fixed priority order
-  (Anthropic first).
+- **Resolver** (`resolver.ts`): a per-call `explicitProviderId` (Release 3
+  M2 — how `Conversation.provider` overrides the process-wide default for
+  one conversation) wins if passed; otherwise explicit `AI_PROVIDER` env
+  override wins; otherwise the first *configured* provider in a fixed
+  priority order (Anthropic first).
 - **Providers** (10): Anthropic, OpenAI, Gemini, xAI, OpenRouter,
   DeepSeek, Together, Azure OpenAI, AWS Bedrock, Ollama. The
   OpenAI-compatible ones share one adapter parameterized by base URL.
@@ -364,6 +366,37 @@ logic and UI are unaffected by provider swaps — that invariant is
 non-negotiable (see `PROJECT_HANDOVER.md` "Things that must never be
 changed"). Interface design for hyperscale self-hosted serving lives in
 the `feature/synora-infra-interfaces` branch (unmerged design work).
+
+### Conversation Generation Flow (Release 3 M2)
+
+`conversationGeneration.service.ts` is the only place a user message
+becomes an assistant reply:
+
+```
+POST .../messages (role=USER)
+  → messageService.create() persists the user message (final, immediately)
+  → conversationGenerationService.generateReply()
+      → StreamingJob(PENDING → RUNNING)
+      → resolveProvider('text-generation', { explicitProviderId: conversation.provider })
+      → provider.generateText({ prompt, messages: <windowed history>, model })
+          success → Message(role=ASSISTANT) created, StreamingJob COMPLETED,
+                     ConversationUsage upserted, Conversation.lastMessageAt updated
+          failure → retry (up to 2x, 500ms/1500ms backoff), else StreamingJob FAILED
+  ← HTTP response (same request — no queue, no streaming transport yet)
+```
+
+Deliberately synchronous: there is no Redis-backed queue or SSE/WebSocket
+transport in Release 3 M2 (see "Queue Architecture" and this section's
+note below) — the entire exchange happens within the one HTTP request
+that created the user message. An assistant `Message` row is only ever
+created on a successful generation; there is no `PENDING` placeholder
+message and no `Message.status` field — `StreamingJob` is the sole
+"generation in flight" state, so there's exactly one place that can say
+whether a reply is done, not two that could disagree.
+`M2_IMPLEMENTATION_PLAN.md` §6, §7, and §12 have the full design
+rationale, including the future path to an async/queued/streamed version
+that changes *who calls* this service, not its internal retry/state-machine
+logic.
 
 ## Mailer Abstraction {#mailer-abstraction}
 

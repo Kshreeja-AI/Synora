@@ -581,13 +581,13 @@ model ProcessedWebhookEvent {
 }
 ```
 
-### Conversation & Message (Release 3 M1)
+### Conversation & Message (Release 3 M1/M2)
 
 The foundation of the chat platform: a workspace-scoped conversation
-containing a tree of messages. This is Release 3 Milestone 1's entire
-scope — no API or frontend consumes these models yet (that begins at
-M2/M3); only the data model is established here, deliberately, so that
-schema doesn't change shape once services are built against it.
+containing a tree of messages. The data model was established in M1;
+M2 (Universal Conversation Engine) added `Conversation.lastMessageAt`
+and the `StreamingJob` retry/error fields documented below, and is the
+first milestone with a real service/API built on top of this model.
 
 #### Conversation
 ```prisma
@@ -604,6 +604,10 @@ model Conversation {
   status        ConversationStatus  // ACTIVE, ARCHIVED, or DELETED
   isArchived    Boolean             // Convenience flag mirroring status
   isPinned      Boolean             // User-pinned for quick access
+  lastMessageAt DateTime?           // (M2) Denormalized from the latest Message.createdAt —
+                                     // avoids a correlated subquery for the default
+                                     // "most recently active first" list sort. Null
+                                     // until the first message is sent.
   folderId      String?             // FK to ConversationFolder (M12), optional
 
   // Relations
@@ -625,8 +629,16 @@ model Conversation {
 ```
 
 **Indexes:** `workspaceId` (workspace-scoped list queries),
-`(workspaceId, createdAt)` (chronological listing), `isArchived` and
-`isPinned` (common list filters).
+`(workspaceId, createdAt)` (chronological listing),
+`(workspaceId, lastMessageAt)` (M2 — the default list sort), `isArchived`
+and `isPinned` (common list filters).
+
+**State machine (M2):** `ACTIVE ⇄ ARCHIVED` via the service's `archive`/
+`restore` methods; `{ACTIVE, ARCHIVED} → DELETED` via `delete` (terminal).
+Enforced in `conversation.service.ts`, not just implied by the enum — each
+transition is its own method that checks the current `status` before
+proceeding, never a generic field update. See `docs/api.md`'s Conversation
+Endpoints section for the corresponding routes.
 
 **Deletion model:** `status: DELETED` is a soft delete — conversations
 are never hard-deleted by application code, matching the `isArchived`
@@ -663,12 +675,11 @@ soft-deleted messages), `parentId` (thread/branch reconstruction).
 
 **Soft delete:** `deletedAt` follows the same nullable-timestamp
 convention as `RefreshToken.revokedAt`/`WorkspaceInvitation.revokedAt` —
-presence means deleted, the value is when. This is deliberately schema-only
-in M1; no service enforces it yet (that begins at M3, message lifecycle).
-It exists now so M3 doesn't need its own migration to add it. A soft
-delete never touches the `parentId` self-relation's cascade rule below —
-cascade only fires on a real SQL `DELETE`, and soft delete is a plain
-`UPDATE`, so children are never affected by a parent being soft-deleted.
+presence means deleted, the value is when. Added in M1 as schema-only;
+`message.service.ts`'s `delete()` (M2) is what actually sets it — a plain
+`UPDATE`, never a real `DELETE`, so the `parentId` self-relation's cascade
+rule below never fires and a soft-deleted message's children are
+unaffected.
 
 **Threading:** `parentId` is a self-referential FK (`onDelete: Cascade`)
 forming a tree, not a flat list — the root message of a conversation has
@@ -676,6 +687,39 @@ forming a tree, not a flat list — the root message of a conversation has
 alternative responses at any point without restructuring the schema:
 branching is "insert another child under the same parent," not a new
 concept the base schema needs to accommodate later.
+
+#### StreamingJob (Release 3 M2)
+```prisma
+model StreamingJob {
+  id            String              // Unique identifier (CUID)
+  conversationId String             // FK to Conversation (informational — no
+                                     // formal relation declared, matching how
+                                     // this model was originally scaffolded)
+  messageId     String?             // FK-like reference to the assistant Message
+                                     // this job produced — set only on success;
+                                     // null while running or if every retry failed
+  status        StreamingJobStatus  // PENDING, RUNNING, COMPLETED, FAILED, CANCELED
+  attempt       Int                 // Generation attempts made so far (max 3 — see
+                                     // conversationGeneration.service.ts)
+  lastError     String?             // The most recent failure's message, if any
+
+  // Timestamps
+  createdAt     DateTime
+  updatedAt     DateTime
+  completedAt   DateTime?
+}
+```
+
+**Indexes:** `conversationId`, `status`.
+
+**Purpose:** the per-generation state machine backing "retry support" and
+"error recovery" — one row per attempted generation, driven end-to-end by
+`conversationGeneration.service.ts`: created `PENDING`, moved to `RUNNING`
+before the first provider call, `attempt` incremented before each retry,
+`lastError` updated after each failure, and finally `COMPLETED` (with
+`messageId` set) or `FAILED`. Not yet consumed by any client-facing
+streaming transport — see `M2_IMPLEMENTATION_PLAN.md` §12 for the
+async/SSE path these fields are already shaped for.
 
 ### Other models
 The following exist in `packages/database/prisma/schema.prisma` and

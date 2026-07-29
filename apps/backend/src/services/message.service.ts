@@ -1,7 +1,8 @@
 import { prisma } from '@synora/database'
 import { Message, MessageRole, MessageAttachment } from '@prisma/client'
-import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { NotFoundException } from '@synora/shared'
 import { requirePermission } from './permissions'
+import { requireMembership } from './checks'
 
 export interface CreateMessageInput {
   content: string
@@ -23,14 +24,8 @@ export class MessageService {
       throw new NotFoundException('Conversation not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
-    requirePermission(member.role, 'message:send')
+    const membership = await requireMembership(userId, conversation.workspaceId)
+    requirePermission(membership.role, 'message:send')
 
     const message = await prisma.message.create({
       data: {
@@ -76,13 +71,7 @@ export class MessageService {
       return null
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this message')
-    }
+    await requireMembership(userId, message.conversation.workspaceId)
 
     return message
   }
@@ -100,16 +89,10 @@ export class MessageService {
       throw new NotFoundException('Conversation not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this conversation')
-    }
+    await requireMembership(userId, conversation.workspaceId)
 
     return prisma.message.findMany({
-      where: { conversationId },
+      where: { conversationId, deletedAt: null },
       include: {
         branch: true,
         attachments: true,
@@ -130,14 +113,8 @@ export class MessageService {
       throw new NotFoundException('Message not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
-    requirePermission(member.role, 'message:manage')
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:manage')
 
     return prisma.message.update({
       where: { id },
@@ -147,6 +124,12 @@ export class MessageService {
     })
   }
 
+  /** Soft delete (sets `deletedAt`) — never a real SQL DELETE, so this
+   * never triggers the parentId self-relation's cascade (see M1's schema
+   * comment on Message.deletedAt). Idempotent: deleting an
+   * already-deleted message is a no-op, not an error, matching the
+   * delete-is-idempotent convention used elsewhere (StorageProvider.delete,
+   * Conversation.delete). */
   async delete(userId: string, id: string): Promise<Message> {
     const message = await prisma.message.findUnique({
       where: { id },
@@ -157,17 +140,16 @@ export class MessageService {
       throw new NotFoundException('Message not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
-    })
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:manage')
 
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
+    if (message.deletedAt) {
+      return message
     }
-    requirePermission(member.role, 'message:manage')
 
-    return prisma.message.delete({
+    return prisma.message.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
   }
 
@@ -185,14 +167,8 @@ export class MessageService {
       throw new NotFoundException('Message not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
-    requirePermission(member.role, 'message:send')
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:send')
 
     return prisma.messageAttachment.create({
       data: {

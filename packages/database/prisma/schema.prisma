@@ -822,6 +822,11 @@ model Conversation {
   status            ConversationStatus @default(ACTIVE)
   isArchived        Boolean   @default(false)
   isPinned          Boolean   @default(false)
+  // Denormalized from the latest Message.createdAt in this conversation,
+  // maintained by conversationGeneration.service.ts (M2) — avoids a
+  // correlated subquery/join for the default "most recently active first"
+  // list sort. Null until the first message is sent.
+  lastMessageAt     DateTime?
 
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -841,6 +846,7 @@ model Conversation {
 
   @@index([workspaceId])
   @@index([workspaceId, createdAt])
+  @@index([workspaceId, lastMessageAt])
   @@index([isArchived])
   @@index([isPinned])
 }
@@ -1073,10 +1079,19 @@ model ConversationVersion {
   @@index([conversationId, createdAt])
 }
 
+// messageId/attempt/lastError added in M2 (Universal Conversation Engine)
+// so retry support and error recovery are inspectable, not opaque:
+// messageId links to the assistant Message this job produced (set only on
+// success — see conversationGeneration.service.ts for why a Message row is
+// never created until generation actually succeeds), attempt counts calls
+// made so far, lastError holds the most recent failure's message.
 model StreamingJob {
   id                String    @id @default(cuid())
   conversationId    String
+  messageId         String?
   status            StreamingJobStatus @default(PENDING)
+  attempt           Int       @default(0)
+  lastError         String?
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt

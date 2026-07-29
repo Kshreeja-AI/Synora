@@ -1010,6 +1010,226 @@ code-oriented default system prompt when `systemPrompt` is omitted.
 
 ---
 
+## Conversation Endpoints
+
+Release 3 M2 (Universal Conversation Engine). All routes are workspace-scoped
+and require workspace membership; a workspace the caller does not belong to
+returns `404`, not `403` (this codebase's established convention for
+cross-tenant access — see `requireMembership` in `services/checks.ts`).
+
+### Create Conversation
+```http
+POST /api/workspaces/:workspaceId/conversations
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "My conversation",
+  "description": "Optional",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5"
+}
+```
+`provider` must name a registered, currently-configured AI provider
+(`400` otherwise) — see `docs/production/R1-e_AI_PROVIDER_ABSTRACTION.md`
+for the provider list. `model` is not validated against a fixed list;
+models are free-form per-provider strings throughout this codebase.
+
+**Status Codes**
+- `201`: Created
+- `400`: Invalid body, or `provider` is unregistered/unconfigured
+- `401`: Unauthorized
+- `404`: Not a member of `:workspaceId`
+
+### List Conversations
+```http
+GET /api/workspaces/:workspaceId/conversations?search=&archived=&pinned=&sortBy=&sortDirection=&skip=&take=
+Authorization: Bearer <token>
+```
+- `search` — case-insensitive substring match on title/description.
+- `archived` — `true` to list archived conversations instead of active ones.
+- `pinned` — `true` to filter to pinned conversations only.
+- `sortBy` — one of `createdAt`, `updatedAt`, `lastMessageAt` (default), `title`.
+- `sortDirection` — `asc` or `desc` (default `desc`).
+
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "conversations": [ { "id": "...", "title": "...", "lastMessageAt": "...", "tags": [] } ],
+    "total": 1
+  }
+}
+```
+
+### Get Conversation
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId
+Authorization: Bearer <token>
+```
+Includes the 50 most recent non-deleted messages, tags, collaborators,
+and usage. Returns `404` for a conversation that doesn't exist or that
+the caller's workspace can't see.
+
+### Update Conversation
+```http
+PATCH /api/workspaces/:workspaceId/conversations/:conversationId
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "title": "Renamed",
+  "description": "...",
+  "provider": "openai",
+  "model": "gpt-4o",
+  "tagNames": ["important", "follow-up"]
+}
+```
+Metadata only. There is no `isArchived`/`isPinned`/`status` field here —
+those transitions go through the dedicated endpoints below so the
+conversation's state machine can't be bypassed by a direct PATCH.
+`tagNames` replaces the conversation's full tag set (find-or-create per
+workspace, max 20 tags).
+
+### Archive / Restore / Pin / Unpin / Delete
+```http
+POST   /api/workspaces/:workspaceId/conversations/:conversationId/archive
+POST   /api/workspaces/:workspaceId/conversations/:conversationId/restore
+POST   /api/workspaces/:workspaceId/conversations/:conversationId/pin
+POST   /api/workspaces/:workspaceId/conversations/:conversationId/unpin
+DELETE /api/workspaces/:workspaceId/conversations/:conversationId
+Authorization: Bearer <token>
+```
+State machine: `ACTIVE ⇄ ARCHIVED` via archive/restore;
+`{ACTIVE, ARCHIVED} → DELETED` via delete (terminal — no endpoint
+restores from `DELETED`). `archive` on a non-`ACTIVE` conversation and
+`restore` on a non-`ARCHIVED` conversation both return `400`. `delete` is
+idempotent — deleting an already-`DELETED` conversation returns `200`
+with no error. Each transition records one `AuditLog` entry
+(`conversation_archived`, `conversation_restored`, `conversation_pinned`,
+`conversation_unpinned`, `conversation_deleted`).
+
+### Get Conversation Usage
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId/usage
+Authorization: Bearer <token>
+```
+**Response**
+```json
+{
+  "success": true,
+  "data": {
+    "inputTokens": 1240,
+    "outputTokens": 480,
+    "totalTokens": 1720,
+    "estimatedCost": 0.0135
+  }
+}
+```
+Aggregate token/cost accounting for the whole conversation (not a
+per-message ledger). Returns all-zero fields if no generation has
+completed yet. `estimatedCost` is a display approximation
+(`ai/pricing.ts`) — it is never used for billing, which is entirely
+separate (see Billing Endpoints below).
+
+---
+
+## Message Endpoints
+
+### Create Message (and generate a reply)
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "content": "Hello",
+  "role": "USER",
+  "parentId": "optional-parent-message-id"
+}
+```
+`role` accepts `USER` or `SYSTEM` only — `ASSISTANT` is rejected with
+`400`. An assistant message is only ever created by a successful
+generation (see below); a client cannot fabricate one directly.
+
+For a `USER` message, this endpoint is **synchronous**: it creates the
+user message, then calls the conversation's own AI provider (not
+whatever `AI_PROVIDER` happens to be globally set to — see
+`ai/resolver.ts`'s `explicitProviderId`), retrying up to twice with
+backoff on failure, before responding. There is no streaming/async
+transport in Release 3 M2 — the whole exchange happens within one HTTP
+request/response.
+
+**Response (USER message, generation succeeded)**
+```json
+{
+  "success": true,
+  "data": {
+    "userMessage": { "id": "...", "content": "Hello", "role": "USER" },
+    "assistantMessage": { "id": "...", "content": "Hi there!", "role": "ASSISTANT" },
+    "usage": { "inputTokens": 12, "outputTokens": 6 }
+  }
+}
+```
+
+**Response (SYSTEM message — no generation triggered)**
+```json
+{ "success": true, "data": { "id": "...", "content": "...", "role": "SYSTEM" } }
+```
+
+**Status Codes**
+- `201`: Created (and, for a `USER` message, generated)
+- `400`: Invalid body, or `role: "ASSISTANT"`
+- `401`: Unauthorized
+- `404`: Not a member of `:workspaceId`, or the conversation doesn't exist
+- `503`: Every generation attempt failed — the response names the
+  `StreamingJob` id so the failure can be inspected
+  (`services/conversationGeneration.service.ts`). The user message itself
+  is **not** rolled back; the caller can retry with a follow-up message.
+
+### List Messages
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId/messages?skip=&take=
+Authorization: Bearer <token>
+```
+Chronological, excludes soft-deleted messages. `take` is capped at 100.
+
+### Get Message
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId
+Authorization: Bearer <token>
+```
+
+### Update Message
+```http
+PATCH /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "content": "Edited content" }
+```
+
+### Delete Message (soft delete)
+```http
+DELETE /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId
+Authorization: Bearer <token>
+```
+Sets `deletedAt`; the row is not removed and is excluded from the
+default message list. Idempotent — deleting an already-deleted message
+returns `200` with the existing `deletedAt` unchanged.
+
+### Add Attachment
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/attachments
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "url": "https://...", "mimeType": "image/png", "name": "screenshot.png", "size": 12345 }
+```
+
+---
+
 ## Liveness & Readiness
 
 ### `/health`
