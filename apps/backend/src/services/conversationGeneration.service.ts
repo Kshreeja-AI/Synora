@@ -76,7 +76,7 @@ export class ConversationGenerationService {
         })
 
         if (attempt < MAX_ATTEMPTS) {
-          await sleep(RETRY_BACKOFF_MS[attempt - 1])
+          await internals.sleep(RETRY_BACKOFF_MS[attempt - 1])
         }
       }
     }
@@ -176,8 +176,18 @@ export class ConversationGenerationService {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+/**
+ * Retry backoff delay as a mutable, spy-able seam. Faking global timers
+ * (vi.useFakeTimers) proved unsafe here — it also reaches into Prisma's own
+ * internal timer usage and hangs real DB calls indefinitely, and spying on a
+ * plain named export doesn't intercept same-module calls under ESM. Routing
+ * the call through this object gives tests something they can actually
+ * override (see conversationGeneration.service.test.ts).
+ */
+export const internals = {
+  sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  },
 }
 
 export const conversationGenerationService = new ConversationGenerationService()

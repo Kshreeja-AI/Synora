@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import type { Message } from '@prisma/client'
 import { prisma } from '@synora/database'
 import { initConfig } from '../../config'
-import { conversationGenerationService } from '../conversationGeneration.service'
+import { conversationGenerationService, internals } from '../conversationGeneration.service'
 import { conversationUsageService } from '../conversationUsage.service'
 import * as aiModule from '../../ai/index.js'
 import { ServiceUnavailableException } from '@synora/shared'
@@ -36,7 +36,6 @@ describe('conversationGeneration.service', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks()
-    vi.useRealTimers()
     await prisma.workspace.deleteMany({ where: { id: { in: workspaceIds } } })
     workspaceIds.length = 0
   })
@@ -90,7 +89,7 @@ describe('conversationGeneration.service', () => {
 
   it('retries once on failure and succeeds on the second attempt', async () => {
     const userMessage = await createUserMessage()
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const sleepSpy = vi.spyOn(internals, 'sleep').mockResolvedValue(undefined)
 
     const generateText = vi
       .fn<(request: aiModule.TextGenerationRequest) => Promise<MockGenerateResult>>()
@@ -103,21 +102,20 @@ describe('conversationGeneration.service', () => {
       })
     mockProvider(generateText)
 
-    const resultPromise = conversationGenerationService.generateReply(conversationId, userMessage)
-    await vi.advanceTimersByTimeAsync(600) // past the 500ms first backoff
-    const result = await resultPromise
+    const result = await conversationGenerationService.generateReply(conversationId, userMessage)
 
     expect(result.assistantMessage.content).toBe('Recovered')
     expect(generateText).toHaveBeenCalledTimes(2)
+    expect(sleepSpy).toHaveBeenCalledWith(500)
 
     const job = await prisma.streamingJob.findFirst({ where: { conversationId } })
     expect(job?.status).toBe('COMPLETED')
     expect(job?.attempt).toBe(2)
-  }, 10000)
+  })
 
   it('fails after exhausting all retries: no assistant message is created, job is FAILED with lastError set, usage untouched', async () => {
     const userMessage = await createUserMessage()
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const sleepSpy = vi.spyOn(internals, 'sleep').mockResolvedValue(undefined)
 
     const generateText = vi
       .fn<(request: aiModule.TextGenerationRequest) => Promise<MockGenerateResult>>()
@@ -125,17 +123,13 @@ describe('conversationGeneration.service', () => {
     mockProvider(generateText)
 
     const resultPromise = conversationGenerationService.generateReply(conversationId, userMessage)
-    // Swallow the eventual rejection here so it isn't reported as unhandled
-    // while timers are being advanced below; the real assertion is the
-    // `rejects.toThrow` on this same promise further down.
-    resultPromise.catch(() => undefined)
-
-    await vi.advanceTimersByTimeAsync(2100) // past both the 500ms and 1500ms backoffs
 
     await expect(resultPromise).rejects.toThrow(ServiceUnavailableException)
     await expect(resultPromise).rejects.toThrow(/permanent failure/)
 
     expect(generateText).toHaveBeenCalledTimes(3)
+    expect(sleepSpy).toHaveBeenCalledWith(500)
+    expect(sleepSpy).toHaveBeenCalledWith(1500)
 
     const job = await prisma.streamingJob.findFirst({ where: { conversationId } })
     expect(job?.status).toBe('FAILED')
@@ -147,7 +141,7 @@ describe('conversationGeneration.service', () => {
 
     const usage = await conversationUsageService.getByConversationId(conversationId)
     expect(usage).toBeNull()
-  }, 10000)
+  })
 
   it("passes the conversation's own provider as an explicit override, not relying on global auto-detection", async () => {
     const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })
