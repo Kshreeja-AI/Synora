@@ -17,6 +17,15 @@ describe('permissions', () => {
       'asset:upload',
       'asset:delete',
       'audit:view',
+      'conversation:create',
+      'conversation:manage',
+      'message:send',
+      'message:manage',
+      'branch:manage',
+      'conversation-folder:manage',
+      'prompt:manage',
+      'template:manage',
+      'sharing:manage',
     ];
     for (const permission of permissions) {
       expect(hasPermission('OWNER', permission)).toBe(true);
@@ -30,10 +39,30 @@ describe('permissions', () => {
     expect(hasPermission('VIEWER', 'member:invite')).toBe(false);
   });
 
+  it('denies VIEWER every chat permission', () => {
+    expect(hasPermission('VIEWER', 'conversation:create')).toBe(false);
+    expect(hasPermission('VIEWER', 'message:send')).toBe(false);
+    expect(hasPermission('VIEWER', 'branch:manage')).toBe(false);
+    expect(hasPermission('VIEWER', 'conversation-folder:manage')).toBe(false);
+    expect(hasPermission('VIEWER', 'prompt:manage')).toBe(false);
+    expect(hasPermission('VIEWER', 'template:manage')).toBe(false);
+    expect(hasPermission('VIEWER', 'sharing:manage')).toBe(false);
+  });
+
   it('lets MEMBER upload assets but nothing else', () => {
     expect(hasPermission('MEMBER', 'asset:upload')).toBe(true);
     expect(hasPermission('MEMBER', 'asset:delete')).toBe(false);
     expect(hasPermission('MEMBER', 'project:create')).toBe(false);
+  });
+
+  it('lets MEMBER use every chat feature — the same "not VIEWER" bar the old inline checks enforced', () => {
+    expect(hasPermission('MEMBER', 'conversation:create')).toBe(true);
+    expect(hasPermission('MEMBER', 'message:send')).toBe(true);
+    expect(hasPermission('MEMBER', 'branch:manage')).toBe(true);
+    expect(hasPermission('MEMBER', 'conversation-folder:manage')).toBe(true);
+    expect(hasPermission('MEMBER', 'prompt:manage')).toBe(true);
+    expect(hasPermission('MEMBER', 'template:manage')).toBe(true);
+    expect(hasPermission('MEMBER', 'sharing:manage')).toBe(true);
   });
 
   it('denies ADMIN workspace:delete (owner-only)', () => {

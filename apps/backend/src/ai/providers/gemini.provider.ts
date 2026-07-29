@@ -8,7 +8,7 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
+import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
 import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
@@ -35,7 +35,10 @@ export class GeminiTextProvider implements TextGenerationProvider {
       });
 
       const result = await model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: request.prompt }] }],
+        contents: resolveConversationTurns(request).map((turn) => ({
+          role: turn.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: turn.content }],
+        })),
         generationConfig: {
           maxOutputTokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
           temperature: request.temperature,

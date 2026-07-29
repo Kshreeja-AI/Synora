@@ -194,6 +194,8 @@ CREATE TABLE "Tool" (
 CREATE TABLE "ToolCall" (
     "id" TEXT NOT NULL,
     "toolId" TEXT NOT NULL,
+    "conversationId" TEXT NOT NULL,
+    "executedBy" TEXT NOT NULL,
     "input" JSONB NOT NULL,
     "output" JSONB,
     "error" TEXT,
@@ -253,6 +255,7 @@ CREATE INDEX "StreamingJob_status_idx" ON "StreamingJob"("status");
 CREATE INDEX "Tool_workspaceId_idx" ON "Tool"("workspaceId");
 CREATE INDEX "Tool_isPublic_idx" ON "Tool"("isPublic");
 CREATE INDEX "ToolCall_toolId_idx" ON "ToolCall"("toolId");
+CREATE INDEX "ToolCall_conversationId_idx" ON "ToolCall"("conversationId");
 CREATE UNIQUE INDEX "ConversationUsage_conversationId_key" ON "ConversationUsage"("conversationId");
 CREATE UNIQUE INDEX "_ConversationToConversationTag_AB_unique" ON "_ConversationToConversationTag"("A", "B");
 CREATE INDEX "_ConversationToConversationTag_B_index" ON "_ConversationToConversationTag"("B");
@@ -277,6 +280,7 @@ ALTER TABLE "ConversationActivity" ADD CONSTRAINT "ConversationActivity_conversa
 ALTER TABLE "ConversationVersion" ADD CONSTRAINT "ConversationVersion_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "Tool" ADD CONSTRAINT "Tool_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "ToolCall" ADD CONSTRAINT "ToolCall_toolId_fkey" FOREIGN KEY ("toolId") REFERENCES "Tool"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ToolCall" ADD CONSTRAINT "ToolCall_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "ConversationUsage" ADD CONSTRAINT "ConversationUsage_conversationId_fkey" FOREIGN KEY ("conversationId") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "_ConversationToConversationTag" ADD CONSTRAINT "_ConversationToConversationTag_A_fkey" FOREIGN KEY ("A") REFERENCES "Conversation"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "_ConversationToConversationTag" ADD CONSTRAINT "_ConversationToConversationTag_B_fkey" FOREIGN KEY ("B") REFERENCES "ConversationTag"("id") ON DELETE CASCADE ON UPDATE CASCADE;

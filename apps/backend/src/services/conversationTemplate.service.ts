@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { ConversationTemplate, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateConversationTemplateInput {
   name: string
@@ -31,9 +32,10 @@ export class ConversationTemplateService {
       where: { userId_workspaceId: { userId, workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to create conversation templates')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'template:manage')
 
     return prisma.conversationTemplate.create({
       data: {
@@ -134,9 +136,10 @@ export class ConversationTemplateService {
         where: { userId_workspaceId: { userId, workspaceId: template.workspaceId } },
       })
 
-      if (!member || member.role === 'VIEWER') {
-        throw new ForbiddenException('You do not have permission to update this template')
+      if (!member) {
+        throw new ForbiddenException('You do not have access to this workspace')
       }
+      requirePermission(member.role, 'template:manage')
     }
 
     return prisma.conversationTemplate.update({
@@ -165,9 +168,10 @@ export class ConversationTemplateService {
         where: { userId_workspaceId: { userId, workspaceId: template.workspaceId } },
       })
 
-      if (!member || member.role === 'VIEWER') {
-        throw new ForbiddenException('You do not have permission to delete this template')
+      if (!member) {
+        throw new ForbiddenException('You do not have access to this workspace')
       }
+      requirePermission(member.role, 'template:manage')
     }
 
     await prisma.conversationTemplate.delete({ where: { id } })

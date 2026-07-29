@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { Message, MessageBranch, MessageRole } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateBranchInput {
   parentId: string
@@ -25,9 +26,10 @@ export class BranchService {
       where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to create branches')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this conversation')
     }
+    requirePermission(member.role, 'branch:manage')
 
     const parentMessage = await prisma.message.findUnique({
       where: { id: input.parentId },
@@ -119,9 +121,10 @@ export class BranchService {
       where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to set main branch')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this conversation')
     }
+    requirePermission(member.role, 'branch:manage')
 
     if (message.parentId) {
       await prisma.messageBranch.updateMany({
@@ -160,9 +163,10 @@ export class BranchService {
       where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to delete branches')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this conversation')
     }
+    requirePermission(member.role, 'branch:manage')
 
     if (message.branch?.isMainBranch) {
       throw new ForbiddenException('Cannot delete the main branch')

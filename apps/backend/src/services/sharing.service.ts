@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { prisma } from '@synora/database'
 import { SharedConversation, SharePermission, ConversationCollaborator, CollaboratorRole, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateShareLinkInput {
   permissions?: SharePermission
@@ -31,8 +32,8 @@ async function requireConversationAccess(userId: string, conversationId: string,
     throw new ForbiddenException('You do not have access to this conversation')
   }
 
-  if (requireWrite && member.role === 'VIEWER') {
-    throw new ForbiddenException('You do not have permission to manage sharing for this conversation')
+  if (requireWrite) {
+    requirePermission(member.role, 'sharing:manage')
   }
 
   return conversation

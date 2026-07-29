@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { PromptTemplate, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreatePromptTemplateInput {
   name: string
@@ -33,9 +34,10 @@ export class PromptTemplateService {
       where: { userId_workspaceId: { userId, workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to create prompt templates')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'prompt:manage')
 
     return prisma.promptTemplate.create({
       data: {
@@ -140,9 +142,10 @@ export class PromptTemplateService {
         where: { userId_workspaceId: { userId, workspaceId: template.workspaceId } },
       })
 
-      if (!member || member.role === 'VIEWER') {
-        throw new ForbiddenException('You do not have permission to update this prompt template')
+      if (!member) {
+        throw new ForbiddenException('You do not have access to this workspace')
       }
+      requirePermission(member.role, 'prompt:manage')
     }
 
     return prisma.promptTemplate.update({
@@ -172,9 +175,10 @@ export class PromptTemplateService {
         where: { userId_workspaceId: { userId, workspaceId: template.workspaceId } },
       })
 
-      if (!member || member.role === 'VIEWER') {
-        throw new ForbiddenException('You do not have permission to delete this prompt template')
+      if (!member) {
+        throw new ForbiddenException('You do not have access to this workspace')
       }
+      requirePermission(member.role, 'prompt:manage')
     }
 
     await prisma.promptTemplate.delete({ where: { id } })

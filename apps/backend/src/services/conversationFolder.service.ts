@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { ConversationFolder } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateConversationFolderInput {
   name: string
@@ -18,9 +19,10 @@ export class ConversationFolderService {
       where: { userId_workspaceId: { userId, workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to create folders')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation-folder:manage')
 
     if (input.parentId) {
       const parent = await prisma.conversationFolder.findUnique({
@@ -108,9 +110,10 @@ export class ConversationFolderService {
       where: { userId_workspaceId: { userId, workspaceId: folder.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to update this folder')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation-folder:manage')
 
     if (input.parentId) {
       if (input.parentId === id) {
@@ -150,9 +153,10 @@ export class ConversationFolderService {
       where: { userId_workspaceId: { userId, workspaceId: folder.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to delete this folder')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation-folder:manage')
 
     await prisma.conversationFolder.delete({ where: { id } })
   }
@@ -170,9 +174,10 @@ export class ConversationFolderService {
       where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to move conversations')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation-folder:manage')
 
     if (folderId) {
       const folder = await prisma.conversationFolder.findUnique({

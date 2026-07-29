@@ -8,7 +8,7 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
+import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
 import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
@@ -41,7 +41,10 @@ export class OpenAICompatibleTextProvider implements TextGenerationProvider {
         temperature: request.temperature,
         messages: [
           ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
-          { role: 'user' as const, content: request.prompt },
+          ...resolveConversationTurns(request).map((turn) => ({
+            role: turn.role as 'user' | 'assistant',
+            content: turn.content,
+          })),
         ],
       });
 

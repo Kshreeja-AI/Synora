@@ -834,6 +834,7 @@ model Conversation {
   activity          ConversationActivity[]
   shared            SharedConversation[]
   usage             ConversationUsage?
+  toolCalls         ToolCall[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1100,18 +1101,27 @@ model Tool {
   @@index([isPublic])
 }
 
+// executedBy is a soft reference — same reasoning as AuditLog.actorId: a
+// tool-execution audit trail must remain queryable even if the executing
+// account is later removed. conversationId is a hard reference (cascade),
+// matching ConversationActivity, since every call happens within a
+// conversation's agent loop.
 model ToolCall {
   id                String    @id @default(cuid())
   toolId            String
+  conversationId    String
+  executedBy        String
   input             Json
   output            Json?
   error             String?
 
-  tool              Tool      @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  tool              Tool         @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime  @default(now())
 
   @@index([toolId])
+  @@index([conversationId])
 }
 
 model ConversationUsage {

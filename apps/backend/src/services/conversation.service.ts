@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { Conversation, ConversationStatus, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateConversationInput {
   title: string
@@ -32,9 +33,10 @@ export class ConversationService {
       where: { userId_workspaceId: { userId, workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to create conversations')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation:create')
 
     return prisma.conversation.create({
       data: {
@@ -135,9 +137,10 @@ export class ConversationService {
       where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to update this conversation')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation:manage')
 
     return prisma.conversation.update({
       where: { id },
@@ -176,9 +179,10 @@ export class ConversationService {
       where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to delete this conversation')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'conversation:manage')
 
     return prisma.conversation.update({
       where: { id },

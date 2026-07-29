@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { Message, MessageRole, MessageAttachment } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { requirePermission } from './permissions'
 
 export interface CreateMessageInput {
   content: string
@@ -26,9 +27,10 @@ export class MessageService {
       where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to add messages')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'message:send')
 
     const message = await prisma.message.create({
       data: {
@@ -132,9 +134,10 @@ export class MessageService {
       where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to update this message')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'message:manage')
 
     return prisma.message.update({
       where: { id },
@@ -158,9 +161,10 @@ export class MessageService {
       where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to delete this message')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'message:manage')
 
     return prisma.message.delete({
       where: { id },
@@ -185,9 +189,10 @@ export class MessageService {
       where: { userId_workspaceId: { userId, workspaceId: message.conversation.workspaceId } },
     })
 
-    if (!member || member.role === 'VIEWER') {
-      throw new ForbiddenException('You do not have permission to add attachments')
+    if (!member) {
+      throw new ForbiddenException('You do not have access to this workspace')
     }
+    requirePermission(member.role, 'message:send')
 
     return prisma.messageAttachment.create({
       data: {
