@@ -91,6 +91,42 @@ describe('Conversation/Message schema (Release 3 M1)', () => {
     expect(replyWithParent.parent?.id).toBe(root.id)
   })
 
+  it('defaults deletedAt to null and never sets it implicitly', async () => {
+    const conversation = await prisma.conversation.create({
+      data: { workspaceId, title: 'Soft delete default test', provider: 'anthropic', model: 'claude-sonnet-5' },
+    })
+    const message = await prisma.message.create({
+      data: { conversationId: conversation.id, content: 'Hello', role: MessageRole.USER },
+    })
+
+    expect(message.deletedAt).toBeNull()
+  })
+
+  it('supports soft delete via deletedAt without removing the row or cascading to children', async () => {
+    const conversation = await prisma.conversation.create({
+      data: { workspaceId, title: 'Soft delete test', provider: 'anthropic', model: 'claude-sonnet-5' },
+    })
+    const root = await prisma.message.create({
+      data: { conversationId: conversation.id, content: 'Root', role: MessageRole.USER },
+    })
+    const child = await prisma.message.create({
+      data: { conversationId: conversation.id, content: 'Child', role: MessageRole.ASSISTANT, parentId: root.id },
+    })
+
+    const deletedAt = new Date()
+    await prisma.message.update({ where: { id: root.id }, data: { deletedAt } })
+
+    const stillPresent = await prisma.message.findUnique({ where: { id: root.id } })
+    expect(stillPresent).not.toBeNull()
+    expect(stillPresent?.deletedAt?.getTime()).toBe(deletedAt.getTime())
+
+    // A soft delete is a plain UPDATE — it must never trigger the parentId
+    // FK's ON DELETE CASCADE, which only fires on a real SQL DELETE.
+    const childAfter = await prisma.message.findUnique({ where: { id: child.id } })
+    expect(childAfter).not.toBeNull()
+    expect(childAfter?.deletedAt).toBeNull()
+  })
+
   it('supports a SYSTEM-role message alongside USER/ASSISTANT', async () => {
     const conversation = await prisma.conversation.create({
       data: { workspaceId, title: 'System prompt test', provider: 'anthropic', model: 'claude-sonnet-5' },

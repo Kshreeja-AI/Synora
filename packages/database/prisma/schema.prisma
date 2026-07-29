@@ -851,12 +851,22 @@ enum ConversationStatus {
   DELETED
 }
 
+// deletedAt follows the same nullable-timestamp soft-delete convention as
+// RefreshToken.revokedAt/WorkspaceInvitation.revokedAt (presence = deleted,
+// value = when) rather than introducing a new isDeleted-boolean pattern.
+// Added in M1 specifically so M3 (message lifecycle) can implement soft
+// delete without a further migration: the architecture calls for deleting a
+// message to orphan, not cascade-remove, its children, which soft-delete
+// naturally gives for free (a plain UPDATE never triggers the parentId FK's
+// cascade — that only fires on an actual SQL DELETE, which soft-delete
+// never issues).
 model Message {
   id                String    @id @default(cuid())
   conversationId    String
   content           String
   role              MessageRole
   parentId          String?
+  deletedAt         DateTime?
 
   conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   parent            Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
@@ -870,6 +880,7 @@ model Message {
 
   @@index([conversationId])
   @@index([conversationId, createdAt])
+  @@index([conversationId, deletedAt])
   @@index([parentId])
 }
 

@@ -45,6 +45,7 @@ CREATE TABLE "Message" (
     "content" TEXT NOT NULL,
     "role" "MessageRole" NOT NULL,
     "parentId" TEXT,
+    "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -229,6 +230,7 @@ CREATE INDEX "Conversation_isArchived_idx" ON "Conversation"("isArchived");
 CREATE INDEX "Conversation_isPinned_idx" ON "Conversation"("isPinned");
 CREATE INDEX "Message_conversationId_idx" ON "Message"("conversationId");
 CREATE INDEX "Message_conversationId_createdAt_idx" ON "Message"("conversationId", "createdAt");
+CREATE INDEX "Message_conversationId_deletedAt_idx" ON "Message"("conversationId", "deletedAt");
 CREATE INDEX "Message_parentId_idx" ON "Message"("parentId");
 CREATE UNIQUE INDEX "MessageBranch_messageId_key" ON "MessageBranch"("messageId");
 CREATE INDEX "MessageBranch_messageId_idx" ON "MessageBranch"("messageId");

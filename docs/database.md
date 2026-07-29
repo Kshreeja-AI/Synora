@@ -642,6 +642,7 @@ model Message {
   content         String        // Message text
   role            MessageRole   // USER, ASSISTANT, or SYSTEM
   parentId        String?       // FK to the message this replies to/branches from
+  deletedAt       DateTime?     // Soft-delete marker — null means not deleted
 
   // Relations
   conversation    Conversation
@@ -657,7 +658,17 @@ model Message {
 ```
 
 **Indexes:** `conversationId` and `(conversationId, createdAt)` (message
-timeline queries), `parentId` (thread/branch reconstruction).
+timeline queries), `(conversationId, deletedAt)` (filtering out
+soft-deleted messages), `parentId` (thread/branch reconstruction).
+
+**Soft delete:** `deletedAt` follows the same nullable-timestamp
+convention as `RefreshToken.revokedAt`/`WorkspaceInvitation.revokedAt` —
+presence means deleted, the value is when. This is deliberately schema-only
+in M1; no service enforces it yet (that begins at M3, message lifecycle).
+It exists now so M3 doesn't need its own migration to add it. A soft
+delete never touches the `parentId` self-relation's cascade rule below —
+cascade only fires on a real SQL `DELETE`, and soft delete is a plain
+`UPDATE`, so children are never affected by a parent being soft-deleted.
 
 **Threading:** `parentId` is a self-referential FK (`onDelete: Cascade`)
 forming a tree, not a flat list — the root message of a conversation has
