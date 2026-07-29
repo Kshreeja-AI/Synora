@@ -84,10 +84,14 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # Coverage lands per-package (turbo runs test:coverage per workspace
+      # project), never at a repo-root ./coverage — that path never existed,
+      # so this step previously no-op'd silently (fail_ci_if_error: false
+      # masked it) without ever uploading a real report.
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         with:
-          files: ./coverage/coverage-final.json
+          files: ./apps/backend/coverage/coverage-final.json,./apps/web/coverage/coverage-final.json,./packages/design-system/coverage/coverage-final.json
           fail_ci_if_error: false
 
   docker:
@@ -178,8 +182,14 @@ jobs:
 
       # Best-effort deeper scan. Non-blocking because it requires an account
       # token that a fresh clone will not have; the blocking gates above do not.
+      # --all-projects is required because this repo has both a pnpm-lock.yaml
+      # and a pnpm-workspace.yaml (a pnpm monorepo) — without it, Snyk's CLI
+      # refuses to pick a project and exits with a usage error before it ever
+      # reaches authentication, regardless of whether SNYK_TOKEN is set.
       - name: Run Snyk security scan
         uses: snyk/actions/node@master
+        with:
+          args: --all-projects
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         continue-on-error: true
