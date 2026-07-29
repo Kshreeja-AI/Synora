@@ -581,6 +581,91 @@ model ProcessedWebhookEvent {
 }
 ```
 
+### Conversation & Message (Release 3 M1)
+
+The foundation of the chat platform: a workspace-scoped conversation
+containing a tree of messages. This is Release 3 Milestone 1's entire
+scope — no API or frontend consumes these models yet (that begins at
+M2/M3); only the data model is established here, deliberately, so that
+schema doesn't change shape once services are built against it.
+
+#### Conversation
+```prisma
+model Conversation {
+  id            String              // Unique identifier (CUID)
+  workspaceId   String              // FK to Workspace
+  title         String              // Conversation title
+  description   String?             // Optional longer description
+  provider      String              // AI provider id used, e.g. "anthropic" —
+                                     // a string, not an enum, matching the
+                                     // ai/registry.ts descriptor pattern: adding
+                                     // a provider never requires a migration
+  model         String              // Concrete model name, e.g. "claude-sonnet-5"
+  status        ConversationStatus  // ACTIVE, ARCHIVED, or DELETED
+  isArchived    Boolean             // Convenience flag mirroring status
+  isPinned      Boolean             // User-pinned for quick access
+  folderId      String?             // FK to ConversationFolder (M12), optional
+
+  // Relations
+  workspace     Workspace
+  messages      Message[]
+  folder        ConversationFolder?
+  tags          ConversationTag[]
+  collaborators ConversationCollaborator[]
+  versions      ConversationVersion[]
+  activity      ConversationActivity[]
+  shared        SharedConversation[]
+  usage         ConversationUsage?
+  toolCalls     ToolCall[]
+
+  // Timestamps
+  createdAt     DateTime
+  updatedAt     DateTime
+}
+```
+
+**Indexes:** `workspaceId` (workspace-scoped list queries),
+`(workspaceId, createdAt)` (chronological listing), `isArchived` and
+`isPinned` (common list filters).
+
+**Deletion model:** `status: DELETED` is a soft delete — conversations
+are never hard-deleted by application code, matching the `isArchived`
+convention already used elsewhere in this schema. Deleting the parent
+`Workspace` cascades (`onDelete: Cascade`), since a conversation cannot
+meaningfully exist without its workspace.
+
+#### Message
+```prisma
+model Message {
+  id              String        // Unique identifier (CUID)
+  conversationId  String        // FK to Conversation
+  content         String        // Message text
+  role            MessageRole   // USER, ASSISTANT, or SYSTEM
+  parentId        String?       // FK to the message this replies to/branches from
+
+  // Relations
+  conversation    Conversation
+  parent          Message?      // Self-relation ("MessageTree")
+  children        Message[]     // Self-relation ("MessageTree")
+  branch          MessageBranch?
+  attachments     MessageAttachment[]
+
+  // Timestamps
+  createdAt       DateTime
+  updatedAt       DateTime
+}
+```
+
+**Indexes:** `conversationId` and `(conversationId, createdAt)` (message
+timeline queries), `parentId` (thread/branch reconstruction).
+
+**Threading:** `parentId` is a self-referential FK (`onDelete: Cascade`)
+forming a tree, not a flat list — the root message of a conversation has
+`parentId: null`. This is what lets Release 3 M8 (branching) attach
+alternative responses at any point without restructuring the schema:
+branching is "insert another child under the same parent," not a new
+concept the base schema needs to accommodate later.
+
 ### Other models
 The following exist in `packages/database/prisma/schema.prisma` and
 aren't reproduced in full here — treat the schema file as the definitive
@@ -670,6 +755,24 @@ enum NotificationType {
   ACCOUNT     // Email verified, profile changes
   WORKSPACE   // Workspace created, membership changes
   SYSTEM      // Platform-level notices
+}
+```
+
+### ConversationStatus (Release 3 M1)
+```prisma
+enum ConversationStatus {
+  ACTIVE      // Normal, in-use conversation
+  ARCHIVED    // Hidden from default lists, not deleted
+  DELETED     // Soft-deleted; application code never hard-deletes a conversation
+}
+```
+
+### MessageRole (Release 3 M1)
+```prisma
+enum MessageRole {
+  USER        // A human participant's turn
+  ASSISTANT   // An AI-generated turn
+  SYSTEM      // A system/instruction turn
 }
 ```
 
