@@ -62,6 +62,30 @@ export interface StageDefaults {
     defaultCurrency: string;
     trialDays: number;
   };
+  queue: {
+    enabled: boolean;
+    workers: {
+      generateResponse: number;
+      indexMessageSearch: number;
+      generateEmbeddings: number;
+      processFile: number;
+      cleanup: number;
+      notification: number;
+    };
+    retry: {
+      attempts: number;
+      backoffMs: number;
+      backoffStrategy: 'exponential' | 'fixed';
+    };
+    deadLetter: {
+      enabled: boolean;
+      retention: number;
+    };
+    rateLimit: {
+      enabled: boolean;
+      maxJobsPerSecond: number;
+    };
+  };
 }
 
 const BASE_DEFAULTS: StageDefaults = {
@@ -124,6 +148,30 @@ const BASE_DEFAULTS: StageDefaults = {
     defaultCurrency: 'USD',
     trialDays: 14,
   },
+  queue: {
+    enabled: true,
+    workers: {
+      generateResponse: 5,
+      indexMessageSearch: 2,
+      generateEmbeddings: 2,
+      processFile: 3,
+      cleanup: 1,
+      notification: 2,
+    },
+    retry: {
+      attempts: 3,
+      backoffMs: 1000,
+      backoffStrategy: 'exponential',
+    },
+    deadLetter: {
+      enabled: true,
+      retention: 86400000, // 24 hours
+    },
+    rateLimit: {
+      enabled: true,
+      maxJobsPerSecond: 100,
+    },
+  },
 };
 
 const STAGE_OVERRIDES: Partial<Record<DeploymentStage, Partial<StageDefaults>>> = {
@@ -177,6 +225,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     mail: { ...BASE_DEFAULTS.mail, ...override.mail },
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
+    queue: { ...BASE_DEFAULTS.queue, ...override.queue },
   };
 
   return applyModeOverrides(merged, modes);

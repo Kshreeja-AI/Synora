@@ -162,6 +162,63 @@ export async function loadConfig(
       defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),
       trialDays: readNumber(env, 'BILLING_TRIAL_DAYS', defaults.billing.trialDays),
     },
+    queue: {
+      enabled: readString(env, 'QUEUE_ENABLED', String(defaults.queue.enabled)) === 'true',
+      redis: {
+        url: env.REDIS_URL || undefined,
+        host: env.REDIS_HOST || undefined,
+        port: env.REDIS_PORT ? readNumber(env, 'REDIS_PORT', 6379) : undefined,
+        password: env.REDIS_PASSWORD || undefined,
+        db: env.REDIS_DB ? readNumber(env, 'REDIS_DB', 0) : undefined,
+        tls: env.REDIS_TLS ? env.REDIS_TLS === 'true' : undefined,
+        maxRetriesPerRequest: env.REDIS_MAX_RETRIES_PER_REQUEST
+          ? readNumber(env, 'REDIS_MAX_RETRIES_PER_REQUEST', 20)
+          : undefined,
+        enableReadyCheck: readString(env, 'REDIS_ENABLE_READY_CHECK', 'true') === 'true',
+        enableOfflineQueue: readString(env, 'REDIS_ENABLE_OFFLINE_QUEUE', 'true') === 'true',
+      },
+      workers: {
+        generateResponse: readNumber(
+          env,
+          'QUEUE_WORKERS_GENERATE_RESPONSE',
+          defaults.queue.workers.generateResponse
+        ),
+        indexMessageSearch: readNumber(
+          env,
+          'QUEUE_WORKERS_INDEX_MESSAGE_SEARCH',
+          defaults.queue.workers.indexMessageSearch
+        ),
+        generateEmbeddings: readNumber(
+          env,
+          'QUEUE_WORKERS_GENERATE_EMBEDDINGS',
+          defaults.queue.workers.generateEmbeddings
+        ),
+        processFile: readNumber(env, 'QUEUE_WORKERS_PROCESS_FILE', defaults.queue.workers.processFile),
+        cleanup: readNumber(env, 'QUEUE_WORKERS_CLEANUP', defaults.queue.workers.cleanup),
+        notification: readNumber(env, 'QUEUE_WORKERS_NOTIFICATION', defaults.queue.workers.notification),
+      },
+      retry: {
+        attempts: readNumber(env, 'QUEUE_RETRY_ATTEMPTS', defaults.queue.retry.attempts),
+        backoffMs: readNumber(env, 'QUEUE_RETRY_BACKOFF_MS', defaults.queue.retry.backoffMs),
+        backoffStrategy: readString(
+          env,
+          'QUEUE_RETRY_BACKOFF_STRATEGY',
+          defaults.queue.retry.backoffStrategy
+        ) as AppConfig['queue']['retry']['backoffStrategy'],
+      },
+      deadLetter: {
+        enabled: readString(env, 'QUEUE_DEAD_LETTER_ENABLED', String(defaults.queue.deadLetter.enabled)) === 'true',
+        retention: readNumber(env, 'QUEUE_DEAD_LETTER_RETENTION_MS', defaults.queue.deadLetter.retention),
+      },
+      rateLimit: {
+        enabled: readString(env, 'QUEUE_RATE_LIMIT_ENABLED', String(defaults.queue.rateLimit.enabled)) === 'true',
+        maxJobsPerSecond: readNumber(
+          env,
+          'QUEUE_RATE_LIMIT_MAX_JOBS_PER_SECOND',
+          defaults.queue.rateLimit.maxJobsPerSecond
+        ),
+      },
+    },
   };
 
   const result = AppConfigSchema.safeParse(candidate);

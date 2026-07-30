@@ -128,4 +128,40 @@ export const AppConfigSchema = z.object({
     defaultCurrency: z.string().min(1).default('USD'),
     trialDays: z.number().int().nonnegative().default(14),
   }),
+
+  queue: z.object({
+    enabled: z.boolean().default(true),
+    redis: z.object({
+      url: z.string().url().optional(),
+      host: z.string().optional(),
+      port: z.number().int().positive().optional(),
+      password: z.string().optional(),
+      db: z.number().int().nonnegative().optional(),
+      tls: z.boolean().optional(),
+      maxRetriesPerRequest: z.number().int().nonnegative().optional(),
+      enableReadyCheck: z.boolean().default(true),
+      enableOfflineQueue: z.boolean().default(true),
+    }),
+    workers: z.object({
+      generateResponse: z.number().int().positive().default(5),
+      indexMessageSearch: z.number().int().positive().default(2),
+      generateEmbeddings: z.number().int().positive().default(2),
+      processFile: z.number().int().positive().default(3),
+      cleanup: z.number().int().positive().default(1),
+      notification: z.number().int().positive().default(2),
+    }),
+    retry: z.object({
+      attempts: z.number().int().positive().default(3),
+      backoffMs: z.number().int().positive().default(1000),
+      backoffStrategy: z.enum(['exponential', 'fixed']).default('exponential'),
+    }),
+    deadLetter: z.object({
+      enabled: z.boolean().default(true),
+      retention: z.number().int().positive().default(86400000),
+    }),
+    rateLimit: z.object({
+      enabled: z.boolean().default(true),
+      maxJobsPerSecond: z.number().positive().default(100),
+    }),
+  }),
 });
