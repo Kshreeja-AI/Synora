@@ -254,7 +254,7 @@ export class AIOrchestrator {
     throw lastError ?? new AIError('Max retries exceeded', 'MAX_RETRIES_EXCEEDED', provider.id, 500, false);
   }
 
-  registerHook(hookType: string, hook: Function): void {
+  registerHook(hookType: string, hook: (...args: unknown[]) => void | Promise<void>): void {
     this.hookEngine.register(hookType, hook as any);
   }
 
