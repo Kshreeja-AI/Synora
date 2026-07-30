@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { Message, MessageRole, MessageAttachment } from '@prisma/client'
 import { NotFoundException } from '@synora/shared'
+import { logger } from '../utils/logger'
 import { requirePermission } from './permissions'
 import { requireMembership } from './checks'
 
@@ -27,6 +28,8 @@ export class MessageService {
     const membership = await requireMembership(userId, conversation.workspaceId)
     requirePermission(membership.role, 'message:send')
 
+    logger.debug(`[messageService.create] Creating ${input.role} message for conversation ${conversationId}`)
+
     const message = await prisma.message.create({
       data: {
         conversationId,
@@ -51,6 +54,7 @@ export class MessageService {
       })
     }
 
+    logger.debug(`[messageService.create] Created message ${message.id} (${input.role})`)
     return message
   }
 
@@ -144,9 +148,11 @@ export class MessageService {
     requirePermission(membership.role, 'message:manage')
 
     if (message.deletedAt) {
+      logger.debug(`[messageService.delete] Message ${id} already soft-deleted, returning`)
       return message
     }
 
+    logger.info(`[messageService.delete] Soft-deleting message ${id} from conversation ${message.conversationId}`)
     return prisma.message.update({
       where: { id },
       data: { deletedAt: new Date() },

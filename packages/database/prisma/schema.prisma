@@ -880,6 +880,7 @@ model Message {
 
   branch            MessageBranch?
   attachments       MessageAttachment[]
+  streamingJob      StreamingJob?
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1088,7 +1089,8 @@ model ConversationVersion {
 model StreamingJob {
   id                String    @id @default(cuid())
   conversationId    String
-  messageId         String?
+  messageId         String?   @unique
+  message           Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
   status            StreamingJobStatus @default(PENDING)
   attempt           Int       @default(0)
   lastError         String?
@@ -1099,6 +1101,7 @@ model StreamingJob {
 
   @@index([conversationId])
   @@index([status])
+  @@index([conversationId, status])
 }
 
 enum StreamingJobStatus {

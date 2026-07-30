@@ -1,5 +1,6 @@
 import { prisma } from '@synora/database'
 import { ConversationUsage } from '@prisma/client'
+import { logger } from '../utils/logger'
 import { estimateCost } from '../ai/pricing'
 
 export interface RecordGenerationUsageInput {
@@ -21,6 +22,13 @@ export class ConversationUsageService {
   async recordGeneration(input: RecordGenerationUsageInput): Promise<ConversationUsage> {
     const cost = estimateCost(input.model, input.inputTokens, input.outputTokens)
     const totalTokens = input.inputTokens + input.outputTokens
+
+    logger.debug(`[conversationUsageService.recordGeneration] Recording usage for ${input.conversationId}`, {
+      model: input.model,
+      inputTokens: input.inputTokens,
+      outputTokens: input.outputTokens,
+      estimatedCost: cost,
+    })
 
     return prisma.conversationUsage.upsert({
       where: { conversationId: input.conversationId },

@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { Message, MessageRole, StreamingJobStatus } from '@prisma/client'
 import { ServiceUnavailableException } from '@synora/shared'
+import { logger } from '../utils/logger'
 import { resolveProvider, type ConversationMessage, type TextGenerationProvider } from '../ai/index.js'
 import { conversationUsageService } from './conversationUsage.service'
 
@@ -36,6 +37,8 @@ export interface GenerateReplyResult {
  */
 export class ConversationGenerationService {
   async generateReply(conversationId: string, userMessage: Message): Promise<GenerateReplyResult> {
+    logger.info(`[generateReply] Starting generation for conversation ${conversationId}, user message ${userMessage.id}`)
+
     const conversation = await prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
     })
@@ -43,15 +46,19 @@ export class ConversationGenerationService {
     const job = await prisma.streamingJob.create({
       data: { conversationId, status: StreamingJobStatus.RUNNING },
     })
+    logger.debug(`[generateReply] Created StreamingJob ${job.id} for attempt tracking`)
 
     const history = await this.buildPromptContext(conversationId, userMessage.id)
+    logger.debug(`[generateReply] Built prompt context with ${history.length} prior messages`)
 
     let provider: TextGenerationProvider
     try {
       provider = await resolveProvider('text-generation', {
         explicitProviderId: conversation.provider,
       })
+      logger.debug(`[generateReply] Resolved provider ${provider.id} for conversation`)
     } catch (error) {
+      logger.error(`[generateReply] Failed to resolve provider ${conversation.provider}`, { error })
       await this.failJob(job.id, error)
       throw new ServiceUnavailableException(this.describeFailure(job.id, error, 0))
     }
@@ -61,26 +68,42 @@ export class ConversationGenerationService {
       await prisma.streamingJob.update({ where: { id: job.id }, data: { attempt } })
 
       try {
+        logger.debug(`[generateReply] Attempt ${attempt} of ${MAX_ATTEMPTS}`)
         const result = await provider.generateText({
           prompt: userMessage.content,
           messages: history,
           model: conversation.model,
         })
 
+        logger.info(`[generateReply] Generation succeeded on attempt ${attempt}`, {
+          jobId: job.id,
+          inputTokens: result.usage?.inputTokens,
+          outputTokens: result.usage?.outputTokens,
+        })
         return await this.completeJob(job.id, conversationId, userMessage.id, result)
       } catch (error) {
         lastError = error
+        logger.warn(`[generateReply] Attempt ${attempt} failed`, {
+          jobId: job.id,
+          error: this.errorMessage(error),
+        })
         await prisma.streamingJob.update({
           where: { id: job.id },
           data: { lastError: this.errorMessage(error) },
         })
 
         if (attempt < MAX_ATTEMPTS) {
-          await internals.sleep(RETRY_BACKOFF_MS[attempt - 1])
+          const backoffMs = RETRY_BACKOFF_MS[attempt - 1]
+          logger.debug(`[generateReply] Retrying after ${backoffMs}ms`)
+          await internals.sleep(backoffMs)
         }
       }
     }
 
+    logger.error(`[generateReply] Generation exhausted all ${MAX_ATTEMPTS} attempts`, {
+      jobId: job.id,
+      error: this.errorMessage(lastError),
+    })
     await this.failJob(job.id, lastError)
     throw new ServiceUnavailableException(this.describeFailure(job.id, lastError, MAX_ATTEMPTS))
   }
@@ -91,40 +114,55 @@ export class ConversationGenerationService {
     parentMessageId: string,
     result: { text: string; model: string; usage?: { inputTokens?: number; outputTokens?: number } }
   ): Promise<GenerateReplyResult> {
-    const assistantMessage = await prisma.message.create({
-      data: {
-        conversationId,
-        content: result.text,
-        role: MessageRole.ASSISTANT,
-        parentId: parentMessageId,
-      },
-    })
-
     const inputTokens = result.usage?.inputTokens ?? 0
     const outputTokens = result.usage?.outputTokens ?? 0
 
-    await Promise.all([
-      prisma.streamingJob.update({
-        where: { id: jobId },
-        data: {
-          status: StreamingJobStatus.COMPLETED,
-          messageId: assistantMessage.id,
-          completedAt: new Date(),
-        },
-      }),
-      prisma.conversation.update({
-        where: { id: conversationId },
-        data: { lastMessageAt: assistantMessage.createdAt },
-      }),
-      conversationUsageService.recordGeneration({
+    try {
+      // Transaction: create message, update job, update conversation atomically
+      // Ensures that either all operations succeed or all rollback on error
+      const assistantMessage = await prisma.$transaction(async (tx) => {
+        const msg = await tx.message.create({
+          data: {
+            conversationId,
+            content: result.text,
+            role: MessageRole.ASSISTANT,
+            parentId: parentMessageId,
+          },
+        })
+
+        // Update job with reference to created message
+        await tx.streamingJob.update({
+          where: { id: jobId },
+          data: {
+            status: StreamingJobStatus.COMPLETED,
+            messageId: msg.id,
+            completedAt: new Date(),
+          },
+        })
+
+        // Update conversation's lastMessageAt
+        await tx.conversation.update({
+          where: { id: conversationId },
+          data: { lastMessageAt: msg.createdAt },
+        })
+
+        return msg
+      })
+
+      // Record usage separately (outside transaction to avoid long locks)
+      await conversationUsageService.recordGeneration({
         conversationId,
         model: result.model,
         inputTokens,
         outputTokens,
-      }),
-    ])
+      })
 
-    return { assistantMessage, usage: { inputTokens, outputTokens } }
+      logger.debug(`[completeJob] Completed job ${jobId} with message ${assistantMessage.id}`)
+      return { assistantMessage, usage: { inputTokens, outputTokens } }
+    } catch (error) {
+      logger.error(`[completeJob] Failed to complete job ${jobId}`, { error })
+      throw error
+    }
   }
 
   private async failJob(jobId: string, error: unknown): Promise<void> {
