@@ -6,7 +6,6 @@
 import { PrismaClient } from '@prisma/client';
 import {
   Memory,
-  MemoryMetadata,
   CreateMemoryInput,
   UpdateMemoryInput,
   MemorySearchQuery,

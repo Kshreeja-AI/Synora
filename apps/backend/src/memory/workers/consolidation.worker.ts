@@ -47,7 +47,7 @@ export async function consolidationWorker(
         if (memories.length < 2) continue;
 
         // Find related memories
-        const memoryIds = memories.map(m => m.id);
+        const _memoryIds = memories.map(m => m.id);
 
         // Group by category for consolidation
         const byCategory = memories.reduce(
@@ -197,7 +197,7 @@ export async function embeddingRefreshWorker(
     for (const memory of memories) {
       try {
         if (embeddingService?.embed) {
-          const vector = await embeddingService.embed(memory.content, 'text-embedding-3-small');
+          const _vector = await embeddingService.embed(memory.content, 'text-embedding-3-small');
 
           await prisma.memory.update({
             where: { id: memory.id },

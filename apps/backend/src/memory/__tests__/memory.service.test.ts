@@ -3,11 +3,11 @@
  * Comprehensive tests for universal memory system (90%+ coverage)
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { PrismaClient } from '@prisma/client';
 import { MemoryService } from '../memory.service';
 import { PostgresMemoryProvider } from '../providers/postgres.provider';
-import { CreateMemoryInput, UpdateMemoryInput, MemoryType } from '../types';
+import { CreateMemoryInput, UpdateMemoryInput } from '../types';
 
 let prisma: PrismaClient;
 let memoryService: MemoryService;

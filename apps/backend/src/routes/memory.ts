@@ -241,7 +241,7 @@ export function createMemoryRoutes(prisma: PrismaClient, logger: any): Router {
       try {
         const { workspaceId } = req.params;
         const userId = (req as any).user?.id;
-        const { format = 'json', filter } = req.body;
+        const { format = 'json', _filter } = req.body;
 
         const exportJob = await prisma.memoryExport.create({
           data: {
@@ -305,7 +305,7 @@ export function createMemoryRoutes(prisma: PrismaClient, logger: any): Router {
     requireAuth,
     async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const { memoryId, workspaceId } = req.params;
+        const { memoryId } = req.params;
 
         const memory = await prisma.memory.update({
           where: { id: memoryId },
