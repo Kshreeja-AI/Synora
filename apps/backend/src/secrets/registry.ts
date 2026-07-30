@@ -113,6 +113,20 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     requiredIn: [],
   },
   {
+    key: 'VOYAGE_API_KEY',
+    description: 'Voyage AI API key used by the Voyage embeddings provider (Anthropic\'s recommended embedding partner).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'COHERE_API_KEY',
+    description: 'Cohere API key used by the Cohere embeddings provider.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
     key: 'SMTP_USER',
     description:
       'SMTP username used by the mail SMTP transport. Only required when MAIL_TRANSPORT=smtp is explicitly set.',

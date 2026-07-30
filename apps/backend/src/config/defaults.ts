@@ -86,6 +86,42 @@ export interface StageDefaults {
       maxJobsPerSecond: number;
     };
   };
+  embeddings: {
+    enabled: boolean;
+    openaiModel: string;
+    geminiModel: string;
+    voyageModel: string;
+    cohereModel: string;
+    ollamaModel: string;
+    selfHostedModel: string;
+    cache: {
+      backend: 'memory' | 'redis';
+      maxEntries: number;
+      ttlMs: number;
+    };
+    rateLimit: {
+      backend: 'memory' | 'redis';
+      requestsPerSecond: number;
+    };
+    retry: {
+      attempts: number;
+      backoffMs: number;
+      backoffStrategy: 'exponential' | 'fixed';
+    };
+    circuitBreaker: {
+      failureThreshold: number;
+      cooldownMs: number;
+      halfOpenSuccessThreshold: number;
+    };
+    security: {
+      maxInputChars: number;
+      maxBatchRequestSize: number;
+    };
+    chunking: {
+      defaultChunkSize: number;
+      defaultOverlap: number;
+    };
+  };
 }
 
 const BASE_DEFAULTS: StageDefaults = {
@@ -172,6 +208,42 @@ const BASE_DEFAULTS: StageDefaults = {
       maxJobsPerSecond: 100,
     },
   },
+  embeddings: {
+    enabled: true,
+    openaiModel: 'text-embedding-3-small',
+    geminiModel: 'text-embedding-004',
+    voyageModel: 'voyage-3',
+    cohereModel: 'embed-english-v3.0',
+    ollamaModel: 'nomic-embed-text',
+    selfHostedModel: 'nomic-embed-text',
+    cache: {
+      backend: 'memory',
+      maxEntries: 10_000,
+      ttlMs: 86_400_000, // 24 hours — embeddings are deterministic per (provider, model, text)
+    },
+    rateLimit: {
+      backend: 'memory',
+      requestsPerSecond: 50,
+    },
+    retry: {
+      attempts: 3,
+      backoffMs: 500,
+      backoffStrategy: 'exponential',
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      cooldownMs: 30_000,
+      halfOpenSuccessThreshold: 2,
+    },
+    security: {
+      maxInputChars: 50_000,
+      maxBatchRequestSize: 1000,
+    },
+    chunking: {
+      defaultChunkSize: 1000,
+      defaultOverlap: 100,
+    },
+  },
 };
 
 const STAGE_OVERRIDES: Partial<Record<DeploymentStage, Partial<StageDefaults>>> = {
@@ -226,6 +298,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
     queue: { ...BASE_DEFAULTS.queue, ...override.queue },
+    embeddings: { ...BASE_DEFAULTS.embeddings, ...override.embeddings },
   };
 
   return applyModeOverrides(merged, modes);

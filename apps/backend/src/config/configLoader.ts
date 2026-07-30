@@ -219,6 +219,98 @@ export async function loadConfig(
         ),
       },
     },
+    embeddings: {
+      enabled: readString(env, 'EMBEDDING_ENABLED', String(defaults.embeddings.enabled)) === 'true',
+      provider: env.EMBEDDING_PROVIDER || undefined,
+      openaiModel: readString(env, 'EMBEDDING_OPENAI_MODEL', defaults.embeddings.openaiModel),
+      geminiModel: readString(env, 'EMBEDDING_GEMINI_MODEL', defaults.embeddings.geminiModel),
+      voyageModel: readString(env, 'EMBEDDING_VOYAGE_MODEL', defaults.embeddings.voyageModel),
+      cohereModel: readString(env, 'EMBEDDING_COHERE_MODEL', defaults.embeddings.cohereModel),
+      ollamaBaseUrl: env.EMBEDDING_OLLAMA_BASE_URL || undefined,
+      ollamaModel: readString(env, 'EMBEDDING_OLLAMA_MODEL', defaults.embeddings.ollamaModel),
+      ollamaMaxBatchSize: env.EMBEDDING_OLLAMA_MAX_BATCH_SIZE
+        ? readNumber(env, 'EMBEDDING_OLLAMA_MAX_BATCH_SIZE', 64)
+        : undefined,
+      selfHostedBaseUrl: env.EMBEDDING_SELF_HOSTED_BASE_URL || undefined,
+      selfHostedApiKey: env.EMBEDDING_SELF_HOSTED_API_KEY || undefined,
+      selfHostedModel: readString(env, 'EMBEDDING_SELF_HOSTED_MODEL', defaults.embeddings.selfHostedModel),
+      selfHostedMaxBatchSize: env.EMBEDDING_SELF_HOSTED_MAX_BATCH_SIZE
+        ? readNumber(env, 'EMBEDDING_SELF_HOSTED_MAX_BATCH_SIZE', 64)
+        : undefined,
+      cache: {
+        backend: readString(
+          env,
+          'EMBEDDING_CACHE_BACKEND',
+          defaults.embeddings.cache.backend
+        ) as AppConfig['embeddings']['cache']['backend'],
+        maxEntries: readNumber(env, 'EMBEDDING_CACHE_MAX_ENTRIES', defaults.embeddings.cache.maxEntries),
+        ttlMs: readNumber(env, 'EMBEDDING_CACHE_TTL_MS', defaults.embeddings.cache.ttlMs),
+        redisUrl: env.EMBEDDING_CACHE_REDIS_URL || undefined,
+      },
+      rateLimit: {
+        backend: readString(
+          env,
+          'EMBEDDING_RATE_LIMIT_BACKEND',
+          defaults.embeddings.rateLimit.backend
+        ) as AppConfig['embeddings']['rateLimit']['backend'],
+        requestsPerSecond: readNumber(
+          env,
+          'EMBEDDING_RATE_LIMIT_REQUESTS_PER_SECOND',
+          defaults.embeddings.rateLimit.requestsPerSecond
+        ),
+        redisUrl: env.EMBEDDING_RATE_LIMIT_REDIS_URL || undefined,
+      },
+      retry: {
+        attempts: readNumber(env, 'EMBEDDING_RETRY_ATTEMPTS', defaults.embeddings.retry.attempts),
+        backoffMs: readNumber(env, 'EMBEDDING_RETRY_BACKOFF_MS', defaults.embeddings.retry.backoffMs),
+        backoffStrategy: readString(
+          env,
+          'EMBEDDING_RETRY_BACKOFF_STRATEGY',
+          defaults.embeddings.retry.backoffStrategy
+        ) as AppConfig['embeddings']['retry']['backoffStrategy'],
+      },
+      circuitBreaker: {
+        failureThreshold: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_FAILURE_THRESHOLD',
+          defaults.embeddings.circuitBreaker.failureThreshold
+        ),
+        cooldownMs: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_COOLDOWN_MS',
+          defaults.embeddings.circuitBreaker.cooldownMs
+        ),
+        halfOpenSuccessThreshold: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD',
+          defaults.embeddings.circuitBreaker.halfOpenSuccessThreshold
+        ),
+      },
+      security: {
+        maxInputChars: readNumber(
+          env,
+          'EMBEDDING_SECURITY_MAX_INPUT_CHARS',
+          defaults.embeddings.security.maxInputChars
+        ),
+        maxBatchRequestSize: readNumber(
+          env,
+          'EMBEDDING_SECURITY_MAX_BATCH_REQUEST_SIZE',
+          defaults.embeddings.security.maxBatchRequestSize
+        ),
+      },
+      chunking: {
+        defaultChunkSize: readNumber(
+          env,
+          'EMBEDDING_CHUNKING_DEFAULT_CHUNK_SIZE',
+          defaults.embeddings.chunking.defaultChunkSize
+        ),
+        defaultOverlap: readNumber(
+          env,
+          'EMBEDDING_CHUNKING_DEFAULT_OVERLAP',
+          defaults.embeddings.chunking.defaultOverlap
+        ),
+      },
+    },
   };
 
   const result = AppConfigSchema.safeParse(candidate);

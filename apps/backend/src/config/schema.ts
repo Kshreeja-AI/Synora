@@ -164,4 +164,59 @@ export const AppConfigSchema = z.object({
       maxJobsPerSecond: z.number().positive().default(100),
     }),
   }),
+
+  /**
+   * Non-secret settings for the provider-agnostic embeddings abstraction
+   * (`src/embeddings/`). API keys live in SecretsManager and are read
+   * directly by each provider's descriptor in `src/embeddings/providers/*`.
+   * `provider` is the one explicit selection switch, mirroring `ai.provider`
+   * — everything else is a per-provider default or a cross-cutting
+   * production concern (caching, rate limiting, retry, circuit breaking,
+   * security limits) that applies regardless of which provider is active.
+   */
+  embeddings: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.string().optional(),
+    openaiModel: z.string().min(1).default('text-embedding-3-small'),
+    geminiModel: z.string().min(1).default('text-embedding-004'),
+    voyageModel: z.string().min(1).default('voyage-3'),
+    cohereModel: z.string().min(1).default('embed-english-v3.0'),
+    ollamaBaseUrl: z.string().url().optional(),
+    ollamaModel: z.string().min(1).default('nomic-embed-text'),
+    ollamaMaxBatchSize: z.number().int().positive().optional(),
+    selfHostedBaseUrl: z.string().url().optional(),
+    selfHostedApiKey: z.string().optional(),
+    selfHostedModel: z.string().min(1).default('nomic-embed-text'),
+    selfHostedMaxBatchSize: z.number().int().positive().optional(),
+
+    cache: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      maxEntries: z.number().int().positive().default(10_000),
+      ttlMs: z.number().int().positive().default(86_400_000),
+      redisUrl: z.string().url().optional(),
+    }),
+    rateLimit: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      requestsPerSecond: z.number().positive().default(50),
+      redisUrl: z.string().url().optional(),
+    }),
+    retry: z.object({
+      attempts: z.number().int().positive().default(3),
+      backoffMs: z.number().int().positive().default(500),
+      backoffStrategy: z.enum(['exponential', 'fixed']).default('exponential'),
+    }),
+    circuitBreaker: z.object({
+      failureThreshold: z.number().int().positive().default(5),
+      cooldownMs: z.number().int().positive().default(30_000),
+      halfOpenSuccessThreshold: z.number().int().positive().default(2),
+    }),
+    security: z.object({
+      maxInputChars: z.number().int().positive().default(50_000),
+      maxBatchRequestSize: z.number().int().positive().default(1000),
+    }),
+    chunking: z.object({
+      defaultChunkSize: z.number().int().positive().default(1000),
+      defaultOverlap: z.number().int().nonnegative().default(100),
+    }),
+  }),
 });
