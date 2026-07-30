@@ -9,7 +9,6 @@ import {
   AIStreamEvent,
   AIError,
   CancellationToken,
-  ProviderUnavailableError,
   RateLimitError,
   UsageMetrics,
   RetryPolicy,

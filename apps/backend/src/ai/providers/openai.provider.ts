@@ -167,9 +167,6 @@ export class OpenAIProvider extends BaseProvider {
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response body');
 
-      let inputTokens = 0;
-      let outputTokens = 0;
-
       for await (const chunk of this.readStream(reader)) {
         if (chunk.startsWith('[DONE]')) break;
 
@@ -184,7 +181,6 @@ export class OpenAIProvider extends BaseProvider {
               text: choice.delta.content,
             },
           };
-          outputTokens += Math.ceil(choice.delta.content.length / 4);
         }
 
         if (choice.finish_reason) {
@@ -219,7 +215,7 @@ export class OpenAIProvider extends BaseProvider {
     return this.health;
   }
 
-  async estimateTokens(text: string, modelId: string): Promise<number> {
+  async estimateTokens(text: string, _modelId: string): Promise<number> {
     // Rough estimation: ~4 characters per token
     return Math.ceil(text.length / 4);
   }

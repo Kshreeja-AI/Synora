@@ -3,8 +3,7 @@
  * Transforms provider-specific streaming into uniform AIStreamEvent format.
  */
 
-import { AIStreamEvent, AIResponse, AIMessage } from './types';
-import { CancellationToken } from './types';
+import { AIStreamEvent, CancellationToken } from './types';
 
 export class StreamManager {
   private activeStreams: Map<string, StreamContext> = new Map();
@@ -107,7 +106,7 @@ export class StreamBuffer {
   }
 }
 
-export function createStreamEventParser(providerId: string) {
+export function createStreamEventParser(_providerId: string) {
   return {
     parseContentBlockStart(rawEvent: any): AIStreamEvent {
       return {

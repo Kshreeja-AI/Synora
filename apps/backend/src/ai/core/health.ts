@@ -3,7 +3,7 @@
  * Implements circuit breaker pattern with exponential backoff.
  */
 
-import { ProviderHealth, AIError, RateLimitError } from './types';
+import { ProviderHealth, AIError } from './types';
 import { IProvider } from './provider';
 
 export interface HealthCheckConfig {
@@ -53,7 +53,7 @@ export class HealthMonitor {
         if (health.status === 'unhealthy') {
           this.circuitBreakers.get(providerId)?.recordFailure();
         }
-      } catch (error) {
+      } catch {
         this.circuitBreakers.get(providerId)?.recordFailure();
       }
     }, config.checkIntervalMs);
@@ -76,7 +76,7 @@ export class HealthMonitor {
     };
   }
 
-  recordRequest(providerId: string, success: boolean, latencyMs: number, error?: AIError): void {
+  recordRequest(providerId: string, success: boolean, _latencyMs: number, _error?: AIError): void {
     const breaker = this.circuitBreakers.get(providerId);
     if (!breaker) return;
 
@@ -102,7 +102,7 @@ export class HealthMonitor {
   }
 
   shutdown(): void {
-    for (const [providerId, interval] of this.checkIntervals.entries()) {
+    for (const [, interval] of this.checkIntervals.entries()) {
       clearInterval(interval as any);
     }
     this.checkIntervals.clear();

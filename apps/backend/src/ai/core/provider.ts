@@ -10,10 +10,7 @@ import {
   AIModel,
   ProviderHealth,
   CancellationToken,
-  RetryPolicy,
   AIError,
-  ProviderUnavailableError,
-  RateLimitError,
   ContextWindowExceededError,
 } from './types';
 

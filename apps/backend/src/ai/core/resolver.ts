@@ -3,7 +3,7 @@
  * Implements load balancing, capability matching, and health-aware routing.
  */
 
-import { AIRequest, AIModel, ModelCapability, AIError, ProviderUnavailableError } from './types';
+import { AIRequest, AIModel, ModelCapability } from './types';
 import { IProvider } from './provider';
 import { ProviderRegistry, ModelRegistry } from './registry';
 
@@ -82,7 +82,7 @@ export class ProviderResolver {
 
   async selectBestModel(
     requiredCapabilities?: ModelCapability[],
-    fallbacks?: string[]
+    _fallbacks?: string[]
   ): Promise<AIModel> {
     const allModels = await this.providerRegistry.listModels();
 

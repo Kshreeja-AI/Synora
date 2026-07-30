@@ -70,7 +70,7 @@ export class ProviderRegistry {
         const models = await provider.listModels();
         models.forEach(m => this.modelCache.set(m.id, m));
         allModels.push(...models);
-      } catch (error) {
+      } catch {
         // Provider unavailable
       }
     }
@@ -88,7 +88,7 @@ export class ProviderRegistry {
         }
 
         this.capabilityMatrix[providerId] = matrix;
-      } catch (error) {
+      } catch {
         // Provider unavailable
       }
     }
