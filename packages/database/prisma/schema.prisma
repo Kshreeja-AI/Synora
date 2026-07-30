@@ -850,6 +850,7 @@ model Conversation {
   shared            SharedConversation[]
   usage             ConversationUsage?
   toolCalls         ToolCall[]
+  memories          Memory[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1253,7 +1254,6 @@ model Memory {
   @@index([createdAt])
   @@index([workspaceId, conversationId, type])
   @@index([workspaceId, userId, status])
-  @@fulltext([content])  // Full-text search index
 }
 
 model MemoryMetadata {
