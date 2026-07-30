@@ -122,6 +122,16 @@ export interface StageDefaults {
       defaultOverlap: number;
     };
   };
+  vectordb: {
+    enabled: boolean;
+    pgvectorEnabled: boolean;
+    pgvectorDimensions: number;
+    security: {
+      maxUpsertRequestSize: number;
+      maxTopK: number;
+      maxDimensions: number;
+    };
+  };
 }
 
 const BASE_DEFAULTS: StageDefaults = {
@@ -244,6 +254,16 @@ const BASE_DEFAULTS: StageDefaults = {
       defaultOverlap: 100,
     },
   },
+  vectordb: {
+    enabled: true,
+    pgvectorEnabled: false,
+    pgvectorDimensions: 1536,
+    security: {
+      maxUpsertRequestSize: 1000,
+      maxTopK: 1000,
+      maxDimensions: 4096,
+    },
+  },
 };
 
 const STAGE_OVERRIDES: Partial<Record<DeploymentStage, Partial<StageDefaults>>> = {
@@ -299,6 +319,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
     queue: { ...BASE_DEFAULTS.queue, ...override.queue },
     embeddings: { ...BASE_DEFAULTS.embeddings, ...override.embeddings },
+    vectordb: { ...BASE_DEFAULTS.vectordb, ...override.vectordb },
   };
 
   return applyModeOverrides(merged, modes);

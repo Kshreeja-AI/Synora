@@ -127,6 +127,37 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     requiredIn: [],
   },
   {
+    key: 'PINECONE_API_KEY',
+    description: 'Pinecone API key used by the Pinecone vector DB provider.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'QDRANT_API_KEY',
+    description:
+      'Qdrant API key used by the Qdrant vector DB provider. Only required for Qdrant Cloud; self-hosted Qdrant with no auth configured needs no key.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'WEAVIATE_API_KEY',
+    description:
+      'Weaviate API key used by the Weaviate vector DB provider. Only required for Weaviate Cloud or an instance with auth enabled.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'MILVUS_TOKEN',
+    description:
+      'Milvus/Zilliz Cloud auth token used by the Milvus vector DB provider. Only required for Zilliz Cloud or a self-hosted instance with auth enabled.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
     key: 'SMTP_USER',
     description:
       'SMTP username used by the mail SMTP transport. Only required when MAIL_TRANSPORT=smtp is explicitly set.',

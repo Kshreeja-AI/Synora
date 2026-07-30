@@ -219,4 +219,40 @@ export const AppConfigSchema = z.object({
       defaultOverlap: z.number().int().nonnegative().default(100),
     }),
   }),
+
+  /**
+   * Non-secret settings for the provider-agnostic vector database
+   * abstraction (`src/vectordb/`). Connection secrets (API keys/tokens)
+   * live in SecretsManager and are read directly by each provider's
+   * descriptor in `src/vectordb/providers/*`. `provider` is the one
+   * explicit selection switch, mirroring `ai.provider` / `embeddings.provider`.
+   */
+  vectordb: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.string().optional(),
+    pineconeHost: z.string().optional(),
+    pineconeMaxUpsertBatchSize: z.number().int().positive().optional(),
+    qdrantUrl: z.string().url().optional(),
+    qdrantMaxUpsertBatchSize: z.number().int().positive().optional(),
+    weaviateUrl: z.string().url().optional(),
+    weaviateMaxUpsertBatchSize: z.number().int().positive().optional(),
+    milvusUrl: z.string().url().optional(),
+    milvusMaxUpsertBatchSize: z.number().int().positive().optional(),
+    /**
+     * Unlike every other provider here, pgvector reuses the application's
+     * own PostgreSQL database rather than connecting to a separate one —
+     * so it's always *reachable*, and needs its own explicit opt-in flag
+     * rather than "is a connection secret present" to decide whether it's
+     * "configured" for auto-detection purposes.
+     */
+    pgvectorEnabled: z.boolean().default(false),
+    pgvectorDimensions: z.number().int().positive().default(1536),
+    pgvectorMaxUpsertBatchSize: z.number().int().positive().optional(),
+
+    security: z.object({
+      maxUpsertRequestSize: z.number().int().positive().default(1000),
+      maxTopK: z.number().int().positive().default(1000),
+      maxDimensions: z.number().int().positive().default(4096),
+    }),
+  }),
 });

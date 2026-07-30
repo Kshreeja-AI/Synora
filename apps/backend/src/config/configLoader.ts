@@ -311,6 +311,49 @@ export async function loadConfig(
         ),
       },
     },
+    vectordb: {
+      enabled: readString(env, 'VECTORDB_ENABLED', String(defaults.vectordb.enabled)) === 'true',
+      provider: env.VECTORDB_PROVIDER || undefined,
+      pineconeHost: env.VECTORDB_PINECONE_HOST || undefined,
+      pineconeMaxUpsertBatchSize: env.VECTORDB_PINECONE_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_PINECONE_MAX_UPSERT_BATCH_SIZE', 100)
+        : undefined,
+      qdrantUrl: env.VECTORDB_QDRANT_URL || undefined,
+      qdrantMaxUpsertBatchSize: env.VECTORDB_QDRANT_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_QDRANT_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      weaviateUrl: env.VECTORDB_WEAVIATE_URL || undefined,
+      weaviateMaxUpsertBatchSize: env.VECTORDB_WEAVIATE_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_WEAVIATE_MAX_UPSERT_BATCH_SIZE', 200)
+        : undefined,
+      milvusUrl: env.VECTORDB_MILVUS_URL || undefined,
+      milvusMaxUpsertBatchSize: env.VECTORDB_MILVUS_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_MILVUS_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      pgvectorEnabled:
+        readString(env, 'VECTORDB_PGVECTOR_ENABLED', String(defaults.vectordb.pgvectorEnabled)) === 'true',
+      pgvectorDimensions: readNumber(
+        env,
+        'VECTORDB_PGVECTOR_DIMENSIONS',
+        defaults.vectordb.pgvectorDimensions
+      ),
+      pgvectorMaxUpsertBatchSize: env.VECTORDB_PGVECTOR_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_PGVECTOR_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      security: {
+        maxUpsertRequestSize: readNumber(
+          env,
+          'VECTORDB_SECURITY_MAX_UPSERT_REQUEST_SIZE',
+          defaults.vectordb.security.maxUpsertRequestSize
+        ),
+        maxTopK: readNumber(env, 'VECTORDB_SECURITY_MAX_TOP_K', defaults.vectordb.security.maxTopK),
+        maxDimensions: readNumber(
+          env,
+          'VECTORDB_SECURITY_MAX_DIMENSIONS',
+          defaults.vectordb.security.maxDimensions
+        ),
+      },
+    },
   };
 
   const result = AppConfigSchema.safeParse(candidate);
