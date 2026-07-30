@@ -1,178 +1,180 @@
-import { Router, type Response } from 'express';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
+/**
+ * Server-Sent Events (SSE) streaming endpoint
+ */
+
+import { Router, Request, Response } from 'express';
 import { prisma } from '@synora/database';
+import { requireAuth } from '../middleware/auth';
+import { requireMembership } from '../services/checks';
+import { requirePermission } from '../services/permissions';
 import { logger } from '../utils/logger';
-import { generateText } from '../ai';
+import { Redis } from 'ioredis';
 
-const router: Router = Router({ mergeParams: true });
+const router = Router();
+const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
+/**
+ * GET /api/conversations/:conversationId/stream
+ * Subscribe to message generation stream
+ */
 router.get(
-  '/:workspaceId/conversations/:conversationId/stream',
-  authMiddleware,
-  async (req: AuthRequest, res: Response) => {
-    try {
-      const { conversationId } = req.params;
-      const { messageId } = req.query;
+  '/api/conversations/:conversationId/stream',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const { conversationId } = req.params;
+    const { messageId, workspaceId } = req.query;
 
+    try {
       if (!messageId || typeof messageId !== 'string') {
-        res.status(400).json({ error: 'messageId query parameter is required' });
-        return;
+        return res.status(400).json({ error: 'messageId required' });
       }
+
+      if (!workspaceId || typeof workspaceId !== 'string') {
+        return res.status(400).json({ error: 'workspaceId required' });
+      }
+
+      const membership = await requireMembership(req.user!.id, workspaceId);
+      requirePermission(membership.role, 'message:read');
 
       const conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId },
+        where: { id: conversationId }
       });
 
-      if (!conversation) {
-        res.status(404).json({ error: 'Conversation not found' });
-        return;
+      if (!conversation || conversation.workspaceId !== workspaceId) {
+        return res.status(404).json({ error: 'Conversation not found' });
       }
 
-      // Validate user has access to workspace
-      const member = await prisma.workspaceMember.findUnique({
-        where: {
-          userId_workspaceId: { userId: req.userId!, workspaceId: conversation.workspaceId },
-        },
+      const message = await prisma.message.findUnique({
+        where: { id: messageId as string }
       });
 
-      if (!member) {
-        res.status(403).json({ error: 'Access denied' });
-        return;
+      if (!message || message.conversationId !== conversationId) {
+        return res.status(404).json({ error: 'Message not found' });
       }
 
-      // Set SSE headers
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
-      res.setHeader('Access-Control-Allow-Origin', '*');
 
-      const sendEvent = (eventType: string, data: unknown) => {
-        res.write(`event: ${eventType}\n`);
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
-
-      // Get the message
-      const message = await prisma.message.findUnique({
-        where: { id: messageId },
-        include: { conversation: true },
+      logger.info('[Streaming] Connection opened', {
+        conversationId,
+        messageId,
+        userId: req.user!.id
       });
 
-      if (!message) {
-        sendEvent('error', { error: 'Message not found' });
+      const job = await prisma.streamingJob.findFirst({
+        where: { messageId: messageId as string }
+      });
+
+      if (!job) {
+        res.write(`event: error\ndata: ${JSON.stringify({ code: 'JOB_NOT_FOUND', message: 'No job' })}\n\n`);
         res.end();
         return;
       }
 
-      let inputTokens = 0;
-      let outputTokens = 0;
+      const subscriber = redis.duplicate();
+      const streamChannel = `job:${job.id}:stream`;
 
-      // Stream message content if it exists
-      if (message.content) {
-        // Message already has content, send it word by word
-        const words = message.content.split(/\s+/);
-        for (const word of words) {
-          if (word) {
-            sendEvent('token', { token: word + ' ' });
-            // Small delay to simulate streaming
-            await new Promise(resolve => setTimeout(resolve, 10));
-          }
+      subscriber.subscribe(streamChannel, (err) => {
+        if (err) {
+          logger.error('[Streaming] Subscribe error', { error: err.message });
+          res.write(`event: error\ndata: ${JSON.stringify({ code: 'SUBSCRIBE_ERROR', message: err.message })}\n\n`);
+          res.end();
         }
-      } else {
-        // Message needs to be generated - call AI provider
-        try {
-          // Fetch conversation history for context
-          const messages = await prisma.message.findMany({
-            where: { conversationId },
-            orderBy: { createdAt: 'asc' },
-            select: {
-              id: true,
-              content: true,
-              role: true,
-            },
-          });
-
-          // Get the user message content
-          const userMessage = messages.find(m => m.id === messageId);
-          if (!userMessage) {
-            sendEvent('error', { error: 'User message not found' });
-            res.end();
-            return;
-          }
-
-          // Build system prompt from conversation history
-          const contextMessages = messages
-            .slice(0, -1)
-            .map(m => `${m.role === 'USER' ? 'User' : 'Assistant'}: ${m.content}`)
-            .join('\n\n');
-
-          const systemPrompt = contextMessages
-            ? `Previous conversation:\n${contextMessages}`
-            : undefined;
-
-          // Call AI provider
-          const result = await generateText({
-            prompt: userMessage.content,
-            model: conversation.model,
-            systemPrompt,
-          });
-
-          // Stream the result word by word
-          const words = result.text.split(/\s+/);
-          for (const word of words) {
-            if (word) {
-              sendEvent('token', { token: word + ' ' });
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          }
-
-          inputTokens = result.usage?.inputTokens || 0;
-          outputTokens = result.usage?.outputTokens || 0;
-
-          // Update the message with generated content
-          await prisma.message.update({
-            where: { id: messageId },
-            data: { content: result.text },
-          });
-
-          // Update conversation usage (create if not exists)
-          await prisma.conversationUsage.upsert({
-            where: { conversationId },
-            create: {
-              conversationId,
-              inputTokens,
-              outputTokens,
-              totalTokens: inputTokens + outputTokens,
-            },
-            update: {
-              inputTokens: { increment: inputTokens },
-              outputTokens: { increment: outputTokens },
-              totalTokens: { increment: inputTokens + outputTokens },
-            },
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Generation failed';
-          sendEvent('error', { error: errorMessage });
-        }
-      }
-
-      // Send completion event
-      sendEvent('done', {
-        messageId,
-        inputTokens,
-        outputTokens,
-        completedAt: new Date().toISOString(),
       });
 
-      res.end();
-    } catch (error) {
-      logger.error('SSE stream error:', error);
+      subscriber.on('message', (channel, message) => {
+        try {
+          const event = JSON.parse(message);
+          res.write(`event: ${event.type}\ndata: ${JSON.stringify(event.payload)}\n\n`);
+        } catch (err) {
+          logger.error('[Streaming] Parse error', { error: err });
+        }
+      });
+
+      const heartbeatInterval = setInterval(() => {
+        res.write(`event: heartbeat\ndata: ${JSON.stringify({ timestamp: new Date().toISOString() })}\n\n`);
+      }, 30000);
+
+      req.on('close', () => {
+        clearInterval(heartbeatInterval);
+        subscriber.unsubscribe();
+        subscriber.disconnect();
+        logger.info('[Streaming] Connection closed', { conversationId, messageId });
+      });
+
+      res.on('error', (err) => {
+        logger.error('[Streaming] Response error', { error: err.message });
+        clearInterval(heartbeatInterval);
+        subscriber.unsubscribe();
+        subscriber.disconnect();
+      });
+    } catch (err: any) {
+      logger.error('[Streaming] Error', { error: err.message });
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Stream error' });
-      } else {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`);
-        res.end();
+        res.status(500).json({ error: err.message });
       }
+    }
+  }
+);
+
+/**
+ * POST /api/conversations/:conversationId/stream/:jobId/cancel
+ * Cancel an in-flight stream
+ */
+router.post(
+  '/api/conversations/:conversationId/stream/:jobId/cancel',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    const { conversationId, jobId } = req.params;
+
+    try {
+      const job = await prisma.streamingJob.findUnique({
+        where: { id: jobId }
+      });
+
+      if (!job) {
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId }
+      });
+
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      const membership = await requireMembership(req.user!.id, conversation.workspaceId);
+      requirePermission(membership.role, 'message:manage');
+
+      await prisma.streamingJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date()
+        }
+      });
+
+      await redis.publish(
+        `job:${jobId}:control`,
+        JSON.stringify({
+          action: 'cancel',
+          timestamp: new Date().toISOString()
+        })
+      );
+
+      logger.info('[Streaming] Cancellation requested', {
+        jobId,
+        conversationId,
+        userId: req.user!.id
+      });
+
+      res.json({ success: true, jobId });
+    } catch (err: any) {
+      logger.error('[Cancel] Error', { error: err.message });
+      res.status(500).json({ error: err.message });
     }
   }
 );
