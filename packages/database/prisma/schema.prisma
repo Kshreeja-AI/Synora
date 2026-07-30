@@ -68,6 +68,11 @@ model User {
   memoryAuditLogs MemoryAuditLog[]
   memoryExports MemoryExport[]
 
+  // Tool calling engine
+  createdTools      ToolDefinition[]
+  toolExecutions    ToolExecution[] @relation("UserToolExecutions")
+  toolAuditLogs     ToolAuditLog[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -193,6 +198,11 @@ model Workspace {
   memories            Memory[]
   memoryQuota         MemoryQuota?
   memoryExports       MemoryExport[]
+
+  // Release 3: Universal Tool Calling Engine
+  toolDefinitions     ToolDefinition[]
+  toolExecutions      ToolExecution[]
+  toolQuota           ToolQuota?
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -850,6 +860,7 @@ model Conversation {
   shared            SharedConversation[]
   usage             ConversationUsage?
   toolCalls         ToolCall[]
+  toolExecutions    ToolExecution[]
   memories          Memory[]
 
   createdAt         DateTime  @default(now())
@@ -1422,4 +1433,317 @@ model MemoryExport {
 
   @@index([workspaceId])
   @@index([userId])
+}
+
+// Release 3: Universal Tool Calling Engine
+// Production-grade tool execution platform with streaming, retry, circuit breaker, sandboxing
+
+model ToolDefinition {
+  id                String          @id @default(cuid())
+  workspaceId       String?         // NULL for global tools
+  name              String
+  displayName       String
+  description       String          @db.Text
+  category          String          // e.g., "http", "database", "file", "python", "search"
+  type              ToolType        // HTTP, GraphQL, Database, Search, File, Browser, Python, Webhook, MCP
+
+  // Schema & Validation
+  inputSchema       Json            // JSON Schema for input validation
+  outputSchema      Json?           // JSON Schema for output validation
+
+  // Configuration
+  config            Json            // Provider-specific configuration
+  secrets           String[]        @default([])  // Secret keys used by this tool
+
+  // Capabilities & Permissions
+  capabilities      String[]        @default([])  // e.g., ["read", "write", "execute"]
+  permission        ToolPermission  @default(PRIVATE)
+  allowedRoles      String[]        @default([])  // Empty = all roles allowed
+
+  // Limits & Quotas
+  maxParallelCalls  Int             @default(10)
+  rateLimit         Int?            // Calls per minute, NULL = unlimited
+  timeout           Int             @default(30000)  // ms
+  maxRetries        Int             @default(3)
+
+  // Flags
+  isActive          Boolean         @default(true)
+  isAsync           Boolean         @default(false)
+  supportsStreaming Boolean         @default(false)
+  requiresApproval  Boolean         @default(false)  // Human approval before execution
+
+  // Versioning & History
+  version           Int             @default(1)
+  parentId          String?         // Previous version
+  parent            ToolDefinition? @relation("ToolVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  versions          ToolDefinition[] @relation("ToolVersions")
+
+  // Relations
+  workspace         Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  executions        ToolExecution[]
+  auditLogs         ToolAuditLog[]
+  dependencies      ToolDependency[] @relation("ToolFrom")
+  dependents        ToolDependency[] @relation("ToolTo")
+  metrics           ToolMetrics?
+  webhooks          ToolWebhook[]
+
+  createdBy         String
+  createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@index([category])
+  @@index([type])
+  @@index([isActive])
+  @@index([createdBy])
+}
+
+enum ToolType {
+  HTTP
+  GraphQL
+  Database
+  Search
+  File
+  Browser
+  Python
+  Webhook
+  MCP
+  Custom
+}
+
+enum ToolPermission {
+  PRIVATE         // Only tool owner
+  WORKSPACE       // All workspace members
+  SHARED          // Specific users
+  PUBLIC          // All authenticated users
+}
+
+// Tool dependencies (e.g., Tool A depends on output of Tool B)
+model ToolDependency {
+  id                String          @id @default(cuid())
+  fromId            String          // Tool that depends on output
+  toId              String          // Tool that must run first
+
+  // Dependency configuration
+  passOutputAs      String?         // Parameter name to pass output to
+  transformOutput   String?         // Optional JSON path/transform
+  isOptional        Boolean         @default(false)
+
+  from              ToolDefinition  @relation(name: "ToolFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to                ToolDefinition  @relation(name: "ToolTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@unique([fromId, toId])
+  @@index([fromId])
+  @@index([toId])
+}
+
+// Tool execution (call to a tool)
+model ToolExecution {
+  id                String          @id @default(cuid())
+  toolId            String
+  workspaceId       String
+  conversationId    String?         // If called from conversation
+  userId            String
+
+  // Execution details
+  input             Json
+  output            Json?
+  error             String?
+
+  // Status & Progress
+  status            ExecutionStatus @default(PENDING)
+  progress          Float           @default(0)  // 0-100
+
+  // Streaming (for long-running operations)
+  isStreaming       Boolean         @default(false)
+  streamStartedAt   DateTime?
+
+  // Retry tracking
+  attemptNumber     Int             @default(1)
+  maxAttempts       Int             @default(3)
+  lastError         String?
+
+  // Circuit breaker state
+  circuitBreakerOpen Boolean        @default(false)
+
+  // Timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+  duration          Int?            // milliseconds
+
+  // Cost tracking
+  inputTokens       Int             @default(0)
+  outputTokens      Int             @default(0)
+  costCents         Int             @default(0)
+
+  // Approval workflow
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectedBy        String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation      Conversation?   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User            @relation("UserToolExecutions", fields: [userId], references: [id], onDelete: Cascade)
+
+  invocations       ToolInvocation[]
+  auditLogs         ToolAuditLog[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([toolId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ExecutionStatus {
+  PENDING           // Waiting to execute
+  APPROVED          // Approved, waiting to run
+  RUNNING           // Currently executing
+  STREAMING         // Streaming response
+  COMPLETED         // Successfully completed
+  FAILED            // Failed with error
+  CANCELLED         // User cancelled
+  TIMEOUT           // Execution timeout
+  REJECTED          // Approval rejected
+}
+
+// Individual tool invocation (atomic operation within execution)
+model ToolInvocation {
+  id                String          @id @default(cuid())
+  executionId       String
+  parentInvocationId String?        // For nested calls
+
+  // Call details
+  input             Json
+  output            Json?
+  error             String?
+
+  // Status
+  status            ExecutionStatus @default(PENDING)
+
+  // Timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  // Order (for parallel/sequential tracking)
+  sequenceNumber    Int
+  retryCount        Int             @default(0)
+
+  execution         ToolExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  parent            ToolInvocation? @relation(name: "ToolInvocationTree", fields: [parentInvocationId], references: [id], onDelete: Cascade)
+  children          ToolInvocation[] @relation(name: "ToolInvocationTree")
+
+  createdAt         DateTime        @default(now())
+
+  @@index([executionId])
+  @@index([parentInvocationId])
+}
+
+// Tool execution audit log (immutable trail)
+model ToolAuditLog {
+  id                String          @id @default(cuid())
+  toolId            String
+  executionId       String?
+  userId            String
+
+  action            String          // "CREATED", "EXECUTED", "FAILED", "APPROVED", "REJECTED"
+  status            String?
+
+  changes           Json?           // For definition changes
+  metadata          Json?           // Additional context
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  execution         ToolExecution?  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([toolId])
+  @@index([executionId])
+  @@index([userId])
+  @@index([action])
+}
+
+// Tool metrics (aggregated statistics)
+model ToolMetrics {
+  id                String          @id @default(cuid())
+  toolId            String          @unique
+
+  totalExecutions   Int             @default(0)
+  successfulExecutions Int          @default(0)
+  failedExecutions  Int             @default(0)
+
+  avgDuration       Float           @default(0)
+  minDuration       Int?
+  maxDuration       Int?
+
+  avgInputTokens    Float           @default(0)
+  avgOutputTokens   Float           @default(0)
+  totalCostCents    Int             @default(0)
+
+  lastExecutedAt    DateTime?
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([toolId])
+}
+
+// Webhook configuration for tool callbacks
+model ToolWebhook {
+  id                String          @id @default(cuid())
+  toolId            String
+
+  event             String          // "on-start", "on-progress", "on-complete", "on-error"
+  url               String
+
+  method            String          @default("POST")
+  headers           Json?
+
+  isActive          Boolean         @default(true)
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([toolId])
+  @@index([event])
+}
+
+// Tool workspace quota (limits per workspace)
+model ToolQuota {
+  id                String          @id @default(cuid())
+  workspaceId       String          @unique
+
+  // Usage limits
+  maxToolsPerWorkspace Int          @default(100)
+  maxExecutionsPerDay Int           @default(10000)
+  maxCostPerMonth   Int             @default(100000)  // cents
+
+  // Current usage (daily reset)
+  executionsUsedToday Int           @default(0)
+  costUsedThisMonth Int             @default(0)
+
+  lastResetAt       DateTime        @default(now())
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
 }
