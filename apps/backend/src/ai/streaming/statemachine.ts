@@ -4,27 +4,27 @@
  */
 
 import { prisma } from '@synora/database';
+// Re-exported from the Prisma-generated enum rather than redeclared here —
+// `streaming.service.ts` (Release 3 M2) already models StreamingJob's
+// status against this same enum (spelled `CANCELED`, matching the
+// `StreamingJob` model's migration); a second, differently-spelled local
+// enum would silently desync from the actual column values.
+import { StreamingJobStatus } from '@prisma/client';
 import { logger } from '../../utils/logger';
 import { StreamingError, TimeoutError, RateLimitError } from './types';
 
-export enum StreamingJobStatus {
-  PENDING = 'PENDING',
-  RUNNING = 'RUNNING',
-  COMPLETED = 'COMPLETED',
-  FAILED = 'FAILED',
-  CANCELLED = 'CANCELLED'
-}
+export { StreamingJobStatus };
 
 const VALID_TRANSITIONS: Record<StreamingJobStatus, StreamingJobStatus[]> = {
   [StreamingJobStatus.PENDING]: [StreamingJobStatus.RUNNING, StreamingJobStatus.FAILED],
   [StreamingJobStatus.RUNNING]: [
     StreamingJobStatus.COMPLETED,
     StreamingJobStatus.FAILED,
-    StreamingJobStatus.CANCELLED
+    StreamingJobStatus.CANCELED
   ],
   [StreamingJobStatus.COMPLETED]: [],
   [StreamingJobStatus.FAILED]: [StreamingJobStatus.PENDING],
-  [StreamingJobStatus.CANCELLED]: []
+  [StreamingJobStatus.CANCELED]: []
 };
 
 export class StreamingJobStateMachine {
@@ -58,16 +58,21 @@ export class StreamingJobStateMachine {
 
     this.currentStatus = to;
 
-    // Persist state
+    // Persist state. `StreamingJob` only has a single `completedAt`
+    // timestamp (see schema / `streaming.service.ts`) covering every
+    // terminal state — there's no separate startedAt/failedAt/cancelledAt
+    // column, and no metadata column, so `metadata` above is logged for
+    // observability but not persisted.
+    const isTerminal =
+      to === StreamingJobStatus.COMPLETED ||
+      to === StreamingJobStatus.FAILED ||
+      to === StreamingJobStatus.CANCELED;
+
     await prisma.streamingJob.update({
       where: { id: this.jobId },
       data: {
         status: to,
-        ...(to === StreamingJobStatus.RUNNING && { startedAt: new Date() }),
-        ...(to === StreamingJobStatus.COMPLETED && { completedAt: new Date() }),
-        ...(to === StreamingJobStatus.FAILED && { failedAt: new Date() }),
-        ...(to === StreamingJobStatus.CANCELLED && { cancelledAt: new Date() }),
-        ...(metadata && { metadata: JSON.stringify(metadata) })
+        ...(isTerminal && { completedAt: new Date() }),
       }
     });
   }

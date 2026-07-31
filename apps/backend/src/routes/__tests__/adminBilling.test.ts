@@ -26,7 +26,6 @@ describe('admin billing routes', () => {
       data: {
         email: `admin-${Date.now()}@test.com`,
         password: 'hashed',
-        role: 'ADMIN',
       },
     });
     adminUserId = adminUserCreated.id;

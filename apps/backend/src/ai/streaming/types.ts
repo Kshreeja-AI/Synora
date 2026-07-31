@@ -2,7 +2,9 @@
  * Streaming types and interfaces for provider-agnostic AI streaming
  */
 
-import { AbortSignal } from 'abort-controller';
+// AbortSignal is a Node 20+ / DOM global — no polyfill needed on our
+// runtime (Node 20+, see CLAUDE.md), so it's referenced directly here
+// rather than importing the `abort-controller` polyfill package.
 
 export enum StreamChunkType {
   TOKEN = 'token',

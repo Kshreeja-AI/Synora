@@ -1,3 +1,10 @@
+> **Merge note (2026-07-31):** this file describes `feature/m3-streaming-engine`'s
+> (PR #40) own pre-merge roadmap. That branch has since been merged onto
+> `SYNORA`, which already shipped billing/workspace (PR #37) independently
+> of the M6 described below — see `CURRENT_STATE.md` for the merge
+> reconciliation note. Treat the milestone numbering here as this
+> branch's own history, not the canonical `SYNORA` roadmap.
+
 # NEXT TASK — Release 2, Milestone 7: Media Generation, Asset Manager, Async Queue
 
 **Maintenance rule:** this file always contains ONLY the exact next

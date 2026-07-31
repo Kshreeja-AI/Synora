@@ -185,7 +185,11 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', assetRoutes);
   app.use('/api/workspaces', conversationRoutes);
   app.use('/api/workspaces', messageRoutes);
-  app.use('/api/workspaces', streamingRoutes);
+  // streamingRoutes declares its own absolute paths
+  // (`/api/conversations/:conversationId/stream[...]`), unlike the other
+  // workspace-scoped routers above — mount it at root, not under
+  // `/api/workspaces`, or every path would be double-prefixed.
+  app.use(streamingRoutes);
   app.use('/api/workspaces', branchRoutes);
   app.use('/api/workspaces', promptTemplateRoutes);
   app.use('/api/workspaces', conversationTemplateRoutes);

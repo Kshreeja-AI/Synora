@@ -2,15 +2,15 @@
  * Server-Sent Events (SSE) streaming endpoint
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import { prisma } from '@synora/database';
-import { requireAuth } from '../middleware/auth';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireMembership } from '../services/checks';
 import { requirePermission } from '../services/permissions';
 import { logger } from '../utils/logger';
 import { Redis } from 'ioredis';
 
-const router = Router();
+const router: Router = Router();
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 /**
@@ -19,8 +19,8 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
  */
 router.get(
   '/api/conversations/:conversationId/stream',
-  requireAuth,
-  async (req: Request, res: Response) => {
+  authMiddleware,
+  async (req: AuthRequest, res: Response) => {
     const { conversationId } = req.params;
     const { messageId, workspaceId } = req.query;
 
@@ -33,8 +33,11 @@ router.get(
         return res.status(400).json({ error: 'workspaceId required' });
       }
 
-      const membership = await requireMembership(req.user!.id, workspaceId);
-      requirePermission(membership.role, 'message:read');
+      // Matches message.service.ts's own convention: reading messages
+      // (and, by extension, subscribing to an in-flight generation) only
+      // requires membership, not a `Permission` grant — every role
+      // including VIEWER can read; only send/manage are permission-gated.
+      await requireMembership(req.user!.id, workspaceId);
 
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId }
@@ -76,12 +79,10 @@ router.get(
       const subscriber = redis.duplicate();
       const streamChannel = `job:${job.id}:stream`;
 
-      subscriber.subscribe(streamChannel, (err) => {
-        if (err) {
-          logger.error('[Streaming] Subscribe error', { error: err.message });
-          res.write(`event: error\ndata: ${JSON.stringify({ code: 'SUBSCRIBE_ERROR', message: err.message })}\n\n`);
-          res.end();
-        }
+      subscriber.subscribe(streamChannel).catch((err: Error) => {
+        logger.error('[Streaming] Subscribe error', { error: err.message });
+        res.write(`event: error\ndata: ${JSON.stringify({ code: 'SUBSCRIBE_ERROR', message: err.message })}\n\n`);
+        res.end();
       });
 
       subscriber.on('message', (channel, message) => {
@@ -125,8 +126,8 @@ router.get(
  */
 router.post(
   '/api/conversations/:conversationId/stream/:jobId/cancel',
-  requireAuth,
-  async (req: Request, res: Response) => {
+  authMiddleware,
+  async (req: AuthRequest, res: Response) => {
     const { conversationId, jobId } = req.params;
 
     try {
@@ -152,8 +153,8 @@ router.post(
       await prisma.streamingJob.update({
         where: { id: jobId },
         data: {
-          status: 'CANCELLED',
-          cancelledAt: new Date()
+          status: 'CANCELED',
+          completedAt: new Date()
         }
       });
 

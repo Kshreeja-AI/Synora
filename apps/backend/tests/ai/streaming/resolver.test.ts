@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { StreamingProviderResolver, getStreamingResolver } from '../../src/ai/streaming/resolver';
-import { ProviderNotFoundError } from '../../src/ai/streaming/types';
+import { StreamingProviderResolver, getStreamingResolver } from '../../../src/ai/streaming/resolver';
+import { ProviderNotFoundError } from '../../../src/ai/streaming/types';
 
 describe('StreamingProviderResolver', () => {
   let resolver: StreamingProviderResolver;

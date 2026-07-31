@@ -82,8 +82,8 @@ export function createGenerateResponseWorker() {
 
           // Listen for cancel signal
           const cancelSubscription = redis.duplicate();
-          cancelSubscription.subscribe(`job:${jobId}:control`, (err: Error | null) => {
-            if (err) logger.error('[Worker] Subscribe error', { error: err.message });
+          cancelSubscription.subscribe(`job:${jobId}:control`).catch((err: Error) => {
+            logger.error('[Worker] Subscribe error', { error: err.message });
           });
 
           cancelSubscription.on('message', (channel: string, message: string) => {
@@ -156,7 +156,7 @@ export function createGenerateResponseWorker() {
 
             // Report progress to Bull
             if (accumulator.shouldReportProgress()) {
-              bullJob.progress(Math.min(99, accumulator.getTokenCount() / 2));
+              await bullJob.updateProgress(Math.min(99, accumulator.getTokenCount() / 2));
               accumulator.markProgressReported();
             }
           }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { StreamingAccumulator, TokenAccountant } from '../../src/ai/streaming/accumulator';
+import { StreamingAccumulator, TokenAccountant } from '../../../src/ai/streaming/accumulator';
 
 describe('StreamingAccumulator', () => {
   let accumulator: StreamingAccumulator;

@@ -20,7 +20,7 @@ export class GeminiStreamProvider implements TextGenerationStreamProvider {
 
   constructor(apiKey?: string) {
     const key = apiKey || process.env.GOOGLE_API_KEY;
-    this.client = new GoogleGenerativeAI(key);
+    this.client = new GoogleGenerativeAI(key ?? '');
     this.configured = !!key;
   }
 

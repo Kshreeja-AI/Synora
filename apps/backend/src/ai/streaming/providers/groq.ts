@@ -90,9 +90,15 @@ export class GroqStreamProvider implements TextGenerationStreamProvider {
           outputTokens++;
         }
 
-        if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens;
-          outputTokens = chunk.usage.completion_tokens;
+        // groq-sdk's ChatCompletionChunk type doesn't declare `usage` (it's
+        // only present on the final chunk when `stream_options.include_usage`
+        // is requested, which this OpenAI-compatible API supports at runtime
+        // but the SDK's stream chunk type doesn't model) — narrow locally
+        // rather than widening the whole chunk to `any`.
+        const usage = (chunk as unknown as { usage?: { prompt_tokens: number; completion_tokens: number } }).usage;
+        if (usage) {
+          inputTokens = usage.prompt_tokens;
+          outputTokens = usage.completion_tokens;
         }
       }
 

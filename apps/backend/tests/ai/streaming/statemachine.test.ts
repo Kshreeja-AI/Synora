@@ -3,8 +3,8 @@ import {
   StreamingJobStatus,
   StreamingJobStateMachine,
   StreamingRetryEngine
-} from '../../src/ai/streaming/statemachine';
-import { TimeoutError, RateLimitError } from '../../src/ai/streaming/types';
+} from '../../../src/ai/streaming/statemachine';
+import { TimeoutError, RateLimitError } from '../../../src/ai/streaming/types';
 import { prisma } from '@synora/database';
 
 vi.mock('@synora/database', () => ({

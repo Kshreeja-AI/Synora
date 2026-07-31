@@ -1,5 +1,4 @@
 import { prisma } from '@synora/database';
-import { Prisma } from '@prisma/client';
 import { logger } from '../utils/logger.js';
 import { NotFoundException } from '@synora/shared';
 import { recordAuditEvent } from './audit.service.js';
@@ -157,7 +156,7 @@ export async function recordUsage(
       capability: input.capability,
       quantity: input.quantity,
       creditsCost: input.creditsCost,
-      metadata: input.metadata as Prisma.InputJsonValue,
+      metadata: input.metadata as any,
     },
   });
 

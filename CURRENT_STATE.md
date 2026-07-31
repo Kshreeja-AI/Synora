@@ -1,5 +1,16 @@
 # Synora — Current State
 
+> **Merge note (2026-07-31):** `feature/m3-streaming-engine` (PR #40, AI
+> Streaming Engine) was merged onto `SYNORA` after PR #37 landed a
+> production billing/credits/permissions/webhooks/workspace system on
+> `SYNORA` directly. Where this branch's own (older, PR #38-inherited)
+> reimplementation of that same subsystem overlapped, `SYNORA`'s version
+> was kept as canonical; this branch's genuinely new work — the
+> provider-agnostic SSE streaming engine, job state machine, retry
+> engine, cancellation, and the Release 3 chat/conversation platform it
+> depends on — was layered on top. The milestone narrative below predates
+> that merge and describes this branch's own history in isolation.
+
 **Snapshot date:** 2026-07-28 (updated after M6 completion — Release 2 production-ready)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
