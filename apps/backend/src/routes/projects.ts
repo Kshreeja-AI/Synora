@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { requireProjectAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 import { validateIdQuery } from '../middleware/queryValidation';
 import {
@@ -45,7 +46,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
   try {
     const project = await getProjectForUser(req.userId!, req.params.id);
     res.json(createApiResponse(project));
@@ -54,7 +55,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.patch('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+router.patch('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
   try {
     const input = updateProjectSchema.parse(req.body);
     const project = await updateProject(req.userId!, req.params.id, input);
@@ -64,7 +65,7 @@ router.patch('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.delete('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+router.delete('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
   try {
     await deleteProject(req.userId!, req.params.id);
     res.json(createApiResponse({ message: 'Project deleted.' }));

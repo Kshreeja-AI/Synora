@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 import {
   createWorkspace,
@@ -61,7 +62,7 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:id', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const workspace = await getWorkspaceForUser(req.userId!, req.params.id);
     res.json(createApiResponse(workspace));
@@ -70,7 +71,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.patch('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+router.patch('/:id', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const input = updateWorkspaceSchema.parse(req.body);
     const workspace = await updateWorkspace(req.userId!, req.params.id, input);
@@ -80,7 +81,7 @@ router.patch('/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get('/:id/members', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:id/members', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const members = await listWorkspaceMembers(req.userId!, req.params.id);
     res.json(createApiResponse(members));
@@ -89,7 +90,7 @@ router.get('/:id/members', authMiddleware, async (req: AuthRequest, res, next) =
   }
 });
 
-router.patch('/:id/members/:memberId', authMiddleware, async (req: AuthRequest, res, next) => {
+router.patch('/:id/members/:memberId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { role } = updateMemberRoleSchema.parse(req.body);
     const member = await updateMemberRole(req.userId!, req.params.id, req.params.memberId, role);
@@ -99,7 +100,7 @@ router.patch('/:id/members/:memberId', authMiddleware, async (req: AuthRequest, 
   }
 });
 
-router.delete('/:id/members/:memberId', authMiddleware, async (req: AuthRequest, res, next) => {
+router.delete('/:id/members/:memberId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     await removeMember(req.userId!, req.params.id, req.params.memberId);
     res.json(createApiResponse({ message: 'Member removed.' }));
@@ -108,7 +109,7 @@ router.delete('/:id/members/:memberId', authMiddleware, async (req: AuthRequest,
   }
 });
 
-router.get('/:id/invitations', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:id/invitations', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const invitations = await listInvitations(req.userId!, req.params.id);
     res.json(createApiResponse(invitations));
@@ -117,7 +118,7 @@ router.get('/:id/invitations', authMiddleware, async (req: AuthRequest, res, nex
   }
 });
 
-router.post('/:id/invitations', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:id/invitations', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const input = createInvitationSchema.parse(req.body);
     const invitation = await createInvitation(req.userId!, req.params.id, input);
@@ -127,7 +128,7 @@ router.post('/:id/invitations', authMiddleware, async (req: AuthRequest, res, ne
   }
 });
 
-router.delete('/:id/invitations/:invitationId', authMiddleware, async (req: AuthRequest, res, next) => {
+router.delete('/:id/invitations/:invitationId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     await revokeInvitation(req.userId!, req.params.id, req.params.invitationId);
     res.json(createApiResponse({ message: 'Invitation revoked.' }));
@@ -136,7 +137,7 @@ router.delete('/:id/invitations/:invitationId', authMiddleware, async (req: Auth
   }
 });
 
-router.get('/:id/audit-log', authMiddleware, validateDateRangeQuery, async (req: AuthRequest, res, next) => {
+router.get('/:id/audit-log', authMiddleware, requireWorkspaceAccess(), validateDateRangeQuery, async (req: AuthRequest, res, next) => {
   try {
     const before = parseOptionalDate(req.query.before);
     const logs = await listAuditLog(req.userId!, req.params.id, { before });
