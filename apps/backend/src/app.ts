@@ -9,6 +9,7 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { csrfProtection } from './middleware/csrf';
+import { cspMiddleware } from './middleware/csp';
 import { correlationIdMiddleware } from './middleware/correlation-id';
 import { requestTimeout } from './middleware/requestTimeout';
 import type { AppConfig } from './config/types';
@@ -64,6 +65,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // Security Middleware
   app.use(helmet());
+  app.use(cspMiddleware);
   app.use(requestTimeout);
   app.use(correlationIdMiddleware as any);
   app.use(
