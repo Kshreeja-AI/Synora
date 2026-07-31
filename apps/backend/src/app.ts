@@ -9,6 +9,8 @@ import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { csrfProtection } from './middleware/csrf';
+import { correlationIdMiddleware } from './middleware/correlation-id';
+import { requestTimeout } from './middleware/requestTimeout';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -62,6 +64,8 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // Security Middleware
   app.use(helmet());
+  app.use(requestTimeout);
+  app.use(correlationIdMiddleware);
   app.use(
     cors({
       origin: config.server.corsOrigins,

@@ -30,6 +30,13 @@ import {
 } from '../mail';
 import { logger } from '../utils/logger';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import {
+  loginLimiter,
+  registerLimiter,
+  forgotPasswordLimiter,
+  refreshTokenLimiter,
+} from '../middleware/authRateLimit';
+import { authInputValidator } from '../middleware/inputValidation';
 
 const router: Router = Router();
 
@@ -120,7 +127,7 @@ async function notifyBestEffort(label: string, notify: () => Promise<unknown>): 
   }
 }
 
-router.post('/register', async (req, res, next) => {
+router.post('/register', authInputValidator, registerLimiter, async (req, res, next) => {
   try {
     const { email, password, name } = registerSchema.parse(req.body);
 
@@ -151,7 +158,7 @@ router.post('/register', async (req, res, next) => {
   }
 });
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', authInputValidator, loginLimiter, async (req, res, next) => {
   try {
     const { email, password, rememberMe } = loginSchema.parse(req.body);
 
@@ -211,7 +218,7 @@ router.post('/login', async (req, res, next) => {
  * refresh token. An unknown, revoked, or expired token yields 401 — the
  * client must then re-authenticate.
  */
-router.post('/refresh', async (req, res, next) => {
+router.post('/refresh', authInputValidator, refreshTokenLimiter, async (req, res, next) => {
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
 
@@ -232,7 +239,7 @@ router.post('/refresh', async (req, res, next) => {
  * token no new access token can be minted. Idempotent — a stale or already
  * revoked token still returns success.
  */
-router.post('/logout', async (req, res, next) => {
+router.post('/logout', authInputValidator, async (req, res, next) => {
   try {
     const { refreshToken } = logoutSchema.parse(req.body);
     await revokeRefreshToken(refreshToken);
@@ -246,7 +253,7 @@ router.post('/logout', async (req, res, next) => {
  * Never reveals whether an email is registered: the response shape and
  * status code are identical whether or not a matching account exists.
  */
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', authInputValidator, forgotPasswordLimiter, async (req, res, next) => {
   try {
     const { email } = forgotPasswordSchema.parse(req.body);
 
@@ -274,7 +281,7 @@ router.post('/forgot-password', async (req, res, next) => {
  * live token (potentially the attacker's, if this reset was defensive)
  * must not survive it.
  */
-router.post('/reset-password', async (req, res, next) => {
+router.post('/reset-password', authInputValidator, async (req, res, next) => {
   try {
     const { token, newPassword } = resetPasswordSchema.parse(req.body);
 
@@ -307,7 +314,7 @@ router.post('/reset-password', async (req, res, next) => {
   }
 });
 
-router.post('/verify-email', async (req, res, next) => {
+router.post('/verify-email', authInputValidator, async (req, res, next) => {
   try {
     const { token } = verifyEmailSchema.parse(req.body);
 
@@ -331,7 +338,7 @@ router.post('/verify-email', async (req, res, next) => {
 });
 
 /** Requires auth: resend to whoever is asking, never to an arbitrary email address. */
-router.post('/resend-verification', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/resend-verification', authInputValidator, authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user) {
@@ -378,7 +385,7 @@ router.delete('/sessions/:id', authMiddleware, async (req: AuthRequest, res, nex
 });
 
 /** "Log out everywhere" — revokes every active session, including the caller's own. */
-router.post('/logout-all', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/logout-all', authInputValidator, authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const count = await revokeAllSessions(req.userId!);
     res.json(createApiResponse({ revokedCount: count }));
