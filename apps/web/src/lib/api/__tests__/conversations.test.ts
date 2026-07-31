@@ -66,7 +66,7 @@ describe('Conversations API Hooks', () => {
     });
 
     it('should respect enabled option', () => {
-      const { result } = renderHook(() => useConversations('ws-1', { enabled: false }), {
+      renderHook(() => useConversations('ws-1', { enabled: false }), {
         wrapper: createWrapper(),
       });
 
@@ -107,7 +107,7 @@ describe('Conversations API Hooks', () => {
     });
 
     it('should respect enabled option', () => {
-      const { result } = renderHook(() => useConversation('ws-1', 'conv-1', { enabled: false }), {
+      renderHook(() => useConversation('ws-1', 'conv-1', { enabled: false }), {
         wrapper: createWrapper(),
       });
 
