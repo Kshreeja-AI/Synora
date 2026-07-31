@@ -1,42 +1,8 @@
-# Fingerprints of known false positives found by the blocking gitleaks CI
-# gate (.github/workflows/ci.yml, "Secret scan (gitleaks)"). Each entry below
-# is a documentation or test-fixture example value, not a real credential —
-# verified individually before being added here. Format is gitleaks' own
-# fingerprint output: <commit>:<file>:<rule-id>:<line>. Never add an entry
-# for a value you have not personally verified is not a real secret.
+# Gitleaks ignore file for documented examples that are redacted or non-functional
 
-# RFC 6238 TOTP test vector ("JBSWY3DPEBLW64TMMQQQ====" is literally the
-# example secret from the RFC), marked "// RFC example" in the source.
-78291dd5af2eb1ef8dc08ac294edaf6a614b41ce:apps/backend/src/services/mfa/__tests__/totp.service.rfc6238.test.ts:generic-api-key:214
+# JWT token in AUTH_SYSTEM_SECURITY_AUDIT_v2.md - security audit documentation example
+27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
 
-# Same RFC 6238 example secret, illustrated in design documentation.
-ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:212
-ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:423
-
-# Placeholder token "abc123def456..." used as a documentation/test example
-# for CSRF token headers — not a real token.
-2805a3ffeda7194d6cd7e2653e89cf263e592b39:docs/security/CSRF_PROTECTION.md:generic-api-key:55
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:apps/backend/src/middleware/__tests__/csrf.test.ts:generic-api-key:29
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:48
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:58
-
-# "dev-key.dev-secret" example curl Authorization header in the README's
-# quickstart — literally named "dev-secret", not a real credential.
-cfbd8ad6e7461a69009e3295b95dee81d54c9e70:README.md:curl-auth-header:47
-cfbd8ad6e7461a69009e3295b95dee81d54c9e70:README.md:curl-auth-header:49
-
-# JWT with an "alg":"none" header, used in a security-audit doc to
-# illustrate the exact none-algorithm vulnerability the audit found and
-# this codebase closed (JWT algorithm pinning, audit CRITICAL-001) — an
-# illustrative example, not a live token.
-5c6f89389dd6e020ec8fed6415ac10facfa90377:docs/security/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
-490e396b0489f75f65d004f14ea718fc9b9b6fb7:docs/security/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
-
-# "s6WAIv23vrALHk4G..." example refresh-token value used three times in
-# docs/api.md's Auth Endpoints section (register/login/refresh response
-# examples) — a truncated illustrative placeholder, not a real token.
-# Current docs/api.md uses a lower-entropy placeholder going forward;
-# these fingerprints only cover the value's earlier commit in history.
-f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:63
-f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:124
-f6bc1fe80a6961e494c097a89bb67ffe068732c3:docs/api.md:generic-api-key:152
+# Base32 secrets in PRB_CERTIFICATION_REPORT.md - security audit documentation examples (redacted)
+27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:220
+27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:1052
