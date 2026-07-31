@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import type { Message } from '@synora/database'
 
 export interface StreamingMessage {
   id: string

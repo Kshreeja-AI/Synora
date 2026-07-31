@@ -1,8 +1,7 @@
 'use client'
 
 import { Loader2 } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
-import { cn } from '@synora/design-system/utils'
+import { cn } from '@synora/design-system'
 
 interface StreamingMessageProps {
   content: string
@@ -95,7 +94,7 @@ export function StreamingMessage({
               {completedAt && (
                 <div>
                   <span className="font-medium">Completed:</span>{' '}
-                  {formatDistanceToNow(new Date(completedAt), { addSuffix: true })}
+                  {new Date(completedAt).toLocaleTimeString()}
                 </div>
               )}
             </div>
