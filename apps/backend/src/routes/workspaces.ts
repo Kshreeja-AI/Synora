@@ -13,6 +13,7 @@ import {
 } from '../services/workspace.service';
 import { createInvitation, listInvitations, revokeInvitation } from '../services/invitation.service';
 import { listAuditLog } from '../services/audit.service';
+import { validateDateRangeQuery } from '../middleware/queryValidation';
 
 const router: Router = Router();
 
@@ -135,7 +136,7 @@ router.delete('/:id/invitations/:invitationId', authMiddleware, async (req: Auth
   }
 });
 
-router.get('/:id/audit-log', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:id/audit-log', authMiddleware, validateDateRangeQuery, async (req: AuthRequest, res, next) => {
   try {
     const before = parseOptionalDate(req.query.before);
     const logs = await listAuditLog(req.userId!, req.params.id, { before });

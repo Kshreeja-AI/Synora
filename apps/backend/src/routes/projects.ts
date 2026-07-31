@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse } from '@synora/shared';
+import { validateIdQuery } from '../middleware/queryValidation';
 import {
   createProject,
   listProjectsForUser,
@@ -24,7 +25,7 @@ const updateProjectSchema = z.object({
   status: z.enum(['ACTIVE', 'ARCHIVED', 'DELETED']).optional(),
 });
 
-router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/', authMiddleware, validateIdQuery, async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = typeof req.query.workspaceId === 'string' ? req.query.workspaceId : undefined;
     const projects = await listProjectsForUser(req.userId!, workspaceId);
