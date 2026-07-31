@@ -220,7 +220,7 @@ export class ToolEngineService {
   ): Promise<Map<string, ToolExecution>> {
     logger.info(`[executeToolPipeline] Starting pipeline with ${toolIds.length} tools`, { workspaceId })
 
-    const graph = this.buildExecutionGraph(toolIds, options?.parallel || false)
+    const _graph = this.buildExecutionGraph(toolIds, options?.parallel || false)
     const results = new Map<string, ToolExecution>()
 
     if (options?.parallel) {
@@ -486,7 +486,7 @@ export class ToolEngineService {
   private async executeToolProvider(
     toolId: string,
     input: Record<string, unknown>,
-    timeout: number
+    _timeout: number
   ): Promise<Record<string, unknown>> {
     // Placeholder: would execute in actual sandbox/provider
     return {
