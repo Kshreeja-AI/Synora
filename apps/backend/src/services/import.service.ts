@@ -1,6 +1,7 @@
-import { db } from '../db';
+import { prisma } from '@synora/database';
+import { type Message } from '@synora/database';
 import { logger } from '../utils/logger';
-import { BadRequestException } from '@synora/shared';
+import { ValidationException } from '@synora/shared';
 
 export interface ImportData {
   version: string;
@@ -25,8 +26,8 @@ export class ImportService {
       }
 
       return data;
-    } catch (error) {
-      throw new BadRequestException('Invalid JSON format');
+    } catch {
+      throw new ValidationException('Invalid JSON format');
     }
   }
 
@@ -35,7 +36,7 @@ export class ImportService {
     const lines = content.split('\n');
     let title = '';
     let description = '';
-    const messages = [];
+    const messages: Array<{ content: string; role: 'USER' | 'ASSISTANT' | 'SYSTEM' }> = [];
     let currentMessage = '';
     let currentRole: 'USER' | 'ASSISTANT' | 'SYSTEM' = 'USER';
 
@@ -88,7 +89,7 @@ export class ImportService {
 
   async detectDuplicates(workspaceId: string, importData: ImportData): Promise<string[]> {
     // Check if conversation with same title already exists
-    const existing = await db.conversation.findFirst({
+    const existing = await prisma.conversation.findFirst({
       where: {
         workspaceId,
         title: importData.conversation.title,
@@ -102,30 +103,29 @@ export class ImportService {
     userId: string,
     workspaceId: string,
     importData: ImportData,
-    options: { overwrite?: boolean } = {}
+    _options: { overwrite?: boolean } = {}
   ): Promise<string> {
     try {
-      // Create conversation
-      const conversation = await db.conversation.create({
+      // Create conversation with required fields
+      const conversation = await prisma.conversation.create({
         data: {
           workspaceId,
-          createdBy: userId,
           title: importData.conversation.title,
-          description: importData.conversation.description,
+          description: importData.conversation.description || null,
+          provider: 'imported',
+          model: 'imported',
         },
       });
 
       // Import messages
       let parentId: string | null = null;
       for (const msgData of importData.messages) {
-        const message = await db.message.create({
+        const message: Message = await prisma.message.create({
           data: {
             conversationId: conversation.id,
             content: msgData.content,
             role: msgData.role,
-            model: msgData.model,
             parentId,
-            status: 'COMPLETE',
           },
         });
 
@@ -140,7 +140,7 @@ export class ImportService {
       return conversation.id;
     } catch (error) {
       logger.error('Import failed', { error });
-      throw new BadRequestException('Import failed');
+      throw new ValidationException('Import failed');
     }
   }
 }

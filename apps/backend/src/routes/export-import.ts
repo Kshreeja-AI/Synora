@@ -4,7 +4,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse } from '@synora/shared';
 import { exportService } from '../services/export.service';
 import { importService } from '../services/import.service';
-import { db } from '../db';
+import { prisma } from '@synora/database';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -13,7 +13,8 @@ const exportSchema = z.object({
 });
 
 const importSchema = z.object({
-  format: z.enum(['json', 'markdown']),
+  format: z.enum(['json', 'markdown']).optional(),
+  content: z.string().optional(),
 });
 
 // Export conversation
@@ -23,7 +24,7 @@ router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware
     const { format } = exportSchema.parse(req.body);
 
     // Verify conversation exists and user has access
-    const conversation = await db.conversation.findFirst({
+    const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, workspace: { id: workspaceId } },
     });
 

@@ -1,11 +1,11 @@
-import { db } from '../db';
+import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
-import { NotFoundException, BadRequestException } from '@synora/shared';
+import { NotFoundException } from '@synora/shared';
 import { createWriteStream } from 'fs';
 import { join } from 'path';
 import { randomBytes } from 'crypto';
 
-export type ExportFormat = 'json' | 'markdown' | 'pdf';
+export type ExportFormat = 'json' | 'markdown';
 
 export interface ExportJob {
   id: string;
@@ -31,13 +31,12 @@ export class ExportService {
   }
 
   async exportToJSON(conversationId: string): Promise<string> {
-    const conversation = await db.conversation.findUnique({
+    const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
         messages: {
           include: {
             attachments: true,
-            branches: true,
           },
           orderBy: { createdAt: 'asc' },
         },
@@ -62,10 +61,6 @@ export class ExportService {
         id: msg.id,
         content: msg.content,
         role: msg.role,
-        model: msg.model,
-        providerId: msg.providerId,
-        inputTokens: msg.inputTokens,
-        outputTokens: msg.outputTokens,
         parentId: msg.parentId,
         createdAt: msg.createdAt,
         attachments: msg.attachments.map((att) => ({
@@ -76,11 +71,7 @@ export class ExportService {
       })),
       metadata: {
         messageCount: conversation.messages.length,
-        wordCount: conversation.messages.reduce((sum, msg) => sum + msg.content.split(/\s+/).length, 0),
-        tokenCount: conversation.messages.reduce(
-          (sum, msg) => sum + (msg.inputTokens || 0) + (msg.outputTokens || 0),
-          0
-        ),
+        wordCount: conversation.messages.reduce((sum: number, msg) => sum + msg.content.split(/\s+/).length, 0),
       },
     };
 
@@ -88,7 +79,7 @@ export class ExportService {
   }
 
   async exportToMarkdown(conversationId: string): Promise<string> {
-    const conversation = await db.conversation.findUnique({
+    const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
         messages: {
@@ -114,13 +105,9 @@ export class ExportService {
 
     for (const msg of conversation.messages) {
       const role = msg.role.charAt(0).toUpperCase() + msg.role.slice(1).toLowerCase();
-      markdown += `## ${role}${msg.model ? ` (${msg.model})` : ''}\n\n`;
+      markdown += `## ${role}\n\n`;
 
       markdown += `${msg.content}\n\n`;
-
-      if (msg.inputTokens || msg.outputTokens) {
-        markdown += `_Tokens: input=${msg.inputTokens}, output=${msg.outputTokens}_\n\n`;
-      }
 
       if (msg.attachments.length > 0) {
         markdown += '**Attachments:**\n';
@@ -152,8 +139,6 @@ export class ExportService {
   }
 
   async cleanupOldExports(olderThanDays: number = 30): Promise<number> {
-    // This would be implemented in a worker/scheduled job
-    // For now, log that it needs to be implemented
     logger.info(`Cleanup exports older than ${olderThanDays} days scheduled`);
     return 0;
   }

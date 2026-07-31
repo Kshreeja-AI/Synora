@@ -46,5 +46,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "license": "BUSL-1.1"
+  "license": "BUSL-1.1",
+  "dependencies": {
+    "@elastic/elasticsearch": "^9.4.3",
+    "@types/socket.io": "^3.0.2",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  }
 }

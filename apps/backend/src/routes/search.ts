@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse } from '@synora/shared';
 import { searchService } from '../services/search.service';
-import { db } from '../db';
+import { prisma } from '@synora/database';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -75,7 +75,7 @@ router.post('/:workspaceId/search/index/:conversationId', authMiddleware, async 
     const { workspaceId, conversationId } = req.params;
 
     // Verify user has access to conversation
-    const conversation = await db.conversation.findFirst({
+    const conversation = await prisma.conversation.findFirst({
       where: {
         id: conversationId,
         workspace: { id: workspaceId },
@@ -89,7 +89,7 @@ router.post('/:workspaceId/search/index/:conversationId', authMiddleware, async 
     // Index conversation and messages
     await searchService.indexConversation(conversationId);
 
-    const messages = await db.message.findMany({
+    const messages = await prisma.message.findMany({
       where: { conversationId },
       select: { id: true },
     });
