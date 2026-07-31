@@ -1,7 +1,11 @@
 import { prisma as db } from '@synora/database'
-import { Memory, MemoryStatus, MemoryType, MemoryPermission } from '@synora/database'
+import { Memory, MemoryStatus, MemoryType, MemoryPermission, Prisma } from '@synora/database'
 import { ValidationException, NotFoundException, ForbiddenException } from '@synora/shared'
 import { logger } from '../utils/logger'
+
+type MemoryWithRelations = Prisma.MemoryGetPayload<{
+  include: { metadata: true; relatedMemories: true; relatedBy: true }
+}>
 
 export interface CreateMemoryInput {
   workspaceId: string
@@ -121,7 +125,7 @@ export class MemoryService {
   /**
    * Retrieve a memory by ID
    */
-  async getMemory(memoryId: string, userId: string, workspaceId: string): Promise<Memory> {
+  async getMemory(memoryId: string, userId: string, workspaceId: string): Promise<MemoryWithRelations> {
     const memory = await db.memory.findFirst({
       where: {
         id: memoryId,
@@ -142,7 +146,7 @@ export class MemoryService {
     this.validateMemoryAccess(memory, userId)
 
     // Update access tracking
-    await db.memory.update({
+    const accessUpdate = await db.memory.update({
       where: { id: memoryId },
       data: {
         lastAccessedAt: new Date(),
@@ -164,7 +168,7 @@ export class MemoryService {
     // Log audit
     await this.auditLog(memoryId, userId, 'accessed')
 
-    return memory
+    return { ...memory, ...accessUpdate }
   }
 
   /**
@@ -257,10 +261,10 @@ export class MemoryService {
 
     // Create new version if content changes
     if (input.content && input.content !== memory.content) {
+      const { id: _id, metadata: _metadata, relatedMemories: _relatedMemories, relatedBy: _relatedBy, ...memoryData } = memory
       await db.memory.create({
         data: {
-          ...memory,
-          id: undefined,
+          ...memoryData,
           parentId: memory.id,
           version: memory.version + 1,
           createdAt: new Date(),
