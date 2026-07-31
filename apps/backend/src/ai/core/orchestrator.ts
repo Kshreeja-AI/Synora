@@ -12,12 +12,13 @@ import {
   RateLimitError,
   UsageMetrics,
   RetryPolicy,
+  Hook,
 } from './types';
 import { IProvider } from './provider';
 import { ProviderRegistry, ModelRegistry } from './registry';
 import { ProviderResolver, ResolverConfig } from './resolver';
 import { HealthMonitor, RateLimiter, WorkspaceQuotaManager } from './health';
-import { HookEngine, ContextBuilder } from './hooks';
+import { HookEngine, ContextBuilder, Logger, MemoryProvider, SearchProvider, RAGProvider } from './hooks';
 import { StreamManager } from './streaming';
 
 export interface OrchestratorConfig {
@@ -39,7 +40,7 @@ export class AIOrchestrator {
   private streamManager: StreamManager;
   private metricsCollector: MetricsCollector;
   private readonly config: OrchestratorConfig;
-  private readonly logger: any;
+  private readonly logger: Logger;
 
   private defaultRetryPolicy: RetryPolicy = {
     maxAttempts: 3,
@@ -52,7 +53,7 @@ export class AIOrchestrator {
   constructor(
     providers: Map<string, IProvider>,
     config: OrchestratorConfig = {},
-    logger: any
+    logger: Logger
   ) {
     this.config = config;
     this.logger = logger;
@@ -255,18 +256,19 @@ export class AIOrchestrator {
   }
 
   registerHook(hookType: string, hook: (...args: unknown[]) => void | Promise<void>): void {
-    this.hookEngine.register(hookType, hook as any);
+    // Cast function signature to Hook interface (context: HookContext) => Promise<void>
+    this.hookEngine.register(hookType, hook as unknown as Hook);
   }
 
-  setMemoryProvider(provider: any): void {
+  setMemoryProvider(provider: MemoryProvider): void {
     this.contextBuilder.setMemoryProvider(provider);
   }
 
-  setSearchProvider(provider: any): void {
+  setSearchProvider(provider: SearchProvider): void {
     this.contextBuilder.setSearchProvider(provider);
   }
 
-  setRAGProvider(provider: any): void {
+  setRAGProvider(provider: RAGProvider): void {
     this.contextBuilder.setRAGProvider(provider);
   }
 
@@ -274,7 +276,7 @@ export class AIOrchestrator {
     return this.metricsCollector.getMetrics();
   }
 
-  getProviderHealth(providerId: string): any {
+  getProviderHealth(providerId: string): ReturnType<typeof this.healthMonitor.getHealth> {
     return this.healthMonitor.getHealth(providerId);
   }
 

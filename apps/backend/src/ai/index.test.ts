@@ -23,7 +23,7 @@ describe('generateText', () => {
       }),
     };
 
-    (resolveTextGenerationProvider as any).mockResolvedValue(mockProvider);
+    vi.mocked(resolveTextGenerationProvider).mockResolvedValue(mockProvider);
 
     const result = await generateText({
       prompt: 'Test prompt',
@@ -49,7 +49,7 @@ describe('generateText', () => {
       }),
     };
 
-    (resolveTextGenerationProvider as any).mockResolvedValue(mockProvider);
+    vi.mocked(resolveTextGenerationProvider).mockResolvedValue(mockProvider);
 
     await generateText({
       prompt: 'Write code',
@@ -83,7 +83,7 @@ describe('generateText', () => {
       generateText: vi.fn().mockResolvedValue(mockResponse),
     };
 
-    (resolveTextGenerationProvider as any).mockResolvedValue(mockProvider);
+    vi.mocked(resolveTextGenerationProvider).mockResolvedValue(mockProvider);
 
     const result = await generateText({ prompt: 'Test' });
 
@@ -107,7 +107,7 @@ describe('generateText', () => {
       ),
     };
 
-    (resolveTextGenerationProvider as any).mockResolvedValue(mockProvider);
+    vi.mocked(resolveTextGenerationProvider).mockResolvedValue(mockProvider);
 
     await expect(generateText({ prompt: 'Test' })).rejects.toThrow(
       'API rate limit exceeded'

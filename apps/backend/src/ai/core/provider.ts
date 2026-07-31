@@ -13,6 +13,7 @@ import {
   AIError,
   ContextWindowExceededError,
 } from './types';
+import { Logger } from './hooks';
 
 export interface IProvider {
   readonly id: string;
@@ -42,7 +43,7 @@ export abstract class BaseProvider implements IProvider {
   constructor(
     readonly id: string,
     readonly name: string,
-    private readonly logger: any
+    private readonly logger: Logger
   ) {
     this.health = {
       providerId: id,
@@ -147,5 +148,5 @@ export interface ProviderConfig {
 }
 
 export interface ProviderFactory {
-  create(config: ProviderConfig, logger?: any): Promise<IProvider>;
+  create(config: ProviderConfig, logger?: Logger): Promise<IProvider>;
 }

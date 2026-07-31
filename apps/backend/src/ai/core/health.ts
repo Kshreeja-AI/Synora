@@ -103,7 +103,7 @@ export class HealthMonitor {
 
   shutdown(): void {
     for (const [, interval] of this.checkIntervals.entries()) {
-      clearInterval(interval as any);
+      if (interval) clearInterval(interval as unknown as NodeJS.Timeout);
     }
     this.checkIntervals.clear();
   }

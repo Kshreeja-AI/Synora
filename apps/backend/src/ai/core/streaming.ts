@@ -3,7 +3,7 @@
  * Transforms provider-specific streaming into uniform AIStreamEvent format.
  */
 
-import { AIStreamEvent, CancellationToken } from './types';
+import { AIStreamEvent, CancellationToken, AIError } from './types';
 
 export class StreamManager {
   private activeStreams: Map<string, StreamContext> = new Map();
@@ -106,34 +106,41 @@ export class StreamBuffer {
   }
 }
 
+export interface RawStreamEvent {
+  type?: string;
+  index?: number;
+  delta?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 export function createStreamEventParser(_providerId: string) {
   return {
-    parseContentBlockStart(rawEvent: any): AIStreamEvent {
+    parseContentBlockStart(rawEvent: RawStreamEvent): AIStreamEvent {
       return {
         type: 'content_block_start',
         index: rawEvent.index ?? 0,
       };
     },
 
-    parseContentBlockDelta(rawEvent: any): AIStreamEvent {
+    parseContentBlockDelta(rawEvent: RawStreamEvent): AIStreamEvent {
       return {
         type: 'content_block_delta',
         index: rawEvent.index ?? 0,
         delta: {
           type: 'text_delta',
-          text: rawEvent.delta?.text ?? '',
+          text: (rawEvent.delta as Record<string, unknown> | undefined)?.text as string ?? '',
         },
       };
     },
 
-    parseContentBlockStop(rawEvent: any): AIStreamEvent {
+    parseContentBlockStop(rawEvent: RawStreamEvent): AIStreamEvent {
       return {
         type: 'content_block_stop',
         index: rawEvent.index ?? 0,
       };
     },
 
-    parseMessageDelta(rawEvent: any): AIStreamEvent {
+    parseMessageDelta(rawEvent: RawStreamEvent): AIStreamEvent {
       return {
         type: 'message_delta',
         delta: rawEvent.delta ?? {},
@@ -147,10 +154,10 @@ export function createStreamEventParser(_providerId: string) {
     },
 
     parseError(error: Error): AIStreamEvent {
-      const aiError = error instanceof Error ? new Error(error.message) : error;
+      const aiError = new AIError(error.message, 'STREAMING_ERROR', undefined, 500, false);
       return {
         type: 'error',
-        error: aiError as any,
+        error: aiError,
       };
     },
   };

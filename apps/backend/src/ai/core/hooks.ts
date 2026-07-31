@@ -5,11 +5,18 @@
 
 import { AIRequest, AIResponse, AIError, HookContext, Hook, AIMessage } from './types';
 
+export interface Logger {
+  warn(message: string, context?: Record<string, unknown>): void;
+  info(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  debug(message: string, context?: Record<string, unknown>): void;
+}
+
 export class HookEngine {
   private hooks: Map<string, Hook[]> = new Map();
-  private readonly logger: any;
+  private readonly logger: Logger;
 
-  constructor(logger: any) {
+  constructor(logger: Logger) {
     this.logger = logger;
     this.initializeDefaultHooks();
   }
@@ -126,7 +133,7 @@ export class ContextBuilder {
   private ragProvider?: RAGProvider;
 
   constructor(
-    private logger: any
+    private logger: Logger
   ) {}
 
   setMemoryProvider(provider: MemoryProvider): void {

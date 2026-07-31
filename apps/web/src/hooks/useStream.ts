@@ -48,8 +48,10 @@ export function useStream(
     const handleDone = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
+        // eslint-disable-next-line no-console
         console.debug('Stream complete:', data);
       } catch (err) {
+        // eslint-disable-next-line no-console
         console.error('Failed to parse completion data:', err);
       }
       setIsStreaming(false);
