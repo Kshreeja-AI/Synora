@@ -18,7 +18,7 @@ jobs:
           POSTGRES_PASSWORD: synora
           POSTGRES_DB: synora
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U synora"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -43,6 +43,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Wait for database to be ready
+        env:
+          PGPASSWORD: synora
         run: |
           echo "Waiting for PostgreSQL to accept connections..."
           for i in {1..60}; do
