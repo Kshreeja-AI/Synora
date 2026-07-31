@@ -11,15 +11,28 @@ import {
   UpdateMemoryInput,
   MemorySearchQuery,
   MemorySearchResult,
+  SemanticSearchQuery,
   ConsolidationResult,
   MemoryAnalytics,
 } from '../types';
+import { VectorMemoryProvider } from './vector.provider';
 
 export class PostgresMemoryProvider implements MemoryProvider {
   name = 'postgres';
   type = 'storage' as const;
 
-  constructor(private prisma: PrismaClient, private logger: any) {}
+  /**
+   * Optional: when supplied, semanticSearch() delegates to the real
+   * embedding + vector DB pipeline instead of returning an empty stub.
+   * Kept optional so existing callers/tests that only need SQL-backed
+   * CRUD and full-text search can construct this provider without also
+   * standing up embeddings/vectordb.
+   */
+  constructor(
+    private prisma: PrismaClient,
+    private logger: any,
+    private vectorProvider?: VectorMemoryProvider
+  ) {}
 
   async create(input: CreateMemoryInput, userId: string, workspaceId: string): Promise<Memory> {
     const memory = await this.prisma.memory.create({
@@ -164,9 +177,14 @@ export class PostgresMemoryProvider implements MemoryProvider {
     };
   }
 
-  async semanticSearch(): Promise<MemorySearchResult> {
-    // Vector search would be handled by dedicated vector provider
-    return { memories: [], total: 0, hasMore: false, query: { workspaceId: '' } };
+  async semanticSearch(query: SemanticSearchQuery): Promise<MemorySearchResult> {
+    if (!this.vectorProvider) {
+      this.logger.warn('semanticSearch called without a configured vector provider', {
+        workspaceId: query.workspaceId,
+      });
+      return { memories: [], total: 0, hasMore: false, query: { workspaceId: query.workspaceId } };
+    }
+    return this.vectorProvider.semanticSearch(query);
   }
 
   async consolidate(memoryIds: string[], workspaceId: string): Promise<ConsolidationResult> {

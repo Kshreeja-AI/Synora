@@ -1372,8 +1372,6 @@ model MemoryCache {
 
   // Serialized content (Redis backup)
   serialized        String    @db.Text
-
-  memoryId_          String   @unique  // Redis key reference
 }
 
 enum MemoryType {
