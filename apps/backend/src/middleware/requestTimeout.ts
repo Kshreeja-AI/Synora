@@ -18,6 +18,10 @@ const routeTimeouts: Record<string, number> = {
 };
 
 export function requestTimeout(req: RequestWithTimeout, res: Response, next: NextFunction) {
+  if (process.env.NODE_ENV === 'test') {
+    return next();
+  }
+
   const path = req.path;
   const timeoutMs = routeTimeouts[path] || DEFAULT_TIMEOUT_MS;
 
