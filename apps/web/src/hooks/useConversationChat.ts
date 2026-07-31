@@ -8,7 +8,7 @@ import { useMessages, useCreateMessage } from '@/lib/api/messages';
 import { useConversation, useCreateConversation } from '@/lib/api/conversations';
 import { useRelease3Store } from '@/stores/release3-store';
 import { useStream } from './useStream';
-import { Message, CreateMessageInput } from '@/lib/types/conversations';
+import { Message } from '@/lib/types/conversations';
 
 export interface UseConversationChatReturn {
   // Conversation state

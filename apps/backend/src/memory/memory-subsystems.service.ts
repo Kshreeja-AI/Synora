@@ -11,7 +11,6 @@ import {
   Memory,
   MemoryType,
   MemoryStatus,
-  MemoryPermission,
   MemorySearchResult,
 } from './types';
 

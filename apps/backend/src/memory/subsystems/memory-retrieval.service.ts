@@ -5,7 +5,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { Memory, MemorySearchQuery, MemorySearchResult } from '../types';
+import { Memory } from '../types';
 
 export class MemoryRetrievalService {
   constructor(private prisma: PrismaClient, private logger: any) {}

@@ -5,7 +5,6 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { Memory } from '../types';
 
 export class MemoryCompressionService {
   constructor(

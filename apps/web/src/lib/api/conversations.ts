@@ -17,7 +17,6 @@ import type {
   Conversation,
   CreateConversationInput,
   UpdateConversationInput,
-  SearchConversationsInput,
 } from '@/lib/types/conversations';
 
 const CONVERSATIONS_KEY = 'conversations';

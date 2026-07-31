@@ -205,7 +205,7 @@ function createMockPrisma() {
       findUnique: vi.fn(),
       findMany: vi.fn(),
     },
-    $transaction: vi.fn().mockImplementation((fn: Function) => fn()),
+    $transaction: vi.fn().mockImplementation((fn: (tx: any) => any) => fn(undefined)),
   };
 }
 
@@ -738,7 +738,7 @@ describe('Importance scoring algorithm', () => {
   it('should default importance to 0.5 in postgres provider', async () => {
     mockPrisma.memory.create.mockResolvedValue(makeDbMemory({ importance: 0.5 }));
 
-    const result = await provider.create(
+    await provider.create(
       { content: 'no importance set', type: 'SEMANTIC' },
       'user-001',
       'ws-001',
@@ -779,7 +779,7 @@ describe('Importance scoring algorithm', () => {
     ]);
     mockPrisma.memory.update.mockResolvedValue(makeDbMemory());
 
-    const decayedCount = await service.applyDecay('ws-001');
+    await service.applyDecay('ws-001');
 
     expect(mockPrisma.memory.update).toHaveBeenCalled();
     const updateCall = mockPrisma.memory.update.mock.calls[0][0];
@@ -1131,7 +1131,7 @@ describe('Permission enforcement', () => {
       makeDbMemory({ permission: 'PRIVATE' }),
     );
 
-    const result = await provider.create(
+    await provider.create(
       { content: 'private fact', type: 'SEMANTIC' },
       'user-001',
       'ws-001',
@@ -1525,7 +1525,7 @@ describe('Vector sync', () => {
       makeDbMemory({ embeddingRefreshNeeded: true }),
     );
 
-    const result = await provider.update(
+    await provider.update(
       'mem-001',
       { content: 'changed' },
       'user-001',
