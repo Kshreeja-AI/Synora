@@ -27,6 +27,7 @@ const mockWorkspace = { id: 'workspace-1' };
 
 describe('ToolService', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.mocked(checks.requireMembership as any).mockResolvedValue(undefined);
   });
 
