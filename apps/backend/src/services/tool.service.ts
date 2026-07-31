@@ -130,7 +130,7 @@ export class ToolService {
   async deleteTool(userId: string, workspaceId: string, toolId: string): Promise<void> {
     await requireMembership(userId, workspaceId);
 
-    const tool = await this.getTool(userId, workspaceId, toolId);
+    const _tool = await this.getTool(userId, workspaceId, toolId);
 
     await prisma.toolDefinition.update({
       where: { id: toolId },
@@ -259,7 +259,7 @@ export class ToolService {
   }
 
   async rejectExecution(userId: string, workspaceId: string, executionId: string, reason: string): Promise<ToolExecution> {
-    const execution = await this.getExecution(userId, workspaceId, executionId);
+    const _execution = await this.getExecution(userId, workspaceId, executionId);
 
     return prisma.toolExecution.update({
       where: { id: executionId },
