@@ -178,7 +178,7 @@ jobs:
       - name: Secret scan (gitleaks)
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
-            detect --source=/repo --exit-code 1 --verbose
+            detect --source=/repo --config=/repo/.gitleaks.toml --exit-code 1 --verbose
 
       # Best-effort deeper scan. Non-blocking because it requires an account
       # token that a fresh clone will not have; the blocking gates above do not.
