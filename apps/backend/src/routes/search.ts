@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 import { searchService } from '../services/search.service';
 import { prisma } from '@synora/database';
@@ -14,7 +15,7 @@ const searchQuerySchema = z.object({
   type: z.enum(['full-text', 'semantic']).default('full-text').optional(),
 });
 
-router.get('/:workspaceId/search', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/search', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { q, skip, take } = searchQuerySchema.parse(req.query);
@@ -42,7 +43,7 @@ router.get('/:workspaceId/search', authMiddleware, async (req: AuthRequest, res,
   }
 });
 
-router.get('/:workspaceId/search/messages', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/search/messages', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { q, skip, take } = searchQuerySchema.parse(req.query);
