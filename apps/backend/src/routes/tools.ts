@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { toolService, type CreateToolInput } from '../services/tool.service';
+import { toolService } from '../services/tool.service';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
