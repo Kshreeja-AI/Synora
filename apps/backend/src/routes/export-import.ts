@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 import { exportService } from '../services/export.service';
 import { importService } from '../services/import.service';
@@ -18,7 +19,7 @@ const importSchema = z.object({
 });
 
 // Export conversation
-router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, conversationId } = req.params;
     const { format } = exportSchema.parse(req.body);
@@ -61,7 +62,7 @@ router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware
 });
 
 // Download export
-router.get('/:workspaceId/export/:jobId/download', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/export/:jobId/download', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { jobId } = req.params;
 
@@ -79,7 +80,7 @@ router.get('/:workspaceId/export/:jobId/download', authMiddleware, async (req: A
 });
 
 // Import conversation
-router.post('/:workspaceId/import', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/import', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { format, content } = importSchema.partial().parse(req.body);
