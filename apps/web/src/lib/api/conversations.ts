@@ -58,7 +58,7 @@ export function useConversation(
       const response = await api.get<Conversation>(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}`
       );
-      return response.data;
+      return response;
     },
     enabled: !!conversationId && !!workspaceId && options?.enabled !== false,
   });
@@ -78,7 +78,7 @@ export function useCreateConversation(
         `/api/workspaces/${workspaceId}/conversations`,
         input
       );
-      return response.data;
+      return response;
     },
     onSuccess: (data) => {
       // Invalidate list query to refetch
@@ -106,7 +106,7 @@ export function useUpdateConversation(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}`,
         input
       );
-      return response.data;
+      return response;
     },
     onSuccess: (data) => {
       queryClient.setQueryData([CONVERSATIONS_KEY, conversationId], data);
@@ -158,7 +158,7 @@ export function useArchiveConversation(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}`,
         { isArchived: true }
       );
-      return response.data;
+      return response;
     },
     onSuccess: (data) => {
       queryClient.setQueryData([CONVERSATIONS_KEY, conversationId], data);
@@ -184,7 +184,7 @@ export function useRestoreConversation(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}`,
         { isArchived: false }
       );
-      return response.data;
+      return response;
     },
     onSuccess: (data) => {
       queryClient.setQueryData([CONVERSATIONS_KEY, conversationId], data);
@@ -206,9 +206,10 @@ export function useSearchConversations(
   return useQuery({
     queryKey: ['conversations-search', workspaceId, query],
     queryFn: async () => {
-      return api.get<{ items: Conversation[]; total: number }>(
+      const response = await api.get<{ items: Conversation[]; total: number }>(
         `/api/workspaces/${workspaceId}/conversations?search=${encodeURIComponent(query)}&take=20`
       );
+      return response;
     },
     enabled: !!query && !!workspaceId && options?.enabled !== false,
     staleTime: 30000, // 30s

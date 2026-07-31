@@ -15,7 +15,7 @@ export interface RequestWithContext extends Request {
   traceId: string;
 }
 
-export function correlationIdMiddleware(req: RequestWithContext, res: Response, next: NextFunction) {
+export function correlationIdMiddleware(req: RequestWithContext, res: Response, next: NextFunction): void {
   // Use provided IDs or generate new ones
   const correlationId = (req.headers['x-correlation-id'] as string) || randomUUID();
   const requestId = (req.headers['x-request-id'] as string) || randomUUID();
@@ -26,13 +26,13 @@ export function correlationIdMiddleware(req: RequestWithContext, res: Response, 
   req.requestId = requestId;
   req.traceId = traceId;
 
+  // Propagate headers to response
+  res.setHeader('X-Correlation-ID', correlationId);
+  res.setHeader('X-Request-ID', requestId);
+  res.setHeader('X-Trace-ID', traceId);
+
   // Store in async local storage for access in services
   correlationContext.run({ correlationId, requestId, traceId }, () => {
-    // Propagate headers to response
-    res.setHeader('X-Correlation-ID', correlationId);
-    res.setHeader('X-Request-ID', requestId);
-    res.setHeader('X-Trace-ID', traceId);
-
     next();
   });
 }

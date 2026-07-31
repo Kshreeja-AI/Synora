@@ -20,7 +20,8 @@
       "@synora/shared/*": ["packages/shared/src/*"],
       "@synora/design-system/*": ["packages/design-system/src/*"],
       "@backend/*": ["apps/backend/src/*"],
-      "@web/*": ["apps/web/src/*"]
+      "@web/*": ["apps/web/src/*"],
+      "@/*": ["apps/web/src/*"]
     }
   }
 }

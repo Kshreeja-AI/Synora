@@ -87,7 +87,11 @@ export function requireProjectAccess() {
         return next(new NotFoundException('Project'));
       }
 
-      const isMemberResult = await isMember(userId, project.workspaceId);
+      if (!userId) {
+        return next(new NotFoundException('User'));
+      }
+
+      const isMemberResult = await isMember(userId, project.workspaceId || '');
       if (!isMemberResult) {
         logger.warn('Unauthorized project access attempt', {
           userId,
@@ -100,7 +104,9 @@ export function requireProjectAccess() {
       }
 
       // Attach workspaceId to request for reference
-      req.params.workspaceId = project.workspaceId;
+      if (project.workspaceId) {
+        req.params.workspaceId = project.workspaceId;
+      }
       next();
     } catch (error) {
       logger.error('Error checking project access', { userId, projectId, error });

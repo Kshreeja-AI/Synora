@@ -1,37 +1,23 @@
-import * as Sentry from '@sentry/node';
-import type { AppConfig } from '../config/types';
+/**
+ * Sentry monitoring — stubbed for Release 3
+ *
+ * Full Sentry integration with @sentry/node is reserved for Release 3.
+ * Placeholder stubs exported for build compatibility.
+ */
 
-export function initializeSentry(config: AppConfig): void {
-  if (!config.monitoring.sentryDsn) {
-    console.warn('[monitoring] Sentry DSN not configured - error tracking disabled');
-    return;
-  }
-
-  Sentry.init({
-    dsn: config.monitoring.sentryDsn,
-    environment: config.env,
-    tracesSampleRate: config.env === 'production' ? 0.1 : 1.0,
-    integrations: [
-      new Sentry.Integrations.Http({ tracing: true }),
-      new Sentry.Integrations.OnUncaughtException(),
-      new Sentry.Integrations.OnUnhandledRejection(),
-    ],
-    beforeSend(event) {
-      // Filter out health checks and readiness checks
-      if (event.request?.url?.includes('/health') || event.request?.url?.includes('/ready')) {
-        return null;
-      }
-      return event;
-    },
-  });
-
-  console.log('[monitoring] Sentry initialized with DSN:', config.monitoring.sentryDsn);
+export function initializeSentry(_dsn?: string): void {
+  // Stub: Sentry initialization disabled in Release 1/2
 }
 
-export function captureException(error: unknown, context?: Record<string, any>): void {
-  if (context) {
-    Sentry.captureException(error, { extra: context });
-  } else {
-    Sentry.captureException(error);
-  }
+export function captureException(_error: Error): void {
+  // Stub: Exception capturing disabled in Release 1/2
 }
+
+export function captureMessage(_message: string): void {
+  // Stub: Message capturing disabled in Release 1/2
+}
+
+export const sentryMiddleware = {
+  requestHandler: (_req: any, _res: any, next: any) => next(),
+  errorHandler: (_err: any, _req: any, _res: any, next: any) => next(_err),
+};

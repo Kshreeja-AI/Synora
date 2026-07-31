@@ -4,7 +4,6 @@ import { logger } from './utils/logger';
 import { prisma } from '@synora/database';
 import { initializeApp } from './index';
 import { AppConfig } from './config';
-import { startMemoryWorkerScheduler, MemoryScheduler } from './memory/scheduler';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -25,18 +24,15 @@ async function startServer(app: Express, config: AppConfig): Promise<Server> {
 }
 
 let httpServer: Server | undefined;
-let memoryScheduler: MemoryScheduler | undefined;
 
 async function bootstrap() {
   const { app, config } = await initializeApp();
   httpServer = await startServer(app, config);
-  memoryScheduler = startMemoryWorkerScheduler(prisma, logger);
 }
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`${signal} received, shutting down gracefully...`);
   try {
-    memoryScheduler?.stop();
     await new Promise<void>((resolve) => {
       if (!httpServer) return resolve();
       httpServer.close(() => resolve());

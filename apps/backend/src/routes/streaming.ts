@@ -1,180 +1,97 @@
-import { Router, type Response } from 'express';
-import { authMiddleware, type AuthRequest } from '../middleware/auth';
-import { prisma } from '@synora/database';
-import { logger } from '../utils/logger';
-import { generateText } from '../ai';
+import { Router, type Response } from 'express'
+import { authMiddleware, type AuthRequest } from '../middleware/auth'
+import { logger } from '../utils/logger'
+import { messageGenerationService } from '../services/messageGeneration.service'
 
-const router: Router = Router({ mergeParams: true });
+const router: Router = Router({ mergeParams: true })
 
 router.get(
   '/:workspaceId/conversations/:conversationId/stream',
   authMiddleware,
   async (req: AuthRequest, res: Response) => {
     try {
-      const { conversationId } = req.params;
-      const { messageId } = req.query;
+      const { conversationId } = req.params
+      const { messageId } = req.query
 
       if (!messageId || typeof messageId !== 'string') {
-        res.status(400).json({ error: 'messageId query parameter is required' });
-        return;
+        res.status(400).json({ error: 'messageId query parameter is required' })
+        return
       }
 
-      const conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-      });
-
-      if (!conversation) {
-        res.status(404).json({ error: 'Conversation not found' });
-        return;
-      }
-
-      // Validate user has access to workspace
-      const member = await prisma.workspaceMember.findUnique({
-        where: {
-          userId_workspaceId: { userId: req.userId!, workspaceId: conversation.workspaceId },
-        },
-      });
-
-      if (!member) {
-        res.status(403).json({ error: 'Access denied' });
-        return;
+      if (!req.userId) {
+        res.status(401).json({ error: 'Unauthorized' })
+        return
       }
 
       // Set SSE headers
-      res.setHeader('Content-Type', 'text/event-stream');
-      res.setHeader('Cache-Control', 'no-cache');
-      res.setHeader('Connection', 'keep-alive');
-      res.setHeader('X-Accel-Buffering', 'no');
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('X-Accel-Buffering', 'no')
 
       const sendEvent = (eventType: string, data: unknown) => {
-        res.write(`event: ${eventType}\n`);
-        res.write(`data: ${JSON.stringify(data)}\n\n`);
-      };
-
-      // Get the message
-      const message = await prisma.message.findUnique({
-        where: { id: messageId },
-        include: { conversation: true },
-      });
-
-      if (!message) {
-        sendEvent('error', { error: 'Message not found' });
-        res.end();
-        return;
-      }
-
-      let inputTokens = 0;
-      let outputTokens = 0;
-
-      // Stream message content if it exists
-      if (message.content) {
-        // Message already has content, send it word by word
-        const words = message.content.split(/\s+/);
-        for (const word of words) {
-          if (word) {
-            sendEvent('token', { token: word + ' ' });
-            // Small delay to simulate streaming
-            await new Promise(resolve => setTimeout(resolve, 10));
-          }
-        }
-      } else {
-        // Message needs to be generated - call AI provider
         try {
-          // Fetch conversation history for context
-          const messages = await prisma.message.findMany({
-            where: { conversationId },
-            orderBy: { createdAt: 'asc' },
-            select: {
-              id: true,
-              content: true,
-              role: true,
-            },
-          });
-
-          // Get the user message content
-          const userMessage = messages.find(m => m.id === messageId);
-          if (!userMessage) {
-            sendEvent('error', { error: 'User message not found' });
-            res.end();
-            return;
-          }
-
-          // Build system prompt from conversation history
-          const contextMessages = messages
-            .slice(0, -1)
-            .map(m => `${m.role === 'USER' ? 'User' : 'Assistant'}: ${m.content}`)
-            .join('\n\n');
-
-          const systemPrompt = contextMessages
-            ? `Previous conversation:\n${contextMessages}`
-            : undefined;
-
-          // Call AI provider
-          const result = await generateText({
-            prompt: userMessage.content,
-            model: conversation.model,
-            systemPrompt,
-          });
-
-          // Stream the result word by word
-          const words = result.text.split(/\s+/);
-          for (const word of words) {
-            if (word) {
-              sendEvent('token', { token: word + ' ' });
-              await new Promise(resolve => setTimeout(resolve, 10));
-            }
-          }
-
-          inputTokens = result.usage?.inputTokens || 0;
-          outputTokens = result.usage?.outputTokens || 0;
-
-          // Update the message with generated content
-          await prisma.message.update({
-            where: { id: messageId },
-            data: { content: result.text },
-          });
-
-          // Update conversation usage (create if not exists)
-          await prisma.conversationUsage.upsert({
-            where: { conversationId },
-            create: {
-              conversationId,
-              inputTokens,
-              outputTokens,
-              totalTokens: inputTokens + outputTokens,
-            },
-            update: {
-              inputTokens: { increment: inputTokens },
-              outputTokens: { increment: outputTokens },
-              totalTokens: { increment: inputTokens + outputTokens },
-            },
-          });
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : 'Generation failed';
-          sendEvent('error', { error: errorMessage });
+          res.write(`event: ${eventType}\n`)
+          res.write(`data: ${JSON.stringify(data)}\n\n`)
+        } catch (err) {
+          logger.error('Error writing SSE event', { eventType, error: err })
         }
       }
 
-      // Send completion event
-      sendEvent('done', {
-        messageId,
-        inputTokens,
-        outputTokens,
-        completedAt: new Date().toISOString(),
-      });
+      let inputTokens = 0
+      let outputTokens = 0
 
-      res.end();
+      try {
+        logger.info(`[streaming] Starting stream for message ${messageId} in conversation ${conversationId}`)
+
+        // Use the generation service to stream tokens
+        for await (const token of messageGenerationService.generateResponseStream(
+          req.userId,
+          conversationId,
+          messageId
+        )) {
+          sendEvent('token', { token: token.token })
+
+          // Track token counts from the first and last token
+          if (token.inputTokens !== undefined) {
+            inputTokens = token.inputTokens
+          }
+          if (token.outputTokens !== undefined) {
+            outputTokens = token.outputTokens
+          }
+
+          // Small delay to prevent overwhelming the client
+          await new Promise(resolve => setTimeout(resolve, 5))
+        }
+
+        // Send completion event
+        sendEvent('done', {
+          messageId,
+          inputTokens,
+          outputTokens,
+          completedAt: new Date().toISOString(),
+        })
+
+        logger.info(`[streaming] Completed stream for message ${messageId}`)
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Generation failed'
+        logger.error(`[streaming] Stream error for message ${messageId}`, { error })
+        sendEvent('error', { error: errorMessage })
+      }
+
+      res.end()
     } catch (error) {
-      logger.error('SSE stream error:', error);
+      logger.error('[streaming] SSE handler error', { error })
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Stream error' });
+        res.status(500).json({ error: 'Stream error' })
       } else {
-        res.write(`event: error\ndata: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`);
-        res.end();
+        res.write(`event: error\ndata: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`)
+        res.end()
       }
     }
   }
-);
+)
 
-export default router;
+export default router

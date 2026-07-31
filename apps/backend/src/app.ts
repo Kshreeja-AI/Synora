@@ -36,7 +36,6 @@ import conversationTemplateRoutes from './routes/conversationTemplates'
 import conversationFolderRoutes from './routes/conversationFolders';
 import sharingRoutes from './routes/sharing'
 import sharingPublicRoutes from './routes/sharing-public';
-import { createMemoryRoutes } from './routes/memory';
 
 export interface CreateAppDeps {
   /**
@@ -65,7 +64,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   // Security Middleware
   app.use(helmet());
   app.use(requestTimeout);
-  app.use(correlationIdMiddleware);
+  app.use(correlationIdMiddleware as any);
   app.use(
     cors({
       origin: config.server.corsOrigins,
@@ -196,7 +195,6 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', conversationTemplateRoutes);
   app.use('/api/workspaces', conversationFolderRoutes);
   app.use('/api/workspaces', sharingRoutes);
-  app.use('/api/workspaces', createMemoryRoutes(prisma, logger));
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
