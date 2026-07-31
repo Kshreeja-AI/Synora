@@ -26,9 +26,9 @@ export interface SearchResult {
   id: string
   resourceType: SearchResourceType
   resourceId: string
-  title?: string
+  title: string | null
   content: string
-  summary?: string
+  summary: string | null
   score: number
   rank: number
   highlights?: Map<string, string>
@@ -617,6 +617,62 @@ export class SearchService {
 
     if (!options.userId) {
       throw new ValidationException('userId is required')
+    }
+  }
+
+  async searchConversations(options: {
+    workspaceId: string
+    query: string
+    skip?: number
+    take?: number
+  }): Promise<{ items: SearchResult[]; total: number }> {
+    try {
+      const result = await this.hybridSearch({
+        workspaceId: options.workspaceId,
+        userId: '', // This will be set by routes if needed
+        query: options.query,
+        limit: options.take || 20,
+        offset: options.skip || 0,
+        filters: {
+          resourceTypes: ['CONVERSATION'],
+        },
+      })
+
+      return {
+        items: result.results,
+        total: result.stats.totalResults,
+      }
+    } catch (error) {
+      logger.error('[searchConversations] Search failed', { error })
+      throw error
+    }
+  }
+
+  async searchMessages(options: {
+    workspaceId: string
+    query: string
+    skip?: number
+    take?: number
+  }): Promise<{ items: SearchResult[]; total: number }> {
+    try {
+      const result = await this.hybridSearch({
+        workspaceId: options.workspaceId,
+        userId: '', // This will be set by routes if needed
+        query: options.query,
+        limit: options.take || 20,
+        offset: options.skip || 0,
+        filters: {
+          resourceTypes: ['MESSAGE'],
+        },
+      })
+
+      return {
+        items: result.results,
+        total: result.stats.totalResults,
+      }
+    } catch (error) {
+      logger.error('[searchMessages] Search failed', { error })
+      throw error
     }
   }
 
