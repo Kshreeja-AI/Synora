@@ -73,6 +73,10 @@ model User {
   toolExecutions    ToolExecution[] @relation("UserToolExecutions")
   toolAuditLogs     ToolAuditLog[]
 
+  // Universal Search System
+  searchQueries     SearchQuery[]
+  savedSearches     SavedSearch[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -203,6 +207,14 @@ model Workspace {
   toolDefinitions     ToolDefinition[]
   toolExecutions      ToolExecution[]
   toolQuota           ToolQuota?
+
+  // Release 3: Universal Search System
+  searchIndices       SearchIndex[]
+  searchQueries       SearchQuery[]
+  savedSearches       SavedSearch[]
+  searchSuggestions   SearchSuggestion[]
+  searchRankings      SearchRanking[]
+  searchAnalytics     SearchAnalytics[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -1743,5 +1755,234 @@ model ToolQuota {
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
+  @@index([workspaceId])
+}
+
+// Universal Search System (Release 3)
+// Comprehensive multi-provider search with hybrid, full-text, and vector capabilities
+
+model SearchIndex {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  resourceType      SearchResourceType  // CONVERSATION, MESSAGE, MEMORY, DOCUMENT
+  resourceId        String
+
+  // Content for indexing
+  title             String?
+  content           String          @db.Text
+  summary           String?
+  keywords          String[]        @default([])
+
+  // Chunking for large documents
+  chunkIndex        Int             @default(0)  // Which chunk this is
+  totalChunks       Int             @default(1)  // Total chunks for this resource
+
+  // Vector embedding metadata
+  embeddingId       String?         // Vector DB ID (Pinecone, Weaviate, etc.)
+  embeddingModel    String?         // e.g., "text-embedding-3-small"
+  embeddingDimension Int?
+
+  // Full-text search metadata
+  tsvector          String?         @db.Text  // PostgreSQL tsvector for FTS
+
+  // Workspace and resource isolation
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Metadata
+  language          String          @default("en")
+  isIndexed         Boolean         @default(false)
+  indexedAt         DateTime?
+  lastUpdatedAt     DateTime?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+  @@index([resourceType])
+  @@index([resourceId])
+  @@index([workspaceId, resourceType, resourceId])
+  @@index([isIndexed])
+  @@index([indexedAt])
+}
+
+enum SearchResourceType {
+  CONVERSATION
+  MESSAGE
+  MEMORY
+  DOCUMENT
+  PROMPT_TEMPLATE
+  CONVERSATION_TEMPLATE
+}
+
+model SearchQuery {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  query             String
+  queryType         SearchQueryType // HYBRID, FULLTEXT, VECTOR, SEMANTIC
+
+  // Results metadata
+  resultCount       Int             @default(0)
+  executionTimeMs   Int             @default(0)
+
+  // Analytics
+  clickedResultId   String?         // Which result was clicked (if any)
+  clickPosition     Int?            // Position in results
+  isRelevant        Boolean?        // User feedback: was this relevant?
+
+  // Rankings/ordering
+  sortBy            String          @default("relevance")  // relevance, recent, popular
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([queryType])
+}
+
+enum SearchQueryType {
+  HYBRID
+  FULLTEXT
+  VECTOR
+  SEMANTIC
+}
+
+model SavedSearch {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  name              String
+  description       String?
+  query             String
+  queryType         SearchQueryType @default(HYBRID)
+
+  // Filters
+  filters           Json?           // Saved filter configuration
+  sortBy            String          @default("relevance")
+  limit             Int             @default(20)
+
+  // Pinning/favorites
+  isPinned          Boolean         @default(false)
+  pinnedOrder       Int?
+
+  // Usage tracking
+  executionCount    Int             @default(0)
+  lastExecutedAt    DateTime?
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, userId, name])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([isPinned])
+}
+
+model SearchSuggestion {
+  id                String          @id @default(cuid())
+  workspaceId       String
+
+  term              String
+  frequency         Int             @default(1)
+
+  // Category
+  type              SearchSuggestionType
+
+  // Ranking
+  popularity        Float           @default(0)  // 0-1 score
+
+  // Cache management
+  isActive          Boolean         @default(true)
+  expiresAt         DateTime?
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, term])
+  @@index([workspaceId])
+  @@index([frequency])
+  @@index([popularity])
+}
+
+enum SearchSuggestionType {
+  QUERY       // Full query suggestions
+  KEYWORD     // Single keyword suggestions
+  FILTER      // Filter suggestions
+  OPERATOR    // Search operator suggestions
+}
+
+model SearchRanking {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  resourceType      SearchResourceType
+
+  // Ranking weights
+  titleWeight       Float           @default(1.5)
+  contentWeight     Float           @default(1.0)
+  keywordWeight     Float           @default(1.2)
+  recencyWeight     Float           @default(0.8)
+  popularityWeight  Float           @default(0.6)
+  importanceWeight  Float           @default(1.1)
+
+  // Boosting
+  boostRecent       Boolean         @default(true)  // Boost recently modified
+  recentDaysThreshold Int           @default(7)
+  recentBoost       Float           @default(1.3)
+
+  // Personalization
+  boostByUserInteraction Boolean    @default(true)
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, resourceType])
+  @@index([workspaceId])
+}
+
+model SearchAnalytics {
+  id                String          @id @default(cuid())
+  workspaceId       String
+
+  // Query metrics
+  totalSearches     Int             @default(0)
+  uniqueSearchers   Int             @default(0)
+  avgExecutionTime  Float           @default(0)
+
+  // Result metrics
+  avgResultCount    Float           @default(0)
+  clickThroughRate  Float           @default(0)
+
+  // Most common queries
+  topQueries        Json            // [{term: string, count: int}]
+  topSearchers      Json            // [{userId: string, count: int}]
+
+  // Performance metrics
+  indexSize         BigInt          @default(0)
+  cachedResultsHit  Int             @default(0)
+  cachedResultsMiss Int             @default(0)
+
+  // Time period
+  periodStart       DateTime
+  periodEnd         DateTime
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, periodStart, periodEnd])
   @@index([workspaceId])
 }
