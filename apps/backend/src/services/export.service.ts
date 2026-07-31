@@ -142,6 +142,20 @@ export class ExportService {
     logger.info(`Cleanup exports older than ${olderThanDays} days scheduled`);
     return 0;
   }
+
+  async export(userId: string, conversationId: string, options: { format?: string } = {}): Promise<{ content: string; format: ExportFormat }> {
+    const format = (options.format?.toLowerCase() || 'markdown') as ExportFormat;
+
+    let content: string;
+    if (format === 'json') {
+      content = await this.exportToJSON(conversationId);
+    } else {
+      content = await this.exportToMarkdown(conversationId);
+    }
+
+    logger.info('[export] Conversation exported', { conversationId, userId, format });
+    return { content, format };
+  }
 }
 
 export const exportService = new ExportService();

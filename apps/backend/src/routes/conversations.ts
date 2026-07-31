@@ -4,6 +4,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth'
 import { createApiResponse } from '@synora/shared'
 import { conversationService } from '../services/conversation.service'
 import { conversationUsageService } from '../services/conversationUsage.service'
+import { exportService } from '../services/export.service'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -161,6 +162,28 @@ router.get('/:workspaceId/conversations/:conversationId/usage', authMiddleware, 
         usage ?? { conversationId, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0 }
       )
     )
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { conversationId } = req.params
+    const { format } = req.query
+
+    // Validate conversation access
+    const conversation = await conversationService.getById(req.userId!, conversationId)
+    if (!conversation) {
+      res.status(404).json(createApiResponse({ error: 'Conversation not found' }))
+      return
+    }
+
+    const exported = await exportService.export(req.userId!, conversationId, {
+      format: (format as string) || 'markdown',
+    })
+
+    res.json(createApiResponse(exported))
   } catch (error) {
     next(error)
   }

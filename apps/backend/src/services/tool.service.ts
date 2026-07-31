@@ -194,6 +194,22 @@ export class ToolService {
 
     logger.info('Tool execution started', { executionId: execution.id, toolId, userId });
 
+    // Trigger async execution if approval not required
+    if (!tool.requiresApproval) {
+      setImmediate(async () => {
+        try {
+          const { toolEngineService } = await import('./tool-engine.service');
+          await toolEngineService.executeWithRetries(execution.id, toolId, data.input, { timeout: tool.timeout || 30000 });
+        } catch (error) {
+          logger.error('[toolService] Tool execution failed', {
+            executionId: execution.id,
+            toolId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    }
+
     return execution;
   }
 
@@ -255,7 +271,26 @@ export class ToolService {
   }
 
   async approveExecution(userId: string, workspaceId: string, executionId: string): Promise<ToolExecution> {
-    return this.updateExecutionStatus(userId, workspaceId, executionId, ExecutionStatus.APPROVED);
+    const execution = await this.updateExecutionStatus(userId, workspaceId, executionId, ExecutionStatus.APPROVED);
+
+    // Trigger async execution after approval
+    setImmediate(async () => {
+      try {
+        const tool = await this.getTool(userId, workspaceId, execution.toolId);
+        const { toolEngineService } = await import('./tool-engine.service');
+        await toolEngineService.executeWithRetries(execution.id, execution.toolId, execution.input as Record<string, unknown>, {
+          timeout: tool.timeout || 30000,
+        });
+      } catch (error) {
+        logger.error('[toolService] Tool execution after approval failed', {
+          executionId: execution.id,
+          toolId: execution.toolId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+
+    return execution;
   }
 
   async rejectExecution(userId: string, workspaceId: string, executionId: string, reason: string): Promise<ToolExecution> {

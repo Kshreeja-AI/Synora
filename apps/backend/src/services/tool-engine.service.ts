@@ -151,7 +151,7 @@ export class ToolEngineService {
    * Feature 5: Retry with Exponential Backoff
    * Execute tool with automatic retries on failure
    */
-  private async executeWithRetries(
+  async executeWithRetries(
     executionId: string,
     toolId: string,
     input: Record<string, unknown>,
