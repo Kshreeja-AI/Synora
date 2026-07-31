@@ -1,11 +1,11 @@
-import { Router } from 'express';
+import { Router, type Router as ExpressRouter } from 'express';
 import { z } from 'zod';
 import { toolService } from '../services/tool.service';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 
-const router: ReturnType<typeof Router> = Router({ mergeParams: true });
+const router: ExpressRouter = Router({ mergeParams: true });
 
 const createToolSchema = z.object({
   name: z.string().min(1).max(255),
