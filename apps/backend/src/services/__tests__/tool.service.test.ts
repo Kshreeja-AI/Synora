@@ -128,7 +128,7 @@ describe('ToolService', () => {
         } as any,
       ]);
 
-      const result = await toolService.listTools(mockUser.id, mockWorkspace.id, 'http');
+      await toolService.listTools(mockUser.id, mockWorkspace.id, 'http');
 
       expect(vi.mocked(prisma.toolDefinition.findMany).mock.calls[0][0]).toMatchObject({
         where: {
