@@ -1,5 +1,4 @@
 import { Memory } from '@synora/database'
-import { logger } from '../utils/logger'
 
 export interface RankingSignal {
   semantic: number // 0-1 (similarity to query)
@@ -125,7 +124,10 @@ export class MemoryRankingService {
     const recencyBoost = signals.recency * 0.15
     const frequencyBoost = signals.frequency * 0.1
 
-    const score = (tfidfScore + importanceBoost + recencyBoost + frequencyBoost) / (1 + idf)
+    // Length normalization (BM25-style): longer documents are slightly discounted
+    const lengthNorm = 1 - 0.3 * (1 - docLength)
+
+    const score = ((tfidfScore + importanceBoost + recencyBoost + frequencyBoost) / (1 + idf)) * lengthNorm
 
     return Math.min(1, Math.max(0, score))
   }
@@ -241,7 +243,6 @@ export class MemoryRankingService {
     memory: Memory,
     query?: string,
     semanticScore?: number,
-    config?: RankingConfig,
   ): RankingSignal {
     return {
       semantic: semanticScore ? this.calculateSemanticSignal(semanticScore) : 0,

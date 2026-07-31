@@ -249,6 +249,7 @@ export class MemoryDeduplicationService {
       const updated = await db.memory.update({
         where: { id: merged.id },
         data: {
+          importance: typeof mergedMetadata.importance === 'number' ? mergedMetadata.importance : merged.importance,
           tags: Array.from(allTags),
           summary: this.mergeSummaries(
             primary.summary,

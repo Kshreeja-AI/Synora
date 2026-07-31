@@ -1,7 +1,6 @@
 import { prisma as db } from '@synora/database'
 import { logger } from '../utils/logger'
 import { memoryRetrievalService } from './memoryRetrieval.service'
-import { memoryCacheService } from './memoryCache.service'
 
 export interface ContextBuildRequest {
   conversationId: string
@@ -328,7 +327,7 @@ export class ConversationContextService {
   /**
    * Get context statistics for monitoring
    */
-  async getContextStats(workspaceId: string): Promise<{
+  async getContextStats(_workspaceId: string): Promise<{
     avgMemoriesPerContext: number
     avgTokensPerContext: number
     cacheHitRate: number
