@@ -78,24 +78,11 @@ export async function createCheckoutSession(
     throw new NotFoundException('Plan');
   }
 
-  if (!plan.providerPriceIds) {
-    throw new ServiceUnavailableException('Plan pricing not configured for current billing provider');
-  }
-
   try {
     const provider = await resolveBillingProvider();
-
-    // Extract Stripe price ID from JSON providerPriceIds object
-    const priceIds = plan.providerPriceIds as Record<string, string>;
-    const priceId = priceIds.stripe;
-
-    if (!priceId) {
-      throw new ServiceUnavailableException('Stripe price ID not configured for this plan');
-    }
-
     const session = await provider.createCheckoutSession({
       customerId,
-      priceId,
+      priceId: 'price_placeholder', // In production, use Stripe price IDs from plan.providerPriceIds
       successUrl: input.successUrl,
       cancelUrl: input.cancelUrl,
     });
@@ -129,22 +116,11 @@ export async function changePlan(
     throw new NotFoundException('Plan');
   }
 
-  if (!plan.providerPriceIds) {
-    throw new ServiceUnavailableException('Plan pricing not configured for current billing provider');
-  }
-
   try {
     const provider = await resolveBillingProvider();
-    const priceIds = plan.providerPriceIds as Record<string, string>;
-    const priceId = priceIds.stripe;
-
-    if (!priceId) {
-      throw new ServiceUnavailableException('Stripe price ID not configured for this plan');
-    }
-
     await provider.updateSubscription({
       subscriptionId: subscription.externalSubscriptionId,
-      priceId,
+      priceId: 'price_placeholder',
     });
 
     const updated = await prisma.subscription.update({

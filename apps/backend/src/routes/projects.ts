@@ -71,9 +71,9 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.get('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
+router.get('/:projectId', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
   try {
-    const project = await getProjectForUser(req.userId!, req.params.id);
+    const project = await getProjectForUser(req.userId!, req.params.projectId);
     res.json(createApiResponse(project));
   } catch (error) {
     next(error);
@@ -81,14 +81,14 @@ router.get('/:id', authMiddleware, requireProjectAccess(), async (req: AuthReque
 });
 
 router.patch(
-  '/:id',
+  '/:projectId',
   authMiddleware,
   requireProjectAccess(),
   requirePermission('project:update'),
   async (req: AuthRequest, res, next) => {
     try {
       const input = updateProjectSchema.parse(req.body);
-      const project = await updateProject(req.userId!, req.params.id, input);
+      const project = await updateProject(req.userId!, req.params.projectId, input);
       res.json(createApiResponse(project));
     } catch (error) {
       next(error);
@@ -97,13 +97,13 @@ router.patch(
 );
 
 router.delete(
-  '/:id',
+  '/:projectId',
   authMiddleware,
   requireProjectAccess(),
   requirePermission('project:delete'),
   async (req: AuthRequest, res, next) => {
     try {
-      await deleteProject(req.userId!, req.params.id);
+      await deleteProject(req.userId!, req.params.projectId);
       res.json(createApiResponse({ message: 'Project deleted.' }));
     } catch (error) {
       next(error);

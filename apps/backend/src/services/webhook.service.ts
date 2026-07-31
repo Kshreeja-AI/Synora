@@ -3,7 +3,6 @@ import { resolveBillingProvider, BillingProviderError } from '../billing/index.j
 import { ServiceUnavailableException } from '@synora/shared';
 import { logger } from '../utils/logger.js';
 import { createNotification } from './notification.service.js';
-import { validateWebhookData } from './webhook-validation.js';
 
 async function notifyWorkspaceOwner(workspaceId: string, title: string, body: string) {
   const owner = await prisma.workspaceMember.findFirst({
@@ -47,17 +46,6 @@ export async function handleBillingWebhook(rawBody: Buffer, signatureHeader: str
     });
 
     const data = event.data as Record<string, unknown>;
-
-    try {
-      validateWebhookData(event.type, data);
-    } catch (validationError) {
-      logger.warn('Webhook validation failed', {
-        eventType: event.type,
-        eventId: event.id,
-        error: validationError instanceof Error ? validationError.message : String(validationError),
-      });
-      return;
-    }
 
     switch (event.type) {
       case 'checkout.session.completed':

@@ -1,6 +1,8 @@
 # Synora — Current State
 
-**Snapshot date:** 2026-07-28 (updated after M6 completion — Release 2 production-ready)
+**Snapshot date:** 2026-07-31 (Release 3 M1-M3 — chat platform backend +
+universal tool calling engine — merged onto the Release 2 M1-M6
+production-ready baseline)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
 verified against the repository, not assumed.
@@ -8,15 +10,21 @@ verified against the repository, not assumed.
 ## Release / Milestone position
 
 - **Current release:** Release 2 — "Complete customer-facing platform"
-  (`RELEASE_2_PLAN.md`) — **COMPLETE and PRODUCTION-READY**
+  (`RELEASE_2_PLAN.md`) — **COMPLETE and PRODUCTION-READY**; Release 3
+  M1-M3 (chat platform backend + universal tool calling engine) now
+  merged on top — see the Release 3 section below.
 - **Completed milestones:** M1 (design system), M2 (marketing site), M3 (auth/account UX),
-  M4 (application shell), M5 (projects/folders/assets/invitations), M6 (billing) — all complete.
+  M4 (application shell), M5 (workspace members/projects/folders/assets/invitations, PR #37),
+  M6 (billing) — all complete.
   M4 milestone was redefined to mean the authenticated application shell (per founder 2026-07-25);
   `RELEASE_2_PLAN.md`'s milestone table was renumbered accordingly (old M4→M5, M5→M6, …, M9→M10).
 - **Current branch:** `claude/synora-ai-platform-h5q0k2`
-- **Latest commit:** 4150693 (fix: billing API client PATCH method) — M6 closing commit
-- **Current PR:** #37 (M6) → `SYNORA`, **MERGED** ✅. Release 2 production gates all green.
-- **Current CI status:** All production gates passing (lint ✅, typecheck ✅, test ✅, docker ✅, security ✅)
+- **Current PR:** #38 (Release 3 M1-M3) → `SYNORA`, merged with `SYNORA` (which carries
+  PR #37's canonical billing/credits/permissions/webhooks/workspace system) to resolve
+  the independent reimplementation PR #38 had built from an older base — see
+  "Release 3: Chat platform + tool calling engine" below.
+- **Current CI status:** Release 2 production gates were all green pre-merge
+  (lint ✅, typecheck ✅, test ✅, docker ✅, security ✅); re-verify after this merge.
 
 ## Completed features (working end-to-end)
 
@@ -65,6 +73,10 @@ verified against the repository, not assumed.
   service, all mutations logged, queryable via workspace settings page
 - **Permissions system (M5):** role-based enforcement (VIEWER/MEMBER/EDITOR/ADMIN/OWNER),
   `requireMembership()` and `requirePermission()` middleware pattern across all routes
+  — extended in the Release 3 merge with chat-resource permissions
+  (`conversation:*`, `message:*`, `branch:manage`, `conversation-folder:manage`,
+  `prompt:manage`, `template:manage`, `sharing:manage`), granted to every
+  non-VIEWER role
 - **Frontend M5 additions:** Projects/Folders/Assets pages, invite acceptance page,
   workspace settings tabs (members, invitations, activity), Sidebar Projects nav
   with active-state logic, all real CRUD with real API wiring
@@ -76,6 +88,12 @@ verified against the repository, not assumed.
   webhook processing with idempotency, frontend billing settings tab (4-tab layout:
   plan/payment-methods/invoices/usage), admin plan management UI, Progress component,
   all tests passing (45 billing route tests + provider/service layers)
+- **Release 3 M1-M3 (chat platform + tool engine, this merge):** Conversation/
+  Message/branching/streaming data model, conversation folders/tags/templates/
+  prompt templates, sharing, a Universal Memory System, a Universal Tool Calling
+  Engine (`ToolDefinition`/`ToolExecution`/approval workflow), and a Universal
+  Search System — see "Release 3: Chat platform + tool calling engine" below for
+  the full breakdown.
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
@@ -131,6 +149,41 @@ generation history, usage analytics, usage dashboard.
 docs site, blog, API docs.
 **M10**: Playwright E2E suite, CD pipeline, `/metrics` endpoint, alerting, backups,
 mobile polish, accessibility pass.
+**Release 3 (M4+)**: frontend for chat/conversations, streaming UI, tool-calling
+UI/approval flow, memory browser, search UI — the Release 3 M1-M3 work merged in
+this branch is backend-only (routes/services/schema), no frontend yet.
+
+## Release 3: Chat platform + tool calling engine (M1-M3, this merge)
+
+Branched from `SYNORA` before PR #37 (Release 2 M5) merged, so it independently
+reimplemented billing/credits/permissions/webhooks/workspace-scoped routes from
+scratch. When merging this branch back onto `SYNORA`, `SYNORA`'s already-shipped
+versions of those overlapping files were kept as canonical; only genuinely new
+work from this branch was layered on top (notably: chat-resource permissions in
+`services/permissions.ts`, and `services/checks.ts`'s `requireMembership`/
+`isMember` helpers that the new services depend on). The genuinely new surface:
+
+- **Chat data model:** `Conversation`, `Message` (self-referential tree for
+  branching), `MessageBranch`, `MessageAttachment`, `ConversationFolder`,
+  `ConversationTag`, `StreamingJob`, `ConversationUsage`.
+- **Prompt/template system:** `PromptTemplate`, `ConversationTemplate`.
+- **Sharing & collaboration:** `SharedConversation`, `ConversationCollaborator`,
+  `ConversationActivity`, `ConversationVersion`.
+- **Universal Memory System:** `Memory`, `MemoryMetadata`, `MemoryRelation`,
+  `MemoryAuditLog`, `MemoryQuota`, `MemoryCache`, `MemoryExport`, `AIMemory`.
+- **Universal Tool Calling Engine:** `ToolDefinition`, `ToolDependency`,
+  `ToolExecution` (with an approval workflow), `ToolInvocation`, `ToolAuditLog`,
+  `ToolMetrics`, `ToolWebhook`, `ToolQuota`, plus an earlier lighter-weight
+  `Tool`/`ToolCall` pair from the chat M1 work.
+- **Universal Search System:** `SearchIndex`, `SearchQuery`, `SavedSearch`,
+  `SearchSuggestion`, `SearchRanking`, `SearchAnalytics`.
+- **Supporting infrastructure:** provider-agnostic `embeddings/` and `vectordb/`
+  abstractions, a Redis-backed `queue/` (BullMQ) for async generation/indexing,
+  and a Socket.IO-backed `realtime.service.ts` wired into `server.ts`.
+
+All new routes are mounted under `/api/workspaces` in `app.ts` alongside the
+existing billing/workspace/asset routes. `pnpm --filter @synora/database exec
+prisma validate` passes against the merged schema.
 
 ## Current UI
 

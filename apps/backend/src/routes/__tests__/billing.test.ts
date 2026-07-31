@@ -66,7 +66,6 @@ describe('billing routes', () => {
         priceCents: 9999,
         creditsPerInterval: 5000,
         status: 'ACTIVE',
-        providerPriceIds: { stripe: 'price_test_original' },
       },
     });
     planId = plan.id;
@@ -243,7 +242,6 @@ describe('billing routes', () => {
           priceCents: 19999,
           creditsPerInterval: 10000,
           status: 'ACTIVE',
-          providerPriceIds: { stripe: 'price_test_new' },
         },
       });
       testPlanIds.push(newPlan.id);

@@ -6,7 +6,11 @@ typecheck, tests, build all green → commit → push → green CI), replace
 this file's content with the task named under "Next task after this one".
 
 **Status:** M6 (Billing) is COMPLETE and MERGED. Release 2 production gates all
-green. M7 is ready to begin.
+green. Release 3 M1-M3 (chat platform backend + universal tool calling engine,
+PR #38) has also just been merged onto `SYNORA` — see `CURRENT_STATE.md`'s
+"Release 3" section for what that added. M7 (below) is ready to begin; Release 3
+M4+ (frontend for chat/tools) is also queued and can be sequenced against M7 by
+whoever picks this up next.
 
 ---
 
