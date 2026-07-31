@@ -4,6 +4,7 @@ import { NotFoundException } from '@synora/shared'
 import { generateText, type TextGenerationRequest } from '../ai'
 import { logger } from '../utils/logger'
 import { requireMembership } from './checks'
+import { conversationUsageService } from './conversationUsage.service'
 
 interface StreamToken {
   token: string
@@ -114,22 +115,12 @@ export class MessageGenerationService {
         },
       })
 
-      // Track usage
-      const totalTokens = inputTokens + outputTokens
-      await prisma.conversationUsage.upsert({
-        where: { conversationId },
-        create: {
-          conversationId,
-          inputTokens,
-          outputTokens,
-          totalTokens,
-          estimatedCost: 0, // Will be calculated by billing service
-        },
-        update: {
-          inputTokens: { increment: inputTokens },
-          outputTokens: { increment: outputTokens },
-          totalTokens: { increment: totalTokens },
-        },
+      // Track usage via centralized service (includes cost calculation)
+      await conversationUsageService.recordGeneration({
+        conversationId,
+        model: conversation.model,
+        inputTokens,
+        outputTokens,
       })
 
       logger.info(
