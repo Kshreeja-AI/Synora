@@ -310,7 +310,7 @@ describe('Streaming Routes', () => {
 
       // Try to access conversation from different workspace
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${otherToken}`)
         .set('Accept', 'text/event-stream')
