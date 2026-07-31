@@ -6,21 +6,21 @@ const paginationSchema = z.object({
   skip: z.coerce.number().min(0).max(100000).optional(),
   take: z.coerce.number().min(1).max(1000).optional(),
   search: z.string().max(500).optional(),
-}).strict();
+}).passthrough();
 
 const dateRangeSchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
   before: z.string().datetime().optional(),
   after: z.string().datetime().optional(),
-}).strict();
+}).passthrough();
 
 const idSchema = z.object({
   workspaceId: z.string().uuid().optional(),
   projectId: z.string().uuid().optional(),
   folderId: z.string().uuid().optional(),
   assetId: z.string().uuid().optional(),
-}).partial().strict();
+}).partial().passthrough();
 
 export function validatePaginationQuery(req: Request, _res: Response, next: NextFunction) {
   try {
