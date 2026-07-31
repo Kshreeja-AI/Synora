@@ -2,7 +2,7 @@ import { prisma } from '@synora/database'
 import { Message, MessageRole } from '@prisma/client'
 import { NotFoundException, ForbiddenException } from '@synora/shared'
 import { logger } from '../utils/logger'
-import { resolveProvider, type ConversationMessage, type TextGenerationProvider } from '../ai/index.js'
+import { resolveProvider, type ConversationMessage } from '../ai/index.js'
 import { conversationUsageService } from './conversationUsage.service'
 
 const PROMPT_HISTORY_WINDOW = 50
