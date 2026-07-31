@@ -5,6 +5,7 @@ import {
   SearchResourceType,
   SearchQueryType,
   SearchSuggestionType,
+  SavedSearch,
 } from '@prisma/client'
 
 export interface SearchOptions {
@@ -704,6 +705,72 @@ export class SearchService {
 
   async deleteConversationIndex(conversationId: string): Promise<void> {
     logger.info('Conversation index deleted', { conversationId })
+  }
+
+  async searchSuggestions(workspaceId: string, partial: string, limit: number = 10): Promise<string[]> {
+    try {
+      // Get previous search queries for this workspace that match the partial
+      const queries = await prisma.searchQuery.findMany({
+        where: {
+          workspaceId,
+          query: { contains: partial, mode: 'insensitive' },
+        },
+        select: { query: true },
+        distinct: ['query'],
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      })
+
+      logger.debug('[searchSuggestions] Found suggestions', { workspaceId, partial, count: queries.length })
+      return queries.map(q => q.query)
+    } catch (error) {
+      logger.error('[searchSuggestions] Failed to get suggestions', { error, workspaceId, partial })
+      return []
+    }
+  }
+
+  async saveSearch(userId: string, workspaceId: string, name: string, query: string): Promise<SavedSearch> {
+    try {
+      // Check for duplicate name
+      const existing = await prisma.savedSearch.findFirst({
+        where: { workspaceId, userId, name },
+      })
+
+      if (existing) {
+        throw new ValidationException(`Saved search with name "${name}" already exists`)
+      }
+
+      const saved = await prisma.savedSearch.create({
+        data: { workspaceId, userId, name, query },
+      })
+
+      logger.info('[saveSearch] Search saved', { workspaceId, userId, savedSearchId: saved.id, name })
+      return saved
+    } catch (error) {
+      logger.error('[saveSearch] Failed to save search', { error, workspaceId, userId, name })
+      throw error
+    }
+  }
+
+  async getSavedSearch(workspaceId: string, id: string): Promise<SavedSearch> {
+    const search = await prisma.savedSearch.findUnique({ where: { id } })
+    if (!search || search.workspaceId !== workspaceId) {
+      throw new NotFoundException('Saved search not found')
+    }
+    return search
+  }
+
+  async listSavedSearches(workspaceId: string): Promise<SavedSearch[]> {
+    return prisma.savedSearch.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
+  async deleteSavedSearch(workspaceId: string, id: string): Promise<void> {
+    const search = await this.getSavedSearch(workspaceId, id)
+    await prisma.savedSearch.delete({ where: { id: search.id } })
+    logger.info('[deleteSavedSearch] Saved search deleted', { id })
   }
 }
 
