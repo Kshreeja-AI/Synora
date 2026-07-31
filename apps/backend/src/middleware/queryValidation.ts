@@ -9,10 +9,10 @@ const paginationSchema = z.object({
 }).passthrough();
 
 const dateRangeSchema = z.object({
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
-  before: z.string().datetime().optional(),
-  after: z.string().datetime().optional(),
+  from: z.string().refine(v => !v || !isNaN(Date.parse(v)), 'Invalid date format').optional(),
+  to: z.string().refine(v => !v || !isNaN(Date.parse(v)), 'Invalid date format').optional(),
+  before: z.string().refine(v => !v || !isNaN(Date.parse(v)), 'Invalid date format').optional(),
+  after: z.string().refine(v => !v || !isNaN(Date.parse(v)), 'Invalid date format').optional(),
 }).passthrough();
 
 const idSchema = z.object({
@@ -22,15 +22,14 @@ const idSchema = z.object({
   assetId: z.string().uuid().optional(),
 }).partial().passthrough();
 
-export function validatePaginationQuery(req: Request, _res: Response, next: NextFunction) {
+export function validatePaginationQuery(_req: Request, _res: Response, next: NextFunction) {
   try {
-    const validated = paginationSchema.parse(req.query);
-    req.query = validated as any;
+    paginationSchema.parse(_req.query);
     next();
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn('Invalid pagination query parameters', {
-        path: req.path,
+        path: _req.path,
         error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
@@ -46,15 +45,14 @@ export function validatePaginationQuery(req: Request, _res: Response, next: Next
   }
 }
 
-export function validateDateRangeQuery(req: Request, _res: Response, next: NextFunction) {
+export function validateDateRangeQuery(_req: Request, _res: Response, next: NextFunction) {
   try {
-    const validated = dateRangeSchema.parse(req.query);
-    req.query = validated as any;
+    dateRangeSchema.parse(_req.query);
     next();
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn('Invalid date range query parameters', {
-        path: req.path,
+        path: _req.path,
         error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
@@ -70,15 +68,14 @@ export function validateDateRangeQuery(req: Request, _res: Response, next: NextF
   }
 }
 
-export function validateIdQuery(req: Request, _res: Response, next: NextFunction) {
+export function validateIdQuery(_req: Request, _res: Response, next: NextFunction) {
   try {
-    const validated = idSchema.parse(req.query);
-    req.query = validated as any;
+    idSchema.parse(_req.query);
     next();
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn('Invalid ID query parameters', {
-        path: req.path,
+        path: _req.path,
         error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
