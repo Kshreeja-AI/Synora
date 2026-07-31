@@ -91,10 +91,10 @@ describe('Streaming Routes', () => {
     await prisma.user.delete({ where: { id: userId } })
   })
 
-  describe('GET /api/:workspaceId/conversations/:conversationId/stream', () => {
+  describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/stream', () => {
     it('should return 400 if messageId query parameter is missing', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
 
@@ -104,7 +104,7 @@ describe('Streaming Routes', () => {
 
     it('should return 401 if not authenticated', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Accept', 'text/event-stream')
 
@@ -113,7 +113,7 @@ describe('Streaming Routes', () => {
 
     it('should return SSE with proper headers', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -126,7 +126,7 @@ describe('Streaming Routes', () => {
 
     it('should stream tokens from message generation', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -147,7 +147,7 @@ describe('Streaming Routes', () => {
 
     it('should emit done event with completion data', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -167,7 +167,7 @@ describe('Streaming Routes', () => {
 
     it('should have no error event on successful generation', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -189,7 +189,7 @@ describe('Streaming Routes', () => {
       } as unknown as aiModule.TextGenerationProvider)
 
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -205,7 +205,7 @@ describe('Streaming Routes', () => {
 
     it('should update message with generated content', async () => {
       await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -220,7 +220,7 @@ describe('Streaming Routes', () => {
 
     it('should track usage for conversation', async () => {
       await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -237,7 +237,7 @@ describe('Streaming Routes', () => {
 
     it('should handle non-existent message', async () => {
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId: 'non-existent' })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
@@ -261,7 +261,7 @@ describe('Streaming Routes', () => {
       })
 
       const response = await request(app)
-        .get(`/api/${workspaceId}/conversations/${conversationId}/stream`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/stream`)
         .query({ messageId: assistantMessage.id })
         .set('Authorization', `Bearer ${token}`)
         .set('Accept', 'text/event-stream')
