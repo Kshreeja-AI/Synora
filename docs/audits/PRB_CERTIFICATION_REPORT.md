@@ -217,7 +217,7 @@ The MFA implementation demonstrates solid security fundamentals and clean archit
 **Test Vectors Needed**:
 ```typescript
 // Example: From RFC 6238 Appendix B
-const secret = "JBSWY3DPEBLW64TMMQ======"; // Base32
+const secret = "[REDACTED_BASE32_SECRET]"; // Base32
 const timestamp = 59;  // Epoch
 const expectedCode = "287082"; // From RFC
 ```
@@ -1049,7 +1049,7 @@ prop.forall(
 ```typescript
 // RFC 6238 Appendix B test vectors
 test('RFC 6238 vector - 59 seconds', () => {
-  const secret = 'JBSWY3DPEBLW64TMMQ======';
+  const secret = '[REDACTED_BASE32_SECRET]';
   const code = TOTPService.getCurrentCode(secret, 59);
   expect(code).toBe('287082');  // Expected from RFC
 });

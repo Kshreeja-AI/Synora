@@ -38,7 +38,7 @@ The authentication system has **multiple critical vulnerabilities** that make it
 **Attack Scenario:**
 1. Attacker creates JWT with payload `{ userId: "admin", email: "attacker@evil.com", role: "ADMIN" }`
 2. Signs it with algorithm "none" (no signature required)
-3. Sends: `Authorization: Bearer eyJhbGciOiJub25lIn0.eyJ1c2VySWQiOiJhZG1pbiJ9.`
+3. Sends: `Authorization: Bearer [REDACTED_JWT_TOKEN]`
 4. `jwt.verify()` accepts it as valid due to missing algorithm constraint
 5. Attacker is authenticated as any user
 
