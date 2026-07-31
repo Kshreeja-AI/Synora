@@ -180,4 +180,18 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     environments: ['staging', 'production'],
     requiredIn: [],
   },
+  {
+    key: 'STRIPE_SECRET_KEY',
+    description: 'Stripe secret API key used by the billing/subscription service for charging and managing payments.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: ['production'],
+  },
+  {
+    key: 'STRIPE_WEBHOOK_SECRET',
+    description: 'Stripe webhook signing secret used to verify webhook events from Stripe (payment confirmations, subscription updates, etc.).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: ['production'],
+  },
 ];
