@@ -1,8 +1,22 @@
 # Gitleaks ignore file for documented examples that are redacted or non-functional
+# These are test vectors, RFC examples, and documentation samples — not production secrets
 
-# JWT token in AUTH_SYSTEM_SECURITY_AUDIT_v2.md - security audit documentation example
+# Historical audit documentation: redacted JWT and Base32 examples
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
-
-# Base32 secrets in PRB_CERTIFICATION_REPORT.md - security audit documentation examples (redacted)
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:220
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:1052
+
+# MFA RFC 6238 test vectors (commit 78291dd) — legitimate test data for TOTP validation
+78291dd5af2eb1ef8dc08ac294edaf6a614b41ce:apps/backend/src/services/mfa/__tests__/totp.service.rfc6238.test.ts:generic-api-key:214
+
+# MFA design documentation (commit ca7a16f) — Base32 example secrets in docs
+ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:212
+ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:423
+
+# CSRF protection documentation (commit 2805a3f) — example CSRF tokens in docs
+2805a3ffeda7194d6cd7e2653e89cf263e592b39:docs/security/CSRF_PROTECTION.md:generic-api-key:55
+
+# CSRF test fixtures (commit 9f122cc) — test tokens in unit tests and docs
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:apps/backend/src/middleware/__tests__/csrf.test.ts:generic-api-key:29
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:48
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:58
