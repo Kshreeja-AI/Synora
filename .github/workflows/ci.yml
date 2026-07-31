@@ -45,19 +45,22 @@ jobs:
       - name: Wait for database to be ready
         run: |
           echo "Waiting for PostgreSQL to accept connections..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             if nc -z localhost 5432 2>/dev/null; then
               echo "PostgreSQL port is open, waiting for it to fully initialize..."
-              sleep 2
-              echo "PostgreSQL is ready"
-              exit 0
+              sleep 3
+              # Try a simple connection
+              if timeout 10s psql -h localhost -U synora -d synora -c "SELECT 1" 2>/dev/null; then
+                echo "PostgreSQL is ready"
+                exit 0
+              fi
+              echo "Connection attempt $i/60: psql connection failed, retrying..."
+            else
+              echo "Attempt $i/60: PostgreSQL not responding on port 5432, retrying in 2 seconds..."
             fi
-            if [ $i -lt 30 ]; then
-              echo "Attempt $i/30: PostgreSQL not ready yet, retrying in 1 second..."
-              sleep 1
-            fi
+            sleep 2
           done
-          echo "PostgreSQL failed to become ready after 30 seconds"
+          echo "PostgreSQL failed to become ready after 120 seconds"
           exit 1
 
       - name: Generate database types
@@ -76,10 +79,24 @@ jobs:
       - name: Type check
         run: pnpm run type-check
 
+      - name: Verify database connectivity
+        run: |
+          set -e
+          echo "Testing PostgreSQL connection..."
+          python3 -c "
+          import socket
+          sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+          result = sock.connect_ex(('localhost', 5432))
+          sock.close()
+          print('Port 5432 is', 'OPEN' if result == 0 else 'CLOSED')
+          exit(result)
+          " || exit 1
+
       - name: Run tests
         run: pnpm run test:coverage
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+          NODE_ENV: test
 
       - name: Build
         run: pnpm run build
