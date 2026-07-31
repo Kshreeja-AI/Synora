@@ -128,6 +128,8 @@ jobs:
             -e PORT=3001 \
             -e JWT_SECRET=ci-only-not-a-real-secret-000000000000 \
             -e NEXTAUTH_SECRET=ci-only-not-a-real-secret-111111111111 \
+            -e STRIPE_SECRET_KEY=sk_test_ci-only-not-a-real-secret \
+            -e STRIPE_WEBHOOK_SECRET=whsec_ci-only-not-a-real-secret \
             -e DATABASE_URL=postgresql://synora:synora@127.0.0.1:5432/synora \
             -p 3001:3001 synora-backend:ci
           for i in $(seq 1 30); do
