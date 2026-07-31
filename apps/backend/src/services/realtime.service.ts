@@ -1,6 +1,8 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
+import jwt from 'jsonwebtoken';
 import { logger } from '../utils/logger';
+import { secretsManager } from '../secrets';
 
 interface PresenceEvent {
   userId: string;
@@ -50,7 +52,7 @@ export class RealtimeService {
           return next(new Error('Missing authentication token'));
         }
 
-        const userId = this.validateToken(token);
+        const userId = await this.validateToken(token);
         socket.data.userId = userId;
         next();
       } catch (error) {
@@ -223,15 +225,23 @@ export class RealtimeService {
     });
   }
 
-  private validateToken(token: string): string {
-    const payload = token.split('.')[1];
-    if (!payload) throw new Error('Invalid token format');
-
+  private async validateToken(token: string): Promise<string> {
     try {
-      const decoded = JSON.parse(Buffer.from(payload, 'base64').toString());
-      return decoded.userId || decoded.sub;
-    } catch {
-      throw new Error('Failed to decode token');
+      const jwtSecret = await secretsManager.get('JWT_SECRET', 'backend:realtime-service');
+      const decoded = jwt.verify(token, jwtSecret, { algorithms: ['HS256'] }) as {
+        userId?: string;
+        sub?: string;
+      };
+      const userId = decoded.userId || decoded.sub;
+      if (!userId) {
+        throw new Error('Token missing userId claim');
+      }
+      return userId;
+    } catch (error) {
+      if (error instanceof jwt.JsonWebTokenError) {
+        throw new Error(`Invalid token: ${error.message}`);
+      }
+      throw error instanceof Error ? error : new Error('Failed to validate token');
     }
   }
 
