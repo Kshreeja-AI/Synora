@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { requireProjectAccess, requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
+import { requireProjectAccess } from '../middleware/requireWorkspaceAccess';
 import { requirePermission } from '../middleware/requirePermission';
 import { createApiResponse } from '@synora/shared';
 import { validateIdQuery } from '../middleware/queryValidation';
