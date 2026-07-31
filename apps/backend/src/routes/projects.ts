@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { requireProjectAccess } from '../middleware/requireWorkspaceAccess';
+import { requireProjectAccess, requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
+import { requirePermission } from '../middleware/requirePermission';
 import { createApiResponse } from '@synora/shared';
 import { validateIdQuery } from '../middleware/queryValidation';
 import {
@@ -39,6 +40,30 @@ router.get('/', authMiddleware, validateIdQuery, async (req: AuthRequest, res, n
 router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const input = createProjectSchema.parse(req.body);
+
+    // If workspaceId is provided, validate workspace access
+    if (input.workspaceId) {
+      const { isMember } = await import('../services/checks');
+      const canAccess = await isMember(req.userId!, input.workspaceId);
+      if (!canAccess) {
+        const { NotFoundException } = await import('@synora/shared');
+        return next(new NotFoundException('Workspace'));
+      }
+
+      // Check permission
+      const { checkPermission } = await import('../middleware/requirePermission');
+      const { prisma } = await import('@synora/database');
+      const membership = await prisma.workspaceMember.findUnique({
+        where: { userId_workspaceId: { userId: req.userId!, workspaceId: input.workspaceId } },
+        select: { role: true },
+      });
+
+      if (!membership || !checkPermission(membership.role, 'project:create')) {
+        const { ForbiddenException } = await import('@synora/shared');
+        return next(new ForbiddenException('Insufficient permissions to create project'));
+      }
+    }
+
     const project = await createProject(req.userId!, input);
     res.status(201).json(createApiResponse(project));
   } catch (error) {
@@ -55,23 +80,35 @@ router.get('/:id', authMiddleware, requireProjectAccess(), async (req: AuthReque
   }
 });
 
-router.patch('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    const input = updateProjectSchema.parse(req.body);
-    const project = await updateProject(req.userId!, req.params.id, input);
-    res.json(createApiResponse(project));
-  } catch (error) {
-    next(error);
+router.patch(
+  '/:id',
+  authMiddleware,
+  requireProjectAccess(),
+  requirePermission('project:update'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const input = updateProjectSchema.parse(req.body);
+      const project = await updateProject(req.userId!, req.params.id, input);
+      res.json(createApiResponse(project));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-router.delete('/:id', authMiddleware, requireProjectAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    await deleteProject(req.userId!, req.params.id);
-    res.json(createApiResponse({ message: 'Project deleted.' }));
-  } catch (error) {
-    next(error);
+router.delete(
+  '/:id',
+  authMiddleware,
+  requireProjectAccess(),
+  requirePermission('project:delete'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      await deleteProject(req.userId!, req.params.id);
+      res.json(createApiResponse({ message: 'Project deleted.' }));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 export default router;

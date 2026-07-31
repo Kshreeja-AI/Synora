@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
+import { requirePermission, requireOwnerForOwnershipChange } from '../middleware/requirePermission';
 import { createApiResponse } from '@synora/shared';
 import {
   createWorkspace,
@@ -71,15 +72,21 @@ router.get('/:id', authMiddleware, requireWorkspaceAccess(), async (req: AuthReq
   }
 });
 
-router.patch('/:id', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    const input = updateWorkspaceSchema.parse(req.body);
-    const workspace = await updateWorkspace(req.userId!, req.params.id, input);
-    res.json(createApiResponse(workspace));
-  } catch (error) {
-    next(error);
+router.patch(
+  '/:id',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  requirePermission('workspace:update'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const input = updateWorkspaceSchema.parse(req.body);
+      const workspace = await updateWorkspace(req.userId!, req.params.id, input);
+      res.json(createApiResponse(workspace));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 router.get('/:id/members', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
@@ -90,24 +97,37 @@ router.get('/:id/members', authMiddleware, requireWorkspaceAccess(), async (req:
   }
 });
 
-router.patch('/:id/members/:memberId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    const { role } = updateMemberRoleSchema.parse(req.body);
-    const member = await updateMemberRole(req.userId!, req.params.id, req.params.memberId, role);
-    res.json(createApiResponse(member));
-  } catch (error) {
-    next(error);
+router.patch(
+  '/:id/members/:memberId',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  requirePermission('member:role:update'),
+  requireOwnerForOwnershipChange(),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { role } = updateMemberRoleSchema.parse(req.body);
+      const member = await updateMemberRole(req.userId!, req.params.id, req.params.memberId, role);
+      res.json(createApiResponse(member));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-router.delete('/:id/members/:memberId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    await removeMember(req.userId!, req.params.id, req.params.memberId);
-    res.json(createApiResponse({ message: 'Member removed.' }));
-  } catch (error) {
-    next(error);
+router.delete(
+  '/:id/members/:memberId',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  requirePermission('member:remove'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      await removeMember(req.userId!, req.params.id, req.params.memberId);
+      res.json(createApiResponse({ message: 'Member removed.' }));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 router.get('/:id/invitations', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
@@ -118,24 +138,36 @@ router.get('/:id/invitations', authMiddleware, requireWorkspaceAccess(), async (
   }
 });
 
-router.post('/:id/invitations', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    const input = createInvitationSchema.parse(req.body);
-    const invitation = await createInvitation(req.userId!, req.params.id, input);
-    res.status(201).json(createApiResponse(invitation));
-  } catch (error) {
-    next(error);
+router.post(
+  '/:id/invitations',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  requirePermission('member:invite'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const input = createInvitationSchema.parse(req.body);
+      const invitation = await createInvitation(req.userId!, req.params.id, input);
+      res.status(201).json(createApiResponse(invitation));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
-router.delete('/:id/invitations/:invitationId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    await revokeInvitation(req.userId!, req.params.id, req.params.invitationId);
-    res.json(createApiResponse({ message: 'Invitation revoked.' }));
-  } catch (error) {
-    next(error);
+router.delete(
+  '/:id/invitations/:invitationId',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  requirePermission('member:invite'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      await revokeInvitation(req.userId!, req.params.id, req.params.invitationId);
+      res.json(createApiResponse({ message: 'Invitation revoked.' }));
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 router.get('/:id/audit-log', authMiddleware, requireWorkspaceAccess(), validateDateRangeQuery, async (req: AuthRequest, res, next) => {
   try {
