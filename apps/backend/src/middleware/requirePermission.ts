@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { ForbiddenException, NotFoundException } from '@synora/shared';
 import { prisma } from '@synora/database';
 import type { WorkspaceRole, Permission } from '../services/permissions';
+import { hasPermission as roleHasPermission } from '../services/permissions';
 import { logger } from '../utils/logger';
 import { AuthRequest } from './auth';
 
@@ -49,10 +50,10 @@ export function requirePermission(requiredPermission: Permission) {
         return next(new NotFoundException('Workspace'));
       }
 
-      // Check if the role has the required permission
-      const hasPermission = checkPermission(membership.role, requiredPermission);
+      // Check if the role has the required permission (uses centralized matrix)
+      const has = roleHasPermission(membership.role, requiredPermission);
 
-      if (!hasPermission) {
+      if (!has) {
         logger.warn('Unauthorized action attempt', {
           userId,
           workspaceId,
@@ -79,96 +80,6 @@ export function requirePermission(requiredPermission: Permission) {
   };
 }
 
-/**
- * Internal permission checking logic using the central matrix.
- * This is the single source of truth for what each role can do.
- *
- * Exported for testing and service-layer use.
- */
-export function checkPermission(role: WorkspaceRole, permission: Permission): boolean {
-  const rolePermissions: Record<WorkspaceRole, ReadonlySet<Permission>> = {
-    OWNER: new Set<Permission>([
-      'workspace:update',
-      'workspace:delete',
-      'member:invite',
-      'member:remove',
-      'member:role:update',
-      'project:create',
-      'project:update',
-      'project:delete',
-      'folder:manage',
-      'asset:upload',
-      'asset:delete',
-      'audit:view',
-      'billing:view',
-      'billing:manage',
-      'conversation:create',
-      'conversation:manage',
-      'message:send',
-      'message:manage',
-      'branch:manage',
-      'conversation-folder:manage',
-      'prompt:manage',
-      'template:manage',
-      'sharing:manage',
-    ]),
-    ADMIN: new Set<Permission>([
-      'workspace:update',
-      'member:invite',
-      'member:remove',
-      'member:role:update',
-      'project:create',
-      'project:update',
-      'project:delete',
-      'folder:manage',
-      'asset:upload',
-      'asset:delete',
-      'audit:view',
-      'billing:view',
-      'conversation:create',
-      'conversation:manage',
-      'message:send',
-      'message:manage',
-      'branch:manage',
-      'conversation-folder:manage',
-      'prompt:manage',
-      'template:manage',
-      'sharing:manage',
-    ]),
-    EDITOR: new Set<Permission>([
-      'project:create',
-      'project:update',
-      'folder:manage',
-      'asset:upload',
-      'asset:delete',
-      'conversation:create',
-      'conversation:manage',
-      'message:send',
-      'message:manage',
-      'branch:manage',
-      'conversation-folder:manage',
-      'prompt:manage',
-      'template:manage',
-      'sharing:manage',
-    ]),
-    MEMBER: new Set<Permission>([
-      'project:create',
-      'asset:upload',
-      'conversation:create',
-      'conversation:manage',
-      'message:send',
-      'message:manage',
-      'branch:manage',
-      'conversation-folder:manage',
-      'prompt:manage',
-      'template:manage',
-      'sharing:manage',
-    ]),
-    VIEWER: new Set<Permission>([]),
-  };
-
-  return rolePermissions[role].has(permission);
-}
 
 /**
  * Middleware to prevent certain role changes that would violate invariants.

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { requirePermission, checkPermission, requireOwnerForOwnershipChange } from '../requirePermission';
+import { requirePermission, requireOwnerForOwnershipChange } from '../requirePermission';
+import { hasPermission } from '../../services/permissions';
 import { ForbiddenException, NotFoundException } from '@synora/shared';
 import { AuthRequest } from '../auth';
 
@@ -19,7 +20,7 @@ vi.mock('../../utils/logger', () => ({
   },
 }));
 
-describe('checkPermission', () => {
+describe('hasPermission (centralized matrix from services/permissions.ts)', () => {
   it('should grant all permissions to OWNER', () => {
     const permissions = [
       'workspace:update',
@@ -30,29 +31,41 @@ describe('checkPermission', () => {
     ] as const;
 
     permissions.forEach((perm) => {
-      expect(checkPermission('OWNER', perm)).toBe(true);
+      expect(hasPermission('OWNER', perm)).toBe(true);
     });
   });
 
   it('should grant conversation permissions to MEMBER', () => {
-    expect(checkPermission('MEMBER', 'conversation:create')).toBe(true);
-    expect(checkPermission('MEMBER', 'message:send')).toBe(true);
-    expect(checkPermission('MEMBER', 'member:invite')).toBe(false);
+    expect(hasPermission('MEMBER', 'conversation:create')).toBe(true);
+    expect(hasPermission('MEMBER', 'message:send')).toBe(true);
+    expect(hasPermission('MEMBER', 'member:invite')).toBe(false);
   });
 
-  it('should deny all permissions to VIEWER', () => {
-    expect(checkPermission('VIEWER', 'conversation:create')).toBe(false);
-    expect(checkPermission('VIEWER', 'asset:upload')).toBe(false);
-    expect(checkPermission('VIEWER', 'audit:view')).toBe(false);
+  it('should allow MEMBER to upload assets and view billing', () => {
+    expect(hasPermission('MEMBER', 'asset:upload')).toBe(true);
+    expect(hasPermission('MEMBER', 'billing:view')).toBe(true);
+  });
+
+  it('should deny conversation and asset permissions to VIEWER but allow billing:view', () => {
+    expect(hasPermission('VIEWER', 'conversation:create')).toBe(false);
+    expect(hasPermission('VIEWER', 'asset:upload')).toBe(false);
+    expect(hasPermission('VIEWER', 'audit:view')).toBe(false);
+    expect(hasPermission('VIEWER', 'billing:view')).toBe(true);
   });
 
   it('should grant audit view to ADMIN', () => {
-    expect(checkPermission('ADMIN', 'audit:view')).toBe(true);
+    expect(hasPermission('ADMIN', 'audit:view')).toBe(true);
   });
 
   it('should not grant billing management to non-OWNER', () => {
-    expect(checkPermission('ADMIN', 'billing:manage')).toBe(false);
-    expect(checkPermission('EDITOR', 'billing:manage')).toBe(false);
+    expect(hasPermission('ADMIN', 'billing:manage')).toBe(false);
+    expect(hasPermission('EDITOR', 'billing:manage')).toBe(false);
+  });
+
+  it('should not grant project:create to MEMBER', () => {
+    expect(hasPermission('MEMBER', 'project:create')).toBe(false);
+    expect(hasPermission('EDITOR', 'project:create')).toBe(true);
+    expect(hasPermission('ADMIN', 'project:create')).toBe(true);
   });
 });
 

@@ -50,15 +50,15 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
         return next(new NotFoundException('Workspace'));
       }
 
-      // Check permission
-      const { checkPermission } = await import('../middleware/requirePermission');
+      // Check permission (uses centralized matrix from services/permissions.ts)
+      const { hasPermission } = await import('../services/permissions');
       const { prisma } = await import('@synora/database');
       const membership = await prisma.workspaceMember.findUnique({
         where: { userId_workspaceId: { userId: req.userId!, workspaceId: input.workspaceId } },
         select: { role: true },
       });
 
-      if (!membership || !checkPermission(membership.role, 'project:create')) {
+      if (!membership || !hasPermission(membership.role, 'project:create')) {
         const { ForbiddenException } = await import('@synora/shared');
         return next(new ForbiddenException('Insufficient permissions to create project'));
       }
