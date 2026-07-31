@@ -3,6 +3,9 @@ infrastructure/docker/secrets/
 *.secret
 .secrets/
 
+# Claude Code local worktrees/scratch state
+.claude/
+
 # Logs
 logs
 *.log
