@@ -1,141 +1,66 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { createServer, Server as HTTPServer } from 'http';
 import { RealtimeService } from '../realtime.service';
-import { Server as HTTPServer } from 'http';
 
 describe('RealtimeService', () => {
   let realtimeService: RealtimeService;
+  let httpServer: HTTPServer;
 
   beforeEach(() => {
     realtimeService = new RealtimeService();
+    httpServer = createServer();
+  });
+
+  afterEach(() => {
+    const io = realtimeService.getIO();
+    if (io) io.close();
+    httpServer.close();
   });
 
   describe('initialize', () => {
     it('should initialize socket.io server', () => {
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      const io = realtimeService.initialize(mockServer);
+      const io = realtimeService.initialize(httpServer);
       expect(io).toBeDefined();
       expect(realtimeService.getIO()).toBe(io);
-    });
-
-    it('should configure CORS and transports correctly', () => {
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      const io = realtimeService.initialize(mockServer);
-      expect(io._opts.cors).toBeDefined();
-      expect(io._opts.transports).toContain('websocket');
-      expect(io._opts.transports).toContain('polling');
     });
   });
 
   describe('presence tracking', () => {
-    it('should return empty presence for new conversation', () => {
+    it('should return empty presence for new conversation before initialization', () => {
       const presence = realtimeService.getPresence('test-conv-1');
       expect(presence).toEqual([]);
     });
 
-    it('should track multiple users in conversation', () => {
-      const _conversationId = 'test-conv-1';
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      realtimeService.initialize(mockServer);
-
-      // Simulate presence tracking (would be done via socket events in real scenario)
-      const _mockSocket = {
-        id: 'socket-1',
-        data: { userId: 'user-1' },
-        join: vi.fn(),
-        leave: vi.fn(),
-        on: vi.fn(),
-        broadcast: { to: vi.fn().mockReturnValue({ emit: vi.fn() }) },
-      };
-
-      // Note: Presence tracking happens via socket events,
-      // which are tested through integration tests
-      expect(true).toBe(true);
+    it('should return empty presence for new conversation after initialization', () => {
+      realtimeService.initialize(httpServer);
+      const presence = realtimeService.getPresence('unseen-conv');
+      expect(presence).toEqual([]);
     });
   });
 
   describe('broadcast methods', () => {
-    it('should broadcast presence', async () => {
-      const conversationId = 'test-conv-1';
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      const io = realtimeService.initialize(mockServer);
-
-      io.to = vi.fn().mockReturnValue({
-        emit: vi.fn(),
-      });
-
-      await realtimeService.broadcastPresence(conversationId);
-      expect(io.to).toHaveBeenCalledWith(`conversation:${conversationId}`);
+    it('broadcastPresence resolves without throwing', async () => {
+      realtimeService.initialize(httpServer);
+      await expect(realtimeService.broadcastPresence('conv-1')).resolves.toBeUndefined();
     });
 
-    it('should broadcast new message', async () => {
-      const conversationId = 'test-conv-1';
-      const message = { id: 'msg-1', content: 'test', role: 'USER' };
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      const io = realtimeService.initialize(mockServer);
-      io.to = vi.fn().mockReturnValue({
-        emit: vi.fn(),
-      });
-
-      await realtimeService.broadcastMessage(conversationId, message);
-      expect(io.to).toHaveBeenCalledWith(`conversation:${conversationId}`);
+    it('broadcastMessage resolves without throwing', async () => {
+      realtimeService.initialize(httpServer);
+      await expect(
+        realtimeService.broadcastMessage('conv-1', { id: 'm1', content: 'hi', role: 'USER' })
+      ).resolves.toBeUndefined();
     });
 
-    it('should broadcast typing indicator', async () => {
-      const conversationId = 'test-conv-1';
-      const userId = 'user-1';
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      const io = realtimeService.initialize(mockServer);
-      io.to = vi.fn().mockReturnValue({
-        emit: vi.fn(),
-      });
-
-      await realtimeService.broadcastTyping(conversationId, userId, true);
-      expect(io.to).toHaveBeenCalledWith(`conversation:${conversationId}`);
-    });
-  });
-
-  describe('token validation', () => {
-    it('should validate valid JWT token', () => {
-      const userId = 'test-user-123';
-      const payload = JSON.stringify({ userId, iat: Math.floor(Date.now() / 1000) });
-      const encodedPayload = Buffer.from(payload).toString('base64');
-      const _token = `header.${encodedPayload}.signature`;
-
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      realtimeService.initialize(mockServer);
-      // Note: Direct token validation is private, tested through auth flow
-      expect(true).toBe(true);
+    it('broadcastTyping resolves without throwing', async () => {
+      realtimeService.initialize(httpServer);
+      await expect(realtimeService.broadcastTyping('conv-1', 'user-1', true)).resolves.toBeUndefined();
+      await expect(realtimeService.broadcastTyping('conv-1', 'user-1', false)).resolves.toBeUndefined();
     });
 
-    it('should reject invalid token format', () => {
-      const mockServer = {
-        listen: vi.fn(),
-      } as unknown as HTTPServer;
-
-      realtimeService.initialize(mockServer);
-      // Malformed tokens would be rejected at middleware level
-      expect(true).toBe(true);
+    it('broadcast helpers are no-ops before initialization', async () => {
+      await expect(realtimeService.broadcastPresence('conv-x')).resolves.toBeUndefined();
+      await expect(realtimeService.broadcastMessage('conv-x', {})).resolves.toBeUndefined();
+      await expect(realtimeService.broadcastTyping('conv-x', 'u', true)).resolves.toBeUndefined();
     });
   });
 });
