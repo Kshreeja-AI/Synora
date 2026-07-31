@@ -14,6 +14,8 @@ describe('generateText', () => {
 
   it('resolves provider and calls generateText', async () => {
     const mockProvider = {
+      id: 'anthropic',
+      capabilities: ['text-generation'] as const,
       generateText: vi.fn().mockResolvedValue({
         text: 'Generated text',
         provider: 'anthropic',
@@ -40,6 +42,8 @@ describe('generateText', () => {
 
   it('passes through request parameters to provider', async () => {
     const mockProvider = {
+      id: 'openai',
+      capabilities: ['text-generation'] as const,
       generateText: vi.fn().mockResolvedValue({
         text: 'Result',
         provider: 'openai',
@@ -80,6 +84,8 @@ describe('generateText', () => {
     };
 
     const mockProvider = {
+      id: 'gemini',
+      capabilities: ['text-generation'] as const,
       generateText: vi.fn().mockResolvedValue(mockResponse),
     };
 
@@ -102,6 +108,8 @@ describe('generateText', () => {
 
   it('throws error when provider generateText fails', async () => {
     const mockProvider = {
+      id: 'test-provider',
+      capabilities: ['text-generation'] as const,
       generateText: vi.fn().mockRejectedValue(
         new Error('API rate limit exceeded')
       ),

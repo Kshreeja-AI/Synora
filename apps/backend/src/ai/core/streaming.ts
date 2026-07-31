@@ -143,7 +143,10 @@ export function createStreamEventParser(_providerId: string) {
     parseMessageDelta(rawEvent: RawStreamEvent): AIStreamEvent {
       return {
         type: 'message_delta',
-        delta: rawEvent.delta ?? {},
+        delta: {
+          type: 'text_delta',
+          text: (rawEvent.delta as Record<string, unknown> | undefined)?.text as string ?? '',
+        },
       };
     },
 
