@@ -92,7 +92,7 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
 
     // Check cache for search results
     const cacheKey = `${workspaceId}:${search || ''}`
-    let cached = memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
+    const cached = memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
 
     if (cached) {
       return res.json({ success: true, data: cached })

@@ -26,7 +26,7 @@ class MockPinecone implements IVectorDB {
     this.store.delete(id)
   }
 
-  async query(embedding: number[], topK: number, namespace?: string): Promise<Array<{ id: string; score: number }>> {
+  async query(embedding: number[], topK: number, _namespace?: string): Promise<Array<{ id: string; score: number }>> {
     const results: Array<{ id: string; score: number }> = []
 
     for (const [id, { embedding: stored }] of this.store) {

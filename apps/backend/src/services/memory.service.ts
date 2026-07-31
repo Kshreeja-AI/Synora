@@ -387,7 +387,7 @@ export class MemoryService {
   /**
    * Consolidate memories (summarization)
    */
-  async consolidateMemories(memoryIds: string[], summaryPrompt?: string): Promise<Memory> {
+  async consolidateMemories(memoryIds: string[]): Promise<Memory> {
     if (memoryIds.length === 0) {
       throw new ValidationException('No memories to consolidate')
     }

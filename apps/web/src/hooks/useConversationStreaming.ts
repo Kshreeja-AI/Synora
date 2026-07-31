@@ -93,7 +93,7 @@ export function useConversationStreaming(options: UseConversationStreamingOption
               isStreaming: false,
               error: data.error || 'Stream error occurred',
             }))
-          } catch (err) {
+          } catch {
             setState((prev) => ({
               ...prev,
               isStreaming: false,

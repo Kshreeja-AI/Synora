@@ -1,6 +1,6 @@
 import { prisma as db } from '@synora/database'
 import { Memory } from '@synora/database'
-import { ValidationException, NotFoundException, ForbiddenException } from '@synora/shared'
+import { ValidationException, ForbiddenException } from '@synora/shared'
 import { logger } from '../utils/logger'
 
 export interface MemoryExportOptions {
@@ -321,6 +321,11 @@ export class MemoryGdprService {
 
       if (memory.tags.length > 0) {
         lines.push(`**Tags:** ${memory.tags.join(', ')}`)
+        lines.push('')
+      }
+
+      if (includeMetadata && (memory as any).metadata) {
+        lines.push(`**Metadata:** ${JSON.stringify((memory as any).metadata)}`)
         lines.push('')
       }
 

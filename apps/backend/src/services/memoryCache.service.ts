@@ -117,7 +117,7 @@ export class MemoryCacheService {
   /**
    * Cache memory access pattern (for analytics)
    */
-  recordMemoryAccess(memoryId: string, userId: string): void {
+  recordMemoryAccess(memoryId: string, _userId: string): void {
     const key = `${this.MEMORY_PREFIX}access:${memoryId}`
     const count = this.cache.get(key) || 0
     this.cache.set(key, count + 1, 60 * 60 * 1000) // 1 hour

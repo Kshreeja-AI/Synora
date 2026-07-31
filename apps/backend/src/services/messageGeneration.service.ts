@@ -1,7 +1,7 @@
 import { prisma } from '@synora/database'
 import { Message, MessageRole } from '@prisma/client'
 import { NotFoundException } from '@synora/shared'
-import { generateText, type TextGenerationRequest, type TextGenerationResult } from '../ai'
+import { generateText, type TextGenerationRequest } from '../ai'
 import { logger } from '../utils/logger'
 import { requireMembership } from './checks'
 
@@ -9,17 +9,6 @@ interface StreamToken {
   token: string
   inputTokens?: number
   outputTokens?: number
-}
-
-interface StreamEventListener {
-  onToken: (token: StreamToken) => void | Promise<void>
-  onComplete: (result: {
-    messageId: string
-    inputTokens: number
-    outputTokens: number
-    completedAt: string
-  }) => void | Promise<void>
-  onError: (error: { message: string }) => void | Promise<void>
 }
 
 export class MessageGenerationService {
@@ -181,9 +170,8 @@ export class MessageGenerationService {
     await requireMembership(userId, message.conversation.workspaceId)
 
     // Consume the stream to generate the full response
-    let fullContent = ''
-    for await (const token of this.generateResponseStream(userId, conversationId, messageId)) {
-      fullContent += token.token
+    for await (const _token of this.generateResponseStream(userId, conversationId, messageId)) {
+      // draining the stream persists the message; no per-token handling needed here
     }
 
     // Return the updated message

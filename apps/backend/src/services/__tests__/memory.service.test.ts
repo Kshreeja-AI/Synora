@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { prisma as db } from '@synora/database'
 import { memoryService } from '../memory.service'
 import { MemoryType, MemoryStatus, MemoryPermission } from '@synora/database'
@@ -254,7 +254,7 @@ describe('MemoryService', () => {
     })
 
     it('should search pinned memories', async () => {
-      const regular = await memoryService.createMemory({
+      await memoryService.createMemory({
         workspaceId: testWorkspaceId,
         userId: testUserId,
         content: 'Regular',
