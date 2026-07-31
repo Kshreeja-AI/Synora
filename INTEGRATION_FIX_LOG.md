@@ -1,7 +1,7 @@
 # Release 3 Integration Fix Log
 
-**Status**: In Progress — Phase 1 Security Fixes (P0)
-**Last Updated**: 2026-07-31 21:45 UTC
+**Status**: In Progress — Phase 1 Security Fixes (P0) — 6/7 fixes complete
+**Last Updated**: 2026-07-31 22:05 UTC
 **Branch**: `claude/synora-ai-platform-h5q0k2`
 
 ---
@@ -134,6 +134,31 @@ Critical vulnerabilities that could allow unauthorized access or data loss.
 
 ---
 
+### ✅ Fix 1.6: Express Route Ordering Bug
+
+**Issue**: Routes with dynamic parameters (`:memoryId`) defined before routes with specific static sub-paths caused incorrect route matching. Requests to `GET /memories/stats` would match `GET /memories/:memoryId` with `memoryId="stats"` instead of reaching the stats handler.
+
+**Root Cause**: Express.js matches routes in definition order. Routes with dynamic parameters must be defined AFTER more specific routes.
+
+**Fix Applied**:
+- Reorganized routes/memories.ts with most-specific-first ordering:
+  1. POST routes with specific sub-paths (/search/semantic, /consolidate, /pin, /unpin)
+  2. General POST /memories
+  3. GET routes with specific sub-paths (/stats, /export, /audit/:memoryId)
+  4. GET catch-all specific ID route (/:memoryId)
+  5. GET catch-all list route (/)
+  6. PATCH and DELETE routes
+- Added comments to each route explaining definition order importance
+
+**Files Changed**:
+- `apps/backend/src/routes/memories.ts` (reorganized 350+ LOC)
+
+**Commit**: `36a0299` — "fix(routing): reorganize memories routes to prevent Express route matching conflicts"
+
+**Verification**: ✅ Lint, ✅ Type-check, ✅ Build, ✅ Audit
+
+---
+
 ## Phase 2: Stability Fixes (P1) — 1–2 weeks (pending Phase 1)
 
 Core infrastructure and data flow fixes.
@@ -160,26 +185,28 @@ Technical debt and dead code removal.
 
 | Metric | Count |
 |--------|-------|
-| Total Fixes Completed | 5 |
+| Total Fixes Completed | 6 |
 | Security Issues Resolved | 4 |
 | Code Duplications Removed | 88+ LOC |
-| Commits Created | 5 |
-| Files Modified | 6 |
+| Routing Bugs Fixed | 1 |
+| Architecture Improvements | 1 |
+| Commits Created | 6 |
+| Files Modified | 7 |
 | Files Deleted | 1 |
+| Total LOC Reorganized | 350+ |
 | Verification Gate Passes | 100% (in environment) |
 
 ---
 
 ## Next Steps
 
-1. **Fix 1.6**: Express Route Ordering Bug (routes/memories.ts)
-   - Estimated: 1 hour
-   - Issue: POST routes before catch-all GET/:id creates routing conflicts
-   
-2. **Fix 1.7**: Export/Import Multi-Tenant IDOR
+1. **Fix 1.7**: Export/Import Multi-Tenant IDOR (routes/export.ts, routes/import.ts)
    - Estimated: 2 hours
    - Issue: Export/import routes don't validate workspace access
+   - Status: Ready to begin
 
-3. **Transition to Phase 2** after all Phase 1 fixes complete
+2. **Transition to Phase 2** after all Phase 1 fixes complete
    - Requires BullMQ queue infrastructure
    - Unblocks tool execution and background job processing
+
+**Phase 1 Progress**: 6 of 7 fixes complete (86% — final fix is Export/Import IDOR)
