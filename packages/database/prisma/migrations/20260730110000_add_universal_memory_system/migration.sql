@@ -1,6 +1,11 @@
 -- Universal Memory System (Release 3)
 -- Migration: Add provider-independent memory storage, versioning, permissions, and audit trails
 
+-- Create enum types
+CREATE TYPE "MemoryType" AS ENUM ('SHORT_TERM', 'LONG_TERM', 'SEMANTIC', 'EPISODIC', 'WORKSPACE', 'CONVERSATION', 'PINNED', 'MANUAL', 'AUTOMATIC');
+CREATE TYPE "MemoryStatus" AS ENUM ('ACTIVE', 'ARCHIVED', 'DELETED', 'EXPIRED', 'CONSOLIDATING', 'DECAYING');
+CREATE TYPE "MemoryPermission" AS ENUM ('PRIVATE', 'WORKSPACE', 'SHARED', 'PUBLIC');
+
 -- Create Memory table (main memory records)
 CREATE TABLE "Memory" (
     "id" TEXT NOT NULL PRIMARY KEY,
@@ -9,7 +14,7 @@ CREATE TABLE "Memory" (
     "userId" TEXT NOT NULL,
     "content" TEXT NOT NULL,
     "summary" TEXT,
-    "type" TEXT NOT NULL,
+    "type" "MemoryType" NOT NULL,
     "category" TEXT,
     "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "importance" DOUBLE PRECISION NOT NULL DEFAULT 0.5,
@@ -19,8 +24,8 @@ CREATE TABLE "Memory" (
     "isArchived" BOOLEAN NOT NULL DEFAULT false,
     "isPinned" BOOLEAN NOT NULL DEFAULT false,
     "isManual" BOOLEAN NOT NULL DEFAULT true,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
-    "permission" TEXT NOT NULL DEFAULT 'PRIVATE',
+    "status" "MemoryStatus" NOT NULL DEFAULT 'ACTIVE',
+    "permission" "MemoryPermission" NOT NULL DEFAULT 'PRIVATE',
     "sharedWith" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "version" INTEGER NOT NULL DEFAULT 1,
     "parentId" TEXT,
