@@ -1,7 +1,8 @@
 import { Router, type Response } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { logger } from '../utils/logger'
-import { messageGenerationService } from '../services/messageGeneration.service'
+import { conversationGenerationService } from '../services/conversationGeneration.service'
+import { prisma } from '@synora/database'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -40,41 +41,41 @@ router.get(
         }
       }
 
-      let inputTokens = 0
-      let outputTokens = 0
-
       try {
         logger.info(`[streaming] Starting stream for message ${messageId} in conversation ${conversationId}`)
 
-        // Use the generation service to stream tokens
-        for await (const token of messageGenerationService.generateResponseStream(
-          req.userId,
+        // Fetch the user message that triggered this generation
+        const userMessage = await prisma.message.findUniqueOrThrow({
+          where: { id: messageId as string },
+        })
+
+        // Call the conversation generation service (creates new ASSISTANT message with parentId)
+        const { assistantMessage, usage } = await conversationGenerationService.generateReply(
           conversationId,
-          messageId
-        )) {
-          sendEvent('token', { token: token.token })
+          userMessage
+        )
 
-          // Track token counts from the first and last token
-          if (token.inputTokens !== undefined) {
-            inputTokens = token.inputTokens
+        // Stream the response content word-by-word to simulate token streaming
+        const words = assistantMessage.content.split(/(\s+)/)
+        for (const word of words) {
+          if (word && word.trim()) {
+            sendEvent('token', { token: word })
+            // Small delay to prevent overwhelming the client
+            await new Promise(resolve => setTimeout(resolve, 5))
+          } else if (word === ' ') {
+            sendEvent('token', { token: ' ' })
           }
-          if (token.outputTokens !== undefined) {
-            outputTokens = token.outputTokens
-          }
-
-          // Small delay to prevent overwhelming the client
-          await new Promise(resolve => setTimeout(resolve, 5))
         }
 
-        // Send completion event
+        // Send completion event with usage data
         sendEvent('done', {
-          messageId,
-          inputTokens,
-          outputTokens,
+          messageId: assistantMessage.id,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
           completedAt: new Date().toISOString(),
         })
 
-        logger.info(`[streaming] Completed stream for message ${messageId}`)
+        logger.info(`[streaming] Completed stream for message ${assistantMessage.id}`)
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Generation failed'
         logger.error(`[streaming] Stream error for message ${messageId}`, { error })

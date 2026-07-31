@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { ForbiddenException, NotFoundException } from '@synora/shared';
 import { prisma } from '@synora/database';
-import type { WorkspaceRole, Permission } from '../services/permissions';
+import type { Permission } from '../services/permissions';
 import { hasPermission as roleHasPermission } from '../services/permissions';
 import { logger } from '../utils/logger';
 import { AuthRequest } from './auth';
