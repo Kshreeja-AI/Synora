@@ -8,6 +8,7 @@ const router: Router = Router({ mergeParams: true })
 
 const createPromptSchema = z.object({
   name: z.string().min(1).max(255),
+  description: z.string().optional(),
   content: z.string().min(1),
   category: z.string().optional(),
   tags: z.array(z.string()).optional(),
@@ -16,11 +17,16 @@ const createPromptSchema = z.object({
 
 const updatePromptSchema = z.object({
   name: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
   content: z.string().min(1).optional(),
   category: z.string().optional(),
   tags: z.array(z.string()).optional(),
   isPublic: z.boolean().optional(),
   isFavorite: z.boolean().optional(),
+})
+
+const ratePromptSchema = z.object({
+  rating: z.number().min(0).max(5),
 })
 
 router.post('/:workspaceId/prompts', authMiddleware, async (req: AuthRequest, res, next) => {
@@ -99,6 +105,41 @@ router.post('/:workspaceId/prompts/:promptId/use', authMiddleware, async (req: A
 
     const template = await promptTemplateService.incrementUsage(promptId)
     res.json(createApiResponse({ usageCount: template.usageCount }))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/prompts/:promptId/version', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { promptId } = req.params
+    const input = updatePromptSchema.parse(req.body)
+
+    const prompt = await promptTemplateService.createVersion(req.userId!, promptId, input)
+    res.status(201).json(createApiResponse(prompt))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/prompts/:promptId/rate', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { promptId } = req.params
+    const { rating } = ratePromptSchema.parse(req.body)
+
+    const prompt = await promptTemplateService.ratePrompt(req.userId!, promptId, rating)
+    res.json(createApiResponse(prompt))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/prompts/:promptId/favorite', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { promptId } = req.params
+
+    const prompt = await promptTemplateService.toggleFavorite(req.userId!, promptId)
+    res.json(createApiResponse(prompt))
   } catch (error) {
     next(error)
   }

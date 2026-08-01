@@ -9,10 +9,9 @@ const router: Router = Router({ mergeParams: true })
 const createConvTemplateSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional(),
-  initialMessages: z.array(z.object({
-    role: z.string(),
-    content: z.string(),
-  })).min(1),
+  systemPrompt: z.string().min(1),
+  initialUserMessage: z.string().optional(),
+  suggestedFollowUps: z.array(z.string()).optional(),
   category: z.string().optional(),
   isPublic: z.boolean().optional(),
 })
@@ -20,10 +19,9 @@ const createConvTemplateSchema = z.object({
 const updateConvTemplateSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().optional(),
-  initialMessages: z.array(z.object({
-    role: z.string(),
-    content: z.string(),
-  })).optional(),
+  systemPrompt: z.string().min(1).optional(),
+  initialUserMessage: z.string().optional(),
+  suggestedFollowUps: z.array(z.string()).optional(),
   category: z.string().optional(),
   isPublic: z.boolean().optional(),
 })

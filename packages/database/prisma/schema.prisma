@@ -78,6 +78,10 @@ model User {
   createdToolSecrets ToolSecret[]
   toolSecretAuditLogs ToolSecretAuditLog[]
 
+  // Prompt & template creation
+  createdPrompts    PromptTemplate[] @relation("CreatedPrompts")
+  createdTemplates  ConversationTemplate[] @relation("CreatedTemplates")
+
   // Universal Search System
   searchQueries     SearchQuery[]
   savedSearches     SavedSearch[]
@@ -1101,41 +1105,63 @@ model ConversationTag {
 
 model PromptTemplate {
   id                String    @id @default(cuid())
-  workspaceId       String?
+  workspaceId       String
   name              String
+  description       String?
   content           String
   category          String?
   tags              String[]
   isPublic          Boolean   @default(false)
   usageCount        Int       @default(0)
+  rating            Float     @default(0)
   isFavorite        Boolean   @default(false)
 
-  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // Versioning
+  parentId          String?
+  parent            PromptTemplate? @relation(name: "PromptVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  children          PromptTemplate[] @relation(name: "PromptVersions")
+  version           Int       @default(1)
+
+  // Ownership
+  createdBy         String
+  creator           User      @relation(name: "CreatedPrompts", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([workspaceId])
+  @@index([createdBy])
   @@index([isPublic])
+  @@index([category])
 }
 
 model ConversationTemplate {
   id                String    @id @default(cuid())
-  workspaceId       String?
+  workspaceId       String
   name              String
   description       String?
-  initialMessages   Json
+  systemPrompt      String
+  initialUserMessage String?
+  suggestedFollowUps String[]
   category          String?
   isPublic          Boolean   @default(false)
   usageCount        Int       @default(0)
 
-  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // Ownership
+  createdBy         String
+  creator           User      @relation(name: "CreatedTemplates", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([workspaceId])
+  @@index([createdBy])
   @@index([isPublic])
+  @@index([category])
 }
 
 model AIMemory {

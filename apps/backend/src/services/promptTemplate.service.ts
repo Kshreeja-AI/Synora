@@ -1,10 +1,12 @@
 import { prisma } from '@synora/database'
 import { PromptTemplate, Prisma } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
+import { logger } from '../utils/logger'
 import { requirePermission } from './permissions'
 
 export interface CreatePromptTemplateInput {
   name: string
+  description?: string
   content: string
   category?: string
   tags?: string[]
@@ -13,6 +15,7 @@ export interface CreatePromptTemplateInput {
 
 export interface UpdatePromptTemplateInput {
   name?: string
+  description?: string
   content?: string
   category?: string
   tags?: string[]
@@ -39,16 +42,28 @@ export class PromptTemplateService {
     }
     requirePermission(member.role, 'prompt:manage')
 
-    return prisma.promptTemplate.create({
+    const prompt = await prisma.promptTemplate.create({
       data: {
         workspaceId,
         name: input.name,
+        description: input.description,
         content: input.content,
         category: input.category,
         tags: input.tags || [],
         isPublic: input.isPublic || false,
+        createdBy: userId,
+        version: 1,
       },
     })
+
+    logger.info('[PromptTemplateService] Prompt created', {
+      promptId: prompt.id,
+      workspaceId,
+      userId,
+      isPublic: prompt.isPublic,
+    })
+
+    return prompt
   }
 
   async getById(userId: string, id: string): Promise<PromptTemplate | null> {
@@ -188,6 +203,84 @@ export class PromptTemplateService {
     return prisma.promptTemplate.update({
       where: { id },
       data: { usageCount: { increment: 1 } },
+    })
+  }
+
+  async createVersion(
+    userId: string,
+    promptId: string,
+    input: UpdatePromptTemplateInput
+  ): Promise<PromptTemplate> {
+    const prompt = await prisma.promptTemplate.findUnique({
+      where: { id: promptId },
+    })
+
+    if (!prompt) {
+      throw new NotFoundException('Prompt not found')
+    }
+
+    if (prompt.createdBy !== userId) {
+      throw new ForbiddenException('You do not have permission to version this prompt')
+    }
+
+    const newVersion = await prisma.promptTemplate.create({
+      data: {
+        name: input.name ?? prompt.name,
+        description: input.description ?? prompt.description,
+        content: input.content ?? prompt.content,
+        category: input.category ?? prompt.category,
+        tags: input.tags ?? prompt.tags,
+        isPublic: input.isPublic ?? prompt.isPublic,
+        workspaceId: prompt.workspaceId,
+        createdBy: userId,
+        parentId: promptId,
+        version: prompt.version + 1,
+      },
+    })
+
+    logger.info('[PromptTemplateService] Prompt version created', {
+      promptId,
+      versionId: newVersion.id,
+      version: newVersion.version,
+      userId,
+    })
+
+    return newVersion
+  }
+
+  async ratePrompt(userId: string, promptId: string, rating: number): Promise<PromptTemplate> {
+    if (rating < 0 || rating > 5) {
+      throw new Error('Rating must be between 0 and 5')
+    }
+
+    const prompt = await prisma.promptTemplate.findUnique({
+      where: { id: promptId },
+    })
+
+    if (!prompt) {
+      throw new NotFoundException('Prompt not found')
+    }
+
+    return prisma.promptTemplate.update({
+      where: { id: promptId },
+      data: { rating },
+    })
+  }
+
+  async toggleFavorite(userId: string, promptId: string): Promise<PromptTemplate> {
+    const prompt = await prisma.promptTemplate.findUnique({
+      where: { id: promptId },
+    })
+
+    if (!prompt) {
+      throw new NotFoundException('Prompt not found')
+    }
+
+    return prisma.promptTemplate.update({
+      where: { id: promptId },
+      data: {
+        isFavorite: !prompt.isFavorite,
+      },
     })
   }
 }
