@@ -11,7 +11,7 @@ import { prisma } from '@synora/database';
 // enum would silently desync from the actual column values.
 import { StreamingJobStatus } from '@prisma/client';
 import { logger } from '../../utils/logger';
-import { StreamingError, TimeoutError, RateLimitError } from './types';
+import { TimeoutError, RateLimitError } from './types';
 
 export { StreamingJobStatus };
 

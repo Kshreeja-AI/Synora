@@ -6,6 +6,7 @@ import { logger } from '../utils/logger';
 const CSRF_TOKEN_LENGTH = 32;
 const CSRF_COOKIE_NAME = 'X-CSRF-Token';
 const CSRF_HEADER_NAME = 'X-CSRF-Token';
+const TEST_CSRF_TOKEN = 'test-csrf-token-for-testing-only-do-not-use-in-production';
 
 /**
  * Generates a cryptographically secure CSRF token.
@@ -27,13 +28,15 @@ export function generateCsrfToken(): string {
  * This validates they match, preventing CSRF attacks while allowing
  * stateless operation (no server-side token storage needed).
  *
- * Note: CSRF protection is disabled in test and development environments
- * to allow flexibility during development and testing.
+ * In test environments, a special test CSRF token is recognized to allow
+ * tests to opt-in to CSRF bypass without affecting production security.
  */
 export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
-  // Skip CSRF protection in test and development environments
-  const skipCsrf = ['test', 'development'].includes(process.env.NODE_ENV || '');
-  if (skipCsrf) {
+  // Check if this is a test request using special test token
+  const isTestRequest = process.env.NODE_ENV === 'test' &&
+    (req.headers[CSRF_HEADER_NAME.toLowerCase()] === TEST_CSRF_TOKEN ||
+     (req.body as Record<string, unknown>)?._csrf === TEST_CSRF_TOKEN);
+  if (isTestRequest) {
     return next();
   }
 
@@ -118,3 +121,9 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
 
   next();
 }
+
+/**
+ * Test helper: CSRF token that bypasses protection in test environment only.
+ * Use in test requests by setting the X-CSRF-Token header or _csrf body field.
+ */
+export { TEST_CSRF_TOKEN };

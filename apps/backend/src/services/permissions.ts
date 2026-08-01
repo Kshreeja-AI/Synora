@@ -1,6 +1,8 @@
 import type { WorkspaceRole } from '@synora/database';
 import { ForbiddenException } from '@synora/shared';
 
+export type { WorkspaceRole };
+
 /**
  * The single source of truth for what each workspace role can do. Every
  * route that mutates a workspace-scoped resource calls `requirePermission`

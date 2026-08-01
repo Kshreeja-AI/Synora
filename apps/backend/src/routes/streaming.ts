@@ -10,27 +10,26 @@ import { requirePermission } from '../services/permissions';
 import { logger } from '../utils/logger';
 import { Redis } from 'ioredis';
 
-const router: Router = Router();
+// mergeParams: true so `:workspaceId`/`:conversationId` from the mounting
+// router (this is mounted at `/api/workspaces`, matching every other
+// conversation-scoped route file) are visible on `req.params`.
+const router: Router = Router({ mergeParams: true });
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 
 /**
- * GET /api/conversations/:conversationId/stream
+ * GET /api/workspaces/:workspaceId/conversations/:conversationId/stream
  * Subscribe to message generation stream
  */
 router.get(
-  '/api/conversations/:conversationId/stream',
+  '/:workspaceId/conversations/:conversationId/stream',
   authMiddleware,
   async (req: AuthRequest, res: Response) => {
-    const { conversationId } = req.params;
-    const { messageId, workspaceId } = req.query;
+    const { workspaceId, conversationId } = req.params;
+    const { messageId } = req.query;
 
     try {
       if (!messageId || typeof messageId !== 'string') {
         return res.status(400).json({ error: 'messageId required' });
-      }
-
-      if (!workspaceId || typeof workspaceId !== 'string') {
-        return res.status(400).json({ error: 'workspaceId required' });
       }
 
       // Matches message.service.ts's own convention: reading messages
@@ -121,11 +120,11 @@ router.get(
 );
 
 /**
- * POST /api/conversations/:conversationId/stream/:jobId/cancel
+ * POST /api/workspaces/:workspaceId/conversations/:conversationId/stream/:jobId/cancel
  * Cancel an in-flight stream
  */
 router.post(
-  '/api/conversations/:conversationId/stream/:jobId/cancel',
+  '/:workspaceId/conversations/:conversationId/stream/:jobId/cancel',
   authMiddleware,
   async (req: AuthRequest, res: Response) => {
     const { conversationId, jobId } = req.params;

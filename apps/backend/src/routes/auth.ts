@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
 import {
@@ -30,6 +30,13 @@ import {
 } from '../mail';
 import { logger } from '../utils/logger';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
+import {
+  loginLimiter,
+  registerLimiter,
+  forgotPasswordLimiter,
+  refreshTokenLimiter,
+} from '../middleware/authRateLimit';
+import { authInputValidator } from '../middleware/inputValidation';
 
 const router: Router = Router();
 
@@ -43,14 +50,6 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
   rememberMe: z.boolean().optional(),
-});
-
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
-});
-
-const logoutSchema = z.object({
-  refreshToken: z.string().min(1),
 });
 
 const forgotPasswordSchema = z.object({
@@ -77,13 +76,32 @@ function toAuthedUser(user: { id: string; email: string; name: string | null; em
   return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified !== null };
 }
 
+function setAuthCookies(
+  res: Response,
+  tokens: { accessToken: string; refreshToken: string }
+): void {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie('accessToken', tokens.accessToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    maxAge: 15 * 60 * 1000, // 15 minutes
+    path: '/',
+  });
+  res.cookie('refreshToken', tokens.refreshToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/',
+  });
+}
+
 function authPayload(
-  tokens: { accessToken: string; refreshToken: string },
+  _tokens: { accessToken: string; refreshToken: string },
   user?: AuthedUser
 ): Record<string, unknown> {
   return {
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
     ...(user ? { user } : {}),
   };
 }
@@ -120,7 +138,7 @@ async function notifyBestEffort(label: string, notify: () => Promise<unknown>): 
   }
 }
 
-router.post('/register', async (req, res, next) => {
+router.post('/register', authInputValidator, registerLimiter, async (req, res, next) => {
   try {
     const { email, password, name } = registerSchema.parse(req.body);
 
@@ -145,13 +163,14 @@ router.post('/register', async (req, res, next) => {
       sendVerificationEmail({ to: user.email, name: user.name, token: verificationToken })
     );
 
+    setAuthCookies(res, tokens);
     res.status(201).json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', authInputValidator, loginLimiter, async (req, res, next) => {
   try {
     const { email, password, rememberMe } = loginSchema.parse(req.body);
 
@@ -200,6 +219,7 @@ router.post('/login', async (req, res, next) => {
       { ...deviceMetadata(req), rememberMe }
     );
 
+    setAuthCookies(res, tokens);
     res.json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
@@ -210,16 +230,22 @@ router.post('/login', async (req, res, next) => {
  * Exchange a valid refresh token for a new access+refresh pair, rotating the
  * refresh token. An unknown, revoked, or expired token yields 401 — the
  * client must then re-authenticate.
+ *
+ * Reads refresh token from HttpOnly cookie (preferred) or request body (for backwards compatibility).
  */
-router.post('/refresh', async (req, res, next) => {
+router.post('/refresh', authInputValidator, refreshTokenLimiter, async (req, res, next) => {
   try {
-    const { refreshToken } = refreshSchema.parse(req.body);
+    const refreshToken = req.cookies['refreshToken'] || req.body.refreshToken;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token missing or expired');
+    }
 
     const tokens = await rotateTokens(refreshToken, deviceMetadata(req));
     if (!tokens) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    setAuthCookies(res, tokens);
     res.json(createApiResponse(authPayload(tokens)));
   } catch (error) {
     next(error);
@@ -231,11 +257,18 @@ router.post('/refresh', async (req, res, next) => {
  * short-lived access token expires within minutes, and without a live refresh
  * token no new access token can be minted. Idempotent — a stale or already
  * revoked token still returns success.
+ *
+ * Reads refresh token from HttpOnly cookie (preferred) or request body (for backwards compatibility).
+ * Clears auth cookies after logout.
  */
-router.post('/logout', async (req, res, next) => {
+router.post('/logout', authInputValidator, async (req, res, next) => {
   try {
-    const { refreshToken } = logoutSchema.parse(req.body);
-    await revokeRefreshToken(refreshToken);
+    const refreshToken = req.cookies['refreshToken'] || req.body.refreshToken;
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken);
+    }
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
     res.json(createApiResponse({ message: 'Logged out successfully' }));
   } catch (error) {
     next(error);
@@ -246,7 +279,7 @@ router.post('/logout', async (req, res, next) => {
  * Never reveals whether an email is registered: the response shape and
  * status code are identical whether or not a matching account exists.
  */
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', authInputValidator, forgotPasswordLimiter, async (req, res, next) => {
   try {
     const { email } = forgotPasswordSchema.parse(req.body);
 
@@ -274,7 +307,7 @@ router.post('/forgot-password', async (req, res, next) => {
  * live token (potentially the attacker's, if this reset was defensive)
  * must not survive it.
  */
-router.post('/reset-password', async (req, res, next) => {
+router.post('/reset-password', authInputValidator, async (req, res, next) => {
   try {
     const { token, newPassword } = resetPasswordSchema.parse(req.body);
 
@@ -307,7 +340,7 @@ router.post('/reset-password', async (req, res, next) => {
   }
 });
 
-router.post('/verify-email', async (req, res, next) => {
+router.post('/verify-email', authInputValidator, async (req, res, next) => {
   try {
     const { token } = verifyEmailSchema.parse(req.body);
 
@@ -331,7 +364,7 @@ router.post('/verify-email', async (req, res, next) => {
 });
 
 /** Requires auth: resend to whoever is asking, never to an arbitrary email address. */
-router.post('/resend-verification', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/resend-verification', authInputValidator, authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
     if (!user) {
@@ -378,7 +411,7 @@ router.delete('/sessions/:id', authMiddleware, async (req: AuthRequest, res, nex
 });
 
 /** "Log out everywhere" — revokes every active session, including the caller's own. */
-router.post('/logout-all', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/logout-all', authInputValidator, authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const count = await revokeAllSessions(req.userId!);
     res.json(createApiResponse({ revokedCount: count }));

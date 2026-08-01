@@ -721,6 +721,13 @@ before the first provider call, `attempt` incremented before each retry,
 streaming transport — see `M2_IMPLEMENTATION_PLAN.md` §12 for the
 async/SSE path these fields are already shaped for.
 
+Release 3 also added a Universal Memory System, a Universal Tool Calling
+Engine, and a Universal Search System — dozens of further models
+(`Memory*`, `Tool*`, `Search*`) live in
+`packages/database/prisma/schema.prisma` alongside the chat models above;
+treat the schema file as the definitive source for their exact fields
+rather than reproducing them here.
+
 ### Other models
 The following exist in `packages/database/prisma/schema.prisma` and
 aren't reproduced in full here — treat the schema file as the definitive

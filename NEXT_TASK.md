@@ -1,9 +1,11 @@
 > **Merge note (2026-07-31):** this file describes `feature/m3-streaming-engine`'s
 > (PR #40) own pre-merge roadmap. That branch has since been merged onto
 > `SYNORA`, which already shipped billing/workspace (PR #37) independently
-> of the M6 described below — see `CURRENT_STATE.md` for the merge
-> reconciliation note. Treat the milestone numbering here as this
-> branch's own history, not the canonical `SYNORA` roadmap.
+> of the M6 described below, and then `claude/synora-ai-platform-h5q0k2`
+> (PR #38, Release 3 M1-M3 chat platform backend + universal tool calling
+> engine) was merged on top of that — see `CURRENT_STATE.md` for both merge
+> reconciliation notes. Treat the milestone numbering here as historical
+> narrative, not the canonical up-to-date roadmap.
 
 # NEXT TASK — Release 2, Milestone 7: Media Generation, Asset Manager, Async Queue
 
@@ -13,7 +15,11 @@ typecheck, tests, build all green → commit → push → green CI), replace
 this file's content with the task named under "Next task after this one".
 
 **Status:** M6 (Billing) is COMPLETE and MERGED. Release 2 production gates all
-green. M7 is ready to begin.
+green. Release 3 M1-M3 (chat platform backend + universal tool calling engine,
+PR #38) has also just been merged onto `SYNORA` — see `CURRENT_STATE.md`'s
+"Release 3" section for what that added. M7 (below) is ready to begin; Release 3
+M4+ (frontend for chat/tools) is also queued and can be sequenced against M7 by
+whoever picks this up next.
 
 ---
 

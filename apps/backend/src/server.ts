@@ -4,17 +4,17 @@ import { logger } from './utils/logger';
 import { prisma } from '@synora/database';
 import { initializeApp } from './index';
 import { AppConfig } from './config';
+import { realtimeService } from './services/realtime.service';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
- * future real-time layer (WebSocket presence/collaboration) has something
- * to attach to (`new WebSocketServer({ server })` or a manual `upgrade`
- * listener) without restructuring startup again. `app.listen(...)` already
- * creates and returns exactly this server — this only stops discarding it.
+ * real-time layer (WebSocket presence/collaboration) can attach to it.
+ * `app.listen(...)` already creates and returns exactly this server.
  */
 async function startServer(app: Express, config: AppConfig): Promise<Server> {
   return new Promise<Server>((resolve) => {
     const server = app.listen(config.server.port, '0.0.0.0', () => {
+      realtimeService.initialize(server);
       logger.info(`🚀 Server running at http://localhost:${config.server.port}`);
       logger.info(`📚 API available at http://localhost:${config.server.port}/api`);
       logger.info(`🔐 Stage: ${config.stage} | Modes: ${JSON.stringify(config.modes)}`);

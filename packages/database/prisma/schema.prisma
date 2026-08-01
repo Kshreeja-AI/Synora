@@ -63,6 +63,22 @@ model User {
   // Conversation folders created by this user
   conversationFolders ConversationFolder[]
 
+  // Memory system
+  memories      Memory[]
+  memoryAuditLogs MemoryAuditLog[]
+  memoryExports MemoryExport[]
+
+  // Tool calling engine
+  createdTools      ToolDefinition[]
+  toolExecutions    ToolExecution[] @relation("UserToolExecutions")
+  toolAuditLogs     ToolAuditLog[]
+  createdToolSecrets ToolSecret[]
+  toolSecretAuditLogs ToolSecretAuditLog[]
+
+  // Universal Search System
+  searchQueries     SearchQuery[]
+  savedSearches     SavedSearch[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -183,6 +199,26 @@ model Workspace {
   promptTemplates     PromptTemplate[]
   conversationTemplates ConversationTemplate[]
   tools               Tool[]
+
+  // Release 3: Universal Memory System
+  memories            Memory[]
+  memoryQuota         MemoryQuota?
+  memoryExports       MemoryExport[]
+
+  // Release 3: Universal Tool Calling Engine
+  toolDefinitions     ToolDefinition[]
+  toolExecutions      ToolExecution[]
+  toolQuota           ToolQuota?
+  toolSecrets         ToolSecret[]
+  toolSecretAuditLogs ToolSecretAuditLog[]
+
+  // Release 3: Universal Search System
+  searchIndices       SearchIndex[]
+  searchQueries       SearchQuery[]
+  savedSearches       SavedSearch[]
+  searchSuggestions   SearchSuggestion[]
+  searchRankings      SearchRanking[]
+  searchAnalytics     SearchAnalytics[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -840,6 +876,8 @@ model Conversation {
   shared            SharedConversation[]
   usage             ConversationUsage?
   toolCalls         ToolCall[]
+  toolExecutions    ToolExecution[]
+  memories          Memory[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1165,4 +1203,865 @@ model ConversationUsage {
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
+}
+
+// Universal Memory System (Release 3)
+// Provider-independent long-term memory engine for conversations
+// Supports billions of memory records across workspaces
+
+model Memory {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  conversationId    String?
+  userId            String
+
+  // Content
+  content           String
+  summary           String?
+  type              MemoryType
+  category          String?
+  tags              String[]        @default([])
+
+  // Metadata
+  importance        Float           @default(0.5)    // 0-1 score
+  decayRate         Float           @default(0.01)   // Daily decay percentage
+  lastAccessedAt    DateTime?
+  accessCount       Int             @default(0)
+
+  // Status
+  isArchived        Boolean         @default(false)
+  isPinned          Boolean         @default(false)
+  isManual          Boolean         @default(true)   // vs auto-generated
+  status            MemoryStatus    @default(ACTIVE)
+
+  // Permissions
+  permission        MemoryPermission @default(PRIVATE)
+  sharedWith        String[]        @default([])     // userIds
+
+  // Versioning & history
+  version           Int             @default(1)
+  parentId          String?         // Previous version
+  parent            Memory?         @relation("MemoryVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  versions          Memory[]        @relation("MemoryVersions")
+
+  // Relations
+  relatedMemories   MemoryRelation[] @relation("MemoryFrom")
+  relatedBy         MemoryRelation[] @relation("MemoryTo")
+
+  // Embedding metadata (for vector DB)
+  embeddingId       String?         // Vector DB record ID (Pinecone, Weaviate, etc.)
+  embeddingModel    String?         // e.g., "text-embedding-3-small"
+  embeddingVersion  Int             @default(0)
+  embeddingRefreshNeeded Boolean    @default(false)
+
+  // Encryption
+  isEncrypted       Boolean         @default(false)
+  encryptionKey     String?         @db.Text // Encrypted key reference
+
+  // Lifecycle
+  expiresAt         DateTime?
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation      Conversation?   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  metadata          MemoryMetadata?
+  auditLogs         MemoryAuditLog[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+  @@index([conversationId])
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([isPinned])
+  @@index([importance])
+  @@index([createdAt])
+  @@index([workspaceId, conversationId, type])
+  @@index([workspaceId, userId, status])
+}
+
+model MemoryMetadata {
+  id                String    @id @default(cuid())
+  memoryId          String    @unique
+
+  // Memory type specific metadata
+  source            String?   // Where memory came from (e.g., "conversation", "tool", "manual")
+  context           Json?     // Context at time of creation
+  confidence        Float     @default(1.0)  // How confident we are in this memory
+
+  // Consolidation state
+  isConsolidated    Boolean   @default(false)
+  consolidatedAt    DateTime?
+  consolidationScore Float?   // How well consolidated (0-1)
+
+  // Metrics
+  relevanceScore    Float     @default(1.0)
+  retrievalCount    Int       @default(0)
+  lastRetrievedAt   DateTime?
+
+  // Analytics
+  tokens            Int       @default(0)
+  size              Int       @default(0)  // bytes
+
+  memory            Memory    @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model MemoryRelation {
+  id                String    @id @default(cuid())
+  fromId            String
+  toId              String
+  relationType      String    // "related_to", "references", "contradicts", "expands", etc.
+  strength          Float     @default(1.0)  // 0-1 relation strength
+
+  from              Memory    @relation("MemoryFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to                Memory    @relation("MemoryTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([fromId, toId, relationType])
+  @@index([fromId])
+  @@index([toId])
+}
+
+model MemoryAuditLog {
+  id                String    @id @default(cuid())
+  memoryId          String
+  userId            String
+
+  action            String    // "created", "updated", "accessed", "consolidated", "archived", "deleted", etc.
+  changes           Json?     // What changed
+  reason            String?
+  metadata          Json?
+
+  memory            Memory    @relation(fields: [memoryId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([memoryId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model MemoryQuota {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+
+  // Quotas (adjustable per plan)
+  maxMemories       Int       @default(10000)
+  maxTokens         Int       @default(1000000)
+  maxStorage        BigInt    @default(1000000000)  // 1GB
+
+  // Current usage
+  currentMemories   Int       @default(0)
+  currentTokens     Int       @default(0)
+  currentStorage    BigInt    @default(0)
+
+  // Limits
+  maxConsolidationsPerDay Int @default(100)
+  consolidationsUsedToday Int @default(0)
+  lastResetAt       DateTime  @default(now())
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model MemoryCache {
+  id                String    @id @default(cuid())
+  memoryId          String    @unique
+
+  // Cache metadata
+  cachedAt          DateTime  @default(now())
+  expiresAt         DateTime
+  hits              Int       @default(0)
+  lastHitAt         DateTime?
+
+  // Serialized content (Redis backup)
+  serialized        String    @db.Text
+}
+
+enum MemoryType {
+  // Duration-based
+  SHORT_TERM        // Temporary, active context (minutes to hours)
+  LONG_TERM         // Persistent knowledge (weeks to indefinite)
+
+  // Knowledge-based
+  SEMANTIC          // Facts, concepts, relationships
+  EPISODIC          // Events, experiences, conversations
+
+  // Scope-based
+  WORKSPACE         // Workspace-level knowledge
+  CONVERSATION      // Conversation-specific context
+
+  // Management-based
+  PINNED            // User explicitly pinned
+  MANUAL            // User manually created
+  AUTOMATIC         // System auto-generated from conversations/tools
+}
+
+enum MemoryStatus {
+  ACTIVE            // Normal, retrievable
+  ARCHIVED          // Hidden but preserved
+  DELETED           // Soft-deleted, awaiting expiry
+  EXPIRED           // TTL expired
+  CONSOLIDATING     // Being consolidated/summarized
+  DECAYING          // Importance below threshold
+}
+
+enum MemoryPermission {
+  PRIVATE           // Only user can access
+  WORKSPACE         // All workspace members can access
+  SHARED            // Specific users can access
+  PUBLIC            // All authenticated users can access
+}
+
+// Future workspace expansion
+model MemoryExport {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  format            String    // "json", "markdown", "csv", etc.
+  filteredBy        String?   // JSON query used to filter memories
+
+  storageKey        String    // S3 or object storage path
+  size              Int
+
+  status            String    @default("pending")
+  completedAt       DateTime?
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([userId])
+}
+
+// Release 3: Universal Tool Calling Engine
+// Production-grade tool execution platform with streaming, retry, circuit breaker, sandboxing
+
+model ToolDefinition {
+  id                String          @id @default(cuid())
+  workspaceId       String?         // NULL for global tools
+  name              String
+  displayName       String
+  description       String          @db.Text
+  category          String          // e.g., "http", "database", "file", "python", "search"
+  type              ToolType        // HTTP, GraphQL, Database, Search, File, Browser, Python, Webhook, MCP
+
+  // Schema & Validation
+  inputSchema       Json            // JSON Schema for input validation
+  outputSchema      Json?           // JSON Schema for output validation
+
+  // Configuration
+  config            Json            // Provider-specific configuration
+  secrets           String[]        @default([])  // Secret keys used by this tool
+
+  // Capabilities & Permissions
+  capabilities      String[]        @default([])  // e.g., ["read", "write", "execute"]
+  permission        ToolPermission  @default(PRIVATE)
+  allowedRoles      String[]        @default([])  // Empty = all roles allowed
+
+  // Limits & Quotas
+  maxParallelCalls  Int             @default(10)
+  rateLimit         Int?            // Calls per minute, NULL = unlimited
+  timeout           Int             @default(30000)  // ms
+  maxRetries        Int             @default(3)
+
+  // Flags
+  isActive          Boolean         @default(true)
+  isAsync           Boolean         @default(false)
+  supportsStreaming Boolean         @default(false)
+  requiresApproval  Boolean         @default(false)  // Human approval before execution
+
+  // Versioning & History
+  version           Int             @default(1)
+  parentId          String?         // Previous version
+  parent            ToolDefinition? @relation("ToolVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  versions          ToolDefinition[] @relation("ToolVersions")
+
+  // Relations
+  workspace         Workspace?      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  executions        ToolExecution[]
+  auditLogs         ToolAuditLog[]
+  dependencies      ToolDependency[] @relation("ToolFrom")
+  dependents        ToolDependency[] @relation("ToolTo")
+  metrics           ToolMetrics?
+  webhooks          ToolWebhook[]
+  toolSecrets       ToolSecret[]
+
+  createdBy         String
+  createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@index([category])
+  @@index([type])
+  @@index([isActive])
+  @@index([createdBy])
+}
+
+enum ToolType {
+  HTTP
+  GraphQL
+  Database
+  Search
+  File
+  Browser
+  Python
+  Webhook
+  MCP
+  Custom
+}
+
+enum ToolPermission {
+  PRIVATE         // Only tool owner
+  WORKSPACE       // All workspace members
+  SHARED          // Specific users
+  PUBLIC          // All authenticated users
+}
+
+// Tool dependencies (e.g., Tool A depends on output of Tool B)
+model ToolDependency {
+  id                String          @id @default(cuid())
+  fromId            String          // Tool that depends on output
+  toId              String          // Tool that must run first
+
+  // Dependency configuration
+  passOutputAs      String?         // Parameter name to pass output to
+  transformOutput   String?         // Optional JSON path/transform
+  isOptional        Boolean         @default(false)
+
+  from              ToolDefinition  @relation(name: "ToolFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to                ToolDefinition  @relation(name: "ToolTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@unique([fromId, toId])
+  @@index([fromId])
+  @@index([toId])
+}
+
+// Tool execution (call to a tool)
+model ToolExecution {
+  id                String          @id @default(cuid())
+  toolId            String
+  workspaceId       String
+  conversationId    String?         // If called from conversation
+  userId            String
+
+  // Execution details
+  input             Json
+  output            Json?
+  error             String?
+
+  // Status & Progress
+  status            ExecutionStatus @default(PENDING)
+  progress          Float           @default(0)  // 0-100
+
+  // Streaming (for long-running operations)
+  isStreaming       Boolean         @default(false)
+  streamStartedAt   DateTime?
+
+  // Retry tracking
+  attemptNumber     Int             @default(1)
+  maxAttempts       Int             @default(3)
+  lastError         String?
+
+  // Circuit breaker state
+  circuitBreakerOpen Boolean        @default(false)
+
+  // Timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+  duration          Int?            // milliseconds
+
+  // Cost tracking
+  inputTokens       Int             @default(0)
+  outputTokens      Int             @default(0)
+  costCents         Int             @default(0)
+
+  // Approval workflow
+  approvedBy        String?
+  approvedAt        DateTime?
+  rejectedBy        String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversation      Conversation?   @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user              User            @relation("UserToolExecutions", fields: [userId], references: [id], onDelete: Cascade)
+
+  invocations       ToolInvocation[]
+  auditLogs         ToolAuditLog[]
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([toolId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ExecutionStatus {
+  PENDING           // Waiting to execute
+  APPROVED          // Approved, waiting to run
+  RUNNING           // Currently executing
+  STREAMING         // Streaming response
+  COMPLETED         // Successfully completed
+  FAILED            // Failed with error
+  CANCELLED         // User cancelled
+  TIMEOUT           // Execution timeout
+  REJECTED          // Approval rejected
+}
+
+// Individual tool invocation (atomic operation within execution)
+model ToolInvocation {
+  id                String          @id @default(cuid())
+  executionId       String
+  parentInvocationId String?        // For nested calls
+
+  // Call details
+  input             Json
+  output            Json?
+  error             String?
+
+  // Status
+  status            ExecutionStatus @default(PENDING)
+
+  // Timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  // Order (for parallel/sequential tracking)
+  sequenceNumber    Int
+  retryCount        Int             @default(0)
+
+  execution         ToolExecution   @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  parent            ToolInvocation? @relation(name: "ToolInvocationTree", fields: [parentInvocationId], references: [id], onDelete: Cascade)
+  children          ToolInvocation[] @relation(name: "ToolInvocationTree")
+
+  createdAt         DateTime        @default(now())
+
+  @@index([executionId])
+  @@index([parentInvocationId])
+}
+
+// Tool execution audit log (immutable trail)
+model ToolAuditLog {
+  id                String          @id @default(cuid())
+  toolId            String
+  executionId       String?
+  userId            String
+
+  action            String          // "CREATED", "EXECUTED", "FAILED", "APPROVED", "REJECTED"
+  status            String?
+
+  changes           Json?           // For definition changes
+  metadata          Json?           // Additional context
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  execution         ToolExecution?  @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([toolId])
+  @@index([executionId])
+  @@index([userId])
+  @@index([action])
+}
+
+// Tool metrics (aggregated statistics)
+model ToolMetrics {
+  id                String          @id @default(cuid())
+  toolId            String          @unique
+
+  totalExecutions   Int             @default(0)
+  successfulExecutions Int          @default(0)
+  failedExecutions  Int             @default(0)
+
+  avgDuration       Float           @default(0)
+  minDuration       Int?
+  maxDuration       Int?
+
+  avgInputTokens    Float           @default(0)
+  avgOutputTokens   Float           @default(0)
+  totalCostCents    Int             @default(0)
+
+  lastExecutedAt    DateTime?
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([toolId])
+}
+
+// Webhook configuration for tool callbacks
+model ToolWebhook {
+  id                String          @id @default(cuid())
+  toolId            String
+
+  event             String          // "on-start", "on-progress", "on-complete", "on-error"
+  url               String
+
+  method            String          @default("POST")
+  headers           Json?
+
+  isActive          Boolean         @default(true)
+
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([toolId])
+  @@index([event])
+}
+
+// Tool workspace quota (limits per workspace)
+model ToolQuota {
+  id                String          @id @default(cuid())
+  workspaceId       String          @unique
+
+  // Usage limits
+  maxToolsPerWorkspace Int          @default(100)
+  maxExecutionsPerDay Int           @default(10000)
+  maxCostPerMonth   Int             @default(100000)  // cents
+
+  // Current usage (daily reset)
+  executionsUsedToday Int           @default(0)
+  costUsedThisMonth Int             @default(0)
+
+  lastResetAt       DateTime        @default(now())
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+}
+
+// Encrypted Tool Secrets (Release 3)
+// Stores API keys, credentials, and other secrets for tool execution
+model ToolSecret {
+  id                String          @id @default(cuid())
+  toolId            String
+  workspaceId       String
+
+  // Secret metadata
+  name              String          // e.g., "api_key", "auth_token", "database_url"
+  description       String?
+  secretType        String          // API_KEY, PASSWORD, URL, TOKEN, CONNECTION_STRING, etc.
+
+  // Encrypted value (AES-256-GCM)
+  encryptedValue    String          @db.Text  // Base64-encoded ciphertext
+  iv                String                    // Base64-encoded initialization vector
+  authTag           String                    // Base64-encoded authentication tag
+  algorithm         String          @default("aes-256-gcm")
+
+  // Metadata
+  expiresAt         DateTime?       // Optional expiration date
+  isRotationPending Boolean         @default(false)
+  lastRotatedAt     DateTime?
+
+  // Relations
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  auditLogs         ToolSecretAuditLog[]
+
+  createdBy         String
+  createdByUser     User            @relation(fields: [createdBy], references: [id])
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([toolId, name])
+  @@index([toolId])
+  @@index([workspaceId])
+  @@index([createdBy])
+  @@index([expiresAt])
+}
+
+// Tool Secret Audit Log
+// Immutable audit trail for all secret access and modifications
+model ToolSecretAuditLog {
+  id                String          @id @default(cuid())
+  secretId          String
+  workspaceId       String
+
+  // Action tracking
+  action            String          // CREATED, RETRIEVED, UPDATED, ROTATED, DELETED, ACCESSED
+  reason            String?         // Why was the secret accessed (for audit)
+
+  // Access context
+  accessedBy        String
+  accessedByUser    User            @relation(fields: [accessedBy], references: [id])
+
+  // Security context
+  ipAddress         String?
+  userAgent         String?
+  requestId         String?         // Correlation ID from request middleware
+
+  // Relations
+  secret            ToolSecret      @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([secretId])
+  @@index([workspaceId])
+  @@index([accessedBy])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// Universal Search System (Release 3)
+// Comprehensive multi-provider search with hybrid, full-text, and vector capabilities
+
+model SearchIndex {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  resourceType      SearchResourceType  // CONVERSATION, MESSAGE, MEMORY, DOCUMENT
+  resourceId        String
+
+  // Content for indexing
+  title             String?
+  content           String          @db.Text
+  summary           String?
+  keywords          String[]        @default([])
+
+  // Chunking for large documents
+  chunkIndex        Int             @default(0)  // Which chunk this is
+  totalChunks       Int             @default(1)  // Total chunks for this resource
+
+  // Vector embedding metadata
+  embeddingId       String?         // Vector DB ID (Pinecone, Weaviate, etc.)
+  embeddingModel    String?         // e.g., "text-embedding-3-small"
+  embeddingDimension Int?
+
+  // Full-text search metadata
+  tsvector          String?         @db.Text  // PostgreSQL tsvector for FTS
+
+  // Workspace and resource isolation
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Metadata
+  language          String          @default("en")
+  isIndexed         Boolean         @default(false)
+  indexedAt         DateTime?
+  lastUpdatedAt     DateTime?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([workspaceId])
+  @@index([resourceType])
+  @@index([resourceId])
+  @@index([workspaceId, resourceType, resourceId])
+  @@index([isIndexed])
+  @@index([indexedAt])
+}
+
+enum SearchResourceType {
+  CONVERSATION
+  MESSAGE
+  MEMORY
+  DOCUMENT
+  PROMPT_TEMPLATE
+  CONVERSATION_TEMPLATE
+}
+
+model SearchQuery {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  query             String
+  queryType         SearchQueryType // HYBRID, FULLTEXT, VECTOR, SEMANTIC
+
+  // Results metadata
+  resultCount       Int             @default(0)
+  executionTimeMs   Int             @default(0)
+
+  // Analytics
+  clickedResultId   String?         // Which result was clicked (if any)
+  clickPosition     Int?            // Position in results
+  isRelevant        Boolean?        // User feedback: was this relevant?
+
+  // Rankings/ordering
+  sortBy            String          @default("relevance")  // relevance, recent, popular
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([queryType])
+}
+
+enum SearchQueryType {
+  HYBRID
+  FULLTEXT
+  VECTOR
+  SEMANTIC
+}
+
+model SavedSearch {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  name              String
+  description       String?
+  query             String
+  queryType         SearchQueryType @default(HYBRID)
+
+  // Filters
+  filters           Json?           // Saved filter configuration
+  sortBy            String          @default("relevance")
+  limit             Int             @default(20)
+
+  // Pinning/favorites
+  isPinned          Boolean         @default(false)
+  pinnedOrder       Int?
+
+  // Usage tracking
+  executionCount    Int             @default(0)
+  lastExecutedAt    DateTime?
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, userId, name])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([isPinned])
+}
+
+model SearchSuggestion {
+  id                String          @id @default(cuid())
+  workspaceId       String
+
+  term              String
+  frequency         Int             @default(1)
+
+  // Category
+  type              SearchSuggestionType
+
+  // Ranking
+  popularity        Float           @default(0)  // 0-1 score
+
+  // Cache management
+  isActive          Boolean         @default(true)
+  expiresAt         DateTime?
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, term])
+  @@index([workspaceId])
+  @@index([frequency])
+  @@index([popularity])
+}
+
+enum SearchSuggestionType {
+  QUERY       // Full query suggestions
+  KEYWORD     // Single keyword suggestions
+  FILTER      // Filter suggestions
+  OPERATOR    // Search operator suggestions
+}
+
+model SearchRanking {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  resourceType      SearchResourceType
+
+  // Ranking weights
+  titleWeight       Float           @default(1.5)
+  contentWeight     Float           @default(1.0)
+  keywordWeight     Float           @default(1.2)
+  recencyWeight     Float           @default(0.8)
+  popularityWeight  Float           @default(0.6)
+  importanceWeight  Float           @default(1.1)
+
+  // Boosting
+  boostRecent       Boolean         @default(true)  // Boost recently modified
+  recentDaysThreshold Int           @default(7)
+  recentBoost       Float           @default(1.3)
+
+  // Personalization
+  boostByUserInteraction Boolean    @default(true)
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, resourceType])
+  @@index([workspaceId])
+}
+
+model SearchAnalytics {
+  id                String          @id @default(cuid())
+  workspaceId       String
+
+  // Query metrics
+  totalSearches     Int             @default(0)
+  uniqueSearchers   Int             @default(0)
+  avgExecutionTime  Float           @default(0)
+
+  // Result metrics
+  avgResultCount    Float           @default(0)
+  clickThroughRate  Float           @default(0)
+
+  // Most common queries
+  topQueries        Json            // [{term: string, count: int}]
+  topSearchers      Json            // [{userId: string, count: int}]
+
+  // Performance metrics
+  indexSize         BigInt          @default(0)
+  cachedResultsHit  Int             @default(0)
+  cachedResultsMiss Int             @default(0)
+
+  // Time period
+  periodStart       DateTime
+  periodEnd         DateTime
+
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([workspaceId, periodStart, periodEnd])
+  @@index([workspaceId])
 }

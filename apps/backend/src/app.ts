@@ -3,12 +3,16 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 import { csrfProtection } from './middleware/csrf';
+import { cspMiddleware } from './middleware/csp';
+import { correlationIdMiddleware } from './middleware/correlation-id';
+import { requestTimeout } from './middleware/requestTimeout';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -34,6 +38,12 @@ import conversationTemplateRoutes from './routes/conversationTemplates'
 import conversationFolderRoutes from './routes/conversationFolders';
 import sharingRoutes from './routes/sharing'
 import sharingPublicRoutes from './routes/sharing-public';
+import memoryRoutes from './routes/memories';
+import realtimeRoutes from './routes/realtime';
+import searchRoutes from './routes/search';
+import exportImportRoutes from './routes/export-import';
+import { toolRoutes } from './routes/tools';
+import toolSecretRoutes from './routes/toolSecrets';
 
 export interface CreateAppDeps {
   /**
@@ -61,6 +71,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // Security Middleware
   app.use(helmet());
+  app.use(cspMiddleware);
+  app.use(requestTimeout);
+  app.use(correlationIdMiddleware as any);
   app.use(
     cors({
       origin: config.server.corsOrigins,
@@ -76,6 +89,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   });
 
   app.use('/api/', limiter);
+
+  // Response Compression (gzip/brotli for all responses > 1KB)
+  app.use(compression({ threshold: 1024 }));
 
   // Billing webhook needs raw body to verify Stripe signature (must be before json parsing)
   app.use('/api/billing', (req, res, next) => {
@@ -185,16 +201,18 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', assetRoutes);
   app.use('/api/workspaces', conversationRoutes);
   app.use('/api/workspaces', messageRoutes);
-  // streamingRoutes declares its own absolute paths
-  // (`/api/conversations/:conversationId/stream[...]`), unlike the other
-  // workspace-scoped routers above — mount it at root, not under
-  // `/api/workspaces`, or every path would be double-prefixed.
-  app.use(streamingRoutes);
+  app.use('/api/workspaces', streamingRoutes);
   app.use('/api/workspaces', branchRoutes);
   app.use('/api/workspaces', promptTemplateRoutes);
   app.use('/api/workspaces', conversationTemplateRoutes);
   app.use('/api/workspaces', conversationFolderRoutes);
   app.use('/api/workspaces', sharingRoutes);
+  app.use('/api/workspaces', memoryRoutes);
+  app.use('/api/workspaces', realtimeRoutes);
+  app.use('/api/workspaces', searchRoutes);
+  app.use('/api/workspaces', exportImportRoutes);
+  app.use('/api/workspaces', toolRoutes);
+  app.use('/api/workspaces', toolSecretRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);

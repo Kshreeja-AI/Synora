@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type React from 'react';
-import { setTokens, clearTokens } from '../lib/auth/token-storage';
 import { useAuthStore } from '../stores/auth-store';
 
 vi.mock('../lib/api/account', () => ({
@@ -20,19 +19,10 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('useCurrentUser', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearTokens();
     useAuthStore.setState({ user: null, status: 'loading' });
   });
 
-  it('never fires the query when there is no access token', async () => {
-    const { result } = renderHook(() => useCurrentUser(), { wrapper });
-
-    expect(result.current.fetchStatus).toBe('idle');
-    expect(getCurrentUser).not.toHaveBeenCalled();
-  });
-
-  it('fetches and mirrors the result into the auth store on success', async () => {
-    setTokens({ accessToken: 'a', refreshToken: 'r' });
+  it('fetches the current user (tokens in HttpOnly cookies)', async () => {
     (getCurrentUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'u1',
       email: 'ada@example.com',
@@ -54,7 +44,6 @@ describe('useCurrentUser', () => {
   });
 
   it('clears the auth store session when the fetch fails', async () => {
-    setTokens({ accessToken: 'a', refreshToken: 'r' });
     useAuthStore.setState({ user: { id: 'u1', email: 'x@y.co', name: null, emailVerified: false }, status: 'authenticated' });
     (getCurrentUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('unauthorized'));
 

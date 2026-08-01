@@ -34,7 +34,7 @@
   },
   "pnpm": {
     "overrides": {
-      "vitest": ">=3.2.6",
+      "vitest": "^3.2.7",
       "vite": ">=6.4.3",
       "esbuild": ">=0.28.1",
       "brace-expansion": ">=5.0.8",
@@ -46,5 +46,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "license": "BUSL-1.1"
+  "license": "BUSL-1.1",
+  "dependencies": {
+    "@elastic/elasticsearch": "^9.4.3",
+    "@types/socket.io": "^3.0.2",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
+  }
 }

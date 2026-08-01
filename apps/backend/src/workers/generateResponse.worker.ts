@@ -171,7 +171,7 @@ export function createGenerateResponseWorker() {
             tokens: accounting.outputTokens
           });
 
-          const completedMessage = await prisma.message.update({
+          await prisma.message.update({
             where: { id: messageId },
             data: {
               content: finalText

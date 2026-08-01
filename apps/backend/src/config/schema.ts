@@ -128,4 +128,131 @@ export const AppConfigSchema = z.object({
     defaultCurrency: z.string().min(1).default('USD'),
     trialDays: z.number().int().nonnegative().default(14),
   }),
+
+  queue: z.object({
+    enabled: z.boolean().default(true),
+    redis: z.object({
+      url: z.string().url().optional(),
+      host: z.string().optional(),
+      port: z.number().int().positive().optional(),
+      password: z.string().optional(),
+      db: z.number().int().nonnegative().optional(),
+      tls: z.boolean().optional(),
+      maxRetriesPerRequest: z.number().int().nonnegative().optional(),
+      enableReadyCheck: z.boolean().default(true),
+      enableOfflineQueue: z.boolean().default(true),
+    }),
+    workers: z.object({
+      generateResponse: z.number().int().positive().default(5),
+      indexMessageSearch: z.number().int().positive().default(2),
+      generateEmbeddings: z.number().int().positive().default(2),
+      processFile: z.number().int().positive().default(3),
+      cleanup: z.number().int().positive().default(1),
+      notification: z.number().int().positive().default(2),
+    }),
+    retry: z.object({
+      attempts: z.number().int().positive().default(3),
+      backoffMs: z.number().int().positive().default(1000),
+      backoffStrategy: z.enum(['exponential', 'fixed']).default('exponential'),
+    }),
+    deadLetter: z.object({
+      enabled: z.boolean().default(true),
+      retention: z.number().int().positive().default(86400000),
+    }),
+    rateLimit: z.object({
+      enabled: z.boolean().default(true),
+      maxJobsPerSecond: z.number().positive().default(100),
+    }),
+  }),
+
+  /**
+   * Non-secret settings for the provider-agnostic embeddings abstraction
+   * (`src/embeddings/`). API keys live in SecretsManager and are read
+   * directly by each provider's descriptor in `src/embeddings/providers/*`.
+   * `provider` is the one explicit selection switch, mirroring `ai.provider`
+   * — everything else is a per-provider default or a cross-cutting
+   * production concern (caching, rate limiting, retry, circuit breaking,
+   * security limits) that applies regardless of which provider is active.
+   */
+  embeddings: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.string().optional(),
+    openaiModel: z.string().min(1).default('text-embedding-3-small'),
+    geminiModel: z.string().min(1).default('text-embedding-004'),
+    voyageModel: z.string().min(1).default('voyage-3'),
+    cohereModel: z.string().min(1).default('embed-english-v3.0'),
+    ollamaBaseUrl: z.string().url().optional(),
+    ollamaModel: z.string().min(1).default('nomic-embed-text'),
+    ollamaMaxBatchSize: z.number().int().positive().optional(),
+    selfHostedBaseUrl: z.string().url().optional(),
+    selfHostedApiKey: z.string().optional(),
+    selfHostedModel: z.string().min(1).default('nomic-embed-text'),
+    selfHostedMaxBatchSize: z.number().int().positive().optional(),
+
+    cache: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      maxEntries: z.number().int().positive().default(10_000),
+      ttlMs: z.number().int().positive().default(86_400_000),
+      redisUrl: z.string().url().optional(),
+    }),
+    rateLimit: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      requestsPerSecond: z.number().positive().default(50),
+      redisUrl: z.string().url().optional(),
+    }),
+    retry: z.object({
+      attempts: z.number().int().positive().default(3),
+      backoffMs: z.number().int().positive().default(500),
+      backoffStrategy: z.enum(['exponential', 'fixed']).default('exponential'),
+    }),
+    circuitBreaker: z.object({
+      failureThreshold: z.number().int().positive().default(5),
+      cooldownMs: z.number().int().positive().default(30_000),
+      halfOpenSuccessThreshold: z.number().int().positive().default(2),
+    }),
+    security: z.object({
+      maxInputChars: z.number().int().positive().default(50_000),
+      maxBatchRequestSize: z.number().int().positive().default(1000),
+    }),
+    chunking: z.object({
+      defaultChunkSize: z.number().int().positive().default(1000),
+      defaultOverlap: z.number().int().nonnegative().default(100),
+    }),
+  }),
+
+  /**
+   * Non-secret settings for the provider-agnostic vector database
+   * abstraction (`src/vectordb/`). Connection secrets (API keys/tokens)
+   * live in SecretsManager and are read directly by each provider's
+   * descriptor in `src/vectordb/providers/*`. `provider` is the one
+   * explicit selection switch, mirroring `ai.provider` / `embeddings.provider`.
+   */
+  vectordb: z.object({
+    enabled: z.boolean().default(true),
+    provider: z.string().optional(),
+    pineconeHost: z.string().optional(),
+    pineconeMaxUpsertBatchSize: z.number().int().positive().optional(),
+    qdrantUrl: z.string().url().optional(),
+    qdrantMaxUpsertBatchSize: z.number().int().positive().optional(),
+    weaviateUrl: z.string().url().optional(),
+    weaviateMaxUpsertBatchSize: z.number().int().positive().optional(),
+    milvusUrl: z.string().url().optional(),
+    milvusMaxUpsertBatchSize: z.number().int().positive().optional(),
+    /**
+     * Unlike every other provider here, pgvector reuses the application's
+     * own PostgreSQL database rather than connecting to a separate one —
+     * so it's always *reachable*, and needs its own explicit opt-in flag
+     * rather than "is a connection secret present" to decide whether it's
+     * "configured" for auto-detection purposes.
+     */
+    pgvectorEnabled: z.boolean().default(false),
+    pgvectorDimensions: z.number().int().positive().default(1536),
+    pgvectorMaxUpsertBatchSize: z.number().int().positive().optional(),
+
+    security: z.object({
+      maxUpsertRequestSize: z.number().int().positive().default(1000),
+      maxTopK: z.number().int().positive().default(1000),
+      maxDimensions: z.number().int().positive().default(4096),
+    }),
+  }),
 });

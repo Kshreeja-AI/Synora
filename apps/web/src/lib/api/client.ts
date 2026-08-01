@@ -1,5 +1,4 @@
-import type { ApiEnvelope, ApiErrorBody, AuthTokens } from './types';
-import { getAccessToken, getRefreshToken, setTokens, clearTokens } from '../auth/token-storage';
+import type { ApiEnvelope, ApiErrorBody } from './types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -22,36 +21,24 @@ export function getApiBaseUrl(): string {
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
-  /** Skip the Authorization header and the 401-refresh-retry cycle. */
+  /** Skip the 401-refresh-retry cycle (for auth endpoints themselves). */
   anonymous?: boolean;
   signal?: AbortSignal;
 }
 
-// Single-flight refresh: concurrent 401s share one refresh request so the
-// single-use rotating refresh token is never presented twice.
+// Single-flight refresh: concurrent 401s share one refresh request to avoid
+// presenting the single-use rotating refresh token twice.
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function refreshTokens(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-
   try {
     const response = await fetch(`${getApiBaseUrl()}/api/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken }),
+      credentials: 'include', // Send refreshToken cookie automatically
     });
-    if (!response.ok) {
-      clearTokens();
-      return false;
-    }
-    const envelope = (await response.json()) as ApiEnvelope<AuthTokens>;
-    if (!envelope.success || !envelope.data) {
-      clearTokens();
-      return false;
-    }
-    setTokens(envelope.data);
-    return true;
+    // Tokens are in HttpOnly cookies set by backend; no need to store them
+    return response.ok;
   } catch {
     return false;
   }
@@ -72,13 +59,10 @@ async function rawRequest(path: string, options: RequestOptions): Promise<Respon
   // FormData must never get a Content-Type header set manually — the
   // browser needs to add the multipart boundary itself.
   if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
-  if (!options.anonymous) {
-    const accessToken = getAccessToken();
-    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
-  }
   return fetch(`${getApiBaseUrl()}${path}`, {
     method: options.method ?? 'GET',
     headers,
+    credentials: 'include', // Send accessToken cookie automatically
     body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
     signal: options.signal,
   });
@@ -102,14 +86,13 @@ async function parseEnvelope<T>(response: Response): Promise<T> {
 }
 
 /**
- * Typed request against the backend API. Attaches the bearer access token,
- * and on a 401 transparently refreshes the session (single-flight) and
- * retries the request once.
+ * Typed request against the backend API. Tokens are in HttpOnly cookies sent automatically.
+ * On a 401 transparently refreshes the session (single-flight) and retries the request once.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   let response = await rawRequest(path, options);
 
-  if (response.status === 401 && !options.anonymous && getRefreshToken()) {
+  if (response.status === 401 && !options.anonymous) {
     const refreshed = await ensureRefresh();
     if (refreshed) {
       response = await rawRequest(path, options);

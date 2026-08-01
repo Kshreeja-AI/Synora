@@ -62,6 +62,76 @@ export interface StageDefaults {
     defaultCurrency: string;
     trialDays: number;
   };
+  queue: {
+    enabled: boolean;
+    workers: {
+      generateResponse: number;
+      indexMessageSearch: number;
+      generateEmbeddings: number;
+      processFile: number;
+      cleanup: number;
+      notification: number;
+    };
+    retry: {
+      attempts: number;
+      backoffMs: number;
+      backoffStrategy: 'exponential' | 'fixed';
+    };
+    deadLetter: {
+      enabled: boolean;
+      retention: number;
+    };
+    rateLimit: {
+      enabled: boolean;
+      maxJobsPerSecond: number;
+    };
+  };
+  embeddings: {
+    enabled: boolean;
+    openaiModel: string;
+    geminiModel: string;
+    voyageModel: string;
+    cohereModel: string;
+    ollamaModel: string;
+    selfHostedModel: string;
+    cache: {
+      backend: 'memory' | 'redis';
+      maxEntries: number;
+      ttlMs: number;
+    };
+    rateLimit: {
+      backend: 'memory' | 'redis';
+      requestsPerSecond: number;
+    };
+    retry: {
+      attempts: number;
+      backoffMs: number;
+      backoffStrategy: 'exponential' | 'fixed';
+    };
+    circuitBreaker: {
+      failureThreshold: number;
+      cooldownMs: number;
+      halfOpenSuccessThreshold: number;
+    };
+    security: {
+      maxInputChars: number;
+      maxBatchRequestSize: number;
+    };
+    chunking: {
+      defaultChunkSize: number;
+      defaultOverlap: number;
+    };
+  };
+  vectordb: {
+    enabled: boolean;
+    pgvectorEnabled: boolean;
+    pgvectorDimensions: number;
+    security: {
+      maxUpsertRequestSize: number;
+      maxTopK: number;
+      maxDimensions: number;
+    };
+  };
 }
 
 const BASE_DEFAULTS: StageDefaults = {
@@ -124,6 +194,76 @@ const BASE_DEFAULTS: StageDefaults = {
     defaultCurrency: 'USD',
     trialDays: 14,
   },
+  queue: {
+    enabled: true,
+    workers: {
+      generateResponse: 5,
+      indexMessageSearch: 2,
+      generateEmbeddings: 2,
+      processFile: 3,
+      cleanup: 1,
+      notification: 2,
+    },
+    retry: {
+      attempts: 3,
+      backoffMs: 1000,
+      backoffStrategy: 'exponential',
+    },
+    deadLetter: {
+      enabled: true,
+      retention: 86400000, // 24 hours
+    },
+    rateLimit: {
+      enabled: true,
+      maxJobsPerSecond: 100,
+    },
+  },
+  embeddings: {
+    enabled: true,
+    openaiModel: 'text-embedding-3-small',
+    geminiModel: 'text-embedding-004',
+    voyageModel: 'voyage-3',
+    cohereModel: 'embed-english-v3.0',
+    ollamaModel: 'nomic-embed-text',
+    selfHostedModel: 'nomic-embed-text',
+    cache: {
+      backend: 'memory',
+      maxEntries: 10_000,
+      ttlMs: 86_400_000, // 24 hours — embeddings are deterministic per (provider, model, text)
+    },
+    rateLimit: {
+      backend: 'memory',
+      requestsPerSecond: 50,
+    },
+    retry: {
+      attempts: 3,
+      backoffMs: 500,
+      backoffStrategy: 'exponential',
+    },
+    circuitBreaker: {
+      failureThreshold: 5,
+      cooldownMs: 30_000,
+      halfOpenSuccessThreshold: 2,
+    },
+    security: {
+      maxInputChars: 50_000,
+      maxBatchRequestSize: 1000,
+    },
+    chunking: {
+      defaultChunkSize: 1000,
+      defaultOverlap: 100,
+    },
+  },
+  vectordb: {
+    enabled: true,
+    pgvectorEnabled: false,
+    pgvectorDimensions: 1536,
+    security: {
+      maxUpsertRequestSize: 1000,
+      maxTopK: 1000,
+      maxDimensions: 4096,
+    },
+  },
 };
 
 const STAGE_OVERRIDES: Partial<Record<DeploymentStage, Partial<StageDefaults>>> = {
@@ -177,6 +317,9 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     mail: { ...BASE_DEFAULTS.mail, ...override.mail },
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
+    queue: { ...BASE_DEFAULTS.queue, ...override.queue },
+    embeddings: { ...BASE_DEFAULTS.embeddings, ...override.embeddings },
+    vectordb: { ...BASE_DEFAULTS.vectordb, ...override.vectordb },
   };
 
   return applyModeOverrides(merged, modes);
