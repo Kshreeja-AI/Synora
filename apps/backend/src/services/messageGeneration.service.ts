@@ -14,6 +14,7 @@ export interface StreamToken {
   inputTokens?: number
   outputTokens?: number
   completed?: boolean
+  messageId?: string
 }
 
 /**
@@ -95,10 +96,18 @@ export class MessageGenerationService {
           }
         }
 
-        // Update message with content
-        await prisma.message.update({
-          where: { id: messageId },
-          data: { content: fullContent },
+        // Create the assistant's reply as its own message, parented to the
+        // user message that triggered it. This used to `update` the user
+        // message's own row with the generated content instead of creating
+        // a reply, which silently overwrote the user's message and left it
+        // permanently mislabeled with role: USER.
+        const assistantMessage = await prisma.message.create({
+          data: {
+            conversationId,
+            content: fullContent,
+            role: MessageRole.ASSISTANT,
+            parentId: messageId,
+          },
         })
 
         // Record usage
@@ -109,9 +118,16 @@ export class MessageGenerationService {
           outputTokens,
         })
 
-        yield { token: '', completed: true, inputTokens, outputTokens }
+        yield {
+          token: '',
+          completed: true,
+          inputTokens,
+          outputTokens,
+          messageId: assistantMessage.id,
+        }
         logger.info(`[generateResponseStream] Completed on attempt ${attempt}`, {
           messageId,
+          assistantMessageId: assistantMessage.id,
           inputTokens,
           outputTokens,
         })
@@ -143,14 +159,22 @@ export class MessageGenerationService {
   ): Promise<Message> {
     logger.info(`[generateResponseFull] Starting for message ${messageId}`)
 
-    // Consume entire stream
-    for await (const _token of this.generateResponseStream(userId, conversationId, messageId)) {
-      // Just consume, the stream handles all updates
+    // Consume the entire stream and capture the id of the assistant message
+    // it created (see the `completed` token in generateResponseStream).
+    let assistantMessageId: string | undefined
+    for await (const token of this.generateResponseStream(userId, conversationId, messageId)) {
+      if (token.completed) {
+        assistantMessageId = token.messageId
+      }
     }
 
-    // Return updated message
+    if (!assistantMessageId) {
+      throw new Error('generateResponseStream completed without producing a message id')
+    }
+
+    // Return the newly created assistant message, not the triggering one.
     const message = await prisma.message.findUniqueOrThrow({
-      where: { id: messageId },
+      where: { id: assistantMessageId },
     })
 
     return message

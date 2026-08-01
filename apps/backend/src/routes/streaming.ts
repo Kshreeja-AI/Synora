@@ -3,6 +3,7 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { logger } from '../utils/logger'
 import { conversationGenerationService } from '../services/conversationGeneration.service'
 import { prisma } from '@synora/database'
+import { MessageRole } from '@prisma/client'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -48,6 +49,10 @@ router.get(
         const userMessage = await prisma.message.findUniqueOrThrow({
           where: { id: messageId as string },
         })
+
+        if (userMessage.role !== MessageRole.USER) {
+          throw new Error('Can only generate responses for user messages')
+        }
 
         // Call the conversation generation service (creates new ASSISTANT message with parentId)
         const { assistantMessage, usage } = await conversationGenerationService.generateReply(

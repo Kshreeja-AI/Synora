@@ -110,21 +110,33 @@ describe('MessageGenerationService', () => {
       expect(lastOutputTokens).toBe(10)
     })
 
-    it('should update message with generated content', async () => {
-      for await (const _token of messageGenerationService.generateResponseStream(
+    it('should create an assistant reply with the generated content, leaving the user message untouched', async () => {
+      let assistantMessageId: string | undefined
+      for await (const token of messageGenerationService.generateResponseStream(
         userId,
         conversationId,
         userMessageId
       )) {
-        // Consume the stream
+        if (token.completed) {
+          assistantMessageId = token.messageId
+        }
       }
 
-      // Verify message was updated with full content
-      const updatedMessage = await prisma.message.findUnique({
+      expect(assistantMessageId).toBeDefined()
+
+      const assistantMessage = await prisma.message.findUnique({
+        where: { id: assistantMessageId },
+      })
+      expect(assistantMessage?.role).toBe(MessageRole.ASSISTANT)
+      expect(assistantMessage?.parentId).toBe(userMessageId)
+      expect(assistantMessage?.content).toContain('Hello')
+
+      // The user's own message must not be mutated by generation.
+      const userMessage = await prisma.message.findUnique({
         where: { id: userMessageId },
       })
-
-      expect(updatedMessage?.content).toContain('Hello')
+      expect(userMessage?.role).toBe(MessageRole.USER)
+      expect(userMessage?.content).toBe('Hello, Claude!')
     })
 
     it('should track usage in ConversationUsage', async () => {
@@ -191,22 +203,17 @@ describe('MessageGenerationService', () => {
     })
 
     it('should throw NotFoundException if conversation not found', async () => {
-      // Create a message with a non-existent conversation
-      const orphanMessage = await prisma.message.create({
-        data: {
-          id: `msg-${Date.now()}`,
-          conversationId: 'non-existent-conv',
-          content: 'Orphan message',
-          role: MessageRole.USER,
-        },
-      })
-
+      // generateResponseStream validates the conversation before it ever
+      // looks at messageId, so there's no need for a real (or orphan)
+      // Message row here -- and Message.conversationId has an FK
+      // constraint, so a row actually pointing at a non-existent
+      // conversation can't be created in the first place.
       let error: Error | undefined
       try {
         for await (const _token of messageGenerationService.generateResponseStream(
           userId,
           'non-existent-conv',
-          orphanMessage.id
+          'non-existent-message'
         )) {
           // Stream consumer
         }
@@ -216,9 +223,6 @@ describe('MessageGenerationService', () => {
 
       expect(error).toBeDefined()
       expect(error?.message).toContain('Conversation not found')
-
-      // Cleanup
-      await prisma.message.delete({ where: { id: orphanMessage.id } })
     })
 
     it('should check workspace membership', async () => {
