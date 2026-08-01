@@ -142,6 +142,9 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
+      '@supabase/cli':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@types/bcryptjs':
         specifier: ^2.4.6
         version: 2.4.6
@@ -1840,6 +1843,9 @@ packages:
 
   '@stablelib/base64@1.0.1':
     resolution: {integrity: sha512-1bnPQqSxSuc3Ii6MhBysoWCg58j97aUjuCSZrGSmDxNqtytIi0k8utUenAwTZN4V5mXXYGsVUI9zeBqy+jBOSQ==}
+
+  '@supabase/cli@1.0.0':
+    resolution: {integrity: sha512-Vaqtvm95c7ZI7I1onGoTcd38RyEHWrpqQNk4xI12vySXpChWMSqk3L2efkS4HwcZdu/ymHX+bg5f6eOfdlrTeA==}
 
   '@swc/helpers@0.5.15':
     resolution: {integrity: sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g==}
@@ -6377,6 +6383,8 @@ snapshots:
   '@socket.io/component-emitter@3.1.2': {}
 
   '@stablelib/base64@1.0.1': {}
+
+  '@supabase/cli@1.0.0': {}
 
   '@swc/helpers@0.5.15':
     dependencies:
