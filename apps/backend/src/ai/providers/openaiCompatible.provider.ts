@@ -8,8 +8,8 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
  * Generic adapter for any provider that exposes an OpenAI-compatible chat
@@ -41,7 +41,10 @@ export class OpenAICompatibleTextProvider implements TextGenerationProvider {
         temperature: request.temperature,
         messages: [
           ...(systemPrompt ? [{ role: 'system' as const, content: systemPrompt }] : []),
-          { role: 'user' as const, content: request.prompt },
+          ...resolveConversationTurns(request).map((turn) => ({
+            role: turn.role as 'user' | 'assistant',
+            content: turn.content,
+          })),
         ],
       });
 

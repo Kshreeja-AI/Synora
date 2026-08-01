@@ -4,6 +4,7 @@ import { ForbiddenException, NotFoundException } from '@synora/shared';
 import { createNotification } from './notification.service';
 import { requirePermission, requireOwnerForOwnershipChange } from './permissions';
 import { recordAuditEvent } from './audit.service';
+import { requireMembership } from './checks';
 
 /**
  * Workspace create/list/get/update, membership listing, and member role
@@ -130,21 +131,6 @@ export async function listWorkspacesForUser(userId: string): Promise<WorkspaceSu
     createdAt: membership.workspace.createdAt,
     updatedAt: membership.workspace.updatedAt,
   }));
-}
-
-export async function requireMembership(
-  userId: string,
-  workspaceId: string
-): Promise<{ id: string; role: WorkspaceRole }> {
-  const membership = await prisma.workspaceMember.findUnique({
-    where: { userId_workspaceId: { userId, workspaceId } },
-  });
-
-  if (!membership) {
-    throw new NotFoundException('Workspace');
-  }
-
-  return membership;
 }
 
 export async function getWorkspaceForUser(userId: string, workspaceId: string): Promise<WorkspaceSummary> {
@@ -293,3 +279,6 @@ export async function removeMember(actorId: string, workspaceId: string, memberI
     role: target.role,
   });
 }
+
+// Re-export requireMembership from checks for backwards compatibility
+export { requireMembership } from './checks';

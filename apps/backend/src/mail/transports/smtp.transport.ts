@@ -2,7 +2,7 @@ import nodemailer, { type Transporter } from 'nodemailer';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import { MailTransportError, type MailMessage, type MailTransport } from '../types';
-import type { MailTransportDescriptor } from '../registry';
+import type { MailTransportDescriptor } from '../types/descriptor';
 
 /**
  * Real-world delivery via any SMTP-speaking provider (SES, SendGrid,

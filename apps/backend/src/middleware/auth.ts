@@ -12,6 +12,8 @@ export interface AuthRequest extends Request {
     email: string;
     role: string;
   };
+  /** User's role in current workspace (set by workspace-scoped middleware) */
+  userRole?: string;
 }
 
 interface JwtPayload {

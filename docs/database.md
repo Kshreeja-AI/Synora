@@ -581,6 +581,146 @@ model ProcessedWebhookEvent {
 }
 ```
 
+### Conversation & Message (Release 3 M1/M2)
+
+The foundation of the chat platform: a workspace-scoped conversation
+containing a tree of messages. The data model was established in M1;
+M2 (Universal Conversation Engine) added `Conversation.lastMessageAt`
+and the `StreamingJob` retry/error fields documented below, and is the
+first milestone with a real service/API built on top of this model.
+
+#### Conversation
+```prisma
+model Conversation {
+  id            String              // Unique identifier (CUID)
+  workspaceId   String              // FK to Workspace
+  title         String              // Conversation title
+  description   String?             // Optional longer description
+  provider      String              // AI provider id used, e.g. "anthropic" —
+                                     // a string, not an enum, matching the
+                                     // ai/registry.ts descriptor pattern: adding
+                                     // a provider never requires a migration
+  model         String              // Concrete model name, e.g. "claude-sonnet-5"
+  status        ConversationStatus  // ACTIVE, ARCHIVED, or DELETED
+  isArchived    Boolean             // Convenience flag mirroring status
+  isPinned      Boolean             // User-pinned for quick access
+  lastMessageAt DateTime?           // (M2) Denormalized from the latest Message.createdAt —
+                                     // avoids a correlated subquery for the default
+                                     // "most recently active first" list sort. Null
+                                     // until the first message is sent.
+  folderId      String?             // FK to ConversationFolder (M12), optional
+
+  // Relations
+  workspace     Workspace
+  messages      Message[]
+  folder        ConversationFolder?
+  tags          ConversationTag[]
+  collaborators ConversationCollaborator[]
+  versions      ConversationVersion[]
+  activity      ConversationActivity[]
+  shared        SharedConversation[]
+  usage         ConversationUsage?
+  toolCalls     ToolCall[]
+
+  // Timestamps
+  createdAt     DateTime
+  updatedAt     DateTime
+}
+```
+
+**Indexes:** `workspaceId` (workspace-scoped list queries),
+`(workspaceId, createdAt)` (chronological listing),
+`(workspaceId, lastMessageAt)` (M2 — the default list sort), `isArchived`
+and `isPinned` (common list filters).
+
+**State machine (M2):** `ACTIVE ⇄ ARCHIVED` via the service's `archive`/
+`restore` methods; `{ACTIVE, ARCHIVED} → DELETED` via `delete` (terminal).
+Enforced in `conversation.service.ts`, not just implied by the enum — each
+transition is its own method that checks the current `status` before
+proceeding, never a generic field update. See `docs/api.md`'s Conversation
+Endpoints section for the corresponding routes.
+
+**Deletion model:** `status: DELETED` is a soft delete — conversations
+are never hard-deleted by application code, matching the `isArchived`
+convention already used elsewhere in this schema. Deleting the parent
+`Workspace` cascades (`onDelete: Cascade`), since a conversation cannot
+meaningfully exist without its workspace.
+
+#### Message
+```prisma
+model Message {
+  id              String        // Unique identifier (CUID)
+  conversationId  String        // FK to Conversation
+  content         String        // Message text
+  role            MessageRole   // USER, ASSISTANT, or SYSTEM
+  parentId        String?       // FK to the message this replies to/branches from
+  deletedAt       DateTime?     // Soft-delete marker — null means not deleted
+
+  // Relations
+  conversation    Conversation
+  parent          Message?      // Self-relation ("MessageTree")
+  children        Message[]     // Self-relation ("MessageTree")
+  branch          MessageBranch?
+  attachments     MessageAttachment[]
+
+  // Timestamps
+  createdAt       DateTime
+  updatedAt       DateTime
+}
+```
+
+**Indexes:** `conversationId` and `(conversationId, createdAt)` (message
+timeline queries), `(conversationId, deletedAt)` (filtering out
+soft-deleted messages), `parentId` (thread/branch reconstruction).
+
+**Soft delete:** `deletedAt` follows the same nullable-timestamp
+convention as `RefreshToken.revokedAt`/`WorkspaceInvitation.revokedAt` —
+presence means deleted, the value is when. Added in M1 as schema-only;
+`message.service.ts`'s `delete()` (M2) is what actually sets it — a plain
+`UPDATE`, never a real `DELETE`, so the `parentId` self-relation's cascade
+rule below never fires and a soft-deleted message's children are
+unaffected.
+
+**Threading:** `parentId` is a self-referential FK (`onDelete: Cascade`)
+forming a tree, not a flat list — the root message of a conversation has
+`parentId: null`. This is what lets Release 3 M8 (branching) attach
+alternative responses at any point without restructuring the schema:
+branching is "insert another child under the same parent," not a new
+concept the base schema needs to accommodate later.
+
+#### StreamingJob (Release 3 M2)
+```prisma
+model StreamingJob {
+  id            String              // Unique identifier (CUID)
+  conversationId String             // FK to Conversation (informational — no
+                                     // formal relation declared, matching how
+                                     // this model was originally scaffolded)
+  messageId     String?             // FK-like reference to the assistant Message
+                                     // this job produced — set only on success;
+                                     // null while running or if every retry failed
+  status        StreamingJobStatus  // PENDING, RUNNING, COMPLETED, FAILED, CANCELED
+  attempt       Int                 // Generation attempts made so far (max 3 — see
+                                     // conversationGeneration.service.ts)
+  lastError     String?             // The most recent failure's message, if any
+
+  // Timestamps
+  createdAt     DateTime
+  updatedAt     DateTime
+  completedAt   DateTime?
+}
+```
+
+**Indexes:** `conversationId`, `status`.
+
+**Purpose:** the per-generation state machine backing "retry support" and
+"error recovery" — one row per attempted generation, driven end-to-end by
+`conversationGeneration.service.ts`: created `PENDING`, moved to `RUNNING`
+before the first provider call, `attempt` incremented before each retry,
+`lastError` updated after each failure, and finally `COMPLETED` (with
+`messageId` set) or `FAILED`. Not yet consumed by any client-facing
+streaming transport — see `M2_IMPLEMENTATION_PLAN.md` §12 for the
+async/SSE path these fields are already shaped for.
+
 ### Other models
 The following exist in `packages/database/prisma/schema.prisma` and
 aren't reproduced in full here — treat the schema file as the definitive
@@ -591,6 +731,15 @@ source for their exact fields:
 - **`WorkspaceInvitation`** — pending email invitations to a workspace, token-based, with expiry.
 - **`ApiKey`** — workspace-scoped API keys (not currently exposed via any route — reserved for a future programmatic-access feature).
 - **`VerificationToken`** — generic identifier/token pair for NextAuth-style verification flows; not currently wired to any route.
+- **`MessageBranch`**, **`MessageAttachment`** — one-to-one/one-to-many with `Message`: which sibling branch is "main" (Release 3 M8 branching), and file attachments on a message.
+- **`ConversationFolder`**, **`ConversationTag`** — user-organizable grouping for conversations (nested folders; freeform workspace-scoped tags).
+- **`PromptTemplate`**, **`ConversationTemplate`** — reusable saved prompts and full conversation starters, optionally workspace-scoped or public.
+- **`AIMemory`** — one-to-one with `Workspace`; persisted assistant context/memory.
+- **`SharedConversation`**, **`ConversationCollaborator`** — public share links (token, expiry, permission level) and per-user collaborator roles on a conversation.
+- **`ConversationActivity`**, **`ConversationVersion`** — append-only activity/audit trail and content-version history for a conversation.
+- **`Tool`**, **`ToolCall`** — workspace-scoped (or public) tool/function definitions and their per-conversation invocation log.
+- **`ConversationUsage`** — one-to-one with `Conversation`; running token counts and estimated cost.
+- **`StreamingJob`** — see "Conversation & Message (Release 3 M1/M2)" above; the AI Streaming Engine's (Milestone 3) per-generation job/state-machine row, one per attempted generation, driving retry and SSE progress.
 
 ## Enums
 
@@ -670,6 +819,24 @@ enum NotificationType {
   ACCOUNT     // Email verified, profile changes
   WORKSPACE   // Workspace created, membership changes
   SYSTEM      // Platform-level notices
+}
+```
+
+### ConversationStatus (Release 3 M1)
+```prisma
+enum ConversationStatus {
+  ACTIVE      // Normal, in-use conversation
+  ARCHIVED    // Hidden from default lists, not deleted
+  DELETED     // Soft-deleted; application code never hard-deletes a conversation
+}
+```
+
+### MessageRole (Release 3 M1)
+```prisma
+enum MessageRole {
+  USER        // A human participant's turn
+  ASSISTANT   // An AI-generated turn
+  SYSTEM      // A system/instruction turn
 }
 ```
 

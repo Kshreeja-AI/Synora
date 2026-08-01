@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { logger } from '../../utils/logger';
 
 export enum AlertChannel {
   EMAIL = 'EMAIL',
@@ -13,7 +14,7 @@ export interface Alert {
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   userId?: string;
   message: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   channels: AlertChannel[];
   sent: boolean;
   sentAt?: Date;
@@ -31,7 +32,7 @@ export class AlertingService {
     severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW',
     message: string,
     userId?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     channels: AlertChannel[] = [AlertChannel.LOG]
   ): Promise<Alert> {
     const alert: Alert = {
@@ -72,7 +73,11 @@ export class AlertingService {
             break;
         }
       } catch (error) {
-        console.error(`[AlertingService] Failed to send alert via ${channel}:`, error);
+        logger.error(`Failed to send alert via ${channel}`, {
+          alertType: alert.type,
+          channel,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
@@ -81,29 +86,44 @@ export class AlertingService {
   }
 
   private async sendToLog(alert: Alert): Promise<void> {
-    const message = `[MFA-ALERT] [${alert.severity}] ${alert.type}: ${alert.message}`;
-    if (alert.severity === 'CRITICAL') {
-      console.error(message, alert.metadata);
-    } else if (alert.severity === 'HIGH') {
-      console.warn(message, alert.metadata);
-    } else {
-      console.log(message, alert.metadata);
+    const logData = {
+      alertType: alert.type,
+      severity: alert.severity,
+      message: alert.message,
+      userId: alert.userId,
+      metadata: alert.metadata,
+    };
+
+    switch (alert.severity) {
+      case 'CRITICAL':
+      case 'HIGH':
+        logger.warn(alert.message, logData);
+        break;
+      default:
+        logger.info(alert.message, logData);
     }
   }
 
   private async sendToEmail(alert: Alert): Promise<void> {
-    // Stub for email integration (SendGrid, AWS SES, etc.)
-    console.log(`[AlertingService] Email alert would be sent for ${alert.type} to admin`, alert.metadata);
+    logger.debug('Email alert would be sent', {
+      alertType: alert.type,
+      severity: alert.severity,
+      recipient: 'admin',
+    });
   }
 
   private async sendToWebhook(alert: Alert): Promise<void> {
-    // Stub for webhook integration (Slack, PagerDuty, etc.)
-    console.log(`[AlertingService] Webhook notification would be sent for ${alert.type}`, alert.metadata);
+    logger.debug('Webhook notification would be sent', {
+      alertType: alert.type,
+      severity: alert.severity,
+    });
   }
 
   private async sendToSIEM(alert: Alert): Promise<void> {
-    // Stub for SIEM integration (Splunk, ELK, CloudWatch, etc.)
-    console.log(`[AlertingService] SIEM event would be logged for ${alert.type}`, alert.metadata);
+    logger.debug('SIEM event would be logged', {
+      alertType: alert.type,
+      severity: alert.severity,
+    });
   }
 
   async acknowledgeAlert(alertId: string): Promise<Alert | null> {

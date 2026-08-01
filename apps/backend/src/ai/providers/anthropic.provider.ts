@@ -8,8 +8,8 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
  * Release 1's default text/code generation provider. Activated purely by
@@ -35,7 +35,10 @@ export class AnthropicTextProvider implements TextGenerationProvider {
         max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: request.temperature,
         system: resolveSystemPrompt(request),
-        messages: [{ role: 'user', content: request.prompt }],
+        messages: resolveConversationTurns(request).map((turn) => ({
+          role: turn.role as 'user' | 'assistant',
+          content: turn.content,
+        })),
       });
 
       const text = response.content

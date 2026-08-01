@@ -1,7 +1,8 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { generateText } from '../ai';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
 
 const router: Router = Router();
 
@@ -14,7 +15,7 @@ const generateTextRequestSchema = z.object({
   systemPrompt: z.string().optional(),
 });
 
-router.post('/generate', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/generate', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = generateTextRequestSchema.parse(req.body);
 

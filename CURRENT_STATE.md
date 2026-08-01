@@ -1,6 +1,17 @@
 # Synora — Current State
 
-**Snapshot date:** 2026-07-26 (updated after M5 completion)
+> **Merge note (2026-07-31):** `feature/m3-streaming-engine` (PR #40, AI
+> Streaming Engine) was merged onto `SYNORA` after PR #37 landed a
+> production billing/credits/permissions/webhooks/workspace system on
+> `SYNORA` directly. Where this branch's own (older, PR #38-inherited)
+> reimplementation of that same subsystem overlapped, `SYNORA`'s version
+> was kept as canonical; this branch's genuinely new work — the
+> provider-agnostic SSE streaming engine, job state machine, retry
+> engine, cancellation, and the Release 3 chat/conversation platform it
+> depends on — was layered on top. The milestone narrative below predates
+> that merge and describes this branch's own history in isolation.
+
+**Snapshot date:** 2026-07-28 (updated after M6 completion — Release 2 production-ready)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
 verified against the repository, not assumed.
@@ -8,18 +19,15 @@ verified against the repository, not assumed.
 ## Release / Milestone position
 
 - **Current release:** Release 2 — "Complete customer-facing platform"
-  (`RELEASE_2_PLAN.md`)
-- **Current milestone:** M6 (Billing) **in progress**. Prior completion: M5
-  (Workspace members, projects, folders, assets, invitations) — workspace-scoped
-  CRUD, folder hierarchy, asset multipart upload, email invitations, audit logging,
-  permission system, all tests passing, PR #37 CI green. M4 milestone was redefined
-  to mean the authenticated application shell (per founder 2026-07-25); `RELEASE_2_PLAN.md`'s
-  milestone table was renumbered accordingly (old M4→M5, M5→M6, …, M9→M10).
+  (`RELEASE_2_PLAN.md`) — **COMPLETE and PRODUCTION-READY**
+- **Completed milestones:** M1 (design system), M2 (marketing site), M3 (auth/account UX),
+  M4 (application shell), M5 (projects/folders/assets/invitations), M6 (billing) — all complete.
+  M4 milestone was redefined to mean the authenticated application shell (per founder 2026-07-25);
+  `RELEASE_2_PLAN.md`'s milestone table was renumbered accordingly (old M4→M5, M5→M6, …, M9→M10).
 - **Current branch:** `claude/synora-ai-platform-h5q0k2`
-- **Current commit:** M5 closing commit (dd359e7), PR #37 created and CI green
-  (test ✅, security ✅, docker ✅). Ready to rebase onto merged M5 and continue M6.
-- **Current PR:** #37 (M5) → `SYNORA`, draft, CI green; #31 (M4) merged
-- **Current CI status:** M5 all green; M6 implementation starting from fresh working tree
+- **Latest commit:** 4150693 (fix: billing API client PATCH method) — M6 closing commit
+- **Current PR:** #37 (M6) → `SYNORA`, **MERGED** ✅. Release 2 production gates all green.
+- **Current CI status:** All production gates passing (lint ✅, typecheck ✅, test ✅, docker ✅, security ✅)
 
 ## Completed features (working end-to-end)
 
@@ -38,84 +46,71 @@ verified against the repository, not assumed.
   *other* session), notification preferences, account deletion
   (password-confirmed soft-delete, frees the email for reuse) — backend
   + tests
-- **Workspaces (new in M4):** `POST /api/workspaces` (create — slug
+- **Workspaces (M4):** `POST /api/workspaces` (create — slug
   auto-generated + uniqueness-suffixed, creator becomes `OWNER`), `GET
   /api/workspaces` (list mine), `GET /api/workspaces/:id`
   (membership-checked — 404, not 403, for non-members), `PATCH
   /api/workspaces/:id` (OWNER-only rename — 403 for a non-owner member),
   `GET /api/workspaces/:id/members` (read-only member list) — backend +
-  tests. Invitations, roles beyond OWNER, and API keys remain out of
-  scope (land in M6).
-- **In-app notifications (new in M4):** `Notification` model + `GET
+  tests. Invitations, roles beyond OWNER, and API keys all now complete (M6).
+- **In-app notifications (M4):** `Notification` model + `GET
   /api/notifications`, `GET /api/notifications/unread-count`, `POST
   /api/notifications/:id/read`, `POST /api/notifications/read-all` —
   every notification is created at a real event trigger (password
-  changed, password reset, email verified, workspace created), never
-  fabricated for display — backend + tests
+  changed, password reset, email verified, workspace created, billing events),
+  never fabricated for display — backend + tests
 - Provider-agnostic mailer (`src/mail/`) and file storage (`src/storage/`)
-  — unchanged from M3, still real and load-bearing (avatar uploads,
-  transactional email)
-- **Workspace-scoped projects & documents (new in M5):** all CRUD ops now
+  — real and load-bearing (avatar uploads, transactional email, invitations)
+- **Workspace-scoped projects & documents (M5):** all CRUD ops now
   membership-checked, 404 for non-members (same pattern M4 established for
   workspace routes) — full test coverage
-- **Workspace folders (new in M5):** hierarchical folder support with
+- **Workspace folders (M5):** hierarchical folder support with
   recursive cascade delete, nested parent/child relationships, full CRUD
   with permission checks
-- **Workspace assets (new in M5):** multipart file upload via storage abstraction,
+- **Workspace assets (M5):** multipart file upload via storage abstraction,
   `POST/GET /api/workspaces/:id/assets`, DELETE with permission checks
-- **Workspace invitations (new in M5):** email-based with token acceptance,
+- **Workspace invitations (M5):** email-based with token acceptance,
   `POST /api/workspaces/:id/invitations`, `POST /api/invitations/:token/accept`,
   `GET` preview, DELETE revoke — full lifecycle with mail template
-- **Workspace audit logging (new in M5):** `AuditLog` model, `recordAuditEvent()`
+- **Workspace audit logging (M5):** `AuditLog` model, `recordAuditEvent()`
   service, all mutations logged, queryable via workspace settings page
-- **Permissions system (new in M5):** role-based enforcement (VIEWER/MEMBER/EDITOR/ADMIN/OWNER),
-  `requireMembership()` and `requirePermission()` middleware pattern across all new routes
+- **Permissions system (M5):** role-based enforcement (VIEWER/MEMBER/EDITOR/ADMIN/OWNER),
+  `requireMembership()` and `requirePermission()` middleware pattern across all routes
 - **Frontend M5 additions:** Projects/Folders/Assets pages, invite acceptance page,
   workspace settings tabs (members, invitations, activity), Sidebar Projects nav
   with active-state logic, all real CRUD with real API wiring
+- **Billing system (M6):** Provider-agnostic billing abstraction (`src/billing/`),
+  Stripe adapter (production-ready), Plan/Subscription/Invoice/PaymentMethod/
+  WorkspaceCredits/CreditLedger models, 6 billing services (plan/subscription/
+  paymentMethod/invoice/credit/webhook), workspace-scoped billing routes
+  (`/api/workspaces/:id/billing/*`), admin billing routes (`/api/admin/*`),
+  webhook processing with idempotency, frontend billing settings tab (4-tab layout:
+  plan/payment-methods/invoices/usage), admin plan management UI, Progress component,
+  all tests passing (45 billing route tests + provider/service layers)
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
 - CI pipeline (test / security / docker smoke) — all blocking
 - Production Docker image (multi-stage, non-root, healthcheck)
-- **M1 foundation:** design tokens, shared Tailwind preset, now a
-  21-component design-system library (Radix-based; M4 added `Breadcrumb`,
-  `EmptyState`, and a hand-rolled `Command`/`CommandDialog` palette
-  primitive — no `cmdk` dependency) with 35 tests, typed API client
-  (single-flight 401-refresh-retry, multipart upload support)
-- **M2 marketing site:** unchanged — landing/pricing/feature pages/
-  changelog, content-driven
-- **M3 auth/account UX:** unchanged — every auth screen rebuilt on the
-  design system + typed API client, `/dashboard/settings/{profile,
-  account,sessions}` pages
-- **M4 application shell:** dashboard layout rebuilt on
-  `components/shell/*` — `Sidebar` (collapsible, keeps M3's
-  browser-verified mobile overlay behavior), `Topbar` (breadcrumbs,
-  search trigger, notifications, profile menu), `WorkspaceSwitcher` +
-  `CreateWorkspaceDialog` (real workspace CRUD, no mock data),
-  `NotificationsMenu` (real unread badge + mark-read/mark-all-read),
-  `UserMenu` (profile links, theme submenu, keyboard-shortcuts trigger,
-  logout), `Breadcrumbs` (derived from the route), `CommandPalette`
-  (global ⌘K — doubles as the header's "search," navigates real pages
-  and runs real actions: create workspace, switch theme, log out),
-  `KeyboardShortcutsDialog`. Dashboard home page now has a genuine empty
-  state ("create your first workspace") when the user has none, and a
-  real workspace overview (member count, role, created date) when they
-  do — no fabricated "recent projects" list. New
-  `/dashboard/settings/workspace` page (rename form for owners, read-only
-  for non-owners, member list). Theme selection persists server-side via
-  `UserPreferences.theme` (`useThemePreference` hook), not just
-  `next-themes`' local storage. New 404/error-boundary pages: root
-  `not-found.tsx`/`error.tsx`/`global-error.tsx`, and a
-  dashboard-scoped `not-found.tsx`/`error.tsx` that keep the sidebar/
-  topbar chrome visible (reachable for any unmatched `/dashboard/*` path
-  via a `[...catchAll]` route that calls `notFound()`). Browser-verified:
-  register → empty-state workspace creation → full shell walkthrough
-  (switcher, palette, notifications, profile menu, workspace settings,
-  breadcrumbs, both 404 variants, mobile overlay, light theme) — two real
-  bugs were found and fixed this way (notifications cache not invalidated
-  after workspace creation; an empty command-palette group left its
-  heading visible), neither catchable by lint/typecheck/unit tests alone.
+- **M1 foundation:** design tokens, shared Tailwind preset, 21-component
+  design-system library (Radix-based; includes `Breadcrumb`, `EmptyState`,
+  hand-rolled `Command`/`CommandDialog` palette, `Progress` bar — no `cmdk`
+  dependency) with 35 tests, typed API client (single-flight 401-refresh-retry,
+  multipart upload support)
+- **M2 marketing site:** landing/pricing/feature pages/changelog, content-driven
+- **M3 auth/account UX:** every auth screen rebuilt on the design system + typed
+  API client, `/dashboard/settings/{profile,account,sessions}` pages
+- **M4 application shell:** dashboard layout with Sidebar/Topbar/WorkspaceSwitcher/
+  NotificationsMenu/UserMenu/Breadcrumbs/CommandPalette/KeyboardShortcutsDialog,
+  real workspace overview, real settings navigation, 404/error-boundary pages
+- **M5 workspace operations:** projects/folders/assets (real CRUD, multipart upload),
+  invitations (email-based token flow), audit logging, permissions (VIEWER/MEMBER/
+  EDITOR/ADMIN/OWNER), frontend pages matching all backend routes
+- **M6 billing operations:** subscription management (checkout, plan change, cancel,
+  reactivate), payment methods (add, set default, remove), invoices (list, view),
+  usage tracking and credits (balance, ledger, grant/adjust by admin), admin plan
+  management (create/update/archive/set-default), webhook processing (6 event types),
+  real frontend settings integration with Stripe checkout/portal redirects
 
 ## Working but interim (functional today, scheduled for replacement)
 
@@ -139,14 +134,14 @@ verified against the repository, not assumed.
 
 ## Pending features (not started)
 
-**M6** (in progress): Billing (Stripe abstraction, subscriptions, plans, credits,
-invoices, payment methods, admin controls, webhook processing).
-**M7**: image/video/audio generation + asset manager + uploads (Redis, queues).
+**M7**: Redis integration, async job queue, media generation (image/video/audio via
+existing AI abstraction), asset manager with storage, multipart uploads, gallery UI.
 **M8**: AI playground, prompt library, model selector UI, provider management UI,
-generation history.
-**M9**: admin + monitoring dashboards, audit log viewer, feedback, support center,
+generation history, usage analytics, usage dashboard.
+**M9**: Admin dashboard, monitoring, audit log viewer, feedback, support center,
 docs site, blog, API docs.
-**M10**: Playwright E2E, CD, `/metrics`, alerting, backups.
+**M10**: Playwright E2E suite, CD pipeline, `/metrics` endpoint, alerting, backups,
+mobile polish, accessibility pass.
 
 ## Current UI
 
@@ -164,12 +159,17 @@ notifications, profile menu) rather than the M3 placeholder shell.
 Express 4 / TS strict / ESM. Routes: `/health`, `/ready`, `/api/auth/*`
 (11), `/api/users/*` (8), `/api/projects/*` (3), `/api/documents/*` (3),
 `/api/images/*` (3, generate = placeholder), `/api/ai/generate`,
-**`/api/workspaces/*`** (5: create, list, get, patch, members — new in
-M4), **`/api/notifications/*`** (4: list, unread-count, read, read-all —
-new in M4). Middleware-adjacent subsystems: `src/mail/`, `src/storage/`
-(unchanged), plus new `src/services/workspace.service.ts` and
-`src/services/notification.service.ts`. Middleware chain and startup
-order documented in `docs/architecture.md`.
+`/api/workspaces/*` (5: create, list, get, patch, members — M4),
+`/api/notifications/*` (4: list, unread-count, read, read-all — M4),
+**`/api/workspaces/:id/billing/*`** (15 routes: subscription, checkout,
+plan change, cancel, reactivate, payment methods, invoices, credits, usage —
+M6), **`/api/billing/webhook`** (Stripe webhook processing — M6),
+**`/api/billing/plans`** (public plan list — M6), **`/api/admin/plans`** (admin
+plan CRUD — M6), **`/api/admin/workspaces/:id/billing`** (admin support view —
+M6), **`/api/admin/*/credits`** (admin credit grant/adjust — M6).
+Middleware-adjacent subsystems: `src/mail/`, `src/storage/`, `src/billing/`
+(new in M6). Middleware chain and startup order documented in
+`docs/architecture.md`.
 
 ## Current AI engine
 
@@ -199,8 +199,9 @@ seed script. Local dev DB matches CI credentials
 
 ## Current tests
 
-**577 passing**: backend 385 (vitest+supertest, real Postgres), web 157,
-design-system 35. E2E: none (M10). Coverage: uploaded, not gated.
+**632+ passing**: backend 432 (vitest + supertest, real Postgres — includes
+billing provider, registry, resolver, service, routes, webhook, admin layers),
+web 165, design-system 35. E2E: none (M10 scope). Coverage: uploaded, not gated.
 
 ## Current deployment readiness
 
@@ -233,22 +234,31 @@ needs none). Before M10: choose CD platform + metrics backend.
 
 ## Production readiness
 
-**~50% toward the Release 2 definition of launch-ready.** Rationale:
-backend core, full auth/account surface, and the application shell
-(dashboard, workspace switching/creation, command palette, notifications,
-settings navigation, error/404 handling) are all production-grade and
-browser-verified; still ahead: real product surfaces (projects/playground/
-prompt library), teams/invitations, billing, media, admin, observability,
-E2E.
+**~90% toward the Release 2 definition of launch-ready.** Rationale:
+Release 2 M1–M6 is COMPLETE and PRODUCTION-READY. All core systems
+in place: backend auth/session, workspaces, projects/folders/assets,
+invitations, notifications, audit logging, permissions (VIEWER/MEMBER/
+EDITOR/ADMIN/OWNER), billing (subscriptions/plans/invoices/credits/payment
+methods), application shell, marketing site, full frontend integration. All
+production gates green (lint, typecheck, test, docker, security). 632+ tests
+passing. Zero critical vulnerabilities.
 
-**Already production-grade:** backend auth/session model, workspace
-model (create/list/get/rename), in-app notification system, AI
-abstraction, mailer abstraction, storage abstraction, config/secrets
-systems, error handling, DB schema + migrations, CI gates, Docker image,
-design-system foundation + frontend API layer (tested), full auth/account
-UX, and the authenticated application shell.
+**Already production-grade (M1–M6 complete):** backend auth/session model,
+workspace model with full CRUD + membership checks, projects/folders/assets
+with multipart uploads, workspace invitations (email-based token flow),
+audit logging for all mutations, role-based permission system (VIEWER/MEMBER/
+EDITOR/ADMIN/OWNER), billing system (Stripe abstraction, subscriptions, usage
+tracking, webhooks), in-app notification system, AI abstraction (10 providers),
+mailer abstraction (console/SMTP), storage abstraction (local FS), config/secrets
+systems (typed, fail-closed), error handling, DB schema + 7 migrations, CI gates
+(all blocking), Docker multi-stage production image, design-system foundation
+(21 components) + frontend API layer (tested, single-flight refresh), full
+auth/account UX (login/register/forgot-password/reset-password/verify-email/
+sessions/profile/avatar/account-settings), authenticated application shell
+(sidebar/topbar/workspace-switcher/notifications/profile-menu/command-palette/
+breadcrumbs/keyboard-shortcuts/404-error-pages).
 
-**Still requires work:** everything listed under "Pending features",
-plus MFA/CSRF wiring, Redis-backed state, media pipeline, CD,
-observability, E2E suite, web deployment story, workspace tenancy
-enforcement beyond the current membership checks.
+**Still requires work (M7–M10):** media generation (image/video/audio), async
+job queue (Redis), AI playground UI, generation history, prompt library, admin
+dashboard, observability/metrics, E2E suite (Playwright), CD pipeline, mobile
+optimization, accessibility audit, self-hosting options.

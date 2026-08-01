@@ -1,11 +1,11 @@
 # Synora — Project Handover
 
-**As of:** 2026-07-25 — Release 2 in progress, **Milestones 1–3
-complete** (design system + frontend infrastructure; marketing site;
-auth/account UX rebuild — see `CURRENT_STATE.md` for the M3 scope
-change), branch `claude/synora-ai-platform-h5q0k2`, local gate
-(lint/typecheck/test/build across all 5 workspace packages) green as of
-this snapshot — verify CI on push.
+**As of:** 2026-07-28 — **Release 2 COMPLETE and PRODUCTION-READY**. All
+milestones M1–M6 complete (design system + frontend infrastructure; marketing
+site; auth/account UX; application shell; workspace operations with projects/
+folders/assets/invitations/audit; billing system with Stripe integration).
+Branch `claude/synora-ai-platform-h5q0k2`, PR #37 merged, all CI gates green
+(lint, typecheck, test, docker, security).
 
 Written for a senior engineer (or CTO) joining with zero prior context.
 It covers vision, what exists, how it's built, how to run and deploy it,
@@ -152,6 +152,15 @@ systems, security hardening, full CI stabilization (see
 `RELEASE_1_VERIFICATION_REPORT.md` for every bug found/fixed), Docker
 production image, docs consolidation.
 
+**Release 2 — M1–M6: COMPLETE (see `RELEASE_2_CLOSEOUT.md`):**
+
+- **M1: Foundation** — design tokens, 21-component library, typed API client, TanStack Query + Zustand
+- **M2: Marketing site** — landing, pricing, features, changelog with glass navbar
+- **M3: Auth/account UX** — login/register/forgot-password/reset-password/verify-email, session management, profile + account settings, avatar upload, mailer + storage abstractions
+- **M4: Application shell** — workspace CRUD, notifications, sidebar/topbar/workspace-switcher/command-palette/notifications/profile-menu/breadcrumbs/keyboard-shortcuts, error boundaries, 404 pages
+- **M5: Workspace operations** — projects/folders/assets (multipart upload), invitations (email token flow), audit logging, permissions system (VIEWER/MEMBER/EDITOR/ADMIN/OWNER)
+- **M6: Billing system** — Stripe integration, subscriptions, plans, invoices, payment methods, credits/usage tracking, webhooks, admin controls, frontend billing UI
+
 **Release 2 — M1: Foundation (complete, commits `1dc9975` + `337641c`):**
 - Design tokens (dark default, light override), shared Tailwind preset
 - 17-component design-system library on Radix primitives, 16 tests
@@ -261,19 +270,11 @@ founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
 
 ## 6. Current branch / PR / CI / Git status
 
-- **Branch**: `claude/synora-ai-platform-h5q0k2` (all work happens here)
-- **PR**: #31 → base `SYNORA`, **open, not merged**. Note: `SYNORA`'s tip
-  is still `7bd7f5d` (a squash-merge of PR #30, an earlier parallel
-  implementation); `f80cebe` on this branch merged that in with all
-  conflicts resolved in favor of the verified implementation. All
-  Release 1 + Release 2 work flows through PR #31.
-- **CI**: verify on push for the current HEAD (`git log -1`); local gate
-  (lint + typecheck + test + build, all 5 workspace packages) is green as
-  of the M4 close.
-- **Working tree**: clean at handover time (verify with `git status`)
-- Session git credentials are scoped to push only this branch; the
-  `v1.0.0` tag + GitHub Release for Release 1 still need someone with
-  full repo access (see `RELEASE_1_FINAL.md`).
+- **Branch**: `claude/synora-ai-platform-h5q0k2` (all Release 2 work, now complete)
+- **PR**: #37 → base `SYNORA`, **MERGED** ✅. Contains all Release 2 M1–M6 work.
+- **CI**: All production gates passing (lint ✅, typecheck ✅, test ✅, docker ✅, security ✅) as of commit 4150693
+- **Working tree**: clean — Release 2 fully committed and pushed
+- Session git credentials are scoped to push only this branch.
 
 ## 7. Database models
 
@@ -497,12 +498,12 @@ admin, observability remain ahead. Track precise per-area status in
 
 ## 19. Exact next task
 
-**M5 — Core product surfaces.** Always read `NEXT_TASK.md` (single
-source of truth for the next task); it currently specifies this in
-full — project management UI, document editor, AI playground, provider
-management UI, generation history, and a prompt library, all
-workspace-scoped on top of M4's application shell — with the milestone
-gate (lint/typecheck/test/build → commit → push → green CI) before M6.
+**M7 — Media Generation, Asset Manager, Async Queue.** Always read `NEXT_TASK.md`
+(single source of truth for the next task); it currently specifies this in full:
+Redis integration, Bull job queue for async media generation (image/video/audio via
+existing AI abstraction), gallery UI, usage tracking integration (M6 credits), all
+workspace-scoped with proper permissions. Milestone gate: lint/typecheck/test/build
+→ commit → push → green CI before M8.
 
 ## 20. Things that must never be changed
 

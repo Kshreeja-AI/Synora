@@ -60,6 +60,9 @@ model User {
   createdFolders  Folder[]
   uploadedAssets  Asset[]
 
+  // Conversation folders created by this user
+  conversationFolders ConversationFolder[]
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -171,6 +174,15 @@ model Workspace {
   credits       WorkspaceCredits?
   creditLedger  CreditLedgerEntry[]
   usageRecords  UsageRecord[]
+
+  // Release 3: Chat relations
+  conversations       Conversation[]
+  conversationFolders ConversationFolder[]
+  conversationTags    ConversationTag[]
+  aiMemory            AIMemory?
+  promptTemplates     PromptTemplate[]
+  conversationTemplates ConversationTemplate[]
+  tools               Tool[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -796,4 +808,361 @@ model ProcessedWebhookEvent {
 
   @@unique([provider, externalEventId])
   @@index([provider, createdAt])
+}
+
+// Release 3: Universal AI Workspace - Chat Models
+
+model Conversation {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  title             String
+  description       String?
+  provider          String
+  model             String
+  status            ConversationStatus @default(ACTIVE)
+  isArchived        Boolean   @default(false)
+  isPinned          Boolean   @default(false)
+  // Denormalized from the latest Message.createdAt in this conversation,
+  // maintained by conversationGeneration.service.ts (M2) — avoids a
+  // correlated subquery/join for the default "most recently active first"
+  // list sort. Null until the first message is sent.
+  lastMessageAt     DateTime?
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  messages          Message[]
+  folder            ConversationFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  folderId          String?
+  tags              ConversationTag[]
+  collaborators     ConversationCollaborator[]
+  versions          ConversationVersion[]
+  activity          ConversationActivity[]
+  shared            SharedConversation[]
+  usage             ConversationUsage?
+  toolCalls         ToolCall[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, lastMessageAt])
+  @@index([isArchived])
+  @@index([isPinned])
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+// deletedAt follows the same nullable-timestamp soft-delete convention as
+// RefreshToken.revokedAt/WorkspaceInvitation.revokedAt (presence = deleted,
+// value = when) rather than introducing a new isDeleted-boolean pattern.
+// Added in M1 specifically so M3 (message lifecycle) can implement soft
+// delete without a further migration: the architecture calls for deleting a
+// message to orphan, not cascade-remove, its children, which soft-delete
+// naturally gives for free (a plain UPDATE never triggers the parentId FK's
+// cascade — that only fires on an actual SQL DELETE, which soft-delete
+// never issues).
+model Message {
+  id                String    @id @default(cuid())
+  conversationId    String
+  content           String
+  role              MessageRole
+  parentId          String?
+  deletedAt         DateTime?
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  parent            Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children          Message[] @relation("MessageTree")
+
+  branch            MessageBranch?
+  attachments       MessageAttachment[]
+  streamingJob      StreamingJob?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([conversationId])
+  @@index([conversationId, createdAt])
+  @@index([conversationId, deletedAt])
+  @@index([parentId])
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+model MessageBranch {
+  id                String    @id @default(cuid())
+  messageId         String    @unique
+  branchIndex       Int
+  isMainBranch      Boolean   @default(false)
+
+  message           Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([messageId])
+}
+
+model MessageAttachment {
+  id                String    @id @default(cuid())
+  messageId         String
+  url               String
+  mimeType          String
+  name              String
+  size              Int
+
+  message           Message   @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([messageId])
+}
+
+model ConversationFolder {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  parentId          String?
+  name              String
+  createdById       String
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent            ConversationFolder? @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children          ConversationFolder[] @relation("FolderTree")
+  createdBy         User      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([parentId])
+  @@index([createdById])
+}
+
+model ConversationTag {
+  id                String    @id @default(cuid())
+  workspaceId       String
+  name              String
+  color             String?
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations     Conversation[]
+
+  createdAt         DateTime  @default(now())
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model PromptTemplate {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  content           String
+  category          String?
+  tags              String[]
+  isPublic          Boolean   @default(false)
+  usageCount        Int       @default(0)
+  isFavorite        Boolean   @default(false)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+model ConversationTemplate {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  description       String?
+  initialMessages   Json
+  category          String?
+  isPublic          Boolean   @default(false)
+  usageCount        Int       @default(0)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+model AIMemory {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  context           Json
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model SharedConversation {
+  id                String    @id @default(cuid())
+  conversationId    String
+  shareToken        String    @unique
+  expiresAt         DateTime?
+  isPublic          Boolean   @default(false)
+  permissions       SharePermission @default(VIEW)
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([conversationId])
+  @@index([shareToken])
+}
+
+enum SharePermission {
+  VIEW
+  COMMENT
+  EDIT
+}
+
+model ConversationCollaborator {
+  id                String    @id @default(cuid())
+  conversationId    String
+  userId            String
+  role              CollaboratorRole
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+}
+
+enum CollaboratorRole {
+  VIEWER
+  EDITOR
+  OWNER
+}
+
+model ConversationActivity {
+  id                String    @id @default(cuid())
+  conversationId    String
+  action            String
+  metadata          Json?
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model ConversationVersion {
+  id                String    @id @default(cuid())
+  conversationId    String
+  content           Json
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// messageId/attempt/lastError added in M2 (Universal Conversation Engine)
+// so retry support and error recovery are inspectable, not opaque:
+// messageId links to the assistant Message this job produced (set only on
+// success — see conversationGeneration.service.ts for why a Message row is
+// never created until generation actually succeeds), attempt counts calls
+// made so far, lastError holds the most recent failure's message.
+model StreamingJob {
+  id                String    @id @default(cuid())
+  conversationId    String
+  messageId         String?   @unique
+  message           Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  status            StreamingJobStatus @default(PENDING)
+  attempt           Int       @default(0)
+  lastError         String?
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  completedAt       DateTime?
+
+  @@index([conversationId])
+  @@index([status])
+  @@index([conversationId, status])
+}
+
+enum StreamingJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELED
+}
+
+model Tool {
+  id                String    @id @default(cuid())
+  workspaceId       String?
+  name              String
+  description       String?
+  definition        Json
+  isPublic          Boolean   @default(false)
+
+  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  calls             ToolCall[]
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([isPublic])
+}
+
+// executedBy is a soft reference — same reasoning as AuditLog.actorId: a
+// tool-execution audit trail must remain queryable even if the executing
+// account is later removed. conversationId is a hard reference (cascade),
+// matching ConversationActivity, since every call happens within a
+// conversation's agent loop.
+model ToolCall {
+  id                String    @id @default(cuid())
+  toolId            String
+  conversationId    String
+  executedBy        String
+  input             Json
+  output            Json?
+  error             String?
+
+  tool              Tool         @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([toolId])
+  @@index([conversationId])
+}
+
+model ConversationUsage {
+  id                String    @id @default(cuid())
+  conversationId    String    @unique
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  totalTokens       Int       @default(0)
+  estimatedCost     Float     @default(0)
+
+  conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 }

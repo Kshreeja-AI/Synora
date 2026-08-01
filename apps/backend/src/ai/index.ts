@@ -4,6 +4,8 @@ import { TextGenerationRequest, TextGenerationResult } from './types';
 export type {
   AICapability,
   TextGenerationMode,
+  ConversationRole,
+  ConversationMessage,
   TextGenerationRequest,
   TextGenerationResult,
   TextGenerationUsage,

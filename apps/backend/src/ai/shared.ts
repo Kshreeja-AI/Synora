@@ -1,4 +1,4 @@
-import { TextGenerationRequest } from './types';
+import { ConversationMessage, TextGenerationRequest } from './types';
 
 /**
  * Shared, provider-agnostic helpers used by every adapter under
@@ -23,3 +23,23 @@ export function resolveSystemPrompt(request: TextGenerationRequest): string | un
 }
 
 export const DEFAULT_MAX_TOKENS = 4096;
+
+/**
+ * The full user/assistant turn sequence a provider should send, oldest
+ * first: `request.messages` (if any) followed by `request.prompt` as the
+ * final user turn. `'system'`-role entries are dropped — `resolveSystemPrompt`
+ * is the single source of truth for the one system instruction every
+ * provider's wire format allows, so a `system` turn embedded in history
+ * would either be rejected by the SDK or silently duplicate it.
+ *
+ * With no `messages` set, this returns exactly `[{ role: 'user', content:
+ * request.prompt }]` — byte-identical to what every provider constructed
+ * inline before conversation history existed, so single-shot callers are
+ * unaffected.
+ */
+export function resolveConversationTurns(
+  request: TextGenerationRequest
+): ConversationMessage[] {
+  const history = (request.messages ?? []).filter((message) => message.role !== 'system');
+  return [...history, { role: 'user', content: request.prompt }];
+}

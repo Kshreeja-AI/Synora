@@ -2,11 +2,13 @@ import { resolve } from 'node:path';
 import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
+import { csrfProtection } from './middleware/csrf';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
@@ -23,6 +25,15 @@ import billingRoutes from './routes/billing';
 import billingPlansRoutes from './routes/billingPlans';
 import billingWebhookRoutes from './routes/billingWebhook';
 import adminBillingRoutes from './routes/adminBilling';
+import conversationRoutes from './routes/conversations';
+import messageRoutes from './routes/messages';
+import streamingRoutes from './routes/streaming';
+import branchRoutes from './routes/branches';
+import promptTemplateRoutes from './routes/promptTemplates';
+import conversationTemplateRoutes from './routes/conversationTemplates'
+import conversationFolderRoutes from './routes/conversationFolders';
+import sharingRoutes from './routes/sharing'
+import sharingPublicRoutes from './routes/sharing-public';
 
 export interface CreateAppDeps {
   /**
@@ -80,8 +91,18 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
+  // Cookie Parser and CSRF Protection (only in production/staging)
+  // Skip in test environment to avoid test complications
+  if (!['test', 'development'].includes(process.env.NODE_ENV || '')) {
+    app.use(cookieParser());
+    app.use(csrfProtection);
+  }
+
   // Logging Middleware
   app.use(requestLogger);
+
+  // Public shared conversation endpoint (before auth routes)
+  app.use('/api/shared', sharingPublicRoutes)
 
   // Liveness: process is up and serving HTTP. Deliberately checks nothing
   // else — an orchestrator uses this to decide whether to restart the
@@ -162,6 +183,18 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', billingRoutes);
   app.use('/api/workspaces', folderRoutes);
   app.use('/api/workspaces', assetRoutes);
+  app.use('/api/workspaces', conversationRoutes);
+  app.use('/api/workspaces', messageRoutes);
+  // streamingRoutes declares its own absolute paths
+  // (`/api/conversations/:conversationId/stream[...]`), unlike the other
+  // workspace-scoped routers above — mount it at root, not under
+  // `/api/workspaces`, or every path would be double-prefixed.
+  app.use(streamingRoutes);
+  app.use('/api/workspaces', branchRoutes);
+  app.use('/api/workspaces', promptTemplateRoutes);
+  app.use('/api/workspaces', conversationTemplateRoutes);
+  app.use('/api/workspaces', conversationFolderRoutes);
+  app.use('/api/workspaces', sharingRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
