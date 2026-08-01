@@ -144,6 +144,40 @@ export function subscribeToMessageStream(
 }
 
 /**
+ * Regenerate an assistant response. The server clears the message and
+ * re-enqueues generation against the same messageId, so the caller can
+ * re-subscribe to the stream with the id it already has.
+ */
+export function useRegenerateMessage(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<{ message: ConversationMessage; jobId: string }, Error, string> {
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      return api.post<{ message: ConversationMessage; jobId: string }>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/regenerate`
+      );
+    },
+  });
+}
+
+/**
+ * Cancel an in-flight generation.
+ */
+export function useCancelGeneration(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<void, Error, string> {
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      await api.post(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/stream/${jobId}/cancel`
+      );
+    },
+  });
+}
+
+/**
  * Update a message (user messages only)
  */
 export function useUpdateMessage(
@@ -174,13 +208,12 @@ export function useUpdateMessage(
  */
 export function useDeleteMessage(
   workspaceId: string,
-  conversationId: string,
-  messageId: string
-): UseMutationResult<void, Error, void> {
+  conversationId: string
+): UseMutationResult<void, Error, string> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (messageId: string) => {
       await api.delete(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}`
       );

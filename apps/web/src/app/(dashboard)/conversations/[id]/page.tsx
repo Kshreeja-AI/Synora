@@ -5,20 +5,20 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
 import { useConversation } from '@/lib/api/conversations';
-import { useMessages, useSendMessage, subscribeToMessageStream } from '@/lib/api/messages';
+import {
+  useMessages,
+  useSendMessage,
+  useRegenerateMessage,
+  useCancelGeneration,
+  useDeleteMessage,
+  subscribeToMessageStream,
+  type ConversationMessage,
+} from '@/lib/api/messages';
+import { MessageBubble } from '@/components/chat/MessageBubble';
+import { Composer } from '@/components/chat/Composer';
 import { Button } from '@synora/design-system/components/Button';
-import { Input } from '@synora/design-system/components/Input';
 import { Spinner } from '@synora/design-system/components/Spinner';
-import { AlertCircle, Send, Plus } from 'lucide-react';
-
-interface ConversationMessage {
-  id: string;
-  content: string;
-  role: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  createdAt: string;
-  inputTokens?: number;
-  outputTokens?: number;
-}
+import { AlertCircle, MessageSquarePlus } from 'lucide-react';
 
 export default function ConversationDetailPage() {
   const params = useParams();
@@ -35,170 +35,159 @@ export default function ConversationDetailPage() {
     error: conversationError,
   } = useConversation(workspaceId, conversationId, { enabled: !!workspaceId && !!conversationId });
 
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [inputValue, setInputValue] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-
-  // Fetch messages using the hook
   const {
     data: messagesData,
     isLoading: isLoadingMessages,
     error: messagesError,
   } = useMessages(workspaceId, conversationId, { enabled: !!workspaceId && !!conversationId });
 
-  // Send message mutation
   const { mutate: sendMessage } = useSendMessage(workspaceId, conversationId);
+  const { mutate: regenerate } = useRegenerateMessage(workspaceId, conversationId);
+  const { mutate: cancelGeneration } = useCancelGeneration(workspaceId, conversationId);
+  const { mutate: deleteMessage } = useDeleteMessage(workspaceId, conversationId);
 
-  // Scroll to bottom when messages change
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, []);
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, scrollToBottom]);
-
-  // Update messages when hook data changes
-  useEffect(() => {
-    if (messagesData) {
-      setMessages(messagesData);
-    }
+    if (messagesData) setMessages(messagesData);
   }, [messagesData]);
 
-  // Handle message loading errors
   useEffect(() => {
     if (messagesError) {
       setError(messagesError instanceof Error ? messagesError.message : 'Failed to load messages');
     }
   }, [messagesError]);
 
-  // Setup SSE streaming for new messages
-  const subscribeToStream = useCallback(
-    (messageId: string) => {
-      let streamedContent = '';
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-      const unsubscribe = subscribeToMessageStream(
+  const patchMessage = useCallback(
+    (messageId: string, patch: Partial<ConversationMessage>) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, ...patch } : m))
+      );
+    },
+    []
+  );
+
+  const startStream = useCallback(
+    (messageId: string) => {
+      let streamed = '';
+      setStreamingId(messageId);
+
+      unsubscribeRef.current = subscribeToMessageStream(
         workspaceId,
         conversationId,
         messageId,
         (token) => {
-          streamedContent += token;
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg && lastMsg.id === messageId) {
-              lastMsg.content = streamedContent;
-            }
-            return updated;
-          });
+          streamed += token;
+          patchMessage(messageId, { content: streamed });
         },
         (data) => {
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastMsg = updated[updated.length - 1];
-            if (lastMsg && lastMsg.id === messageId) {
-              lastMsg.outputTokens = data.outputTokens;
-              lastMsg.inputTokens = data.inputTokens;
-            }
-            return updated;
+          patchMessage(messageId, {
+            inputTokens: data.inputTokens,
+            outputTokens: data.outputTokens,
           });
-          setIsSending(false);
+          setStreamingId(null);
           unsubscribeRef.current = null;
         },
         (err) => {
-          console.error('Stream error', { messageId });
           setError(err);
-          setIsSending(false);
+          setStreamingId(null);
           unsubscribeRef.current = null;
         }
       );
-
-      unsubscribeRef.current = unsubscribe;
     },
-    [workspaceId, conversationId]
+    [workspaceId, conversationId, patchMessage]
   );
 
-  // Send message
-  const handleSendMessage = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
+  const handleSend = useCallback(() => {
+    const content = inputValue.trim();
+    if (!content || !workspaceId || !conversationId) return;
 
-      if (!inputValue.trim() || !workspaceId || !conversationId) {
-        return;
+    setError(null);
+    setInputValue('');
+
+    const tempId = `temp-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: tempId, content, role: 'USER', createdAt: new Date().toISOString() },
+    ]);
+
+    sendMessage(
+      { content, role: 'USER' },
+      {
+        onSuccess: (response) => {
+          setMessages((prev) => [
+            ...prev.map((m) => (m.id === tempId ? response.userMessage : m)),
+            response.assistantMessage,
+          ]);
+          startStream(response.assistantMessage.id);
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : 'Failed to send message');
+          setMessages((prev) => prev.filter((m) => m.id !== tempId));
+          setInputValue(content);
+        },
       }
+    );
+  }, [inputValue, workspaceId, conversationId, sendMessage, startStream]);
 
-      setIsSending(true);
+  const handleRegenerate = useCallback(
+    (messageId: string) => {
       setError(null);
-      const sentContent = inputValue;
-      setInputValue('');
-
-      // Add user message to UI immediately
-      const tempUserMessageId = `temp-${Date.now()}`;
-      const userMessage: ConversationMessage = {
-        id: tempUserMessageId,
-        content: sentContent,
-        role: 'USER',
-        createdAt: new Date().toISOString(),
-      };
-
-      setMessages((prev) => [...prev, userMessage]);
-
-      sendMessage(
-        { content: sentContent, role: 'USER' },
-        {
-          onSuccess: (response) => {
-            // Replace temp message with real one
-            setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === tempUserMessageId
-                  ? {
-                      ...msg,
-                      id: response.userMessage.id,
-                      createdAt: response.userMessage.createdAt,
-                    }
-                  : msg
-              )
-            );
-
-            // Add assistant placeholder message
-            setMessages((prev) => [...prev, response.assistantMessage]);
-
-            // Subscribe to stream for assistant response
-            subscribeToStream(response.assistantMessage.id);
-          },
-          onError: (err) => {
-            console.error('Failed to send message', err);
-            setError(err instanceof Error ? err.message : 'Failed to send message');
-            setIsSending(false);
-            // Remove temp message on error
-            setMessages((prev) => prev.filter((msg) => msg.id !== tempUserMessageId));
-          },
-        }
-      );
+      patchMessage(messageId, { content: '', inputTokens: 0, outputTokens: 0 });
+      regenerate(messageId, {
+        onSuccess: () => startStream(messageId),
+        onError: (err) =>
+          setError(err instanceof Error ? err.message : 'Failed to regenerate response'),
+      });
     },
-    [inputValue, workspaceId, conversationId, subscribeToStream, sendMessage]
+    [regenerate, startStream, patchMessage]
   );
 
-  // Cleanup event source on unmount
+  const handleStop = useCallback(() => {
+    if (!streamingId) return;
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+    cancelGeneration(streamingId);
+    setStreamingId(null);
+  }, [streamingId, cancelGeneration]);
+
+  const handleDelete = useCallback(
+    (messageId: string) => {
+      const previous = messages;
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      deleteMessage(messageId, {
+        onError: (err) => {
+          setMessages(previous);
+          setError(err instanceof Error ? err.message : 'Failed to delete message');
+        },
+      });
+    },
+    [messages, deleteMessage]
+  );
+
   useEffect(() => {
     return () => {
-      if (unsubscribeRef.current) {
-        unsubscribeRef.current();
-      }
+      unsubscribeRef.current?.();
     };
   }, []);
 
-  if (!userQuery.data || !currentWorkspace) {
+  if (!userQuery.isLoading && !userQuery.data) {
     router.push('/auth/login');
     return null;
   }
 
-  if (conversationLoading || isLoadingMessages) {
+  if (conversationLoading || isLoadingMessages || userQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex h-full items-center justify-center">
         <Spinner />
       </div>
     );
@@ -206,109 +195,73 @@ export default function ConversationDetailPage() {
 
   if (conversationError || !conversation) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <AlertCircle className="mx-auto mb-4 h-12 w-12 text-red-500" />
-          <h2 className="text-lg font-semibold mb-2">Error</h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            {conversationError instanceof Error ? conversationError.message : 'Conversation not found'}
+          <AlertCircle className="mx-auto mb-4 h-12 w-12 text-destructive" />
+          <h2 className="mb-2 text-lg font-semibold">Conversation unavailable</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            {conversationError instanceof Error
+              ? conversationError.message
+              : 'This conversation could not be found.'}
           </p>
-          <Button onClick={() => router.push('/conversations')} className="mt-4">
-            Back to Conversations
-          </Button>
+          <Button onClick={() => router.push('/conversations')}>Back to Conversations</Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-card">
-        <div className="px-6 py-4">
-          <h1 className="text-xl font-semibold text-foreground">{conversation.title}</h1>
-          {conversation.description && (
-            <p className="text-sm text-muted-foreground mt-1">{conversation.description}</p>
-          )}
-          <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-            <span>
-              Provider: <span className="font-medium">{conversation.provider}</span>
-            </span>
-            <span>
-              Model: <span className="font-medium">{conversation.model}</span>
-            </span>
-          </div>
+    <div className="flex h-full flex-col bg-background">
+      <header className="border-b border-border bg-card px-6 py-4">
+        <h1 className="text-xl font-semibold text-foreground">{conversation.title}</h1>
+        {conversation.description && (
+          <p className="mt-1 text-sm text-muted-foreground">{conversation.description}</p>
+        )}
+        <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
+          <span>
+            Provider: <span className="font-medium">{conversation.provider}</span>
+          </span>
+          <span>
+            Model: <span className="font-medium">{conversation.model}</span>
+          </span>
         </div>
-      </div>
+      </header>
 
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 space-y-6 overflow-y-auto p-6">
         {messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-center">
+          <div className="flex h-full items-center justify-center text-center">
             <div>
-              <Plus className="mx-auto mb-4 h-12 w-12 text-muted-foreground opacity-50" />
-              <p className="text-muted-foreground">Start a conversation by sending a message</p>
+              <MessageSquarePlus className="mx-auto mb-4 h-12 w-12 text-muted-foreground opacity-50" />
+              <p className="text-muted-foreground">Start the conversation by sending a message</p>
             </div>
           </div>
         ) : (
           messages.map((message) => (
-            <div key={message.id} className={`flex ${message.role === 'USER' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-2xl px-4 py-3 rounded-lg ${
-                  message.role === 'USER'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-foreground border border-border'
-                }`}
-              >
-                <p className="whitespace-pre-wrap break-words text-sm">{message.content}</p>
-                {message.role === 'ASSISTANT' && (message.inputTokens || message.outputTokens) && (
-                  <p className="text-xs opacity-70 mt-2">
-                    {message.inputTokens} input • {message.outputTokens} output
-                  </p>
-                )}
-              </div>
-            </div>
+            <MessageBubble
+              key={message.id}
+              message={message}
+              isStreaming={streamingId === message.id}
+              onRegenerate={handleRegenerate}
+              onDelete={handleDelete}
+            />
           ))
         )}
-
-        {isSending && messages[messages.length - 1]?.role === 'ASSISTANT' && !messages[messages.length - 1]?.content && (
-          <div className="flex justify-start">
-            <div className="bg-muted text-foreground border border-border px-4 py-3 rounded-lg">
-              <div className="flex gap-1">
-                <span className="inline-block w-2 h-2 bg-current rounded-full animate-bounce"></span>
-                <span
-                  className="inline-block w-2 h-2 bg-current rounded-full animate-bounce"
-                  style={{ animationDelay: '0.2s' }}
-                ></span>
-                <span
-                  className="inline-block w-2 h-2 bg-current rounded-full animate-bounce"
-                  style={{ animationDelay: '0.4s' }}
-                ></span>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input area */}
       <div className="border-t border-border bg-card p-6">
-        <form onSubmit={handleSendMessage} className="flex gap-3">
-          <Input
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Type your message..."
-            disabled={isSending}
-            className="flex-1"
-            autoFocus
-          />
-          <Button type="submit" disabled={isSending || !inputValue.trim()} className="gap-2">
-            <Send className="h-4 w-4" />
-            Send
-          </Button>
-        </form>
-        {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
+        <Composer
+          value={inputValue}
+          onChange={setInputValue}
+          onSubmit={handleSend}
+          onStop={handleStop}
+          isGenerating={streamingId !== null}
+        />
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -912,6 +912,15 @@ model Message {
   parentId          String?
   deletedAt         DateTime?
 
+  // Per-message accounting, written by the generation worker on completion.
+  // Persisted (rather than only streamed over SSE) so counts survive reload
+  // and so usage/analytics can aggregate without replaying streams.
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  costCents         Float     @default(0)
+  provider          String?
+  model             String?
+
   conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   parent            Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
   children          Message[] @relation("MessageTree")

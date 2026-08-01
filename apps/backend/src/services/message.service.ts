@@ -88,10 +88,13 @@ export class MessageService {
         throw new NotFoundException('Conversation not found')
       }
 
-      // Create a streaming job record for tracking
+      // Create a streaming job record for tracking. The messageId link is
+      // what the SSE endpoint uses to locate the job for this message
+      // (see routes/streaming.ts findFirst({ where: { messageId } })).
       const job = await prisma.streamingJob.create({
         data: {
           conversationId,
+          messageId: assistantMessage.id,
           status: 'RUNNING',
         },
       })
@@ -117,6 +120,58 @@ export class MessageService {
       })
       // Don't throw - let the placeholder message stay so user knows something happened
     }
+  }
+
+  /**
+   * Regenerate an assistant response for a given assistant message.
+   * Wipes the message content, creates a fresh streaming job, and enqueues
+   * generation. The client can re-subscribe to the SSE stream using the
+   * same messageId. Returns the reset message.
+   */
+  async regenerate(userId: string, messageId: string): Promise<Message> {
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      include: { conversation: true },
+    })
+
+    if (!message) {
+      throw new NotFoundException('Message not found')
+    }
+
+    if (message.role !== MessageRole.ASSISTANT) {
+      throw new NotFoundException('Only assistant messages can be regenerated')
+    }
+
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:send')
+
+    // Clear the existing message so the stream restarts from empty
+    const reset = await prisma.message.update({
+      where: { id: messageId },
+      data: {
+        content: '',
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    })
+
+    // Detach any prior streaming job so the messageId unique link is free
+    await prisma.streamingJob.updateMany({
+      where: { messageId },
+      data: { messageId: null, status: 'CANCELED', completedAt: new Date() },
+    })
+
+    // Find the user message that preceded this assistant message
+    const parentUserMessage = message.parentId
+      ? await prisma.message.findUnique({ where: { id: message.parentId } })
+      : null
+
+    if (!parentUserMessage) {
+      throw new NotFoundException('Parent user message not found')
+    }
+
+    await this.enqueueGeneration(message.conversationId, parentUserMessage, reset, userId)
+    return reset
   }
 
   async getById(userId: string, id: string): Promise<Message | null> {

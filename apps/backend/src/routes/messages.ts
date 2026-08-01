@@ -106,6 +106,16 @@ router.delete('/:workspaceId/conversations/:conversationId/messages/:messageId',
   }
 })
 
+router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/regenerate', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { messageId } = req.params
+    const message = await messageService.regenerate(req.userId!, messageId)
+    res.status(202).json(createApiResponse({ message, jobId: message.id }))
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/attachments', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { messageId } = req.params

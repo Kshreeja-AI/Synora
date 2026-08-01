@@ -171,22 +171,48 @@ export function createGenerateResponseWorker() {
             tokens: accounting.outputTokens
           });
 
-          await prisma.message.update({
-            where: { id: messageId },
-            data: {
-              content: finalText
-            }
-          });
+          const totalTokens = accounting.inputTokens + accounting.outputTokens;
 
-          // Update job
-          await prisma.streamingJob.update({
-            where: { id: jobId },
-            data: {
-              messageId,
-              status: StreamingJobStatus.COMPLETED,
-              completedAt: new Date()
-            }
-          });
+          // Message content, its accounting, the job status, and the
+          // conversation-level rollup must land together — a partial write
+          // would leave usage totals permanently out of step with messages.
+          await prisma.$transaction([
+            prisma.message.update({
+              where: { id: messageId },
+              data: {
+                content: finalText,
+                inputTokens: accounting.inputTokens,
+                outputTokens: accounting.outputTokens,
+                costCents: accounting.estimatedCostCents,
+                provider,
+                model
+              }
+            }),
+            prisma.streamingJob.update({
+              where: { id: jobId },
+              data: {
+                messageId,
+                status: StreamingJobStatus.COMPLETED,
+                completedAt: new Date()
+              }
+            }),
+            prisma.conversationUsage.upsert({
+              where: { conversationId },
+              create: {
+                conversationId,
+                inputTokens: accounting.inputTokens,
+                outputTokens: accounting.outputTokens,
+                totalTokens,
+                estimatedCost: accounting.estimatedCostCents
+              },
+              update: {
+                inputTokens: { increment: accounting.inputTokens },
+                outputTokens: { increment: accounting.outputTokens },
+                totalTokens: { increment: totalTokens },
+                estimatedCost: { increment: accounting.estimatedCostCents }
+              }
+            })
+          ]);
 
           // Emit completion event
           await redis.publish(
