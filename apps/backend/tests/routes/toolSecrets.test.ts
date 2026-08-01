@@ -43,10 +43,12 @@ describe('Tool Secrets Routes', () => {
       data: {
         workspaceId,
         name: 'Test Tool',
+        displayName: 'Test Tool',
         description: 'A test tool',
+        category: 'http',
+        type: 'HTTP',
         inputSchema: { type: 'object' },
-        provider: 'openai',
-        providerConfig: { apiKey: 'test' },
+        config: { apiKey: 'test' },
         createdBy: userId,
       },
     })
