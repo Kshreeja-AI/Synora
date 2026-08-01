@@ -45,6 +45,7 @@ import exportImportRoutes from './routes/export-import';
 import { toolRoutes } from './routes/tools';
 import toolSecretRoutes from './routes/toolSecrets';
 import fileRoutes from './routes/files';
+import feedbackRoutes from './routes/feedback';
 
 export interface CreateAppDeps {
   /**
@@ -215,6 +216,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', toolRoutes);
   app.use('/api/workspaces', toolSecretRoutes);
   app.use('/api/workspaces', fileRoutes);
+  app.use('/api/workspaces', feedbackRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
