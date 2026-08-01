@@ -4,6 +4,7 @@ import { NotFoundException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requirePermission } from './permissions'
 import { requireMembership } from './checks'
+import { createGenerateResponseQueue } from '../workers/generateResponse.worker'
 
 export interface CreateMessageInput {
   content: string
@@ -56,6 +57,66 @@ export class MessageService {
 
     logger.debug(`[messageService.create] Created message ${message.id} (${input.role})`)
     return message
+  }
+
+  async createPlaceholder(conversationId: string, role: MessageRole, parentId?: string): Promise<Message> {
+    const message = await prisma.message.create({
+      data: {
+        conversationId,
+        content: '', // Empty until generation completes
+        role,
+        parentId,
+      },
+      include: {
+        branch: true,
+        children: true,
+        attachments: true,
+      },
+    })
+
+    logger.debug(`[messageService.createPlaceholder] Created placeholder message ${message.id} (${role})`)
+    return message
+  }
+
+  async enqueueGeneration(conversationId: string, userMessage: Message, assistantMessage: Message, userId: string): Promise<void> {
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+      })
+
+      if (!conversation) {
+        throw new NotFoundException('Conversation not found')
+      }
+
+      // Create a streaming job record for tracking
+      const job = await prisma.streamingJob.create({
+        data: {
+          conversationId,
+          status: 'RUNNING',
+        },
+      })
+
+      // Enqueue the generation job
+      const queue = createGenerateResponseQueue()
+      await queue.add('generate-response', {
+        jobId: job.id,
+        conversationId,
+        messageId: assistantMessage.id,
+        userId,
+        provider: conversation.provider,
+        model: conversation.model,
+      })
+
+      logger.info(`[messageService.enqueueGeneration] Enqueued generation job ${job.id}`, {
+        conversationId,
+        assistantMessageId: assistantMessage.id,
+      })
+    } catch (error) {
+      logger.error('[messageService.enqueueGeneration] Failed to enqueue generation', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      // Don't throw - let the placeholder message stay so user knows something happened
+    }
   }
 
   async getById(userId: string, id: string): Promise<Message | null> {

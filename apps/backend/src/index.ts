@@ -2,9 +2,13 @@ import 'dotenv/config';
 import { secretsManager } from './secrets';
 import { initConfig } from './config';
 import { createApp } from './app';
+import { initializeWorkers } from './workers/manager';
+import { logger } from './utils/logger';
 
 /**
- * Initialize the application: validate secrets, load config, create Express app.
+ * Initialize the application: validate secrets, load config, create Express app,
+ * and start background workers.
+ *
  * Pure function: no side effects, no server startup.
  * Tests can call this directly to get a configured app.
  * Production calls this via server.ts to start the server.
@@ -15,5 +19,17 @@ export async function initializeApp() {
   await secretsManager.validateRequired();
   const config = await initConfig();
   const app = createApp(config);
+
+  // Initialize background workers for async task processing
+  try {
+    await initializeWorkers();
+  } catch (error) {
+    logger.error('Failed to initialize workers', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Don't fail the entire app if workers don't start, but log the error
+    // (useful for local dev without Redis, or test environments)
+  }
+
   return { app, config };
 }
