@@ -25,30 +25,32 @@ describe('Landing Page - Production Quality', () => {
   describe('Hero Section', () => {
     it('renders hero with main headline', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Create anything with AI/i)).toBeInTheDocument();
+      expect(screen.getByText(/The only AI workspace/i)).toBeInTheDocument();
     });
 
     it('renders hero with subheading', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Own every part of it/i)).toBeInTheDocument();
+      expect(screen.getByText(/you'll never outgrow/i)).toBeInTheDocument();
     });
 
     it('renders call-to-action buttons', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Start creating free/i)).toBeInTheDocument();
-      expect(screen.getByText(/View pricing/i)).toBeInTheDocument();
+      const startButtons = screen.getAllByText(/Start free/i);
+      expect(startButtons.length).toBeGreaterThan(0);
+      const ctaButtons = screen.getAllByText(/No credit card required/i);
+      expect(ctaButtons.length).toBeGreaterThan(0);
     });
 
     it('renders status badge', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Text & code live/i)).toBeInTheDocument();
+      expect(screen.getByText(/Live now/i)).toBeInTheDocument();
     });
 
     it('renders statistics band with provider count', () => {
       const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('10');
-      expect(container.textContent).toContain('interchangeable AI providers');
-      expect(container.textContent).toContain('creative mediums');
+      expect(container.textContent).toContain('10+');
+      expect(container.textContent).toContain('AI providers');
+      expect(container.textContent).toContain('portable');
     });
   });
 
@@ -89,24 +91,26 @@ describe('Landing Page - Production Quality', () => {
   describe('Why Synora Section', () => {
     it('renders pillars section with three key differentiators', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Provider-agnostic by design/i)).toBeInTheDocument();
-      expect(screen.getByText(/Never locked in/i)).toBeInTheDocument();
-      expect(screen.getByText(/Security first/i)).toBeInTheDocument();
+      expect(screen.getByText(/Choose your AI provider/i)).toBeInTheDocument();
+      expect(screen.getByText(/Own your data/i)).toBeInTheDocument();
+      expect(screen.getByText(/Enterprise-grade security/i)).toBeInTheDocument();
     });
   });
 
   describe('Security Section', () => {
     it('renders security features', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/End-to-end encryption/i)).toBeInTheDocument();
-      expect(screen.getByText(/Audit trail logging/i)).toBeInTheDocument();
+      const encryptionElements = screen.getAllByText(/End-to-end encryption/i);
+      expect(encryptionElements.length).toBeGreaterThan(0);
+      const auditElements = screen.getAllByText(/Audit trail logging/i);
+      expect(auditElements.length).toBeGreaterThan(0);
     });
   });
 
   describe('Pricing Section', () => {
     it('renders three pricing tiers', () => {
       const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('Creator');
+      expect(container.textContent).toContain('Free');
       expect(container.textContent).toContain('Pro');
       expect(container.textContent).toContain('Enterprise');
     });
@@ -135,15 +139,16 @@ describe('Landing Page - Production Quality', () => {
 
     it('renders FAQ items as details elements', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/What AI providers does Synora support/i)).toBeInTheDocument();
-      expect(screen.getByText(/Can I switch providers without losing my data/i)).toBeInTheDocument();
+      expect(screen.getByText(/How do I get started/i)).toBeInTheDocument();
+      expect(screen.getByText(/What AI providers can I use/i)).toBeInTheDocument();
     });
   });
 
   describe('Footer CTA', () => {
     it('renders final call-to-action section', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Ready to create at the speed of thought/i)).toBeInTheDocument();
+      const ctaElements = screen.getAllByText(/Start creating today/i);
+      expect(ctaElements.length).toBeGreaterThan(0);
     });
   });
 
@@ -202,9 +207,9 @@ describe('Landing Page - Production Quality', () => {
 
     it('renders unique and purposeful content in each section', () => {
       render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Provider-agnostic by design/i)).toBeInTheDocument();
-      expect(screen.getByText(/Never locked in/i)).toBeInTheDocument();
-      expect(screen.getByText(/Rotating sessions with reuse detection/i)).toBeInTheDocument();
+      expect(screen.getByText(/Choose your AI provider/i)).toBeInTheDocument();
+      expect(screen.getByText(/Own your data/i)).toBeInTheDocument();
+      expect(screen.getByText(/Enterprise-grade security/i)).toBeInTheDocument();
     });
   });
 

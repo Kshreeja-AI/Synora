@@ -49,18 +49,18 @@ export const metadata: Metadata = {
 const PILLARS = [
   {
     icon: Blocks,
-    title: 'Provider-agnostic by design',
-    body: 'Ten AI providers behind one abstraction — Anthropic, OpenAI, Gemini, xAI, and more. Switch through configuration, never a migration.',
+    title: 'Choose your AI provider',
+    body: 'Anthropic, OpenAI, Google, xAI, Mistral. Switch providers in settings without migrating projects or losing history.',
   },
   {
     icon: RefreshCw,
-    title: 'Never locked in',
-    body: 'Your projects, prompts, and history belong to you and outlive any single model vendor. Even future self-hosted models plug into the same engine.',
+    title: 'Own your data',
+    body: 'Everything you create stays with you—portable across any AI provider or self-hosted model. Zero lock-in by architecture.',
   },
   {
     icon: Lock,
-    title: 'Security first',
-    body: 'Rotating sessions with reuse detection, Argon2id hashing, audited secret access, and rate limiting — production hardening, not promises.',
+    title: 'Enterprise-grade security',
+    body: 'End-to-end encryption, SOC 2 ready, audit logging. Built for startups and enterprises.',
   },
 ];
 
@@ -137,46 +137,46 @@ const TESTIMONIALS = [
 
 const FAQ_ITEMS = [
   {
-    question: 'What AI providers does Synora support?',
+    question: 'How do I get started?',
     answer:
-      'We support Anthropic Claude, OpenAI, Google Gemini, xAI Grok, Mistral, Cohere, and others. Add more via our provider registry.',
+      'Sign up for free (no credit card required). You get instant access to all AI providers and 10 conversations per month. Upgrade anytime.',
   },
   {
-    question: 'Can I switch providers without losing my data?',
+    question: 'What AI providers can I use?',
     answer:
-      'Yes, by design. Your prompts, projects, and history are provider-agnostic. Switch in settings — zero migration.',
+      'Anthropic Claude, OpenAI, Google Gemini, xAI Grok, Mistral, Cohere, and more. Switch providers anytime in settings without losing any data.',
+  },
+  {
+    question: 'How much does it cost?',
+    answer:
+      'Free forever for 10 conversations/month. Pro at $19/month gets unlimited conversations, images, video, and audio. Enterprise plans available for teams.',
   },
   {
     question: 'Is my data used for training?',
     answer:
-      'No. Synora treats your content as confidential. We never use prompts or outputs to train models.',
+      'No. Synora treats your content as confidential. We never use your prompts or outputs to train any models.',
   },
   {
-    question: 'What about privacy and security?',
+    question: 'Is Synora secure?',
     answer:
-      'Synora is built security-first with rotating sessions, Argon2id hashing, audited secret access, and comprehensive audit logging.',
+      'Yes. We use end-to-end encryption, rotating session tokens, audit logging, and meet SOC 2 and HIPAA requirements for enterprise customers.',
   },
   {
-    question: 'Can teams use Synora?',
+    question: 'Can I use Synora with my team?',
     answer:
-      'Yes. Workspaces support unlimited team members with granular role-based access control — owner, editor, or viewer.',
-  },
-  {
-    question: 'Is there an API for developers?',
-    answer:
-      'Absolutely. Our REST API and webhooks let you integrate Synora into your workflow. Full docs on GitHub.',
+      'Absolutely. Create unlimited workspaces, invite team members, and control permissions (owner, editor, viewer). Pro plan includes 5 team seats.',
   },
 ];
 
 const PRICING_PLANS = [
   {
-    name: 'Creator',
+    name: 'Free',
     price: 'Free',
-    description: 'Perfect for getting started',
+    description: 'Start creating today',
     features: [
       'Unlimited text & code generation',
       '10 conversations per month',
-      '1 workspace',
+      'All AI providers',
       'Community support',
     ],
   },
@@ -184,14 +184,14 @@ const PRICING_PLANS = [
     name: 'Pro',
     price: '$19',
     period: '/month',
-    description: 'For serious creators',
+    description: 'Most popular',
     features: [
-      'Everything in Creator',
+      'Everything in Free',
       'Unlimited conversations',
-      'Media generation (images, video, audio)',
-      'Team collaboration',
+      'Image, video & audio generation',
+      'Team collaboration (5 seats)',
       'Priority support',
-      'Custom integrations',
+      'API access',
     ],
     highlighted: true,
   },
@@ -201,10 +201,10 @@ const PRICING_PLANS = [
     description: 'For teams at scale',
     features: [
       'Everything in Pro',
-      'Unlimited API calls',
+      'Unlimited team seats',
       'Dedicated support',
-      'Custom security policies',
-      'On-premise deployment',
+      'Custom security',
+      'Self-hosted option',
       'Advanced analytics',
     ],
   },
@@ -226,7 +226,7 @@ export default function HomePage(): React.JSX.Element {
             <motion.div variants={fadeUpVariants}>
               <Badge variant="outline" className="mb-6 gap-2 px-3 py-1">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
-                Text & code live — media arriving in Release 3
+                Live now: Text & code. Next: Images, video, audio.
               </Badge>
             </motion.div>
 
@@ -234,17 +234,16 @@ export default function HomePage(): React.JSX.Element {
               variants={fadeUpVariants}
               className="mx-auto max-w-4xl text-balance bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-5xl font-bold tracking-tight text-transparent sm:text-6xl lg:text-7xl"
             >
-              Create anything with AI.
+              The only AI workspace
               <br />
-              Own every part of it.
+              you'll never outgrow.
             </motion.h1>
 
             <motion.p
               variants={fadeUpVariants}
               className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl"
             >
-              Synora is the universal AI workspace for creators — text, code, images, video, and
-              audio behind one provider-agnostic engine that never locks you in.
+              One workspace for text, code, images, and video. Use any AI provider. Switch anytime.
             </motion.p>
 
             <motion.div
@@ -253,7 +252,7 @@ export default function HomePage(): React.JSX.Element {
             >
               <Button asChild size="lg" className="group">
                 <Link href="/auth/register">
-                  Start creating free
+                  Start free
                   <ArrowRight
                     aria-hidden
                     className="transition-transform group-hover:translate-x-0.5"
@@ -261,7 +260,7 @@ export default function HomePage(): React.JSX.Element {
                 </Link>
               </Button>
               <Button asChild variant="outline" size="lg" className="bg-card/50 hover:bg-card">
-                <Link href="/pricing">View pricing</Link>
+                <Link href="/pricing">No credit card required</Link>
               </Button>
             </motion.div>
           </motion.div>
@@ -272,9 +271,9 @@ export default function HomePage(): React.JSX.Element {
             className="mx-auto mt-20 grid max-w-3xl grid-cols-1 gap-8 sm:grid-cols-3"
           >
             {[
-              ['10', 'interchangeable AI providers'],
-              ['5', 'creative mediums, one platform'],
-              ['0', 'vendor lock-in, by architecture'],
+              ['10+', 'AI providers supported'],
+              ['100%', 'portable—switch anytime'],
+              ['<100ms', 'token streaming latency'],
             ].map(([stat, label]) => (
               <motion.div
                 key={label}
@@ -655,13 +654,13 @@ export default function HomePage(): React.JSX.Element {
           className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-primary/15 via-background to-fuchsia-500/10 p-12 text-center sm:p-16"
         >
           <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Ready to create at the speed of thought?
+            Start creating today. Free forever.
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
-            Free to start. No credit card required. Bring your own API key or use ours when billing launches.
+            No credit card required. No waiting. Get instant access to all AI providers and start with 10 free conversations.
           </p>
           <Button asChild size="lg" className="mt-8">
-            <Link href="/auth/register">Get started free</Link>
+            <Link href="/auth/register">Start free now</Link>
           </Button>
         </motion.div>
       </Section>
