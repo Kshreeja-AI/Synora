@@ -214,8 +214,8 @@ describe('Landing Page - Production Quality', () => {
   });
 
   describe('SEO and Metadata', () => {
-    it('page component exports metadata', async () => {
-      const { metadata } = await import('../src/app/(marketing)/page');
+    it('layout component exports metadata', async () => {
+      const { metadata } = await import('../src/app/(marketing)/layout');
       expect(metadata).toBeDefined();
       expect(metadata.title).toBeTruthy();
       expect(metadata.description).toBeTruthy();

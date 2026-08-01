@@ -1,6 +1,5 @@
 'use client';
 
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -27,24 +26,6 @@ import {
   containerVariants,
   itemVariants,
 } from '../../lib/animations';
-
-export const metadata: Metadata = {
-  title: 'Synora AI — Universal AI Workspace for Creators',
-  description:
-    'Synora is the unified AI platform for creators — text, code, images, video, and audio behind one provider-agnostic engine.',
-  openGraph: {
-    title: 'Synora AI — Universal AI Workspace for Creators',
-    description:
-      'Create with AI across every medium. Ten interchangeable providers, one premium workspace.',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Synora AI — Universal AI Workspace for Creators',
-    description: 'Create with AI across every medium. Ten interchangeable providers, one premium workspace.',
-  },
-  robots: 'index, follow',
-};
 
 const PILLARS = [
   {
@@ -306,20 +287,20 @@ export default function HomePage(): React.JSX.Element {
           variants={fadeUpVariants}
           className="mb-12 text-center"
         >
-          <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Trusted by developers and creators
           </p>
         </motion.div>
 
         <motion.div
           variants={containerVariants}
-          className="flex flex-wrap items-center justify-center gap-6 sm:gap-8"
+          className="flex flex-wrap items-center justify-center gap-8"
         >
           {['OpenAI', 'Anthropic', 'Google', 'Mistral', 'Cohere'].map((provider) => (
             <motion.div
               key={provider}
               variants={itemVariants}
-              className="rounded-lg border border-border/30 bg-card/50 px-4 py-2 text-sm font-medium text-foreground hover:border-primary/30 transition-colors"
+              className="rounded-md border border-border/40 bg-card/30 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-card/50"
             >
               {provider}
             </motion.div>
@@ -328,7 +309,7 @@ export default function HomePage(): React.JSX.Element {
       </Section>
 
       {/* Features Grid */}
-      <Section id="features" className="scroll-mt-16">
+      <Section id="features" className="scroll-mt-16 border-t border-border">
         <SectionHeading
           eyebrow="Everything you create"
           title="One platform, every medium"
@@ -341,9 +322,11 @@ export default function HomePage(): React.JSX.Element {
           {FEATURES.map((feature, idx) => (
             <motion.div key={feature.slug} variants={itemVariants} custom={idx}>
               <Link href={`/features/${feature.slug}`} className="group">
-                <Card className="h-full transition-all motion-safe:group-hover:-translate-y-1 group-hover:border-primary/40">
+                <Card className="h-full transition-all motion-safe:group-hover:-translate-y-1 group-hover:border-primary/30">
                   <CardContent className="p-6">
-                    <div className="mb-4 text-3xl">{feature.icon}</div>
+                    <div className="mb-4 text-3xl" aria-hidden>
+                      {feature.icon}
+                    </div>
                     <div className="mb-2 flex items-center gap-2">
                       <h3 className="text-lg font-semibold text-foreground">{feature.title}</h3>
                       {feature.status === 'coming-soon' && (
@@ -368,18 +351,18 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-2"
+          className="grid grid-cols-1 gap-6 lg:grid-cols-2"
         >
           {AI_CAPABILITIES.map((capability, idx) => (
             <motion.div
               key={capability.title}
               variants={itemVariants}
               custom={idx}
-              className="group rounded-xl border border-border/50 bg-gradient-to-br from-card to-background p-8 transition-all hover:border-primary/20 hover:shadow-lg"
+              className="group rounded-lg border border-border/50 bg-gradient-to-br from-card to-background p-8 transition-all hover:border-primary/30 hover:shadow-md"
             >
               <capability.icon className="mb-4 h-8 w-8 text-primary transition-transform group-hover:scale-110" />
-              <h3 className="mb-2 text-lg font-semibold text-foreground">{capability.title}</h3>
-              <p className="text-sm text-muted-foreground">{capability.description}</p>
+              <h3 className="mb-3 text-lg font-semibold text-foreground">{capability.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{capability.description}</p>
             </motion.div>
           ))}
         </motion.div>
@@ -394,7 +377,7 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-4"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
         >
           {[
             { step: '1', title: 'Create', desc: 'Start a new project or conversation' },
@@ -405,7 +388,7 @@ export default function HomePage(): React.JSX.Element {
             <motion.div key={item.step} variants={itemVariants} custom={idx}>
               <Card className="h-full bg-gradient-to-br from-primary/5 to-transparent">
                 <CardContent className="p-6">
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                     {item.step}
                   </div>
                   <h4 className="mb-2 font-semibold text-foreground">{item.title}</h4>
@@ -450,19 +433,19 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4"
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
         >
           {PERFORMANCE_METRICS.map((item, idx) => (
             <motion.div
               key={item.metric}
               variants={itemVariants}
               custom={idx}
-              className="rounded-lg bg-gradient-to-br from-primary/10 to-transparent p-6 text-center"
+              className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
             >
-              <div className="mb-2 text-2xl font-bold text-primary md:text-3xl">
+              <div className="mb-2 text-3xl font-bold text-primary">
                 {item.metric}
               </div>
-              <div className="text-xs text-muted-foreground md:text-sm">{item.label}</div>
+              <div className="text-sm text-muted-foreground">{item.label}</div>
             </motion.div>
           ))}
         </motion.div>
@@ -476,21 +459,21 @@ export default function HomePage(): React.JSX.Element {
           description="Your data is protected with industry-leading security practices."
         />
         <motion.div
-          variants={containerVariants}
+          variants={fadeUpVariants}
           className="mx-auto max-w-3xl"
         >
-          <div className="rounded-lg border border-border bg-gradient-to-br from-card to-background p-8">
+          <div className="rounded-lg border border-border/40 bg-gradient-to-br from-card to-background p-8 lg:p-10">
             <div className="mb-8 flex items-center gap-3">
-              <Shield className="h-6 w-6 text-primary" />
+              <Shield className="h-6 w-6 text-primary flex-shrink-0" />
               <h3 className="text-lg font-semibold text-foreground">Security Features</h3>
             </div>
             <motion.div
               variants={containerVariants}
-              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
             >
               {SECURITY_FEATURES.map((feature) => (
                 <motion.div key={feature} variants={itemVariants} className="flex items-start gap-3">
-                  <Check className="mt-1 h-5 w-5 flex-shrink-0 text-primary" />
+                  <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                   <span className="text-sm text-foreground">{feature}</span>
                 </motion.div>
               ))}
@@ -508,7 +491,7 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {[
             {
@@ -531,8 +514,8 @@ export default function HomePage(): React.JSX.Element {
               <Card className="h-full">
                 <CardContent className="p-6">
                   <item.icon className="mb-4 h-8 w-8 text-primary" />
-                  <h3 className="mb-2 font-semibold text-foreground">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
+                  <h3 className="mb-3 font-semibold text-foreground">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -549,33 +532,33 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {PRICING_PLANS.map((plan, idx) => (
             <motion.div key={plan.name} variants={itemVariants} custom={idx}>
               <Card
                 className={`relative h-full transition-all ${
-                  plan.highlighted ? 'border-primary/50 bg-gradient-to-br from-primary/5 to-transparent' : ''
+                  plan.highlighted ? 'border-primary/40 bg-gradient-to-br from-primary/5 to-transparent lg:scale-105' : ''
                 }`}
               >
                 {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground rounded-full">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                     Most Popular
                   </div>
                 )}
-                <CardContent className="p-6">
-                  <h3 className="mb-2 text-lg font-semibold text-foreground">{plan.name}</h3>
+                <CardContent className="p-8">
+                  <h3 className="mb-1 text-lg font-semibold text-foreground">{plan.name}</h3>
                   <p className="mb-6 text-sm text-muted-foreground">{plan.description}</p>
-                  <div className="mb-6">
-                    <span className="text-3xl font-bold text-foreground">{plan.price}</span>
+                  <div className="mb-8">
+                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
                     {plan.period && <span className="text-sm text-muted-foreground">{plan.period}</span>}
                   </div>
-                  <Button asChild className="mb-6 w-full" variant={plan.highlighted ? 'primary' : 'outline'}>
+                  <Button asChild className="mb-8 w-full" variant={plan.highlighted ? 'primary' : 'outline'}>
                     <Link href="/auth/register">Get started</Link>
                   </Button>
                   <ul className="space-y-3">
                     {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <li key={feature} className="flex items-start gap-3 text-sm text-foreground">
                         <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                         {feature}
                       </li>
@@ -597,15 +580,19 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {TESTIMONIALS.map((testimonial, idx) => (
             <motion.div key={testimonial.author} variants={itemVariants} custom={idx}>
               <Card>
-                <CardContent className="p-6">
-                  <p className="mb-4 text-sm text-muted-foreground italic">"{testimonial.content}"</p>
-                  <div className="flex items-center gap-3">
-                    <div className="text-2xl">{testimonial.avatar}</div>
+                <CardContent className="p-6 flex flex-col h-full">
+                  <p className="mb-6 text-sm leading-relaxed text-muted-foreground italic flex-1">
+                    "{testimonial.content}"
+                  </p>
+                  <div className="flex items-center gap-3 border-t border-border/20 pt-4">
+                    <div className="text-2xl" aria-hidden>
+                      {testimonial.avatar}
+                    </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">{testimonial.author}</p>
                       <p className="text-xs text-muted-foreground">{testimonial.role}</p>
@@ -627,18 +614,18 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="mx-auto max-w-2xl space-y-4"
+          className="mx-auto max-w-2xl space-y-3"
         >
           {FAQ_ITEMS.map((item, idx) => (
             <motion.div key={item.question} variants={itemVariants} custom={idx}>
               <Card className="overflow-hidden">
-                <CardContent className="p-6">
+                <CardContent className="p-0">
                   <details className="group">
-                    <summary className="flex cursor-pointer items-center justify-between font-semibold text-foreground hover:text-primary">
+                    <summary className="flex cursor-pointer items-center justify-between px-6 py-4 font-semibold text-foreground hover:bg-card/50 transition-colors">
                       {item.question}
-                      <ChevronDown className="h-5 w-5 transition-transform group-open:rotate-180" />
+                      <ChevronDown className="h-5 w-5 flex-shrink-0 transition-transform group-open:rotate-180" />
                     </summary>
-                    <p className="mt-4 text-sm text-muted-foreground">{item.answer}</p>
+                    <p className="border-t border-border/30 px-6 py-4 text-sm text-muted-foreground">{item.answer}</p>
                   </details>
                 </CardContent>
               </Card>
@@ -648,15 +635,15 @@ export default function HomePage(): React.JSX.Element {
       </Section>
 
       {/* Final CTA */}
-      <Section>
+      <Section className="border-t border-border">
         <motion.div
           variants={fadeUpVariants}
-          className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-primary/15 via-background to-fuchsia-500/10 p-12 text-center sm:p-16"
+          className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-primary/12 via-background to-fuchsia-500/8 p-12 text-center sm:p-16 lg:p-20"
         >
           <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Start creating today. Free forever.
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+          <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground sm:text-base">
             No credit card required. No waiting. Get instant access to all AI providers and start with 10 free conversations.
           </p>
           <Button asChild size="lg" className="mt-8">
