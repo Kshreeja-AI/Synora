@@ -1,39 +1,29 @@
-'use client';
-
 import {
   useMutation,
   useQuery,
   useQueryClient,
-  UseQueryResult,
   UseMutationResult,
+  UseQueryResult,
 } from '@tanstack/react-query';
 import { api } from './client';
 
 export interface ConversationFile {
   id: string;
-  conversationId: string;
   fileName: string;
   mimeType: string;
   fileSize: number;
   storageKey: string;
-  isArchived: boolean;
-  uploadedBy: string;
-  createdAt: string;
-}
-
-export interface FileUploadResponse {
-  id: string;
-  fileName: string;
-  fileSize: number;
-  mimeType: string;
   uploadedAt: string;
-  downloadUrl?: string;
 }
 
-const FILES_KEY = 'files';
+export interface UploadFileInput {
+  file: File;
+}
+
+const FILES_KEY = 'conversation-files';
 
 /**
- * Get all files in a conversation
+ * Fetch files for a conversation
  */
 export function useConversationFiles(
   workspaceId: string,
@@ -41,24 +31,24 @@ export function useConversationFiles(
   options?: { enabled?: boolean }
 ): UseQueryResult<ConversationFile[]> {
   return useQuery({
-    queryKey: [FILES_KEY, 'conversation', conversationId],
+    queryKey: [FILES_KEY, conversationId],
     queryFn: async () => {
-      const response = await api.get<{ items: ConversationFile[] } | ConversationFile[]>(
+      const response = await api.get<{ items: ConversationFile[] }>(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/files`
       );
-      return Array.isArray(response) ? response : response.items || [];
+      return response.items || [];
     },
-    enabled: !!workspaceId && !!conversationId && options?.enabled !== false,
+    enabled: !!conversationId && !!workspaceId && options?.enabled !== false,
   });
 }
 
 /**
- * Upload file to conversation
+ * Upload a file to a conversation
  */
 export function useUploadFile(
   workspaceId: string,
   conversationId: string
-): UseMutationResult<FileUploadResponse, Error, File> {
+): UseMutationResult<ConversationFile, Error, File> {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -66,34 +56,21 @@ export function useUploadFile(
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(
+      return api.upload<ConversationFile>(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/files`,
-        {
-          method: 'POST',
-          body: formData,
-          headers: {
-            Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || '' : ''}`,
-          },
-        }
+        formData
       );
-
-      if (!response.ok) {
-        throw new Error(`Upload failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data.data || data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [FILES_KEY, 'conversation', conversationId],
+        queryKey: [FILES_KEY, conversationId],
       });
     },
   });
 }
 
 /**
- * Delete file from conversation
+ * Delete a file from a conversation
  */
 export function useDeleteFile(
   workspaceId: string,
@@ -109,8 +86,19 @@ export function useDeleteFile(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: [FILES_KEY, 'conversation', conversationId],
+        queryKey: [FILES_KEY, conversationId],
       });
     },
   });
+}
+
+/**
+ * Get download URL for a file
+ */
+export function getFileDownloadUrl(
+  workspaceId: string,
+  conversationId: string,
+  fileId: string
+): string {
+  return `/api/workspaces/${workspaceId}/conversations/${conversationId}/files/${fileId}/download`;
 }
