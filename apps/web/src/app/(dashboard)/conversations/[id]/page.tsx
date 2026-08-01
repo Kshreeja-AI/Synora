@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
 import { useConversation } from '@/lib/api/conversations';
-import { api } from '@/lib/api/client';
+import { useMessages, useSendMessage, subscribeToMessageStream } from '@/lib/api/messages';
 import { Button } from '@synora/design-system/components/Button';
 import { Input } from '@synora/design-system/components/Input';
 import { Spinner } from '@synora/design-system/components/Spinner';
@@ -37,11 +37,20 @@ export default function ConversationDetailPage() {
 
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Fetch messages using the hook
+  const {
+    data: messagesData,
+    isLoading: isLoadingMessages,
+    error: messagesError,
+  } = useMessages(workspaceId, conversationId, { enabled: !!workspaceId && !!conversationId });
+
+  // Send message mutation
+  const { mutate: sendMessage } = useSendMessage(workspaceId, conversationId);
 
   // Scroll to bottom when messages change
   const scrollToBottom = useCallback(() => {
@@ -52,46 +61,31 @@ export default function ConversationDetailPage() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
-  // Fetch messages on conversation load
+  // Update messages when hook data changes
   useEffect(() => {
-    if (!conversationId || !workspaceId) return;
+    if (messagesData) {
+      setMessages(messagesData);
+    }
+  }, [messagesData]);
 
-    const fetchMessages = async () => {
-      try {
-        setIsLoadingMessages(true);
-        setError(null);
-
-        const response = await api.get<{ items: ConversationMessage[] }>(
-          `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`
-        );
-
-        setMessages(response.items || []);
-      } catch (err) {
-        console.error('Failed to fetch messages', err);
-        setError(err instanceof Error ? err.message : 'Failed to load messages');
-      } finally {
-        setIsLoadingMessages(false);
-      }
-    };
-
-    fetchMessages();
-  }, [conversationId, workspaceId]);
+  // Handle message loading errors
+  useEffect(() => {
+    if (messagesError) {
+      setError(messagesError instanceof Error ? messagesError.message : 'Failed to load messages');
+    }
+  }, [messagesError]);
 
   // Setup SSE streaming for new messages
   const subscribeToStream = useCallback(
     (messageId: string) => {
-      const streamUrl = `/api/workspaces/${workspaceId}/conversations/${conversationId}/stream?messageId=${messageId}`;
-
-      const eventSource = new EventSource(streamUrl);
-      eventSourceRef.current = eventSource;
-
       let streamedContent = '';
 
-      eventSource.addEventListener('token', (e) => {
-        try {
-          const token = JSON.parse(e.data);
-          streamedContent += token.content || '';
-
+      const unsubscribe = subscribeToMessageStream(
+        workspaceId,
+        conversationId,
+        messageId,
+        (token) => {
+          streamedContent += token;
           setMessages((prev) => {
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
@@ -100,15 +94,8 @@ export default function ConversationDetailPage() {
             }
             return updated;
           });
-        } catch (err) {
-          console.error('Failed to parse stream token', err);
-        }
-      });
-
-      eventSource.addEventListener('done', (e) => {
-        try {
-          const data = JSON.parse(e.data);
-
+        },
+        (data) => {
           setMessages((prev) => {
             const updated = [...prev];
             const lastMsg = updated[updated.length - 1];
@@ -118,22 +105,18 @@ export default function ConversationDetailPage() {
             }
             return updated;
           });
-
-          eventSource.close();
-          eventSourceRef.current = null;
           setIsSending(false);
-        } catch (err) {
-          console.error('Failed to parse stream completion', err);
+          unsubscribeRef.current = null;
+        },
+        (err) => {
+          console.error('Stream error', { messageId });
+          setError(err);
+          setIsSending(false);
+          unsubscribeRef.current = null;
         }
-      });
+      );
 
-      eventSource.addEventListener('error', () => {
-        console.error('Stream error', { messageId });
-        setError('Connection lost while streaming response');
-        eventSource.close();
-        eventSourceRef.current = null;
-        setIsSending(false);
-      });
+      unsubscribeRef.current = unsubscribe;
     },
     [workspaceId, conversationId]
   );
@@ -147,71 +130,63 @@ export default function ConversationDetailPage() {
         return;
       }
 
-      try {
-        setIsSending(true);
-        setError(null);
+      setIsSending(true);
+      setError(null);
+      const sentContent = inputValue;
+      setInputValue('');
 
-        // Add user message to UI immediately
-        const userMessage: ConversationMessage = {
-          id: `temp-${Date.now()}`,
-          content: inputValue,
-          role: 'USER',
-          createdAt: new Date().toISOString(),
-        };
+      // Add user message to UI immediately
+      const tempUserMessageId = `temp-${Date.now()}`;
+      const userMessage: ConversationMessage = {
+        id: tempUserMessageId,
+        content: sentContent,
+        role: 'USER',
+        createdAt: new Date().toISOString(),
+      };
 
-        setMessages((prev) => [...prev, userMessage]);
-        const sentContent = inputValue;
-        setInputValue('');
+      setMessages((prev) => [...prev, userMessage]);
 
-        // Send to backend
-        const response = await api.post<{ id: string }>(
-          `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`,
-          {
-            content: sentContent,
-            role: 'USER',
-          }
-        );
+      sendMessage(
+        { content: sentContent, role: 'USER' },
+        {
+          onSuccess: (response) => {
+            // Replace temp message with real one
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === tempUserMessageId
+                  ? {
+                      ...msg,
+                      id: response.userMessage.id,
+                      createdAt: response.userMessage.createdAt,
+                    }
+                  : msg
+              )
+            );
 
-        // Replace temp message with real one
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === userMessage.id
-              ? {
-                  ...msg,
-                  id: response.id,
-                  createdAt: new Date().toISOString(),
-                }
-              : msg
-          )
-        );
+            // Add assistant placeholder message
+            setMessages((prev) => [...prev, response.assistantMessage]);
 
-        // Create placeholder for assistant message
-        const assistantMessageId = `assist-${Date.now()}`;
-        const assistantMessage: ConversationMessage = {
-          id: assistantMessageId,
-          content: '',
-          role: 'ASSISTANT',
-          createdAt: new Date().toISOString(),
-        };
-
-        setMessages((prev) => [...prev, assistantMessage]);
-
-        // Subscribe to stream for assistant response
-        subscribeToStream(assistantMessageId);
-      } catch (err) {
-        console.error('Failed to send message', err);
-        setError(err instanceof Error ? err.message : 'Failed to send message');
-        setIsSending(false);
-      }
+            // Subscribe to stream for assistant response
+            subscribeToStream(response.assistantMessage.id);
+          },
+          onError: (err) => {
+            console.error('Failed to send message', err);
+            setError(err instanceof Error ? err.message : 'Failed to send message');
+            setIsSending(false);
+            // Remove temp message on error
+            setMessages((prev) => prev.filter((msg) => msg.id !== tempUserMessageId));
+          },
+        }
+      );
     },
-    [inputValue, workspaceId, conversationId, subscribeToStream]
+    [inputValue, workspaceId, conversationId, subscribeToStream, sendMessage]
   );
 
   // Cleanup event source on unmount
   useEffect(() => {
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
       }
     };
   }, []);
