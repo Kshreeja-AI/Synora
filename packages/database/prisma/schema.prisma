@@ -86,6 +86,24 @@ model User {
   searchQueries     SearchQuery[]
   savedSearches     SavedSearch[]
 
+  // Continuous Learning Platform feedback
+  messageFeedback   MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  corrections       Correction[]
+  preferredResponses PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
+  privacyConsent    PrivacyConsent[]
+  trainingConsent   TrainingConsent[]
+  abAssignments     ABAssignment[]
+
+  // Training dataset creation
+  createdDatasets   Dataset[] @relation("DatasetCreator")
+
   // Timestamps
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -227,6 +245,33 @@ model Workspace {
   searchSuggestions   SearchSuggestion[]
   searchRankings      SearchRanking[]
   searchAnalytics     SearchAnalytics[]
+
+  // Continuous Learning Platform feedback
+  messageFeedback     MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  workspaceFeedback   WorkspaceFeedback?
+  corrections         Correction[]
+  preferredResponses  PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback    CitationFeedback[]
+  toolFeedback        ToolFeedback[]
+  visionFeedback      VisionFeedback[]
+  voiceFeedback       VoiceFeedback[]
+  rewardSignals       RewardSignal[]
+  abExperiments       ABExperiment[]
+  abAssignments       ABAssignment[]
+  benchmarkRuns       BenchmarkRun[]
+  evaluationRuns      EvaluationRun[]
+  humanPreferences    HumanPreference[]
+  privacyConsent      PrivacyConsent[]
+  trainingConsent     TrainingConsent[]
+  feedbackAnalytics   FeedbackAnalytics[]
+
+  // Dataset management
+  datasets            Dataset[]
+  trainingCandidates  TrainingCandidate[]
+  trainingExports     TrainingExport[]
+  modelRegistry       ModelRegistry[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -888,6 +933,21 @@ model Conversation {
   memories          Memory[]
   files             ConversationFile[]
 
+  // Continuous Learning Platform feedback
+  messageFeedback   MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  corrections       Correction[]
+  preferredResponses PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
+  abAssignments     ABAssignment[]
+  abResults         ABResult[]
+  trainingConsent   TrainingConsent[]
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -938,6 +998,18 @@ model Message {
   branch            MessageBranch?
   attachments       MessageAttachment[]
   streamingJob      StreamingJob?
+
+  // Continuous Learning Platform feedback
+  feedback          MessageFeedback[]
+  corrections       Correction[]
+  preferredIn       PreferredResponse[] @relation("PreferredResponse")
+  rejectedIn        PreferredResponse[] @relation("RejectedResponse")
+  hallucinations    HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -1629,6 +1701,7 @@ model ToolDefinition {
   metrics           ToolMetrics?
   webhooks          ToolWebhook[]
   toolSecrets       ToolSecret[]
+  toolFeedback      ToolFeedback[]
 
   createdBy         String
   createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
@@ -2193,3 +2266,1086 @@ model SearchAnalytics {
   @@unique([workspaceId, periodStart, periodEnd])
   @@index([workspaceId])
 }
+
+// ============================================================================
+// Release 3: Continuous Learning Platform
+// Provider-agnostic feedback collection, dataset preparation, and model
+// evolution infrastructure. Designed for training, evaluation, and A/B testing.
+// ============================================================================
+
+// Message-level feedback
+model MessageFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Feedback types
+  rating            Int?                  // 1-5 star rating
+  isHelpful         Boolean?              // Thumbs up/down
+  thumbsUp          Boolean?              // Explicit positive reaction
+  thumbsDown        Boolean?              // Explicit negative reaction
+
+  // Detailed feedback
+  feedbackType      MessageFeedbackType   // RATING, HELPFUL, UNHELPFUL, CORRECTION, etc.
+  comment           String?               @db.Text
+
+  // Feedback on specific aspects
+  accuracyRating    Int?                  // 1-5 accuracy score
+  clarityRating     Int?                  // 1-5 clarity score
+  completenessRating Int?                 // 1-5 completeness score
+  relevanceRating   Int?                  // 1-5 relevance score
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Audit
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([feedbackType])
+  @@index([createdAt])
+}
+
+enum MessageFeedbackType {
+  RATING
+  HELPFUL
+  UNHELPFUL
+  CORRECTION
+  HALLUCINATION
+  TOXICITY
+  BIAS
+  INCOMPLETE
+  IRRELEVANT
+}
+
+// Conversation-level feedback
+model ConversationFeedback {
+  id                String                @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Overall feedback
+  overallRating     Int?                  // 1-5 star rating
+  isUseful          Boolean?
+
+  // Detailed metrics
+  qualityScore      Int?                  // 1-100
+  satisfactionScore Int?                  // 1-100
+
+  // Text feedback
+  comment           String?               @db.Text
+
+  // Feedback on aspects
+  relevanceRating   Int?
+  coherenceRating   Int?
+  usefulnessRating  Int?
+
+  // Relations
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Workspace-level feedback aggregates
+model WorkspaceFeedback {
+  id                String                @id @default(cuid())
+  workspaceId       String                @unique
+
+  // Aggregated metrics
+  averageRating     Float                 @default(0)
+  totalRatings      Int                   @default(0)
+
+  // Quality metrics
+  averageQualityScore Float               @default(0)
+  averageSatisfactionScore Float           @default(0)
+
+  // Feedback distribution
+  positiveCount     Int                   @default(0)
+  neutralCount      Int                   @default(0)
+  negativeCount     Int                   @default(0)
+
+  // Common issues
+  topIssues         Json?                 // [{issue: string, count: int}]
+
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+}
+
+// Response corrections and alternatives
+model Correction {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Original vs corrected
+  originalContent   String                @db.Text
+  correctedContent  String                @db.Text
+  reason            String?               @db.Text
+
+  // Correction type
+  correctionType    CorrectionType
+  confidence        Float?                // 0-1 confidence in correction
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([correctionType])
+}
+
+enum CorrectionType {
+  FACTUAL_ERROR
+  GRAMMAR
+  CLARITY
+  TONE
+  COMPLETENESS
+  STYLE
+  TECHNICAL
+  OTHER
+}
+
+// Pairwise preferences (for DPO training)
+model PreferredResponse {
+  id                String                @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // The two responses being compared
+  preferredMessageId String
+  rejectedMessageId  String
+
+  // Reason for preference
+  reason            String?               @db.Text
+  preferenceType    PreferenceType
+
+  // Confidence
+  confidence        Float?                // 0-1
+
+  // Relations
+  preferredMessage  Message               @relation(name: "PreferredResponse", fields: [preferredMessageId], references: [id], onDelete: Cascade)
+  rejectedMessage   Message               @relation(name: "RejectedResponse", fields: [rejectedMessageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([preferenceType])
+}
+
+enum PreferenceType {
+  ACCURACY
+  CLARITY
+  HELPFULNESS
+  RELEVANCE
+  STYLE
+  TONE
+  COMPLETENESS
+  SAFETY
+}
+
+// Hallucination reports
+model HallucinationReport {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // What was hallucinated
+  hallucinatedText  String                @db.Text
+  factualCorrection String                @db.Text
+
+  // Hallucination severity
+  severity          HallucinationSeverity
+  category          HallucinationCategory
+
+  // Supporting evidence
+  evidence          String?               @db.Text
+  sourceUrl         String?
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([severity])
+  @@index([category])
+}
+
+enum HallucinationSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HallucinationCategory {
+  FACTUAL_ERROR
+  FALSE_CITATION
+  INVENTED_INFORMATION
+  OUTDATED_INFORMATION
+  LOGICAL_ERROR
+}
+
+// Citation quality feedback
+model CitationFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Citation being reviewed
+  citedText         String                @db.Text
+  sourceUrl         String?
+  isAccurate        Boolean?
+  isCitable         Boolean?
+
+  // Quality assessment
+  qualityScore      Int?                  // 1-5
+  relevanceScore    Int?                  // 1-5
+
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([isAccurate])
+}
+
+// Tool execution feedback
+model ToolFeedback {
+  id                String                @id @default(cuid())
+  messageId         String?               // Message containing tool use
+  conversationId    String
+  workspaceId       String
+  userId            String
+  toolId            String
+
+  // Feedback
+  isSuccessful      Boolean?
+  isCorrect         Boolean?
+  rating            Int?                  // 1-5
+
+  // Details
+  comment           String?               @db.Text
+  errorDescription  String?               @db.Text
+
+  // Relations
+  message           Message?              @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool              ToolDefinition        @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([toolId])
+}
+
+// Vision task feedback
+model VisionFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Image analysis feedback
+  detectionAccuracy Int?                  // 1-5
+  descriptionQuality Int?                // 1-5
+  relevance         Int?                  // 1-5
+
+  // Issues found
+  missedElements    String[]              @default([])
+  incorrectElements String[]              @default([])
+
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+}
+
+// Voice/audio task feedback
+model VoiceFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Audio quality feedback
+  transcriptionAccuracy Int?              // 1-5
+  synthesiQuality   Int?                  // 1-5
+  pronunciationQuality Int?               // 1-5
+
+  // Issues
+  errors            String[]              @default([])
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+}
+
+// Dataset for training
+model Dataset {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?               @db.Text
+
+  // Dataset purpose
+  datasetType       DatasetType           // RLHF, DPO, SFT, etc.
+  purpose           String?               // "Claude 3.5 Sonnet SFT", etc.
+
+  // Versioning
+  version           String                @default("1.0")
+  parentDatasetId   String?
+  parent            Dataset?              @relation("DatasetVersions", fields: [parentDatasetId], references: [id], onDelete: SetNull)
+  children          Dataset[]             @relation("DatasetVersions")
+
+  // Access control
+  isPublic          Boolean               @default(false)
+  createdBy         String
+  creator           User                  @relation(name: "DatasetCreator", fields: [createdBy], references: [id])
+
+  // Metadata
+  sampleCount       Int                   @default(0)
+  totalTokens       Int                   @default(0)
+
+  // Status
+  status            DatasetStatus         @default(DRAFT)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  samples           DatasetSample[]
+  versions          DatasetVersion[]
+  exports           TrainingExport[]
+  evaluationRuns    EvaluationRun[]
+  humanPreferences  HumanPreference[]
+  trainingCandidates TrainingCandidate[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+  @@index([datasetType])
+  @@index([status])
+  @@index([createdBy])
+}
+
+enum DatasetType {
+  RLHF
+  DPO
+  SFT
+  TOOL_USE
+  REASONING
+  CODE_GENERATION
+  VISION
+  MULTIMODAL
+  EVALUATION
+  BENCHMARK
+}
+
+enum DatasetStatus {
+  DRAFT
+  PROCESSING
+  READY
+  ARCHIVED
+  DELETED
+}
+
+// Dataset version tracking
+model DatasetVersion {
+  id                String                @id @default(cuid())
+  datasetId         String
+  versionNumber     Int
+  versionName       String?
+  changeLog         String?               @db.Text
+
+  // Snapshot metadata
+  sampleCount       Int
+  totalTokens       Int
+  checksum          String                // For integrity verification
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  samples           DatasetSample[]
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([datasetId, versionNumber])
+  @@index([datasetId])
+}
+
+// Individual samples in a dataset
+model DatasetSample {
+  id                String                @id @default(cuid())
+  datasetId         String
+  datasetVersionId  String?
+
+  // Source tracking
+  sourceType        SampleSourceType      // MESSAGE, CONVERSATION, FEEDBACK, SYNTHETIC
+  sourceId          String?               // messageId, conversationId, etc.
+
+  // Sample content
+  input             String                @db.Text
+  output            String                @db.Text
+
+  // Metadata
+  inputTokens       Int
+  outputTokens      Int
+
+  // Quality metrics
+  qualityScore      Float?                // 0-1
+  confidence        Float?                // 0-1
+
+  // Flags
+  isFiltered        Boolean               @default(false)
+  filterReason      String?
+  hasPII            Boolean               @default(false)
+  isUnsafe          Boolean               @default(false)
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  version           DatasetVersion?       @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
+  labels            DatasetLabel[]
+  splits            DatasetSplit[]
+
+  createdAt         DateTime              @default(now())
+
+  @@index([datasetId])
+  @@index([sourceType])
+  @@index([qualityScore])
+  @@index([hasPII])
+}
+
+enum SampleSourceType {
+  MESSAGE
+  CONVERSATION
+  FEEDBACK
+  CORRECTION
+  PREFERENCE
+  SYNTHETIC
+  EXTERNAL
+}
+
+// Labels on dataset samples
+model DatasetLabel {
+  id                String                @id @default(cuid())
+  sampleId          String
+  labelType         String                // "intent", "sentiment", "topic", etc.
+  labelValue        String
+  confidence        Float?                // 0-1 confidence in label
+
+  sample            DatasetSample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([sampleId])
+  @@index([labelType])
+}
+
+// Train/val/test splits
+model DatasetSplit {
+  id                String                @id @default(cuid())
+  sampleId          String
+  splitType         SplitType
+  splitPercentage   Float                 // For reproducibility
+
+  sample            DatasetSample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, splitType])
+  @@index([sampleId])
+}
+
+enum SplitType {
+  TRAIN
+  VALIDATION
+  TEST
+  HOLDOUT
+}
+
+// Evaluation run (benchmark)
+model EvaluationRun {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  datasetId         String
+
+  // Model being evaluated
+  modelId           String
+  modelVersion      String
+
+  // Evaluation config
+  evaluationType    EvaluationType
+  metrics           String[]              @default([])
+
+  // Results
+  status            EvaluationStatus      @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  results           EvaluationResult[]
+
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([datasetId])
+  @@index([status])
+}
+
+enum EvaluationType {
+  ACCURACY
+  PERPLEXITY
+  BLEU
+  ROUGE
+  F1
+  CUSTOM
+}
+
+enum EvaluationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Evaluation results
+model EvaluationResult {
+  id                String                @id @default(cuid())
+  evaluationRunId   String
+  sampleId          String
+
+  // Prediction vs ground truth
+  prediction        String                @db.Text
+  groundTruth       String?               @db.Text
+
+  // Scores
+  score             Float                 // 0-1
+  metrics           Json?                 // {accuracy: 0.95, precision: 0.92}
+
+  // Errors
+  error             String?
+  errorType         String?
+
+  evaluationRun     EvaluationRun         @relation(fields: [evaluationRunId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([evaluationRunId])
+  @@index([score])
+}
+
+// Reward signals for RLHF
+model RewardSignal {
+  id                String                @id @default(cuid())
+  conversationId    String
+  messageId         String
+  workspaceId       String
+  userId            String
+
+  // The signal
+  reward            Float                 // Unbounded reward value
+  rewardType        RewardType
+
+  // Context
+  comment           String?               @db.Text
+
+  // Relations
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([rewardType])
+}
+
+enum RewardType {
+  THUMBS_UP
+  THUMBS_DOWN
+  RATING
+  PREFERENCE
+  CORRECTION
+  CUSTOM
+}
+
+// Human preference pairs for DPO training
+model HumanPreference {
+  id                String                @id @default(cuid())
+  datasetId         String
+  workspaceId       String
+
+  // Preference pair
+  preferredSampleId String
+  rejectedSampleId  String
+
+  // Metadata
+  annotatorId       String?
+  confidence        Float?                // 0-1
+
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([datasetId])
+  @@index([workspaceId])
+}
+
+// A/B experiment configuration
+model ABExperiment {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?               @db.Text
+
+  // Models being tested
+  controlModelId    String
+  treatmentModelId  String
+
+  // Configuration
+  status            ExperimentStatus      @default(DRAFT)
+  targetSampleSize  Int
+  currentSampleSize Int                   @default(0)
+
+  // Dates
+  startedAt         DateTime?
+  endedAt           DateTime?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignments       ABAssignment[]
+  results           ABResult[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+// A/B assignment (which variant a user gets)
+model ABAssignment {
+  id                String                @id @default(cuid())
+  experimentId      String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Variant
+  variant           String                // "control" or "treatment"
+
+  // Relations
+  experiment        ABExperiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([experimentId, conversationId])
+  @@index([experimentId])
+  @@index([variant])
+}
+
+// A/B result
+model ABResult {
+  id                String                @id @default(cuid())
+  experimentId      String
+  conversationId    String
+
+  // Outcome
+  variant           String
+  outcome           String?               // win/loss/draw
+  metricValue       Float?
+
+  experiment        ABExperiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([experimentId])
+}
+
+// Benchmark run
+model BenchmarkRun {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+
+  // Models tested
+  modelIds          String[]              @default([])
+
+  // Benchmark datasets
+  datasetIds        String[]              @default([])
+
+  // Status
+  status            BenchmarkStatus       @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metrics           BenchmarkMetric[]
+
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum BenchmarkStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Benchmark metric results
+model BenchmarkMetric {
+  id                String                @id @default(cuid())
+  benchmarkRunId    String
+
+  // Model and dataset
+  modelId           String
+  datasetId         String
+
+  // Metrics
+  metricName        String
+  metricValue       Float
+
+  // Secondary metrics
+  metadata          Json?
+
+  benchmarkRun      BenchmarkRun          @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([benchmarkRunId])
+  @@index([modelId])
+  @@index([datasetId])
+}
+
+// Model registry for tracking versions and capabilities
+model ModelRegistry {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  providerId        String                // "anthropic", "openai", etc.
+  modelName         String                // "claude-3-opus", "gpt-4"
+
+  // Model metadata
+  description       String?               @db.Text
+  capabilities      String[]              @default([])  // ["text", "vision", "tool_use"]
+
+  // Versioning
+  latestVersion     String?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions          ModelVersion[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, providerId, modelName])
+  @@index([workspaceId])
+  @@index([providerId])
+}
+
+// Model version tracking
+model ModelVersion {
+  id                String                @id @default(cuid())
+  modelId           String
+  versionString     String
+
+  // Training info
+  trainingDatasetId String?
+  trainingProgress  Float                 @default(0)
+
+  // Performance
+  benchmarkScores   Json?                 // {accuracy: 0.95, f1: 0.92}
+
+  // Status
+  status            ModelVersionStatus    @default(DRAFT)
+
+  // Relations
+  model             ModelRegistry         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([modelId, versionString])
+  @@index([modelId])
+  @@index([status])
+}
+
+enum ModelVersionStatus {
+  DRAFT
+  TRAINING
+  EVALUATING
+  RELEASED
+  DEPRECATED
+}
+
+// Training candidate (a model ready for training)
+model TrainingCandidate {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  datasetId         String
+  modelName         String
+
+  // Training config
+  hyperparameters   Json                  // {lr: 0.0001, batch_size: 32}
+  algorithm         String                // "sft", "dpo", "rlhf"
+
+  // Status
+  status            CandidateStatus       @default(PENDING)
+  priority          Int                   @default(0)  // 0 = lowest, 100 = highest
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([priority])
+}
+
+enum CandidateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+// Training data export
+model TrainingExport {
+  id                String                @id @default(cuid())
+  datasetId         String
+  workspaceId       String
+
+  // Export format
+  format            ExportFormat          // "jsonl", "parquet", "huggingface"
+
+  // File metadata
+  fileSize          BigInt?
+  fileUrl           String?
+  checksum          String?               // SHA-256 for integrity
+
+  // Status
+  status            ExportStatus          @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  completedAt       DateTime?
+
+  @@index([datasetId])
+  @@index([status])
+}
+
+enum ExportFormat {
+  JSONL
+  PARQUET
+  HUGGINGFACE
+  CSV
+  JSON
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Privacy and consent tracking
+model PrivacyConsent {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  // Consent types
+  collectFeedback   Boolean               @default(false)
+  useForTraining    Boolean               @default(false)
+  shareWithPartners Boolean               @default(false)
+  allowEvaluation   Boolean               @default(false)
+
+  // Document tracking
+  consentDocumentVersion String?
+  consentGivenAt    DateTime?
+  consentRevokedAt  DateTime?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([collectFeedback])
+  @@index([useForTraining])
+}
+
+// Training participation consent
+model TrainingConsent {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  userId            String
+  conversationId    String
+
+  // Specific conversation consent
+  allowUseInTraining Boolean              @default(false)
+  allowUseInEvaluation Boolean            @default(false)
+
+  // Opt-out reasons
+  optOutReason      String?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([workspaceId])
+  @@index([allowUseInTraining])
+}
+
+// Feedback analytics aggregate
+model FeedbackAnalytics {
+  id                String                @id @default(cuid())
+  workspaceId       String
+
+  // Time period
+  periodStart       DateTime
+  periodEnd         DateTime
+
+  // Aggregates
+  totalFeedback     Int                   @default(0)
+  averageRating     Float                 @default(0)
+  helpfulCount      Int                   @default(0)
+  unhelpfulCount    Int                   @default(0)
+
+  // By type
+  feedbackByType    Json?                 // {rating: 100, correction: 50}
+
+  // Quality metrics
+  averageQualityScore Float               @default(0)
+  averageSatisfaction Float               @default(0)
+
+  // Issues
+  topIssues         Json?                 // [{issue: "hallucination", count: 20}]
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, periodStart, periodEnd])
+  @@index([workspaceId])
+  @@index([periodStart])
+}
+
+// Add feedback relations to User model
+// (Already done in User model above)
+
+// Add feedback relations to Conversation model
+// (Already done in Conversation model above)
+
+// Add feedback relations to Message model
+// (Already done in Message model above)
