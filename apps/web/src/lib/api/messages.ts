@@ -12,6 +12,15 @@ import {
 } from '@tanstack/react-query';
 import { api } from './client';
 
+export interface MessageAttachment {
+  id: string;
+  url: string;
+  mimeType: string;
+  name: string;
+  size: number;
+  createdAt: string;
+}
+
 export interface ConversationMessage {
   id: string;
   content: string;
@@ -20,12 +29,14 @@ export interface ConversationMessage {
   inputTokens?: number;
   outputTokens?: number;
   parentId?: string;
+  attachments?: MessageAttachment[];
 }
 
 export interface CreateMessageInput {
   content: string;
   role: 'USER' | 'SYSTEM';
   parentId?: string;
+  fileIds?: string[];
 }
 
 export interface CreateMessageResponse {

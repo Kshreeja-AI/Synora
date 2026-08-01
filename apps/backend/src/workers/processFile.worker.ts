@@ -22,7 +22,7 @@ const fileService = new FileService(new LocalStorageProvider());
 
 export function createFileProcessingWorker(): QueueProcessor {
   return async (job: QueueJob) => {
-    const { fileId, conversationId, workspaceId } = job.data;
+    const { fileId } = job.data;
     const attempt = job.data.attempt || 1;
 
     try {

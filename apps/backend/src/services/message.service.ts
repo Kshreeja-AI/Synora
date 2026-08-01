@@ -10,6 +10,7 @@ export interface CreateMessageInput {
   content: string
   role: MessageRole
   parentId?: string
+  fileIds?: string[]
 }
 
 export interface UpdateMessageInput {
@@ -31,12 +32,33 @@ export class MessageService {
 
     logger.debug(`[messageService.create] Creating ${input.role} message for conversation ${conversationId}`)
 
+    // If fileIds provided, fetch the files to attach them
+    let attachmentData: Array<{ url: string; mimeType: string; name: string; size: number }> = []
+    if (input.fileIds && input.fileIds.length > 0) {
+      const files = await prisma.conversationFile.findMany({
+        where: {
+          id: { in: input.fileIds },
+          conversationId, // Ensure files belong to this conversation
+        },
+      })
+
+      attachmentData = files.map((file) => ({
+        url: `/files/${file.storageKey}`,
+        mimeType: file.mimeType,
+        name: file.fileName,
+        size: file.fileSize,
+      }))
+    }
+
     const message = await prisma.message.create({
       data: {
         conversationId,
         content: input.content,
         role: input.role,
         parentId: input.parentId,
+        attachments: {
+          create: attachmentData,
+        },
       },
       include: {
         branch: true,
@@ -55,7 +77,7 @@ export class MessageService {
       })
     }
 
-    logger.debug(`[messageService.create] Created message ${message.id} (${input.role})`)
+    logger.debug(`[messageService.create] Created message ${message.id} (${input.role}) with ${attachmentData.length} attachments`)
     return message
   }
 

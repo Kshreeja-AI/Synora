@@ -6,6 +6,7 @@ export interface ConversationFile {
   fileName: string;
   mimeType: string;
   fileSize: number;
+  storageKey: string;
   processingStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
   virusScanStatus: 'PENDING' | 'SCANNING' | 'CLEAN' | 'INFECTED' | 'FAILED';
   extractedText?: string;

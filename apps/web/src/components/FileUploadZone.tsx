@@ -92,58 +92,69 @@ export function FileUploadZone({ workspaceId, conversationId }: FileUploadZonePr
             Files ({files.length})
           </h3>
           <div className="space-y-2">
-            {files.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700"
-              >
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <File className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                      {file.fileName}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {(file.fileSize / 1024).toFixed(1)} KB
-                    </p>
+            {files.map((file) => {
+              const isImage = file.mimeType.startsWith('image/');
+              return (
+                <div
+                  key={file.id}
+                  className="flex items-start justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    {isImage ? (
+                      <img
+                        src={`/files/${file.storageKey}`}
+                        alt={file.fileName}
+                        className="h-12 w-12 rounded object-cover flex-shrink-0"
+                      />
+                    ) : (
+                      <File className="h-4 w-4 text-gray-400 flex-shrink-0 mt-1" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {file.fileName}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {(file.fileSize / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {/* Status indicator */}
+                    {file.processingStatus === 'PENDING' && (
+                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                    )}
+                    {file.processingStatus === 'PROCESSING' && (
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                    )}
+                    {file.processingStatus === 'COMPLETED' && (
+                      <div className="h-4 w-4 rounded-full bg-green-500" />
+                    )}
+                    {file.processingStatus === 'FAILED' && (
+                      <AlertCircle className="h-4 w-4 text-red-500" />
+                    )}
+
+                    {/* Virus scan status */}
+                    {file.virusScanStatus === 'INFECTED' && (
+                      <div title="Virus detected">
+                        <AlertCircle className="h-4 w-4 text-red-500" />
+                      </div>
+                    )}
+
+                    {/* Delete button */}
+                    <button
+                      onClick={() => deleteFileMutation.mutate(file.id)}
+                      disabled={deleteFileMutation.isPending}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition"
+                      title="Delete file"
+                      aria-label="Delete file"
+                    >
+                      <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
+                    </button>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {/* Status indicator */}
-                  {file.processingStatus === 'PENDING' && (
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                  )}
-                  {file.processingStatus === 'PROCESSING' && (
-                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                  )}
-                  {file.processingStatus === 'COMPLETED' && (
-                    <div className="h-4 w-4 rounded-full bg-green-500" />
-                  )}
-                  {file.processingStatus === 'FAILED' && (
-                    <AlertCircle className="h-4 w-4 text-red-500" />
-                  )}
-
-                  {/* Virus scan status */}
-                  {file.virusScanStatus === 'INFECTED' && (
-                    <div title="Virus detected">
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                    </div>
-                  )}
-
-                  {/* Delete button */}
-                  <button
-                    onClick={() => deleteFileMutation.mutate(file.id)}
-                    disabled={deleteFileMutation.isPending}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded transition"
-                    title="Delete file"
-                    aria-label="Delete file"
-                  >
-                    <Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

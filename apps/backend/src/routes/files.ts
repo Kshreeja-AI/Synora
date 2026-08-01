@@ -1,12 +1,10 @@
 import { Router, Response } from 'express';
 import multer from 'multer';
-import { z } from 'zod';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireMembership } from '../services/checks';
 import { FileService } from '../files/file.service';
 import { LocalStorageProvider } from '../files/storageProviders';
 import { createApiResponse } from '@synora/shared';
-import { logger } from '../utils/logger';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -20,7 +18,6 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024, // 100MB
   },
   fileFilter: (_req, file, cb) => {
-    // Reject files without name or mimetype
     if (!file.originalname || !file.mimetype) {
       return cb(new Error('Invalid file'));
     }

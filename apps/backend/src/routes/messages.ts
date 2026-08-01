@@ -16,6 +16,7 @@ const createMessageSchema = z.object({
   content: z.string().min(1),
   role: z.enum([MessageRole.USER, MessageRole.SYSTEM]),
   parentId: z.string().optional(),
+  fileIds: z.array(z.string()).optional(),
 })
 
 const updateMessageSchema = z.object({
