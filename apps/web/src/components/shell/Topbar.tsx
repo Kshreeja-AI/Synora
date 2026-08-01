@@ -9,9 +9,10 @@ import { useCommandPaletteStore } from '../../stores/command-palette-store';
 
 export interface TopbarProps {
   onToggleSidebar: () => void;
+  onSearch?: () => void;
 }
 
-export function Topbar({ onToggleSidebar }: TopbarProps): React.JSX.Element {
+export function Topbar({ onToggleSidebar, onSearch }: TopbarProps): React.JSX.Element {
   const openPalette = useCommandPaletteStore((state) => state.open);
 
   return (
@@ -31,7 +32,7 @@ export function Topbar({ onToggleSidebar }: TopbarProps): React.JSX.Element {
 
       <button
         type="button"
-        onClick={openPalette}
+        onClick={onSearch || openPalette}
         className="ml-auto flex w-full max-w-xs items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent sm:ml-4"
       >
         <Search className="h-4 w-4 shrink-0" aria-hidden />

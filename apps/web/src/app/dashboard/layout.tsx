@@ -3,8 +3,11 @@
 import { useEffect, useState } from 'react';
 import { Skeleton } from '@synora/design-system';
 import { useRequireAuth } from '../../hooks/useRequireAuth';
+import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
+import { useSearchDialog } from '../../hooks/useSearchDialog';
 import { Sidebar } from '../../components/shell/Sidebar';
 import { Topbar } from '../../components/shell/Topbar';
+import { SearchDialog } from '../../components/search/SearchDialog';
 import { CommandPalette } from '../../components/shell/CommandPalette';
 import { KeyboardShortcutsDialog } from '../../components/shell/KeyboardShortcutsDialog';
 import { CreateWorkspaceDialog } from '../../components/shell/CreateWorkspaceDialog';
@@ -18,6 +21,8 @@ export default function DashboardLayout({
 }): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { data: user, isLoading } = useRequireAuth();
+  const { currentWorkspace } = useCurrentWorkspace();
+  const { isOpen: isSearchOpen, openDialog: openSearch, closeDialog: closeSearch } = useSearchDialog();
 
   // Below `md`, the sidebar becomes a full-height overlay rather than a
   // permanent column — defaulting it open there would cover the entire
@@ -59,12 +64,19 @@ export default function DashboardLayout({
       <Sidebar open={sidebarOpen} onNavigate={closeOverlayOnMobile} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <Topbar onToggleSidebar={() => setSidebarOpen((open) => !open)} />
+        <Topbar onToggleSidebar={() => setSidebarOpen((open) => !open)} onSearch={openSearch} />
         <main className="flex-1 overflow-auto">
           <div className="p-6">{children}</div>
         </main>
       </div>
 
+      {currentWorkspace && (
+        <SearchDialog
+          workspaceId={currentWorkspace.id}
+          isOpen={isSearchOpen}
+          onClose={closeSearch}
+        />
+      )}
       <CommandPalette />
       <KeyboardShortcutsDialog />
       <CreateWorkspaceDialog />
