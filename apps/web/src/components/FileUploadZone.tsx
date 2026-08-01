@@ -120,28 +120,6 @@ export function FileUploadZone({ workspaceId, conversationId }: FileUploadZonePr
                   </div>
 
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    {/* Status indicator */}
-                    {file.processingStatus === 'PENDING' && (
-                      <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
-                    )}
-                    {file.processingStatus === 'PROCESSING' && (
-                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                    )}
-                    {file.processingStatus === 'COMPLETED' && (
-                      <div className="h-4 w-4 rounded-full bg-green-500" />
-                    )}
-                    {file.processingStatus === 'FAILED' && (
-                      <AlertCircle className="h-4 w-4 text-red-500" />
-                    )}
-
-                    {/* Virus scan status */}
-                    {file.virusScanStatus === 'INFECTED' && (
-                      <div title="Virus detected">
-                        <AlertCircle className="h-4 w-4 text-red-500" />
-                      </div>
-                    )}
-
-                    {/* Delete button */}
                     <button
                       onClick={() => deleteFileMutation.mutate(file.id)}
                       disabled={deleteFileMutation.isPending}
