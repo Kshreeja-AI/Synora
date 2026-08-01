@@ -281,6 +281,62 @@ export class ConversationService {
       )
     )
   }
+
+  async generateTitle(userId: string, conversationId: string): Promise<Conversation> {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        messages: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          take: 10,
+        },
+      },
+    })
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found')
+    }
+
+    const membership = await requireMembership(userId, conversation.workspaceId)
+    requirePermission(membership.role, 'conversation:manage')
+
+    // Extract message content for title generation
+    const messageContent = conversation.messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join('\n')
+      .slice(0, 1000) // Limit to first 1000 chars
+
+    if (!messageContent.trim()) {
+      // Default title if no messages
+      return conversation
+    }
+
+    // Generate title using the conversation's configured provider
+    const { generateText } = await import('../ai')
+    try {
+      const result = await generateText({
+        prompt: `Based on this conversation, generate a concise 5-10 word title. Reply with ONLY the title, no punctuation.\n\n${messageContent}`,
+        model: conversation.model,
+        maxTokens: 20,
+      })
+
+      const title = result.text || ''
+      const cleanTitle = title
+        .trim()
+        .replace(/^["']|["']$/g, '') // Remove quotes
+        .slice(0, 100) // Max 100 chars
+
+      return prisma.conversation.update({
+        where: { id: conversationId },
+        data: { title: cleanTitle || 'Untitled Conversation' },
+      })
+    } catch (error) {
+      // If title generation fails, return conversation unchanged
+      // (better to have auto-title fail gracefully than block the user)
+      return conversation
+    }
+  }
 }
 
 export const conversationService = new ConversationService()

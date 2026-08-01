@@ -30,6 +30,7 @@ export interface ConversationMessage {
   outputTokens?: number;
   parentId?: string;
   attachments?: MessageAttachment[];
+  isPinned?: boolean;
 }
 
 export interface CreateMessageInput {
@@ -256,6 +257,52 @@ export function useAddMessageAttachment(
       await api.post(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/attachments`,
         input
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [MESSAGES_KEY, conversationId],
+      });
+    },
+  });
+}
+
+/**
+ * Pin a message to conversation
+ */
+export function usePinMessage(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<ConversationMessage, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      return api.post<ConversationMessage>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/pin`
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [MESSAGES_KEY, conversationId],
+      });
+    },
+  });
+}
+
+/**
+ * Unpin a message from conversation
+ */
+export function useUnpinMessage(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<ConversationMessage, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (messageId: string) => {
+      return api.post<ConversationMessage>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages/${messageId}/unpin`
       );
     },
     onSuccess: () => {

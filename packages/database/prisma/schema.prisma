@@ -920,6 +920,7 @@ model Message {
   role              MessageRole
   parentId          String?
   deletedAt         DateTime?
+  isPinned          Boolean   @default(false)
 
   // Per-message accounting, written by the generation worker on completion.
   // Persisted (rather than only streamed over SSE) so counts survive reload
@@ -944,6 +945,7 @@ model Message {
   @@index([conversationId])
   @@index([conversationId, createdAt])
   @@index([conversationId, deletedAt])
+  @@index([conversationId, isPinned])
   @@index([parentId])
 }
 

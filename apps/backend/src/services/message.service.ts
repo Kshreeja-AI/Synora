@@ -321,6 +321,46 @@ export class MessageService {
       },
     })
   }
+
+  async pinMessage(userId: string, messageId: string): Promise<Message> {
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      include: { conversation: true },
+    })
+
+    if (!message) {
+      throw new NotFoundException('Message not found')
+    }
+
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:manage')
+
+    logger.debug(`[messageService.pinMessage] Pinning message ${messageId}`)
+    return prisma.message.update({
+      where: { id: messageId },
+      data: { isPinned: true },
+    })
+  }
+
+  async unpinMessage(userId: string, messageId: string): Promise<Message> {
+    const message = await prisma.message.findUnique({
+      where: { id: messageId },
+      include: { conversation: true },
+    })
+
+    if (!message) {
+      throw new NotFoundException('Message not found')
+    }
+
+    const membership = await requireMembership(userId, message.conversation.workspaceId)
+    requirePermission(membership.role, 'message:manage')
+
+    logger.debug(`[messageService.unpinMessage] Unpinning message ${messageId}`)
+    return prisma.message.update({
+      where: { id: messageId },
+      data: { isPinned: false },
+    })
+  }
 }
 
 export const messageService = new MessageService()

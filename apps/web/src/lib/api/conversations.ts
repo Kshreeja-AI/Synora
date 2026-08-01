@@ -215,3 +215,27 @@ export function useSearchConversations(
     staleTime: 30000, // 30s
   });
 }
+
+/**
+ * Generate title for a conversation based on its messages
+ */
+export function useGenerateTitle(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<Conversation, Error, void> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      return api.post<Conversation>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/generate-title`
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData([CONVERSATIONS_KEY, conversationId], data);
+      queryClient.invalidateQueries({
+        queryKey: [CONVERSATIONS_KEY, workspaceId],
+      });
+    },
+  });
+}

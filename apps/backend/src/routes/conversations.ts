@@ -167,6 +167,17 @@ router.get('/:workspaceId/conversations/:conversationId/usage', authMiddleware, 
   }
 })
 
+router.post('/:workspaceId/conversations/:conversationId/generate-title', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { conversationId } = req.params
+
+    const conversation = await conversationService.generateTitle(req.userId!, conversationId)
+    res.json(createApiResponse(conversation))
+  } catch (error) {
+    next(error)
+  }
+})
+
 router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { conversationId } = req.params

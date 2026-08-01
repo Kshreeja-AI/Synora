@@ -136,4 +136,26 @@ router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/att
   }
 })
 
+router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/pin', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { messageId } = req.params
+
+    const message = await messageService.pinMessage(req.userId!, messageId)
+    res.json(createApiResponse(message))
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/unpin', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { messageId } = req.params
+
+    const message = await messageService.unpinMessage(req.userId!, messageId)
+    res.json(createApiResponse(message))
+  } catch (error) {
+    next(error)
+  }
+})
+
 export default router
