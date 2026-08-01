@@ -1,24 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { getAccessToken, getRefreshToken, setTokens, clearTokens } from './token-storage';
 
 describe('token-storage', () => {
-  beforeEach(() => {
-    window.localStorage.clear();
-  });
-
-  it('returns null when no tokens are stored', () => {
+  it('tokens are in HttpOnly cookies, not accessible to JS', () => {
     expect(getAccessToken()).toBeNull();
     expect(getRefreshToken()).toBeNull();
   });
 
-  it('stores and retrieves both tokens', () => {
+  it('setTokens is a no-op (cookies set by backend)', () => {
     setTokens({ accessToken: 'a', refreshToken: 'r' });
-    expect(getAccessToken()).toBe('a');
-    expect(getRefreshToken()).toBe('r');
+    expect(getAccessToken()).toBeNull();
+    expect(getRefreshToken()).toBeNull();
   });
 
-  it('clears both tokens', () => {
-    setTokens({ accessToken: 'a', refreshToken: 'r' });
+  it('clearTokens is a no-op (cookies cleared by backend)', () => {
     clearTokens();
     expect(getAccessToken()).toBeNull();
     expect(getRefreshToken()).toBeNull();

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
 import {
@@ -52,14 +52,6 @@ const loginSchema = z.object({
   rememberMe: z.boolean().optional(),
 });
 
-const refreshSchema = z.object({
-  refreshToken: z.string().min(1),
-});
-
-const logoutSchema = z.object({
-  refreshToken: z.string().min(1),
-});
-
 const forgotPasswordSchema = z.object({
   email: z.string().email(),
 });
@@ -84,13 +76,32 @@ function toAuthedUser(user: { id: string; email: string; name: string | null; em
   return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified !== null };
 }
 
+function setAuthCookies(
+  res: Response,
+  tokens: { accessToken: string; refreshToken: string }
+): void {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie('accessToken', tokens.accessToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    maxAge: 15 * 60 * 1000, // 15 minutes
+    path: '/',
+  });
+  res.cookie('refreshToken', tokens.refreshToken, {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'strict',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    path: '/',
+  });
+}
+
 function authPayload(
-  tokens: { accessToken: string; refreshToken: string },
+  _tokens: { accessToken: string; refreshToken: string },
   user?: AuthedUser
 ): Record<string, unknown> {
   return {
-    accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken,
     ...(user ? { user } : {}),
   };
 }
@@ -152,6 +163,7 @@ router.post('/register', authInputValidator, registerLimiter, async (req, res, n
       sendVerificationEmail({ to: user.email, name: user.name, token: verificationToken })
     );
 
+    setAuthCookies(res, tokens);
     res.status(201).json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
@@ -207,6 +219,7 @@ router.post('/login', authInputValidator, loginLimiter, async (req, res, next) =
       { ...deviceMetadata(req), rememberMe }
     );
 
+    setAuthCookies(res, tokens);
     res.json(createApiResponse(authPayload(tokens, toAuthedUser(user))));
   } catch (error) {
     next(error);
@@ -217,16 +230,22 @@ router.post('/login', authInputValidator, loginLimiter, async (req, res, next) =
  * Exchange a valid refresh token for a new access+refresh pair, rotating the
  * refresh token. An unknown, revoked, or expired token yields 401 — the
  * client must then re-authenticate.
+ *
+ * Reads refresh token from HttpOnly cookie (preferred) or request body (for backwards compatibility).
  */
 router.post('/refresh', authInputValidator, refreshTokenLimiter, async (req, res, next) => {
   try {
-    const { refreshToken } = refreshSchema.parse(req.body);
+    const refreshToken = req.cookies['refreshToken'] || req.body.refreshToken;
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token missing or expired');
+    }
 
     const tokens = await rotateTokens(refreshToken, deviceMetadata(req));
     if (!tokens) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    setAuthCookies(res, tokens);
     res.json(createApiResponse(authPayload(tokens)));
   } catch (error) {
     next(error);
@@ -238,11 +257,18 @@ router.post('/refresh', authInputValidator, refreshTokenLimiter, async (req, res
  * short-lived access token expires within minutes, and without a live refresh
  * token no new access token can be minted. Idempotent — a stale or already
  * revoked token still returns success.
+ *
+ * Reads refresh token from HttpOnly cookie (preferred) or request body (for backwards compatibility).
+ * Clears auth cookies after logout.
  */
 router.post('/logout', authInputValidator, async (req, res, next) => {
   try {
-    const { refreshToken } = logoutSchema.parse(req.body);
-    await revokeRefreshToken(refreshToken);
+    const refreshToken = req.cookies['refreshToken'] || req.body.refreshToken;
+    if (refreshToken) {
+      await revokeRefreshToken(refreshToken);
+    }
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
     res.json(createApiResponse({ message: 'Logged out successfully' }));
   } catch (error) {
     next(error);

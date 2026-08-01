@@ -1,6 +1,6 @@
 import { api } from './client';
 import type { AuthResponse } from './types';
-import { setTokens, clearTokens, getRefreshToken } from '../auth/token-storage';
+import { setTokens, clearTokens } from '../auth/token-storage';
 
 export async function login(
   email: string,
@@ -31,11 +31,9 @@ export async function register(
 }
 
 export async function logout(): Promise<void> {
-  const refreshToken = getRefreshToken();
   try {
-    if (refreshToken) {
-      await api.post('/api/auth/logout', { refreshToken });
-    }
+    // Refresh token is in HttpOnly cookie, sent automatically by browser
+    await api.post('/api/auth/logout');
   } finally {
     clearTokens();
   }
