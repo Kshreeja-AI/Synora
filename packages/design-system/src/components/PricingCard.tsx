@@ -3,7 +3,6 @@
 import React from 'react';
 import { Check } from 'lucide-react';
 import { Card, CardContent } from './Card';
-import { Badge } from './Badge';
 import { Button } from './Button';
 import { cn } from '../lib/cn';
 

@@ -10,9 +10,12 @@ export interface Conversation {
   workspaceId: string;
   title: string;
   description?: string;
+  provider: string;
+  model: string;
   isArchived: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt?: string;
 }
 
 export interface Message {
@@ -20,13 +23,17 @@ export interface Message {
   conversationId: string;
   content: string;
   role: 'USER' | 'ASSISTANT' | 'SYSTEM';
-  createdAt: Date;
-  updatedAt: Date;
+  inputTokens?: number;
+  outputTokens?: number;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateConversationInput {
   title?: string;
   description?: string;
+  provider?: string;
+  model?: string;
   projectId?: string;
   folderId?: string;
 }
