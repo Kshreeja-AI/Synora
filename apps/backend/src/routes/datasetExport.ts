@@ -4,6 +4,7 @@ import { datasetExportService } from '../services/datasetExport.service'
 import { createApiResponse } from '@synora/shared'
 import { ExportFormat } from '@prisma/client'
 import { z } from 'zod'
+import { enqueueExportDataset } from '../workers/queue'
 
 const ExportDatasetSchema = z.object({
   format: z.nativeEnum(ExportFormat),
@@ -22,6 +23,17 @@ router.post('/:workspaceId/datasets/:datasetId/exports', authMiddleware, async (
     const result = await datasetExportService.exportDataset(req.userId!, workspaceId, {
       datasetId,
       ...input,
+    })
+
+    // Enqueue background job for actual export processing
+    await enqueueExportDataset({
+      exportId: result.exportId,
+      datasetId,
+      workspaceId,
+      userId: req.userId!,
+      format: input.format,
+      includePII: input.includePII ?? false,
+      maxSamples: input.maxSamples,
     })
 
     res.status(201).json(createApiResponse(result))

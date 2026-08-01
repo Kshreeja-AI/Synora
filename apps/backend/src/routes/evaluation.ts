@@ -4,6 +4,7 @@ import { evaluationService } from '../services/evaluation.service'
 import { createApiResponse } from '@synora/shared'
 import { EvaluationStatus } from '@prisma/client'
 import { z } from 'zod'
+import { enqueueRunEvaluation } from '../workers/queue'
 
 const CreateEvaluationRunSchema = z.object({
   datasetId: z.string().min(1),
@@ -60,13 +61,22 @@ router.get('/:workspaceId/evaluations/:runId', authMiddleware, async (req: AuthR
 })
 
 // Run evaluation (trigger execution)
-router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req, res, next) => {
+router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, runId } = req.params
 
-    const result = await evaluationService.runEvaluation(runId, workspaceId)
+    // Enqueue background job for evaluation processing
+    // The worker will fetch the evaluation run details itself
+    await enqueueRunEvaluation({
+      evaluationRunId: runId,
+      datasetId: '', // Will be fetched by worker
+      modelId: '', // Will be fetched by worker
+      workspaceId,
+      userId: req.userId!,
+      metrics: [],
+    })
 
-    res.json(createApiResponse(result))
+    res.json(createApiResponse({ success: true }))
   } catch (error) {
     next(error)
   }
