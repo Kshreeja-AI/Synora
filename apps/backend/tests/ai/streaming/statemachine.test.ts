@@ -32,12 +32,11 @@ describe('StreamingJobStateMachine', () => {
     await stateMachine.transition(StreamingJobStatus.RUNNING);
 
     expect(stateMachine.getCurrentStatus()).toBe(StreamingJobStatus.RUNNING);
+    // StreamingJob has no startedAt column (only completedAt, covering every
+    // terminal state) — RUNNING is non-terminal, so only status is written.
     expect(prisma.streamingJob.update).toHaveBeenCalledWith({
       where: { id: jobId },
-      data: expect.objectContaining({
-        status: StreamingJobStatus.RUNNING,
-        startedAt: expect.any(Date)
-      })
+      data: { status: StreamingJobStatus.RUNNING }
     });
   });
 
@@ -61,11 +60,11 @@ describe('StreamingJobStateMachine', () => {
     ).rejects.toThrow('Invalid state transition');
   });
 
-  it('should transition to CANCELLED from RUNNING', async () => {
+  it('should transition to CANCELED from RUNNING', async () => {
     await stateMachine.transition(StreamingJobStatus.RUNNING);
-    await stateMachine.transition(StreamingJobStatus.CANCELLED);
+    await stateMachine.transition(StreamingJobStatus.CANCELED);
 
-    expect(stateMachine.getCurrentStatus()).toBe(StreamingJobStatus.CANCELLED);
+    expect(stateMachine.getCurrentStatus()).toBe(StreamingJobStatus.CANCELED);
   });
 
   it('should transition from FAILED to PENDING for retry', async () => {

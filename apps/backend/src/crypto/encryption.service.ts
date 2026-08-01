@@ -23,17 +23,17 @@ export class EncryptionService {
   private readonly ENCODING = 'base64'
   private readonly SALT = Buffer.from('SYNORA_TOOL_SECRETS_SALT_v1', 'utf8')
 
-  private encryptionKey: Buffer
-
-  constructor() {
-    const masterKey = this.getMasterKey()
-    this.encryptionKey = this.deriveKey(masterKey)
-  }
+  // Derived lazily on first encrypt/decrypt, not in the constructor. The
+  // module-level singleton below is imported transitively by most of the
+  // app, so deriving eagerly made a missing TOOL_SECRET_MASTER_KEY crash
+  // the process at import time — before config loaded and before any code
+  // that actually handles secrets ran.
+  private encryptionKey: Buffer | null = null
 
   /**
-   * Get master encryption key from environment
-   * In production: should come from HashiCorp Vault, AWS KMS, or similar
-   * For now: environment variable (TOOL_SECRET_MASTER_KEY)
+   * Get master encryption key from environment.
+   * In production this should come from HashiCorp Vault, AWS KMS, or similar;
+   * the env var is the current source (see SecretsManager).
    */
   private getMasterKey(): string {
     const key = process.env.TOOL_SECRET_MASTER_KEY
@@ -41,6 +41,18 @@ export class EncryptionService {
       throw new Error('TOOL_SECRET_MASTER_KEY environment variable is required for secret encryption')
     }
     return key
+  }
+
+  private getKey(): Buffer {
+    if (!this.encryptionKey) {
+      this.encryptionKey = this.deriveKey(this.getMasterKey())
+    }
+    return this.encryptionKey
+  }
+
+  /** Whether a master key is present, without throwing. For health checks. */
+  isConfigured(): boolean {
+    return Boolean(process.env.TOOL_SECRET_MASTER_KEY)
   }
 
   /**
@@ -63,7 +75,7 @@ export class EncryptionService {
   encrypt(plaintext: string): EncryptedSecret {
     try {
       const iv = randomBytes(this.IV_LENGTH)
-      const cipher = createCipheriv(this.ALGORITHM, this.encryptionKey, iv)
+      const cipher = createCipheriv(this.ALGORITHM, this.getKey(), iv)
 
       const encrypted = Buffer.concat([
         cipher.update(plaintext, 'utf8'),
@@ -93,7 +105,7 @@ export class EncryptionService {
       const encryptedBuffer = Buffer.from(encrypted.encryptedValue, this.ENCODING)
       const authTag = Buffer.from(encrypted.authTag, this.ENCODING)
 
-      const decipher = createDecipheriv(this.ALGORITHM, this.encryptionKey, iv)
+      const decipher = createDecipheriv(this.ALGORITHM, this.getKey(), iv)
       decipher.setAuthTag(authTag)
 
       const decrypted = Buffer.concat([
@@ -115,6 +127,7 @@ export class EncryptionService {
    * Used for health checks and diagnostics
    */
   healthCheck(): boolean {
+    if (!this.isConfigured()) return false
     try {
       const testSecret = 'health_check_test_value_' + Date.now()
       const encrypted = this.encrypt(testSecret)

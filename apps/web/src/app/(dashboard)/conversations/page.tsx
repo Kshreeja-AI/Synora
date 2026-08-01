@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useConversations,
   useCreateConversation,
@@ -12,8 +13,12 @@ import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { AlertCircle, Plus, Trash2, Archive } from 'lucide-react';
 
+const DEFAULT_PROVIDER = 'anthropic';
+const DEFAULT_MODEL = 'claude-sonnet-5';
+
 export default function ConversationsPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { currentWorkspace } = useCurrentWorkspace();
   const workspaceId = currentWorkspace?.id || '';
 
@@ -28,12 +33,15 @@ export default function ConversationsPage() {
   const conversations = conversationsData?.items || [];
   const error = fetchError || createMutation.error;
 
+  const refreshList = () =>
+    queryClient.invalidateQueries({ queryKey: ['conversations', workspaceId] });
+
   const handleCreateConversation = async () => {
     try {
       const conversation = await createMutation.mutateAsync({
         title: 'New Conversation',
-        provider: 'anthropic',
-        model: 'claude-opus',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
       });
 
       if (conversation?.id) {
@@ -54,8 +62,7 @@ export default function ConversationsPage() {
 
     try {
       await api.delete(`/api/workspaces/${workspaceId}/conversations/${conversationId}`);
-      // Invalidate the query to refetch the list
-      window.location.reload();
+      await refreshList();
     } catch (err) {
       console.error('Failed to delete conversation', err);
     }
@@ -69,8 +76,7 @@ export default function ConversationsPage() {
       await api.patch(`/api/workspaces/${workspaceId}/conversations/${conversationId}`, {
         isArchived: true,
       });
-      // Invalidate the query to refetch the list
-      window.location.reload();
+      await refreshList();
     } catch (err) {
       console.error('Failed to archive conversation', err);
     }

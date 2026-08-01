@@ -19,9 +19,9 @@ describe('StreamingAccumulator', () => {
 
   it('should track elapsed time', async () => {
     const before = Date.now();
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    expect(accumulator.getElapsedMs()).toBeGreaterThanOrEqual(50);
+    expect(accumulator.getElapsedMs()).toBeGreaterThanOrEqual(100);
   });
 
   it('should calculate tokens per second', async () => {
@@ -117,7 +117,7 @@ describe('TokenAccountant', () => {
 
     await new Promise(resolve => setTimeout(resolve, 5100));
     expect(accountant.shouldReportProgress()).toBe(true);
-  });
+  }, 10000);
 
   it('should return summary with all fields', () => {
     accountant.setInputTokens(500);

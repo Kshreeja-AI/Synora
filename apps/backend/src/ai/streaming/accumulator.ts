@@ -106,7 +106,7 @@ export class TokenAccountant {
   private inputTokens = 0;
   private outputTokens = 0;
   private estimatedCost = 0;
-  private lastReportedAt = Date.now();
+  private lastReportedAt = Date.now() - 5000;
 
   constructor(private model: string, private provider: string) {}
 
