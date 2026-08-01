@@ -2,14 +2,12 @@ import { prisma } from '@synora/database'
 import { NotFoundException, ValidationException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requireMembership } from './checks'
-import { ModelStatus, ModelVersionStatus } from '@prisma/client'
+import { ModelVersionStatus } from '@prisma/client'
 
 export interface CreateModelInput {
-  name: string
+  modelName: string
   description?: string
-  provider: string
-  baseModel?: string
-  tags?: string[]
+  providerId: string
 }
 
 export interface CreateModelVersionInput {
@@ -41,7 +39,8 @@ export class ModelRegistryService {
     const existing = await prisma.modelRegistry.findFirst({
       where: {
         workspaceId,
-        name: input.name,
+        providerId: input.providerId,
+        modelName: input.modelName,
       },
     })
 
@@ -52,20 +51,17 @@ export class ModelRegistryService {
     const model = await prisma.modelRegistry.create({
       data: {
         workspaceId,
-        name: input.name,
+        modelName: input.modelName,
         description: input.description,
-        provider: input.provider,
-        baseModel: input.baseModel,
-        createdBy: userId,
-        status: ModelStatus.ACTIVE,
-        tags: input.tags || [],
+        providerId: input.providerId,
+        capabilities: [],
       },
     })
 
     const version = await prisma.modelVersion.create({
       data: {
         modelId: model.id,
-        versionNumber: '1.0.0',
+        versionString: '1.0.0',
         status: ModelVersionStatus.DRAFT,
       },
     })
@@ -73,7 +69,7 @@ export class ModelRegistryService {
     logger.info(`[modelRegistry] Model created: ${model.id}`, {
       workspaceId,
       userId,
-      provider: input.provider,
+      providerId: input.providerId,
     })
 
     return { model, version }
@@ -100,7 +96,7 @@ export class ModelRegistryService {
     const existingVersion = await prisma.modelVersion.findFirst({
       where: {
         modelId: input.modelId,
-        versionNumber: input.versionNumber,
+        versionString: input.versionNumber,
       },
     })
 
@@ -111,7 +107,7 @@ export class ModelRegistryService {
     const version = await prisma.modelVersion.create({
       data: {
         modelId: input.modelId,
-        versionNumber: input.versionNumber,
+        versionString: input.versionNumber,
         status: input.status,
         benchmarkScores: input.performanceMetrics || {},
       },
@@ -200,7 +196,7 @@ export class ModelRegistryService {
 
     const [models, total] = await Promise.all([
       prisma.modelRegistry.findMany({
-        where: { workspaceId, status: ModelStatus.ACTIVE },
+        where: { workspaceId },
         include: {
           versions: {
             orderBy: { createdAt: 'desc' },
@@ -212,7 +208,7 @@ export class ModelRegistryService {
         orderBy: { createdAt: 'desc' },
       }),
       prisma.modelRegistry.count({
-        where: { workspaceId, status: ModelStatus.ACTIVE },
+        where: { workspaceId },
       }),
     ])
 
@@ -283,7 +279,7 @@ export class ModelRegistryService {
     const comparison: Record<string, any> = {}
     for (const version of versions) {
       const metrics = version.benchmarkScores || {}
-      comparison[`${version.model.name} v${version.versionNumber}`] = {
+      comparison[`${version.model.modelName} v${version.versionString}`] = {
         versionId: version.id,
         status: version.status,
         metrics,
@@ -336,9 +332,9 @@ export class ModelRegistryService {
       throw new NotFoundException('Model not found')
     }
 
-    await prisma.modelRegistry.update({
-      where: { id: modelId },
-      data: { status: ModelStatus.ARCHIVED },
+    await prisma.modelVersion.updateMany({
+      where: { modelId },
+      data: { status: ModelVersionStatus.DEPRECATED },
     })
 
     logger.info(`[modelRegistry] Model deprecated: ${modelId}`, {
@@ -367,7 +363,7 @@ export class ModelRegistryService {
 
     return {
       modelId: version.modelId,
-      version: version.versionNumber,
+      version: version.versionString,
       accuracy: storedBenchmarks.accuracy,
       speed: storedBenchmarks.speed,
       costPerRequest: storedBenchmarks.costPerRequest,

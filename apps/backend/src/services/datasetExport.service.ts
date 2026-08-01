@@ -45,10 +45,10 @@ export class DatasetExportService {
     }
 
     const stats: ExportStats = {
-      totalSamples: dataset.samples?.length || 0,
+      totalSamples: dataset.sampleCount || 0,
       samplesExported: 0,
       duplicatesRemoved: 0,
-      qualityScore: dataset.averageQuality || 0,
+      qualityScore: 0,
       format: input.format,
       fileSize: 0,
       checksumSHA256: '',
@@ -61,10 +61,9 @@ export class DatasetExportService {
         id: sample.id,
         input: sample.input,
         output: sample.output,
-        conversationId: sample.conversationId,
         sourceType: sample.sourceType,
         qualityScore: sample.qualityScore,
-        labels: sample.labels?.map((l: any) => l.name) || [],
+        labels: sample.labels?.map((l: any) => l.labelValue) || [],
       }))
     }
 
@@ -84,7 +83,7 @@ export class DatasetExportService {
     await this.writeExportFile(filePath, exportedSamples, input.format)
 
     const fileStats = await fs.stat(filePath)
-    stats.fileSize = fileStats.size
+    stats.fileSize = Number(fileStats.size)
 
     stats.checksumSHA256 = await this.calculateChecksum(filePath)
 
@@ -92,14 +91,11 @@ export class DatasetExportService {
       data: {
         datasetId: input.datasetId,
         format: input.format,
-        storageKey: fileName,
-        fileSize: stats.fileSize,
+        fileUrl: `/exports/${fileName}`,
+        fileSize: BigInt(stats.fileSize),
         checksum: stats.checksumSHA256,
-        samplesCount: stats.samplesExported,
         status: ExportStatus.COMPLETED,
-        createdBy: userId,
         workspaceId,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       },
     })
 
@@ -223,8 +219,10 @@ export class DatasetExportService {
     }
 
     try {
-      const filePath = path.join(process.cwd(), 'exports', trainingExport.storageKey)
-      await fs.unlink(filePath)
+      if (trainingExport.fileUrl) {
+        const filePath = path.join(process.cwd(), trainingExport.fileUrl)
+        await fs.unlink(filePath)
+      }
     } catch (error) {
       logger.warn(`[datasetExport] Failed to delete file for export ${exportId}`)
     }

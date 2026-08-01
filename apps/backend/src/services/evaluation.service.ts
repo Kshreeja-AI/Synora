@@ -57,10 +57,11 @@ export class EvaluationService {
       data: {
         datasetId: input.datasetId,
         modelId: input.modelId,
+        modelVersion: '1.0.0',
         status: EvaluationStatus.PENDING,
-        createdBy: userId,
         workspaceId,
         metrics: input.metrics,
+        evaluationType: 'ACCURACY',
       },
     })
 
@@ -111,15 +112,20 @@ export class EvaluationService {
 
       const totalScore = accuracy
 
-      for (const metric of run.metrics) {
-        await prisma.evaluationResult.create({
-          data: {
-            evaluationRunId,
-            metric,
-            value: (allMetrics[metric as keyof EvaluationMetrics] as number) || 0,
-            workspaceId,
-          },
-        })
+      if (run.dataset.samples && run.dataset.samples.length > 0) {
+        for (let i = 0; i < run.dataset.samples.length; i++) {
+          const sample = run.dataset.samples[i]
+          await prisma.evaluationResult.create({
+            data: {
+              evaluationRunId,
+              sampleId: sample.id,
+              prediction: sample.output || '',
+              groundTruth: sample.output,
+              score: accuracy,
+              metrics: allMetrics as any,
+            },
+          })
+        }
       }
 
       await prisma.evaluationRun.update({
@@ -142,11 +148,11 @@ export class EvaluationService {
         where: { id: evaluationRunId },
         data: {
           status: EvaluationStatus.FAILED,
-          error: error instanceof Error ? error.message : String(error),
           completedAt: new Date(),
         },
       })
 
+      logger.error(`[evaluation] Evaluation run ${evaluationRunId} failed`, { error })
       throw error
     }
   }
@@ -242,14 +248,14 @@ export class EvaluationService {
     const comparison: Record<string, any> = {}
     for (const evalRun of evaluations) {
       const model = models.find((m) => m.id === evalRun.modelId)
-      const metrics = evalRun.results.reduce(
-        (acc, r) => ({ ...acc, [r.metric]: r.value }),
-        {}
-      )
+      const avgScore = evalRun.results.length > 0
+        ? evalRun.results.reduce((sum, r) => sum + r.score, 0) / evalRun.results.length
+        : 0
 
-      comparison[model?.name || evalRun.modelId] = {
+      comparison[model?.modelName || evalRun.modelId] = {
         modelId: evalRun.modelId,
-        metrics,
+        avgScore,
+        resultCount: evalRun.results.length,
         completedAt: evalRun.completedAt,
       }
     }
