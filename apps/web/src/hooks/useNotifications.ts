@@ -7,7 +7,6 @@ import {
   markAllNotificationsRead,
 } from '../lib/api/notifications';
 import type { NotificationSummary } from '../lib/api/types';
-import { getAccessToken } from '../lib/auth/token-storage';
 
 const NOTIFICATIONS_QUERY_KEY = ['notifications'];
 const POLL_INTERVAL_MS = 30_000;
@@ -24,6 +23,9 @@ export interface UseNotificationsResult {
  * Polls rather than pushes — there is no websocket/SSE infrastructure yet,
  * so a short interval is the honest way to keep the bell's unread count
  * reasonably fresh without fabricating real-time behavior that isn't there.
+ *
+ * Tokens are managed via HttpOnly secure cookies, automatically sent by the browser.
+ * The query runs regardless of token presence; the API returns 401 if not authenticated.
  */
 export function useNotifications(): UseNotificationsResult {
   const queryClient = useQueryClient();
@@ -31,7 +33,6 @@ export function useNotifications(): UseNotificationsResult {
   const query = useQuery({
     queryKey: NOTIFICATIONS_QUERY_KEY,
     queryFn: listNotifications,
-    enabled: Boolean(getAccessToken()),
     refetchInterval: POLL_INTERVAL_MS,
   });
 
