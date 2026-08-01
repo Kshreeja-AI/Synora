@@ -260,7 +260,7 @@ export default function HomePage(): React.JSX.Element {
                   />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg">
+              <Button asChild variant="outline" size="lg" className="bg-card/50 hover:bg-card">
                 <Link href="/pricing">View pricing</Link>
               </Button>
             </motion.div>
@@ -276,7 +276,11 @@ export default function HomePage(): React.JSX.Element {
               ['5', 'creative mediums, one platform'],
               ['0', 'vendor lock-in, by architecture'],
             ].map(([stat, label]) => (
-              <motion.div key={label} variants={staggerItemVariants} className="text-center">
+              <motion.div
+                key={label}
+                variants={staggerItemVariants}
+                className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
+              >
                 <dt className="order-2 text-sm text-muted-foreground">{label}</dt>
                 <dd className="order-1 text-4xl font-bold tracking-tight text-foreground">
                   {stat}
@@ -298,22 +302,26 @@ export default function HomePage(): React.JSX.Element {
       </div>
 
       {/* Trusted By Section */}
-      <Section className="border-t border-border py-16 sm:py-20">
+      <Section className="border-t border-border">
         <motion.div
           variants={fadeUpVariants}
           className="mb-12 text-center"
         >
           <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-            Trusted by creators worldwide
+            Trusted by developers and creators
           </p>
         </motion.div>
 
         <motion.div
           variants={containerVariants}
-          className="flex flex-wrap items-center justify-center gap-8 opacity-60"
+          className="flex flex-wrap items-center justify-center gap-6 sm:gap-8"
         >
           {['OpenAI', 'Anthropic', 'Google', 'Mistral', 'Cohere'].map((provider) => (
-            <motion.div key={provider} variants={itemVariants} className="text-sm font-medium">
+            <motion.div
+              key={provider}
+              variants={itemVariants}
+              className="rounded-lg border border-border/30 bg-card/50 px-4 py-2 text-sm font-medium text-foreground hover:border-primary/30 transition-colors"
+            >
               {provider}
             </motion.div>
           ))}
@@ -443,7 +451,7 @@ export default function HomePage(): React.JSX.Element {
         />
         <motion.div
           variants={containerVariants}
-          className="grid grid-cols-2 gap-4 md:grid-cols-4"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4"
         >
           {PERFORMANCE_METRICS.map((item, idx) => (
             <motion.div
