@@ -13,8 +13,11 @@ const router: Router = Router({ mergeParams: true });
 
 router.use(authMiddleware);
 
-// Middleware to inject userRole for workspace-scoped billing routes
-router.use(async (req: AuthRequest, res, next: NextFunction) => {
+// Middleware to inject userRole for workspace-scoped billing routes.
+// Mounted on '/:id' (not path-less) so req.params.id is actually populated:
+// a path-less router.use() runs before Express matches a specific route
+// and never extracts params from the routes that come after it.
+router.use('/:id', async (req: AuthRequest, res, next: NextFunction) => {
   try {
     const workspaceId = req.params.id;
     if (workspaceId) {

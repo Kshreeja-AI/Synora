@@ -75,6 +75,7 @@ describe('requirePermission middleware', () => {
   let next: any;
 
   beforeEach(() => {
+    vi.resetAllMocks();
     req = {
       userId: 'test-user',
       params: { workspaceId: 'workspace-1' },
@@ -137,6 +138,7 @@ describe('requireOwnerForOwnershipChange middleware', () => {
   let next: any;
 
   beforeEach(() => {
+    vi.resetAllMocks();
     req = {
       userId: 'owner-user',
       params: { workspaceId: 'workspace-1', memberId: 'member-1' },
@@ -191,9 +193,19 @@ describe('requireOwnerForOwnershipChange middleware', () => {
   });
 
   it('should pass through non-ownership-related changes', async () => {
+    const { prisma } = await import('@synora/database');
+    // Target member is not an OWNER, and req.body.role ('ADMIN', from
+    // beforeEach) isn't OWNER either -- this change never touches
+    // ownership, so the middleware should skip the requester/count checks
+    // entirely and just call next() with no args.
+    vi.mocked(prisma.workspaceMember.findUnique).mockResolvedValueOnce({
+      role: 'ADMIN',
+    } as any);
+
     const middleware = requireOwnerForOwnershipChange();
     await middleware(req as AuthRequest, res, next);
 
     expect(next).toHaveBeenCalledWith();
+    expect(prisma.workspaceMember.count).not.toHaveBeenCalled();
   });
 });

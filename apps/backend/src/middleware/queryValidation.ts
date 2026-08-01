@@ -15,11 +15,13 @@ const dateRangeSchema = z.object({
   after: z.string().refine(v => !v || !isNaN(Date.parse(v)), 'Invalid date format').optional(),
 }).passthrough();
 
+// Every model's id is @default(cuid()) (see packages/database/prisma/schema.prisma),
+// not a UUID -- validating these as .uuid() rejected every legitimate id.
 const idSchema = z.object({
-  workspaceId: z.string().uuid().optional(),
-  projectId: z.string().uuid().optional(),
-  folderId: z.string().uuid().optional(),
-  assetId: z.string().uuid().optional(),
+  workspaceId: z.string().cuid().optional(),
+  projectId: z.string().cuid().optional(),
+  folderId: z.string().cuid().optional(),
+  assetId: z.string().cuid().optional(),
 }).partial().passthrough();
 
 export function validatePaginationQuery(_req: Request, _res: Response, next: NextFunction) {
