@@ -7,7 +7,7 @@ import {
   staggerContainerVariants,
   staggerItemVariants,
   scrollRevealVariants,
-  magneticButtonVariants,
+  buttonVariants,
   containerVariants,
   itemVariants,
 } from '../src/lib/animations';
@@ -31,10 +31,10 @@ describe('Animation System', () => {
   });
 
   describe('Easing Functions', () => {
-    it('defines smooth, bounce, and elastic easing', () => {
+    it('defines smooth easing variants', () => {
       expect(EASING.smooth).toBeDefined();
-      expect(EASING.bounce).toBeDefined();
-      expect(EASING.elastic).toBeDefined();
+      expect(EASING.smoother).toBeDefined();
+      expect(EASING.smoothest).toBeDefined();
     });
 
     it('easing functions are arrays of 4 numbers', () => {
@@ -76,16 +76,15 @@ describe('Animation System', () => {
   });
 
   describe('Interactive Variants', () => {
-    it('magneticButtonVariants has rest, hover, and tap states', () => {
-      expect(magneticButtonVariants.rest).toBeDefined();
-      expect(magneticButtonVariants.hover).toBeDefined();
-      expect(magneticButtonVariants.tap).toBeDefined();
+    it('buttonVariants has rest, hover, and tap states', () => {
+      expect(buttonVariants.rest).toBeDefined();
+      expect(buttonVariants.hover).toBeDefined();
+      expect(buttonVariants.tap).toBeDefined();
     });
 
-    it('magneticButtonVariants produces x/y translations on hover', () => {
-      const hover = magneticButtonVariants.hover as any;
-      expect(hover.x).toBeDefined();
-      expect(hover.y).toBeDefined();
+    it('buttonVariants produces scale transformations on hover', () => {
+      const hover = buttonVariants.hover as any;
+      expect(hover.scale).toBeDefined();
     });
   });
 
@@ -101,7 +100,7 @@ describe('Animation System', () => {
       expect(itemVariants.hidden).toBeDefined();
       const hidden = itemVariants.hidden as any;
       expect(hidden.opacity).toBe(0);
-      expect(hidden.y).toBe(20);
+      expect(hidden.y).toBe(12); // Now uses cardItemVariants which has y: 12
     });
   });
 
@@ -119,7 +118,7 @@ describe('Animation System', () => {
       expect(staggerContainerVariants).toBeDefined();
       expect(staggerItemVariants).toBeDefined();
       expect(scrollRevealVariants).toBeDefined();
-      expect(magneticButtonVariants).toBeDefined();
+      expect(buttonVariants).toBeDefined();
       expect(containerVariants).toBeDefined();
       expect(itemVariants).toBeDefined();
     });
