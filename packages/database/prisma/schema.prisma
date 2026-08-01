@@ -72,6 +72,8 @@ model User {
   createdTools      ToolDefinition[]
   toolExecutions    ToolExecution[] @relation("UserToolExecutions")
   toolAuditLogs     ToolAuditLog[]
+  createdToolSecrets ToolSecret[]
+  toolSecretAuditLogs ToolSecretAuditLog[]
 
   // Universal Search System
   searchQueries     SearchQuery[]
@@ -207,6 +209,8 @@ model Workspace {
   toolDefinitions     ToolDefinition[]
   toolExecutions      ToolExecution[]
   toolQuota           ToolQuota?
+  toolSecrets         ToolSecret[]
+  toolSecretAuditLogs ToolSecretAuditLog[]
 
   // Release 3: Universal Search System
   searchIndices       SearchIndex[]
@@ -1496,6 +1500,7 @@ model ToolDefinition {
   dependents        ToolDependency[] @relation("ToolTo")
   metrics           ToolMetrics?
   webhooks          ToolWebhook[]
+  toolSecrets       ToolSecret[]
 
   createdBy         String
   createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
@@ -1756,6 +1761,80 @@ model ToolQuota {
   updatedAt         DateTime        @updatedAt
 
   @@index([workspaceId])
+}
+
+// Encrypted Tool Secrets (Release 3)
+// Stores API keys, credentials, and other secrets for tool execution
+model ToolSecret {
+  id                String          @id @default(cuid())
+  toolId            String
+  workspaceId       String
+
+  // Secret metadata
+  name              String          // e.g., "api_key", "auth_token", "database_url"
+  description       String?
+  secretType        String          // API_KEY, PASSWORD, URL, TOKEN, CONNECTION_STRING, etc.
+
+  // Encrypted value (AES-256-GCM)
+  encryptedValue    String          @db.Text  // Base64-encoded ciphertext
+  iv                String                    // Base64-encoded initialization vector
+  authTag           String                    // Base64-encoded authentication tag
+  algorithm         String          @default("aes-256-gcm")
+
+  // Metadata
+  expiresAt         DateTime?       // Optional expiration date
+  isRotationPending Boolean         @default(false)
+  lastRotatedAt     DateTime?
+
+  // Relations
+  tool              ToolDefinition  @relation(fields: [toolId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  auditLogs         ToolSecretAuditLog[]
+
+  createdBy         String
+  createdByUser     User            @relation(fields: [createdBy], references: [id])
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([toolId, name])
+  @@index([toolId])
+  @@index([workspaceId])
+  @@index([createdBy])
+  @@index([expiresAt])
+}
+
+// Tool Secret Audit Log
+// Immutable audit trail for all secret access and modifications
+model ToolSecretAuditLog {
+  id                String          @id @default(cuid())
+  secretId          String
+  workspaceId       String
+
+  // Action tracking
+  action            String          // CREATED, RETRIEVED, UPDATED, ROTATED, DELETED, ACCESSED
+  reason            String?         // Why was the secret accessed (for audit)
+
+  // Access context
+  accessedBy        String
+  accessedByUser    User            @relation(fields: [accessedBy], references: [id])
+
+  // Security context
+  ipAddress         String?
+  userAgent         String?
+  requestId         String?         // Correlation ID from request middleware
+
+  // Relations
+  secret            ToolSecret      @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime        @default(now())
+
+  @@index([secretId])
+  @@index([workspaceId])
+  @@index([accessedBy])
+  @@index([action])
+  @@index([createdAt])
 }
 
 // Universal Search System (Release 3)

@@ -334,22 +334,23 @@ export class ToolEngineService {
   /**
    * Feature 10: Secrets Management
    * Retrieve encrypted secrets for tool execution
+   * Secrets are stored encrypted in database and decrypted on-demand
    */
   async resolveToolSecrets(toolId: string, secretNames: string[]): Promise<Record<string, string>> {
+    const { toolSecretService } = await import('./toolSecret.service')
     const secrets: Record<string, string> = {}
 
     for (const secretName of secretNames) {
       try {
-        // Resolve secret from environment or vault
-        const envKey = `TOOL_${toolId}_${secretName}`.toUpperCase().replace(/[^A-Z0-9_]/g, '_')
-        const value = process.env[envKey]
+        // Resolve secret from encrypted database
+        const result = await toolSecretService.getEncryptedSecretByToolAndName(toolId, secretName)
 
-        if (!value) {
-          logger.error('[resolveToolSecrets] Secret not found', { toolId, secretName, envKey })
+        if (!result) {
+          logger.error('[resolveToolSecrets] Secret not found', { toolId, secretName })
           throw new ValidationException(`Secret not found: ${secretName}`)
         }
 
-        secrets[secretName] = value
+        secrets[secretName] = result.decrypted
       } catch (error) {
         logger.error('[resolveToolSecrets] Failed to resolve secret', { toolId, secretName, error })
         throw new ValidationException(`Secret not found: ${secretName}`)
