@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type React from 'react';
-import { setTokens, clearTokens } from '../lib/auth/token-storage';
 
 const replaceMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -25,10 +24,11 @@ function wrapper({ children }: { children: React.ReactNode }) {
 describe('useRequireAuth', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    clearTokens();
   });
 
-  it('redirects to login with a next param when there is no access token', async () => {
+  it('redirects to login when getCurrentUser fails (no valid auth)', async () => {
+    (getCurrentUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('unauthorized'));
+
     renderHook(() => useRequireAuth(), { wrapper });
 
     await waitFor(() => {
@@ -37,7 +37,6 @@ describe('useRequireAuth', () => {
   });
 
   it('does not redirect once the current user loads successfully', async () => {
-    setTokens({ accessToken: 'a', refreshToken: 'r' });
     (getCurrentUser as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       id: 'u1',
       email: 'ada@example.com',
@@ -56,16 +55,5 @@ describe('useRequireAuth', () => {
       expect(result.current.data?.email).toBe('ada@example.com');
     });
     expect(replaceMock).not.toHaveBeenCalled();
-  });
-
-  it('redirects when a present token turns out to be invalid', async () => {
-    setTokens({ accessToken: 'stale', refreshToken: 'stale' });
-    (getCurrentUser as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('unauthorized'));
-
-    renderHook(() => useRequireAuth(), { wrapper });
-
-    await waitFor(() => {
-      expect(replaceMock).toHaveBeenCalledWith('/auth/login?next=%2Fdashboard%2Fsettings');
-    });
   });
 });

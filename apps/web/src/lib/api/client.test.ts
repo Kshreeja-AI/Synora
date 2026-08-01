@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { apiRequest, api, ApiError } from './client';
-import { setTokens, getAccessToken, getRefreshToken, clearTokens } from '../auth/token-storage';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -11,7 +10,6 @@ function jsonResponse(status: number, body: unknown): Response {
 
 describe('apiRequest', () => {
   beforeEach(() => {
-    clearTokens();
     vi.restoreAllMocks();
   });
 
@@ -48,32 +46,27 @@ describe('apiRequest', () => {
     await expect(apiRequest('/api/test')).rejects.toMatchObject({ status: 502 });
   });
 
-  it('attaches the bearer token when present', async () => {
-    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' });
+  it('sends credentials with fetch (HttpOnly cookies)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse(200, { success: true, data: {} }));
     vi.stubGlobal('fetch', fetchMock);
 
     await apiRequest('/api/protected');
-    const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
-    expect(headers['Authorization']).toBe('Bearer access-1');
+    const [, requestInit] = fetchMock.mock.calls[0];
+    expect(requestInit.credentials).toBe('include');
   });
 
   it('refreshes on 401 and retries the request once', async () => {
-    setTokens({ accessToken: 'expired', refreshToken: 'refresh-1' });
     const fetchMock = vi
       .fn()
       // original request → 401
       .mockResolvedValueOnce(
         jsonResponse(401, { success: false, error: { message: 'Unauthorized' } })
       )
-      // refresh → new tokens
+      // refresh → 200 (new accessToken cookie set by backend)
       .mockResolvedValueOnce(
-        jsonResponse(200, {
-          success: true,
-          data: { accessToken: 'access-2', refreshToken: 'refresh-2' },
-        })
+        jsonResponse(200, { success: true, data: {} })
       )
       // retry → success
       .mockResolvedValueOnce(jsonResponse(200, { success: true, data: { ok: true } }));
@@ -81,15 +74,10 @@ describe('apiRequest', () => {
 
     const data = await apiRequest<{ ok: boolean }>('/api/protected');
     expect(data).toEqual({ ok: true });
-    expect(getAccessToken()).toBe('access-2');
-    expect(getRefreshToken()).toBe('refresh-2');
-
-    const retryHeaders = fetchMock.mock.calls[2][1].headers as Record<string, string>;
-    expect(retryHeaders['Authorization']).toBe('Bearer access-2');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('clears tokens and surfaces the 401 when refresh fails', async () => {
-    setTokens({ accessToken: 'expired', refreshToken: 'refresh-dead' });
+  it('surfaces the 401 when refresh fails', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -101,12 +89,9 @@ describe('apiRequest', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(apiRequest('/api/protected')).rejects.toMatchObject({ status: 401 });
-    expect(getAccessToken()).toBeNull();
-    expect(getRefreshToken()).toBeNull();
   });
 
   it('does not attempt refresh for anonymous requests', async () => {
-    setTokens({ accessToken: 'x', refreshToken: 'y' });
     const fetchMock = vi
       .fn()
       .mockResolvedValue(jsonResponse(401, { success: false, error: { message: 'Unauthorized' } }));
@@ -119,7 +104,6 @@ describe('apiRequest', () => {
   });
 
   it('sends FormData bodies as-is, without a manually set Content-Type', async () => {
-    setTokens({ accessToken: 'access-1', refreshToken: 'refresh-1' });
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: { ok: true } }));
     vi.stubGlobal('fetch', fetchMock);
 

@@ -1,30 +1,34 @@
 import type { AuthTokens } from '../api/types';
 
-const ACCESS_TOKEN_KEY = 'synora.accessToken';
-const REFRESH_TOKEN_KEY = 'synora.refreshToken';
-
-function storageAvailable(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-}
+/**
+ * Token storage using HttpOnly secure cookies.
+ *
+ * Tokens are stored in HttpOnly cookies set by the backend, which:
+ * - Cannot be accessed by JavaScript (prevents XSS token theft)
+ * - Are automatically sent with every request (credentials: 'include')
+ * - Are cleared on logout via Set-Cookie headers
+ *
+ * This file is kept for API compatibility but no longer uses localStorage.
+ * The backend sets cookies directly on login/register/refresh.
+ */
 
 export function getAccessToken(): string | null {
-  if (!storageAvailable()) return null;
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY);
+  // Tokens are in HttpOnly cookies, not accessible via JS
+  // Return null to indicate tokens are cookie-based
+  return null;
 }
 
 export function getRefreshToken(): string | null {
-  if (!storageAvailable()) return null;
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY);
+  // Tokens are in HttpOnly cookies, not accessible via JS
+  return null;
 }
 
-export function setTokens(tokens: AuthTokens): void {
-  if (!storageAvailable()) return;
-  window.localStorage.setItem(ACCESS_TOKEN_KEY, tokens.accessToken);
-  window.localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refreshToken);
+export function setTokens(_tokens: AuthTokens): void {
+  // Backend sets HttpOnly cookies directly on auth endpoints
+  // No client-side storage needed
 }
 
 export function clearTokens(): void {
-  if (!storageAvailable()) return;
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY);
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY);
+  // Backend clears cookies on logout
+  // No client-side cleanup needed
 }
