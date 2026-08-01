@@ -3,6 +3,7 @@ import express, { type Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
@@ -88,6 +89,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   });
 
   app.use('/api/', limiter);
+
+  // Response Compression (gzip/brotli for all responses > 1KB)
+  app.use(compression({ threshold: 1024 }));
 
   // Billing webhook needs raw body to verify Stripe signature (must be before json parsing)
   app.use('/api/billing', (req, res, next) => {
