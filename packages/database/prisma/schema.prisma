@@ -63,6 +63,9 @@ model User {
   // Conversation folders created by this user
   conversationFolders ConversationFolder[]
 
+  // Files uploaded to conversations by this user
+  conversationFiles   ConversationFile[]
+
   // Memory system
   memories      Memory[]
   memoryAuditLogs MemoryAuditLog[]
@@ -195,6 +198,7 @@ model Workspace {
   conversations       Conversation[]
   conversationFolders ConversationFolder[]
   conversationTags    ConversationTag[]
+  conversationFiles   ConversationFile[]
   aiMemory            AIMemory?
   promptTemplates     PromptTemplate[]
   conversationTemplates ConversationTemplate[]
@@ -878,6 +882,7 @@ model Conversation {
   toolCalls         ToolCall[]
   toolExecutions    ToolExecution[]
   memories          Memory[]
+  files             ConversationFile[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -970,6 +975,92 @@ model MessageAttachment {
   createdAt         DateTime  @default(now())
 
   @@index([messageId])
+}
+
+// File uploads for conversation context
+model ConversationFile {
+  id                String          @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  fileName          String
+  mimeType          String
+  fileSize          Int
+
+  // Storage metadata
+  storageKey        String          // S3 object key or local path
+  storageProvider   String          @default("s3")  // s3, local, gcs, azure
+
+  // Processing status
+  processingStatus  FileProcessingStatus @default(PENDING)
+  processingError   String?
+  processedAt       DateTime?
+
+  // Parsed content (for search/context)
+  extractedText     String?         @db.Text
+
+  // Virus scan
+  virusScanStatus   VirusScanStatus @default(PENDING)
+  virusScanError    String?
+
+  // Metadata
+  uploadedBy        String
+  isArchived        Boolean         @default(false)
+
+  conversation      Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedByUser    User            @relation(fields: [uploadedBy], references: [id])
+  processingJob     FileProcessingJob?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([uploadedBy])
+  @@index([processingStatus])
+  @@index([virusScanStatus])
+}
+
+enum FileProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum VirusScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+// Background job for file processing
+model FileProcessingJob {
+  id                String    @id @default(cuid())
+  fileId            String    @unique
+
+  // Processing details
+  status            FileProcessingStatus @default(PENDING)
+  attempt           Int       @default(0)
+  lastError         String?
+
+  // Progress tracking
+  progress          Float     @default(0)  // 0-100
+
+  // Job timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  file              ConversationFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([fileId])
 }
 
 model ConversationFolder {
