@@ -19,9 +19,11 @@ winston.addColors(colors);
 const format = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.printf((info) => {
-    const { timestamp, level, message, ...args } = info;
+    const { timestamp, level, message, correlationId, requestId, traceId, ...args } = info;
     const ts = String(timestamp).slice(0, 19).replace('T', ' ');
-    return `${ts} [${level}]: ${message} ${Object.keys(args).length ? JSON.stringify(args, null, 2) : ''}`;
+    const ids = [correlationId && `cid=${correlationId}`, requestId && `rid=${requestId}`, traceId && `tid=${traceId}`].filter(Boolean).join(' ');
+    const idStr = ids ? ` [${ids}]` : '';
+    return `${ts} [${level}]${idStr}: ${message} ${Object.keys(args).length ? JSON.stringify(args, null, 2) : ''}`;
   })
 );
 

@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
 
 /** xAI documents its Grok API as OpenAI-compatible. */

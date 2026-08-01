@@ -1,6 +1,6 @@
 import { logger } from '../../utils/logger';
 import type { MailMessage, MailTransport } from '../types';
-import type { MailTransportDescriptor } from '../registry';
+import type { MailTransportDescriptor } from '../types/descriptor';
 
 /**
  * Default transport for every stage until a real provider is configured.

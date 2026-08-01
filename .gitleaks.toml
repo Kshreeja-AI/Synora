@@ -1,0 +1,23 @@
+title = "Synora Gitleaks Configuration"
+description = "Configuration for gitleaks secret scanning with documented example allowlist"
+
+[allowlist]
+# Documented example secrets: test vectors, RFC samples, and security documentation
+# These are non-production examples used for security testing and documentation only
+fingerprints = [
+  # MFA RFC 6238 TOTP test vectors (commit 78291dd)
+  "78291dd5af2eb1ef8dc08ac294edaf6a614b41ce:apps/backend/src/services/mfa/__tests__/totp.service.rfc6238.test.ts:generic-api-key:214",
+  # MFA design documentation Base32 examples (commit ca7a16f)
+  "ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:212",
+  "ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:423",
+  # CSRF protection documentation (commit 2805a3f)
+  "2805a3ffeda7194d6cd7e2653e89cf263e592b39:docs/security/CSRF_PROTECTION.md:generic-api-key:55",
+  # CSRF test fixtures (commit 9f122cc)
+  "9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:apps/backend/src/middleware/__tests__/csrf.test.ts:generic-api-key:29",
+  "9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:48",
+  "9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:58",
+  # Historical audit documentation - redacted JWT and Base32 examples
+  "27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41",
+  "27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:220",
+  "27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:1052",
+]

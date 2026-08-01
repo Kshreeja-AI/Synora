@@ -1,6 +1,8 @@
 import type { WorkspaceRole } from '@synora/database';
 import { ForbiddenException } from '@synora/shared';
 
+export type { WorkspaceRole };
+
 /**
  * The single source of truth for what each workspace role can do. Every
  * route that mutates a workspace-scoped resource calls `requirePermission`
@@ -23,7 +25,22 @@ export type Permission =
   | 'asset:delete'
   | 'audit:view'
   | 'billing:view'
-  | 'billing:manage';
+  | 'billing:manage'
+  // Release 3 chat resources. Granted to every non-VIEWER role, matching
+  // the inline `role === 'VIEWER'` checks these replace in
+  // conversation/message/branch/conversationFolder/conversationTemplate/
+  // promptTemplate/sharing service — same behavior, one place to audit or
+  // later split into finer-grained roles (e.g. a MEMBER who can chat but
+  // not manage sharing) instead of six copies of the same ad-hoc check.
+  | 'conversation:create'
+  | 'conversation:manage'
+  | 'message:send'
+  | 'message:manage'
+  | 'branch:manage'
+  | 'conversation-folder:manage'
+  | 'prompt:manage'
+  | 'template:manage'
+  | 'sharing:manage';
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
   OWNER: new Set<Permission>([
@@ -41,6 +58,15 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'audit:view',
     'billing:view',
     'billing:manage',
+    'conversation:create',
+    'conversation:manage',
+    'message:send',
+    'message:manage',
+    'branch:manage',
+    'conversation-folder:manage',
+    'prompt:manage',
+    'template:manage',
+    'sharing:manage',
   ]),
   ADMIN: new Set<Permission>([
     'workspace:update',
@@ -55,6 +81,15 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'asset:delete',
     'audit:view',
     'billing:view',
+    'conversation:create',
+    'conversation:manage',
+    'message:send',
+    'message:manage',
+    'branch:manage',
+    'conversation-folder:manage',
+    'prompt:manage',
+    'template:manage',
+    'sharing:manage',
   ]),
   EDITOR: new Set<Permission>([
     'project:create',
@@ -63,8 +98,29 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'asset:upload',
     'asset:delete',
     'billing:view',
+    'conversation:create',
+    'conversation:manage',
+    'message:send',
+    'message:manage',
+    'branch:manage',
+    'conversation-folder:manage',
+    'prompt:manage',
+    'template:manage',
+    'sharing:manage',
   ]),
-  MEMBER: new Set<Permission>(['asset:upload', 'billing:view']),
+  MEMBER: new Set<Permission>([
+    'asset:upload',
+    'billing:view',
+    'conversation:create',
+    'conversation:manage',
+    'message:send',
+    'message:manage',
+    'branch:manage',
+    'conversation-folder:manage',
+    'prompt:manage',
+    'template:manage',
+    'sharing:manage',
+  ]),
   VIEWER: new Set<Permission>(['billing:view']),
 };
 

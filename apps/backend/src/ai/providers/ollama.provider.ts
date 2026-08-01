@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { getConfig } from '../../config';
-import { AIProviderDescriptor } from '../registry';
+import type { AIProviderDescriptor } from '../types/descriptor';
 import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
 
 /**

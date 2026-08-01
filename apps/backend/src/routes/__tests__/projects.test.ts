@@ -170,7 +170,10 @@ describe('projects routes (M5)', () => {
         .patch(`/api/projects/${created.body.data.id}`)
         .set('Authorization', `Bearer ${member.accessToken}`)
         .send({ name: 'Renamed By Member' });
-      expect(updateByMember.status).toBe(403);
+      // requirePermission() deliberately returns 404, not 403, for a
+      // permission-denied request -- it never reveals resource existence
+      // to a caller who isn't allowed to touch it (see its docstring).
+      expect(updateByMember.status).toBe(404);
 
       const updateByOwner = await request(app)
         .patch(`/api/projects/${created.body.data.id}`)

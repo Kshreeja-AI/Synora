@@ -44,8 +44,32 @@ export type AICapability =
  */
 export type TextGenerationMode = 'text' | 'code';
 
+/**
+ * A prior conversation turn. `'system'` is accepted here for callers that
+ * build history generically, but every provider treats it as equivalent to
+ * `systemPrompt` (merged into the provider's dedicated system-prompt
+ * mechanism) rather than as a turn in the user/assistant exchange — no
+ * provider's wire format allows more than one system instruction.
+ */
+export type ConversationRole = 'user' | 'assistant' | 'system';
+
+export interface ConversationMessage {
+  role: ConversationRole;
+  content: string;
+}
+
 export interface TextGenerationRequest {
+  /** The newest user turn. Always required, even when `messages` is set. */
   prompt: string;
+  /**
+   * Prior turns, oldest first, NOT including `prompt` itself. Omit for a
+   * single-shot completion — every Release 1/2 caller does this today, and
+   * every provider's behavior is unchanged when this is absent. A
+   * conversational caller (e.g. Release 3's message service) passes the
+   * windowed message history here; providers append `prompt` as the final
+   * user turn before calling their SDK.
+   */
+  messages?: readonly ConversationMessage[];
   mode?: TextGenerationMode;
   systemPrompt?: string;
   maxTokens?: number;

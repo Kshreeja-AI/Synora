@@ -162,6 +162,198 @@ export async function loadConfig(
       defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),
       trialDays: readNumber(env, 'BILLING_TRIAL_DAYS', defaults.billing.trialDays),
     },
+    queue: {
+      enabled: readString(env, 'QUEUE_ENABLED', String(defaults.queue.enabled)) === 'true',
+      redis: {
+        url: env.REDIS_URL || undefined,
+        host: env.REDIS_HOST || undefined,
+        port: env.REDIS_PORT ? readNumber(env, 'REDIS_PORT', 6379) : undefined,
+        password: env.REDIS_PASSWORD || undefined,
+        db: env.REDIS_DB ? readNumber(env, 'REDIS_DB', 0) : undefined,
+        tls: env.REDIS_TLS ? env.REDIS_TLS === 'true' : undefined,
+        maxRetriesPerRequest: env.REDIS_MAX_RETRIES_PER_REQUEST
+          ? readNumber(env, 'REDIS_MAX_RETRIES_PER_REQUEST', 20)
+          : undefined,
+        enableReadyCheck: readString(env, 'REDIS_ENABLE_READY_CHECK', 'true') === 'true',
+        enableOfflineQueue: readString(env, 'REDIS_ENABLE_OFFLINE_QUEUE', 'true') === 'true',
+      },
+      workers: {
+        generateResponse: readNumber(
+          env,
+          'QUEUE_WORKERS_GENERATE_RESPONSE',
+          defaults.queue.workers.generateResponse
+        ),
+        indexMessageSearch: readNumber(
+          env,
+          'QUEUE_WORKERS_INDEX_MESSAGE_SEARCH',
+          defaults.queue.workers.indexMessageSearch
+        ),
+        generateEmbeddings: readNumber(
+          env,
+          'QUEUE_WORKERS_GENERATE_EMBEDDINGS',
+          defaults.queue.workers.generateEmbeddings
+        ),
+        processFile: readNumber(env, 'QUEUE_WORKERS_PROCESS_FILE', defaults.queue.workers.processFile),
+        cleanup: readNumber(env, 'QUEUE_WORKERS_CLEANUP', defaults.queue.workers.cleanup),
+        notification: readNumber(env, 'QUEUE_WORKERS_NOTIFICATION', defaults.queue.workers.notification),
+      },
+      retry: {
+        attempts: readNumber(env, 'QUEUE_RETRY_ATTEMPTS', defaults.queue.retry.attempts),
+        backoffMs: readNumber(env, 'QUEUE_RETRY_BACKOFF_MS', defaults.queue.retry.backoffMs),
+        backoffStrategy: readString(
+          env,
+          'QUEUE_RETRY_BACKOFF_STRATEGY',
+          defaults.queue.retry.backoffStrategy
+        ) as AppConfig['queue']['retry']['backoffStrategy'],
+      },
+      deadLetter: {
+        enabled: readString(env, 'QUEUE_DEAD_LETTER_ENABLED', String(defaults.queue.deadLetter.enabled)) === 'true',
+        retention: readNumber(env, 'QUEUE_DEAD_LETTER_RETENTION_MS', defaults.queue.deadLetter.retention),
+      },
+      rateLimit: {
+        enabled: readString(env, 'QUEUE_RATE_LIMIT_ENABLED', String(defaults.queue.rateLimit.enabled)) === 'true',
+        maxJobsPerSecond: readNumber(
+          env,
+          'QUEUE_RATE_LIMIT_MAX_JOBS_PER_SECOND',
+          defaults.queue.rateLimit.maxJobsPerSecond
+        ),
+      },
+    },
+    embeddings: {
+      enabled: readString(env, 'EMBEDDING_ENABLED', String(defaults.embeddings.enabled)) === 'true',
+      provider: env.EMBEDDING_PROVIDER || undefined,
+      openaiModel: readString(env, 'EMBEDDING_OPENAI_MODEL', defaults.embeddings.openaiModel),
+      geminiModel: readString(env, 'EMBEDDING_GEMINI_MODEL', defaults.embeddings.geminiModel),
+      voyageModel: readString(env, 'EMBEDDING_VOYAGE_MODEL', defaults.embeddings.voyageModel),
+      cohereModel: readString(env, 'EMBEDDING_COHERE_MODEL', defaults.embeddings.cohereModel),
+      ollamaBaseUrl: env.EMBEDDING_OLLAMA_BASE_URL || undefined,
+      ollamaModel: readString(env, 'EMBEDDING_OLLAMA_MODEL', defaults.embeddings.ollamaModel),
+      ollamaMaxBatchSize: env.EMBEDDING_OLLAMA_MAX_BATCH_SIZE
+        ? readNumber(env, 'EMBEDDING_OLLAMA_MAX_BATCH_SIZE', 64)
+        : undefined,
+      selfHostedBaseUrl: env.EMBEDDING_SELF_HOSTED_BASE_URL || undefined,
+      selfHostedApiKey: env.EMBEDDING_SELF_HOSTED_API_KEY || undefined,
+      selfHostedModel: readString(env, 'EMBEDDING_SELF_HOSTED_MODEL', defaults.embeddings.selfHostedModel),
+      selfHostedMaxBatchSize: env.EMBEDDING_SELF_HOSTED_MAX_BATCH_SIZE
+        ? readNumber(env, 'EMBEDDING_SELF_HOSTED_MAX_BATCH_SIZE', 64)
+        : undefined,
+      cache: {
+        backend: readString(
+          env,
+          'EMBEDDING_CACHE_BACKEND',
+          defaults.embeddings.cache.backend
+        ) as AppConfig['embeddings']['cache']['backend'],
+        maxEntries: readNumber(env, 'EMBEDDING_CACHE_MAX_ENTRIES', defaults.embeddings.cache.maxEntries),
+        ttlMs: readNumber(env, 'EMBEDDING_CACHE_TTL_MS', defaults.embeddings.cache.ttlMs),
+        redisUrl: env.EMBEDDING_CACHE_REDIS_URL || undefined,
+      },
+      rateLimit: {
+        backend: readString(
+          env,
+          'EMBEDDING_RATE_LIMIT_BACKEND',
+          defaults.embeddings.rateLimit.backend
+        ) as AppConfig['embeddings']['rateLimit']['backend'],
+        requestsPerSecond: readNumber(
+          env,
+          'EMBEDDING_RATE_LIMIT_REQUESTS_PER_SECOND',
+          defaults.embeddings.rateLimit.requestsPerSecond
+        ),
+        redisUrl: env.EMBEDDING_RATE_LIMIT_REDIS_URL || undefined,
+      },
+      retry: {
+        attempts: readNumber(env, 'EMBEDDING_RETRY_ATTEMPTS', defaults.embeddings.retry.attempts),
+        backoffMs: readNumber(env, 'EMBEDDING_RETRY_BACKOFF_MS', defaults.embeddings.retry.backoffMs),
+        backoffStrategy: readString(
+          env,
+          'EMBEDDING_RETRY_BACKOFF_STRATEGY',
+          defaults.embeddings.retry.backoffStrategy
+        ) as AppConfig['embeddings']['retry']['backoffStrategy'],
+      },
+      circuitBreaker: {
+        failureThreshold: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_FAILURE_THRESHOLD',
+          defaults.embeddings.circuitBreaker.failureThreshold
+        ),
+        cooldownMs: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_COOLDOWN_MS',
+          defaults.embeddings.circuitBreaker.cooldownMs
+        ),
+        halfOpenSuccessThreshold: readNumber(
+          env,
+          'EMBEDDING_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD',
+          defaults.embeddings.circuitBreaker.halfOpenSuccessThreshold
+        ),
+      },
+      security: {
+        maxInputChars: readNumber(
+          env,
+          'EMBEDDING_SECURITY_MAX_INPUT_CHARS',
+          defaults.embeddings.security.maxInputChars
+        ),
+        maxBatchRequestSize: readNumber(
+          env,
+          'EMBEDDING_SECURITY_MAX_BATCH_REQUEST_SIZE',
+          defaults.embeddings.security.maxBatchRequestSize
+        ),
+      },
+      chunking: {
+        defaultChunkSize: readNumber(
+          env,
+          'EMBEDDING_CHUNKING_DEFAULT_CHUNK_SIZE',
+          defaults.embeddings.chunking.defaultChunkSize
+        ),
+        defaultOverlap: readNumber(
+          env,
+          'EMBEDDING_CHUNKING_DEFAULT_OVERLAP',
+          defaults.embeddings.chunking.defaultOverlap
+        ),
+      },
+    },
+    vectordb: {
+      enabled: readString(env, 'VECTORDB_ENABLED', String(defaults.vectordb.enabled)) === 'true',
+      provider: env.VECTORDB_PROVIDER || undefined,
+      pineconeHost: env.VECTORDB_PINECONE_HOST || undefined,
+      pineconeMaxUpsertBatchSize: env.VECTORDB_PINECONE_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_PINECONE_MAX_UPSERT_BATCH_SIZE', 100)
+        : undefined,
+      qdrantUrl: env.VECTORDB_QDRANT_URL || undefined,
+      qdrantMaxUpsertBatchSize: env.VECTORDB_QDRANT_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_QDRANT_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      weaviateUrl: env.VECTORDB_WEAVIATE_URL || undefined,
+      weaviateMaxUpsertBatchSize: env.VECTORDB_WEAVIATE_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_WEAVIATE_MAX_UPSERT_BATCH_SIZE', 200)
+        : undefined,
+      milvusUrl: env.VECTORDB_MILVUS_URL || undefined,
+      milvusMaxUpsertBatchSize: env.VECTORDB_MILVUS_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_MILVUS_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      pgvectorEnabled:
+        readString(env, 'VECTORDB_PGVECTOR_ENABLED', String(defaults.vectordb.pgvectorEnabled)) === 'true',
+      pgvectorDimensions: readNumber(
+        env,
+        'VECTORDB_PGVECTOR_DIMENSIONS',
+        defaults.vectordb.pgvectorDimensions
+      ),
+      pgvectorMaxUpsertBatchSize: env.VECTORDB_PGVECTOR_MAX_UPSERT_BATCH_SIZE
+        ? readNumber(env, 'VECTORDB_PGVECTOR_MAX_UPSERT_BATCH_SIZE', 500)
+        : undefined,
+      security: {
+        maxUpsertRequestSize: readNumber(
+          env,
+          'VECTORDB_SECURITY_MAX_UPSERT_REQUEST_SIZE',
+          defaults.vectordb.security.maxUpsertRequestSize
+        ),
+        maxTopK: readNumber(env, 'VECTORDB_SECURITY_MAX_TOP_K', defaults.vectordb.security.maxTopK),
+        maxDimensions: readNumber(
+          env,
+          'VECTORDB_SECURITY_MAX_DIMENSIONS',
+          defaults.vectordb.security.maxDimensions
+        ),
+      },
+    },
   };
 
   const result = AppConfigSchema.safeParse(candidate);

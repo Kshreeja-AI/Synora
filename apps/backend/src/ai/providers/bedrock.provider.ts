@@ -8,8 +8,8 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, DEFAULT_MAX_TOKENS } from '../shared';
-import { AIProviderDescriptor } from '../registry';
+import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
+import type { AIProviderDescriptor } from '../types/descriptor';
 
 /** Used only once BEDROCK_REGION has confirmed operator intent (see below). */
 const DEFAULT_BEDROCK_REGION = 'us-east-1';
@@ -48,7 +48,10 @@ export class BedrockTextProvider implements TextGenerationProvider {
       const response = await this.client.send(
         new ConverseCommand({
           modelId,
-          messages: [{ role: 'user', content: [{ text: request.prompt }] }],
+          messages: resolveConversationTurns(request).map((turn) => ({
+            role: turn.role as 'user' | 'assistant',
+            content: [{ text: turn.content }],
+          })),
           system: systemPrompt ? [{ text: systemPrompt }] : undefined,
           inferenceConfig: {
             maxTokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,

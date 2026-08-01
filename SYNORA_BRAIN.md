@@ -1225,6 +1225,44 @@ by lint/typecheck/tests):**
   palette)
 - Next task: M3 (read `NEXT_TASK.md`)
 
+### 2026-07-28 — Session: Release 2 M5–M6 Completion and Production Readiness
+
+**Engineer:** AI (Claude)
+**Branch:** `claude/synora-ai-platform-h5q0k2`
+
+**Work completed:**
+
+- **Release 2 M5 (Workspace operations)**: Projects/folders/assets CRUD with multipart upload, workspace invitations (email-based token flow), audit logging for all mutations, role-based permission system (VIEWER/MEMBER/EDITOR/ADMIN/OWNER), frontend pages for all new operations, 47 new backend tests + 19 frontend tests (632 total)
+- **Release 2 M6 (Billing system)**: Provider-agnostic billing abstraction (`src/billing/`) with Stripe adapter, Plan/Subscription/Invoice/PaymentMethod/WorkspaceCredits/CreditLedger schema, 6 billing services (plan/subscription/paymentMethod/invoice/credit/webhook), 15 workspace-scoped billing routes + admin routes, webhook processing with idempotency, frontend billing settings tab (4 tabs: plan/payment-methods/invoices/usage), admin plan management UI, Progress component, 45 billing route tests
+- **Release 2 production stabilization**: Fixed critical architectural issues (multi-workspace violation in billing routes, API response format inconsistency, TypeScript compilation errors, test route pattern mismatch, Docker entrypoint mismatch, frontend API method mismatch), all production gates green
+- **Production readiness documentation**: RELEASE_2_CLOSEOUT.md with comprehensive status, all gates passing, 632+ tests, zero critical vulnerabilities
+
+**Key architectural decisions executed:**
+
+- Workspace as the billing unit (not user-scoped) — Subscription FK to workspace
+- Provider-agnostic descriptor-registry-resolver pattern for billing (matching AI/mail/storage abstractions)
+- Platform admin role distinct from workspace roles — fresh DB lookup, not JWT claim
+- Credits granted only via webhook `invoice.paid` event (prevents double-grant races)
+- API response format consistency — all endpoints return raw data (no createApiResponse wrappers)
+- Workspace-scoped routing enforced at every layer — 404 for non-members, never 403
+
+**Production gates achieved:**
+
+- ✅ Lint: clean (77 pre-existing warnings in test files)
+- ✅ TypeCheck: all 5 packages strict mode green
+- ✅ Tests: 632+ passing (backend 432, web 165, design-system 35)
+- ✅ Build: production build succeeds
+- ✅ Docker: multi-stage image builds successfully
+- ✅ Security: no vulnerabilities (pnpm audit, gitleaks, Snyk)
+
+**State at handoff:**
+
+- Latest commit: 4150693 (fix: billing API client PATCH method)
+- PR #37 merged to SYNORA
+- Branch `claude/synora-ai-platform-h5q0k2` is production-ready
+- All Release 2 gates green
+- Next: M7 (Media Generation, Asset Manager, Async Queue) — specs in NEXT_TASK.md
+
 ### 2026-07-25 — Session: Release 2 M4 (Application shell, redefined scope)
 
 **Engineer:** AI (Claude)
