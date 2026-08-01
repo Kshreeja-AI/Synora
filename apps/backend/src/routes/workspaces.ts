@@ -16,6 +16,12 @@ import { listAuditLog } from '../services/audit.service';
 
 const router: Router = Router();
 
+const parseOptionalDate = (value: unknown): Date | undefined => {
+  if (!value) return undefined;
+  const date = new Date(value as string);
+  return isNaN(date.getTime()) ? undefined : date;
+};
+
 const createWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
@@ -131,7 +137,7 @@ router.delete('/:id/invitations/:invitationId', authMiddleware, async (req: Auth
 
 router.get('/:id/audit-log', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const before = typeof req.query.before === 'string' ? new Date(req.query.before) : undefined;
+    const before = parseOptionalDate(req.query.before);
     const logs = await listAuditLog(req.userId!, req.params.id, { before });
     res.json(createApiResponse(logs));
   } catch (error) {

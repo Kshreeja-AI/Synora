@@ -99,6 +99,7 @@ jobs:
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
           NODE_ENV: test
+          TOOL_SECRET_MASTER_KEY: ci-only-not-a-real-secret-tool-master-key-000000
 
       - name: Build
         run: pnpm run build
@@ -149,6 +150,7 @@ jobs:
             -e NEXTAUTH_SECRET=ci-only-not-a-real-secret-111111111111 \
             -e STRIPE_SECRET_KEY=sk_test_ci-only-not-a-real-secret \
             -e STRIPE_WEBHOOK_SECRET=whsec_ci-only-not-a-real-secret \
+            -e TOOL_SECRET_MASTER_KEY=ci-only-not-a-real-secret-tool-master-key-000000 \
             -e DATABASE_URL=postgresql://synora:synora@127.0.0.1:5432/synora \
             -p 3001:3001 synora-backend:ci
           for i in $(seq 1 30); do
@@ -196,10 +198,18 @@ jobs:
       # no GITHUB_TOKEN, no account. `detect` scans git history by default
       # (not passing --no-git), which is why the checkout step above uses
       # fetch-depth: 0.
+      #
+      # --log-opts=HEAD restricts the scan to commits reachable from the
+      # checked-out ref. Without it, gitleaks walks every branch fetch-depth:0
+      # pulled in locally (actions/checkout fetches all branches' history at
+      # that depth, not just the checked-out one) -- so a PR's security check
+      # was failing on secrets/false-positives committed on a completely
+      # unrelated, unmerged branch elsewhere in the repo, not on anything in
+      # that PR's own history.
       - name: Secret scan (gitleaks)
         run: |
           docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
-            detect --source=/repo --config=/repo/.gitleaks.toml --exit-code 1 --verbose
+            detect --source=/repo --config=/repo/.gitleaks.toml --log-opts=HEAD --exit-code 1 --verbose
 
       # Best-effort deeper scan. Non-blocking because it requires an account
       # token that a fresh clone will not have; the blocking gates above do not.

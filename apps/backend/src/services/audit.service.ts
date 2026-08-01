@@ -1,6 +1,6 @@
 import { prisma, Prisma } from '@synora/database';
 import { requirePermission } from './permissions';
-import { requireMembership } from './workspace.service';
+import { requireMembership } from './checks';
 
 export interface AuditLogEntry {
   id: string;

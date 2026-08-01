@@ -738,6 +738,15 @@ source for their exact fields:
 - **`WorkspaceInvitation`** — pending email invitations to a workspace, token-based, with expiry.
 - **`ApiKey`** — workspace-scoped API keys (not currently exposed via any route — reserved for a future programmatic-access feature).
 - **`VerificationToken`** — generic identifier/token pair for NextAuth-style verification flows; not currently wired to any route.
+- **`MessageBranch`**, **`MessageAttachment`** — one-to-one/one-to-many with `Message`: which sibling branch is "main" (Release 3 M8 branching), and file attachments on a message.
+- **`ConversationFolder`**, **`ConversationTag`** — user-organizable grouping for conversations (nested folders; freeform workspace-scoped tags).
+- **`PromptTemplate`**, **`ConversationTemplate`** — reusable saved prompts and full conversation starters, optionally workspace-scoped or public.
+- **`AIMemory`** — one-to-one with `Workspace`; persisted assistant context/memory.
+- **`SharedConversation`**, **`ConversationCollaborator`** — public share links (token, expiry, permission level) and per-user collaborator roles on a conversation.
+- **`ConversationActivity`**, **`ConversationVersion`** — append-only activity/audit trail and content-version history for a conversation.
+- **`Tool`**, **`ToolCall`** — workspace-scoped (or public) tool/function definitions and their per-conversation invocation log.
+- **`ConversationUsage`** — one-to-one with `Conversation`; running token counts and estimated cost.
+- **`StreamingJob`** — see "Conversation & Message (Release 3 M1/M2)" above; the AI Streaming Engine's (Milestone 3) per-generation job/state-machine row, one per attempted generation, driving retry and SSE progress.
 
 ## Enums
 

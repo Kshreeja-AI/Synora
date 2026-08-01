@@ -77,23 +77,6 @@ verified against the repository, not assumed.
   (`conversation:*`, `message:*`, `branch:manage`, `conversation-folder:manage`,
   `prompt:manage`, `template:manage`, `sharing:manage`), granted to every
   non-VIEWER role
-- **Frontend M5 additions:** Projects/Folders/Assets pages, invite acceptance page,
-  workspace settings tabs (members, invitations, activity), Sidebar Projects nav
-  with active-state logic, all real CRUD with real API wiring
-- **Billing system (M6):** Provider-agnostic billing abstraction (`src/billing/`),
-  Stripe adapter (production-ready), Plan/Subscription/Invoice/PaymentMethod/
-  WorkspaceCredits/CreditLedger models, 6 billing services (plan/subscription/
-  paymentMethod/invoice/credit/webhook), workspace-scoped billing routes
-  (`/api/workspaces/:id/billing/*`), admin billing routes (`/api/admin/*`),
-  webhook processing with idempotency, frontend billing settings tab (4-tab layout:
-  plan/payment-methods/invoices/usage), admin plan management UI, Progress component,
-  all tests passing (45 billing route tests + provider/service layers)
-- **Release 3 M1-M3 (chat platform + tool engine, this merge):** Conversation/
-  Message/branching/streaming data model, conversation folders/tags/templates/
-  prompt templates, sharing, a Universal Memory System, a Universal Tool Calling
-  Engine (`ToolDefinition`/`ToolExecution`/approval workflow), and a Universal
-  Search System — see "Release 3: Chat platform + tool calling engine" below for
-  the full breakdown.
 - AI text/code generation (`POST /api/ai/generate`) through the
   10-provider abstraction; provider chosen purely by configuration
 - Typed config system (stage-aware, zod, fail-closed) + SecretsManager
