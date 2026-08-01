@@ -46,6 +46,10 @@ import { toolRoutes } from './routes/tools';
 import toolSecretRoutes from './routes/toolSecrets';
 import fileRoutes from './routes/files';
 import feedbackRoutes from './routes/feedback';
+import privacyConsentRoutes from './routes/privacyConsent';
+import modelRegistryRoutes from './routes/modelRegistry';
+import evaluationRoutes from './routes/evaluation';
+import datasetExportRoutes from './routes/datasetExport';
 
 export interface CreateAppDeps {
   /**
@@ -217,6 +221,10 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', toolSecretRoutes);
   app.use('/api/workspaces', fileRoutes);
   app.use('/api/workspaces', feedbackRoutes);
+  app.use('/api/workspaces', privacyConsentRoutes);
+  app.use('/api/workspaces', modelRegistryRoutes);
+  app.use('/api/workspaces', evaluationRoutes);
+  app.use('/api/workspaces', datasetExportRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
