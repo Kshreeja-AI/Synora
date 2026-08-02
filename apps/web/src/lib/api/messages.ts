@@ -28,9 +28,19 @@ export interface ConversationMessage {
   createdAt: string;
   inputTokens?: number;
   outputTokens?: number;
-  parentId?: string;
+  parentId?: string | null;
   attachments?: MessageAttachment[];
   isPinned?: boolean;
+  /**
+   * Total sibling alternatives at this fork (including self). Attached
+   * by the backend linearizer — `1` for messages with no siblings.
+   */
+  siblingCount?: number;
+  /**
+   * 0-based index of this message among its siblings, ordered by
+   * createdAt. Attached by the backend linearizer.
+   */
+  siblingIndex?: number;
 }
 
 export interface CreateMessageInput {

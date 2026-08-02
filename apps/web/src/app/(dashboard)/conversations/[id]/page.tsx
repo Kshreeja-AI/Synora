@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
 import { useConversation } from '@/lib/api/conversations';
@@ -45,6 +46,7 @@ export default function ConversationDetailPage() {
   const { mutate: regenerate } = useRegenerateMessage(workspaceId, conversationId);
   const { mutate: cancelGeneration } = useCancelGeneration(workspaceId, conversationId);
   const { mutate: deleteMessage } = useDeleteMessage(workspaceId, conversationId);
+  const queryClient = useQueryClient();
 
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -174,6 +176,27 @@ export default function ConversationDetailPage() {
     [messages, deleteMessage]
   );
 
+  // A newly-created branch is an empty assistant sibling. Reuse the
+  // existing regenerate path to enqueue a generation job for it and
+  // stream its tokens, then invalidate the linearized message list so
+  // the fork indicator picks up the new sibling.
+  const handleBranchCreated = useCallback(
+    (newMessageId: string) => {
+      setError(null);
+      regenerate(newMessageId, {
+        onSuccess: () => {
+          startStream(newMessageId);
+          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        },
+        onError: (err) =>
+          setError(
+            err instanceof Error ? err.message : 'Failed to generate branch response'
+          ),
+      });
+    },
+    [regenerate, startStream, queryClient, conversationId]
+  );
+
   useEffect(() => {
     return () => {
       unsubscribeRef.current?.();
@@ -243,6 +266,9 @@ export default function ConversationDetailPage() {
               isStreaming={streamingId === message.id}
               onRegenerate={handleRegenerate}
               onDelete={handleDelete}
+              workspaceId={workspaceId}
+              conversationId={conversationId}
+              onBranchCreated={handleBranchCreated}
             />
           ))
         )}

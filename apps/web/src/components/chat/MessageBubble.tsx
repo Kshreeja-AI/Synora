@@ -3,6 +3,8 @@
 import { useCallback, useState } from 'react';
 import { Check, Copy, RefreshCw, Trash2, User, Sparkles, Info } from 'lucide-react';
 import { Markdown } from './Markdown';
+import { ForkNavigator } from '@/components/branching/ForkNavigator';
+import { CreateBranchButton } from '@/components/branching/CreateBranchButton';
 import type { ConversationMessage } from '@/lib/api/messages';
 
 interface MessageBubbleProps {
@@ -10,6 +12,19 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   onRegenerate?: (messageId: string) => void;
   onDelete?: (messageId: string) => void;
+  /**
+   * Workspace + conversation context, required for branch controls.
+   * When omitted, branch controls are hidden — safe for detached
+   * contexts (e.g. isolated component tests) that don't wire branching.
+   */
+  workspaceId?: string;
+  conversationId?: string;
+  /**
+   * Called with the id of a newly-created sibling. The container is
+   * expected to enqueue a generation for it (i.e. treat it like a
+   * regenerate) so the fork isn't left as an empty message.
+   */
+  onBranchCreated?: (newMessageId: string) => void;
 }
 
 const ROLE_ICON = {
@@ -23,7 +38,23 @@ export function MessageBubble({
   isStreaming = false,
   onRegenerate,
   onDelete,
+  workspaceId,
+  conversationId,
+  onBranchCreated,
 }: MessageBubbleProps) {
+  const branchingEnabled = Boolean(workspaceId && conversationId);
+  const showFork = branchingEnabled && (message.siblingCount ?? 1) > 1;
+  // Only expose "branch" on completed assistant messages that have a
+  // parent (i.e. they're a reply to a user turn). Streaming messages
+  // are still in flight; user/system turns don't fork meaningfully at
+  // this UI level (that's a "regenerate" of the assistant response
+  // that follows them, which lives on the assistant bubble).
+  const showBranchButton =
+    branchingEnabled &&
+    message.role === 'ASSISTANT' &&
+    !isStreaming &&
+    !!message.parentId;
+
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'USER';
   const isAssistant = message.role === 'ASSISTANT';
@@ -110,6 +141,15 @@ export function MessageBubble({
             </button>
           )}
 
+          {showBranchButton && (
+            <CreateBranchButton
+              workspaceId={workspaceId!}
+              conversationId={conversationId!}
+              parentId={message.parentId!}
+              onBranchCreated={onBranchCreated}
+            />
+          )}
+
           {onDelete && !isStreaming && (
             <button
               type="button"
@@ -120,6 +160,17 @@ export function MessageBubble({
               <Trash2 className="h-3 w-3" />
               Delete
             </button>
+          )}
+
+          {showFork && (
+            <ForkNavigator
+              workspaceId={workspaceId!}
+              conversationId={conversationId!}
+              messageId={message.id}
+              parentId={message.parentId}
+              siblingIndex={message.siblingIndex}
+              siblingCount={message.siblingCount}
+            />
           )}
 
           {hasTokens && (

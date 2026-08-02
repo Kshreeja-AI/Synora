@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { Message, MessageRole, MessageAttachment } from '@prisma/client'
+import { Message, MessageBranch, MessageRole, MessageAttachment } from '@prisma/client'
 import { NotFoundException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requirePermission } from './permissions'
@@ -15,6 +15,21 @@ export interface CreateMessageInput {
 
 export interface UpdateMessageInput {
   content?: string
+}
+
+/**
+ * A message plus the sibling metadata the client needs to render fork
+ * navigation ("< 2 of 3 >") inline, without a second round-trip.
+ *
+ * `siblingCount` is total alternatives at this fork (including self);
+ * `siblingIndex` is this message's 0-based position among them, ordered
+ * by createdAt. Both are 1/0 for a leaf that has no siblings.
+ */
+export type LinearizedMessage = Message & {
+  branch: MessageBranch | null
+  attachments: MessageAttachment[]
+  siblingCount: number
+  siblingIndex: number
 }
 
 export class MessageService {
@@ -218,11 +233,28 @@ export class MessageService {
     return message
   }
 
+  /**
+   * Return the canonical linearized path through the conversation.
+   *
+   * A conversation is a DAG — every message has an optional parent, and a
+   * parent can have multiple children (alternative branches). The UI
+   * renders one path through that DAG at a time. That path is chosen at
+   * each fork by picking the child whose MessageBranch record is marked
+   * `isMainBranch`; if no child is explicitly marked main (which is the
+   * normal case in an unbranched conversation — we only create branch
+   * records when there's actually a fork), we pick the earliest-created
+   * child. Every returned message carries `siblingCount` and
+   * `siblingIndex` so the client can render fork-navigation controls
+   * without a second round-trip.
+   *
+   * Pagination (skip/take) applies to the linearized path, not the raw
+   * message set: after linearization, take a window from it.
+   */
   async getConversationHistory(
     userId: string,
     conversationId: string,
     options?: { skip?: number; take?: number }
-  ): Promise<Message[]> {
+  ): Promise<LinearizedMessage[]> {
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
     })
@@ -233,16 +265,20 @@ export class MessageService {
 
     await requireMembership(userId, conversation.workspaceId)
 
-    return prisma.message.findMany({
+    const all = await prisma.message.findMany({
       where: { conversationId, deletedAt: null },
       include: {
         branch: true,
         attachments: true,
       },
       orderBy: { createdAt: 'asc' },
-      skip: options?.skip || 0,
-      take: options?.take || 100,
     })
+
+    const linearized = linearizeCanonicalPath(all)
+
+    const skip = options?.skip ?? 0
+    const take = options?.take ?? 100
+    return linearized.slice(skip, skip + take)
   }
 
   async update(userId: string, id: string, input: UpdateMessageInput): Promise<Message> {
@@ -364,3 +400,69 @@ export class MessageService {
 }
 
 export const messageService = new MessageService()
+
+type MessageWithBranch = Message & {
+  branch: MessageBranch | null
+  attachments: MessageAttachment[]
+}
+
+/**
+ * Walk a conversation's message set and return the canonical path from
+ * root(s) to leaf: at each fork, take the child marked `isMainBranch`,
+ * or (if no child is marked) the earliest-created child. Every returned
+ * message is enriched with `siblingCount`/`siblingIndex` measured
+ * against its full sibling set, so the client can render a fork
+ * indicator inline.
+ *
+ * Exported for unit-testing without touching Postgres.
+ */
+export function linearizeCanonicalPath(all: MessageWithBranch[]): LinearizedMessage[] {
+  const childrenByParent = new Map<string | null, MessageWithBranch[]>()
+  for (const m of all) {
+    const key = m.parentId ?? null
+    const list = childrenByParent.get(key)
+    if (list) {
+      list.push(m)
+    } else {
+      childrenByParent.set(key, [m])
+    }
+  }
+
+  // Prisma already ordered by createdAt asc; make it explicit so the
+  // canonical choice ("earliest child") is stable even if this helper is
+  // called with a set that wasn't pre-sorted.
+  for (const siblings of childrenByParent.values()) {
+    siblings.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  }
+
+  const pickCanonical = (siblings: MessageWithBranch[]): MessageWithBranch => {
+    const explicitMain = siblings.find((s) => s.branch?.isMainBranch)
+    return explicitMain ?? siblings[0]
+  }
+
+  const enrich = (m: MessageWithBranch, siblings: MessageWithBranch[]): LinearizedMessage => ({
+    ...m,
+    siblingCount: siblings.length,
+    siblingIndex: siblings.findIndex((s) => s.id === m.id),
+  })
+
+  const path: LinearizedMessage[] = []
+  const roots = childrenByParent.get(null) ?? []
+  // A conversation *should* have exactly one root, but system + first
+  // user message occasionally both have no parent — walk each root's
+  // subtree and concatenate them in root-order so we never silently drop
+  // one.
+  for (const root of roots) {
+    let current: MessageWithBranch | undefined = root
+    let currentSiblings = roots
+    while (current) {
+      path.push(enrich(current, currentSiblings))
+      const children = childrenByParent.get(current.id) ?? []
+      if (children.length === 0) break
+      const chosen = pickCanonical(children)
+      current = chosen
+      currentSiblings = children
+    }
+  }
+  return path
+}
