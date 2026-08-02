@@ -526,14 +526,30 @@ tables in the Prisma schema, `memory.service` / `memoryRetrieval.service`
 (PRIVATE/WORKSPACE/SHARED/PUBLIC), GDPR erasure, and retrieval are
 implemented and tested.
 
-**No embedding store or vector database exists.** Nothing in the AI
-provider abstraction implements the `embeddings` capability, and no
-vector DB is provisioned. Semantic search is therefore *disabled*, not
-approximated: `memoryEmbedding.service` requires real providers to be
-registered via `configureMemoryEmbeddings({ embeddings, vectorDB })` and,
-until they are, refuses to generate vectors, returns 503 from the
-semantic search route, and skips indexing rather than writing
-`embeddingId` values for embeddings that don't exist.
+Semantic search runs on two provider-agnostic subsystems that are fully
+implemented and awaiting credentials:
+
+- **`src/embeddings/`** — 7 providers (OpenAI, Voyage, Gemini, Cohere,
+  Claude, Ollama, self-hosted) behind one `EmbeddingService`, with
+  caching, rate limiting, retry, circuit breaking, metrics, chunking and
+  workspace-scoped cost accounting built in.
+- **`src/vectordb/`** — 5 providers (pgvector, Pinecone, Qdrant,
+  Weaviate, Milvus) behind one `VectorDBService`, with namespace and
+  workspace scoping plus defense-in-depth permission filtering.
+
+`memoryEmbedding.service` owns no provider logic of its own; it calls
+`embed()` and `upsertVectors()/queryVectors()` and lets each subsystem
+select its provider from configuration. **Semantic search activates
+automatically the moment an embedding provider and a vector database are
+both configured** — no code change, no redeploy of application logic.
+Until then it is *disabled, not approximated*: the semantic route returns
+503, indexing skips rather than writing `embeddingId` values for vectors
+that don't exist, and no approximate vector is ever generated.
+
+Required credentials are listed in `.env.example` (`EMBEDDING_*`,
+`VECTORDB_*`). `GET /api/capabilities` reports which capabilities are
+live in a running deployment and what each unconfigured one currently
+does instead — this is the confirmation step after adding credentials.
 
 Retrieval stays useful meanwhile: `memoryRetrieval.service` ranks on
 lexical term overlap, importance, recency, and access frequency, dropping

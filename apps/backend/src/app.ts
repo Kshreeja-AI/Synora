@@ -51,6 +51,7 @@ import modelRegistryRoutes from './routes/modelRegistry';
 import evaluationRoutes from './routes/evaluation';
 import datasetExportRoutes from './routes/datasetExport';
 import usageRoutes from './routes/usage';
+import { capabilityRoutes } from './routes/capabilities';
 
 export interface CreateAppDeps {
   /**
@@ -236,6 +237,8 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', evaluationRoutes);
   app.use('/api/workspaces', datasetExportRoutes);
   app.use('/api/workspaces', usageRoutes);
+  // Deployment-wide capability detection (not workspace-scoped).
+  app.use('/api', capabilityRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);

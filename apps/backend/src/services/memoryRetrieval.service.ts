@@ -63,7 +63,7 @@ export class MemoryRetrievalService {
       // configured. When it isn't, the semantic signal is genuinely
       // absent and is dropped from the ranking rather than contributing
       // a fabricated (or uniformly zero) score.
-      const semanticUsed = hasQuery && isSemanticSearchAvailable()
+      const semanticUsed = hasQuery && (await isSemanticSearchAvailable())
       let semanticResults: Array<{ memoryId: string; score: number }> = []
       if (semanticUsed) {
         semanticResults = await this.semanticSearch(query.query, query.workspaceId, limit * 3)

@@ -1338,6 +1338,44 @@ only, never values.
 
 ---
 
+## Capability Detection
+
+### `GET /api/capabilities`
+
+Which credential-dependent capabilities are live in this deployment, and
+what the platform does while the rest are unconfigured. Requires
+authentication — the response names which vendors a deployment uses. It
+never reads or returns a secret value, only each subsystem's own
+"am I configured" answer.
+
+Use this to confirm credentials took effect after deploying them.
+
+**Response**
+```json
+{
+  "data": {
+    "allActive": false,
+    "capabilities": [
+      {
+        "id": "semantic-memory",
+        "name": "Semantic memory search",
+        "status": "unconfigured",
+        "provider": null,
+        "availableProviders": ["openai", "voyage", "gemini", "cohere", "claude", "ollama", "self-hosted", "pgvector", "pinecone", "qdrant", "weaviate", "milvus"],
+        "degradedBehavior": "Memory retrieval ranks on lexical term overlap, importance, recency and access frequency; the semantic search endpoint returns 503. No approximate vectors are ever generated."
+      }
+    ]
+  }
+}
+```
+
+Reported capabilities: `text-generation`, `semantic-memory`,
+`embeddings`, `vector-database`, `object-storage`, `email`. `status` is
+`active` or `unconfigured`; `semantic-memory` requires both an embedding
+provider and a vector database before it reports active.
+
+---
+
 ## Liveness & Readiness
 
 ### `/health`

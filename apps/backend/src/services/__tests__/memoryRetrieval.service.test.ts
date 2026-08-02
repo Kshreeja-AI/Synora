@@ -1,10 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { MemoryRetrievalService } from '../memoryRetrieval.service'
-import {
-  configureMemoryEmbeddings,
-  resetMemoryEmbeddings,
-  memoryEmbeddingService,
-} from '../memoryEmbedding.service'
+import { memoryEmbeddingService, isSemanticSearchAvailable } from '../memoryEmbedding.service'
 
 /**
  * Retrieval must stay useful — and honest — when semantic search is
@@ -31,6 +27,16 @@ vi.mock('../memoryCache.service', () => ({
   },
 }))
 
+vi.mock('../memoryEmbedding.service', () => ({
+  isSemanticSearchAvailable: vi.fn(),
+  memoryEmbeddingService: {
+    semanticSearch: vi.fn(),
+  },
+}))
+
+const availabilityMock = vi.mocked(isSemanticSearchAvailable)
+const semanticSearchMock = vi.mocked(memoryEmbeddingService.semanticSearch)
+
 function memory(overrides: Record<string, unknown> = {}) {
   return {
     id: 'mem-1',
@@ -56,18 +62,17 @@ describe('MemoryRetrievalService without a semantic provider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    resetMemoryEmbeddings()
+    availabilityMock.mockResolvedValue(false)
     service = new MemoryRetrievalService()
   })
 
   it('does not call semantic search at all', async () => {
     const { prisma } = await import('@synora/database')
     vi.mocked(prisma.memory.findMany).mockResolvedValue([memory()] as never)
-    const spy = vi.spyOn(memoryEmbeddingService, 'semanticSearch')
 
     await service.retrieveMemories({ query: 'deploy runbook', workspaceId: 'ws-1', userId: 'u-1' })
 
-    expect(spy).not.toHaveBeenCalled()
+    expect(semanticSearchMock).not.toHaveBeenCalled()
   })
 
   it('marks results as not having used semantic search', async () => {
@@ -145,25 +150,14 @@ describe('MemoryRetrievalService with a semantic provider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    availabilityMock.mockResolvedValue(true)
     service = new MemoryRetrievalService()
-    configureMemoryEmbeddings({
-      embeddings: { model: 'text-embedding-3-small', embed: vi.fn().mockResolvedValue([0.1]) },
-      vectorDB: {
-        upsert: vi.fn(),
-        delete: vi.fn(),
-        query: vi.fn().mockResolvedValue([]),
-      },
-    })
-  })
-
-  afterEach(() => {
-    resetMemoryEmbeddings()
   })
 
   it('uses the semantic signal and reports it', async () => {
     const { prisma } = await import('@synora/database')
     vi.mocked(prisma.memory.findMany).mockResolvedValue([memory()] as never)
-    vi.spyOn(memoryEmbeddingService, 'semanticSearch').mockResolvedValue([
+    semanticSearchMock.mockResolvedValue([
       { memoryId: 'mem-1', memory: memory() as never, score: 0.9 },
     ])
 
@@ -173,7 +167,27 @@ describe('MemoryRetrievalService with a semantic provider', () => {
       userId: 'u-1',
     })
 
+    expect(semanticSearchMock).toHaveBeenCalled()
     expect(results[0].rankingDetails.semanticSearchUsed).toBe(true)
     expect(results[0].rankingDetails.semanticScore).toBe(0.9)
+  })
+
+  it('still ranks on lexical overlap alongside the semantic signal', async () => {
+    const { prisma } = await import('@synora/database')
+    vi.mocked(prisma.memory.findMany).mockResolvedValue([
+      memory({ id: 'mem-1', content: 'deploy runbook' }),
+    ] as never)
+    semanticSearchMock.mockResolvedValue([
+      { memoryId: 'mem-1', memory: memory() as never, score: 0.5 },
+    ])
+
+    const results = await service.retrieveMemories({
+      query: 'deploy runbook',
+      workspaceId: 'ws-1',
+      userId: 'u-1',
+    })
+
+    expect(results[0].rankingDetails.lexicalScore).toBe(1)
+    expect(results[0].rankingDetails.semanticScore).toBe(0.5)
   })
 })
