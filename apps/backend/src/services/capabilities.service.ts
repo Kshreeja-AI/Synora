@@ -1,4 +1,5 @@
 import { PROVIDER_REGISTRY } from '../ai/registry';
+import { IMAGE_PROVIDER_REGISTRY } from '../ai/imageRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb';
 import { TRANSPORT_REGISTRY } from '../mail/registry';
@@ -87,14 +88,21 @@ function report(
 }
 
 export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
-  const [aiProvider, embeddingProvider, vectorProvider, storageProvider, virusScanProvider] =
-    await Promise.all([
-      firstConfigured(PROVIDER_REGISTRY),
-      firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
-      firstConfigured(VECTORDB_PROVIDER_REGISTRY),
-      firstConfigured(STORAGE_REGISTRY),
-      firstConfigured(VIRUS_SCAN_PROVIDER_REGISTRY),
-    ]);
+  const [
+    aiProvider,
+    imageProvider,
+    embeddingProvider,
+    vectorProvider,
+    storageProvider,
+    virusScanProvider,
+  ] = await Promise.all([
+    firstConfigured(PROVIDER_REGISTRY),
+    firstConfigured(IMAGE_PROVIDER_REGISTRY),
+    firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
+    firstConfigured(VECTORDB_PROVIDER_REGISTRY),
+    firstConfigured(STORAGE_REGISTRY),
+    firstConfigured(VIRUS_SCAN_PROVIDER_REGISTRY),
+  ]);
 
   // Mail is the one subsystem that is never auto-detected: `console` is
   // always valid, so the configured transport is an explicit choice rather
@@ -125,6 +133,13 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
         ...VECTORDB_PROVIDER_REGISTRY.map((d) => d.id),
       ],
     },
+    report(
+      'image-generation',
+      'AI image generation',
+      imageProvider,
+      IMAGE_PROVIDER_REGISTRY,
+      'The image generation endpoint returns 503 rather than a placeholder image; no fabricated image is ever produced.'
+    ),
     report(
       'embeddings',
       'Embedding generation',

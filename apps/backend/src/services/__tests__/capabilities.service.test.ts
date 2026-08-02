@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getPlatformCapabilities } from '../capabilities.service';
 import { PROVIDER_REGISTRY } from '../../ai/registry';
+import { IMAGE_PROVIDER_REGISTRY } from '../../ai/imageRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../../vectordb';
 import { STORAGE_REGISTRY } from '../../storage/registry';
@@ -17,6 +18,9 @@ import { getConfig } from '../../config';
 
 vi.mock('../../ai/registry', () => ({
   PROVIDER_REGISTRY: [{ id: 'anthropic', isConfigured: vi.fn() }],
+}));
+vi.mock('../../ai/imageRegistry', () => ({
+  IMAGE_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
 }));
 vi.mock('../../embeddings', () => ({
   EMBEDDING_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
@@ -40,6 +44,7 @@ vi.mock('../../config', () => ({
 type Configurable = { isConfigured: ReturnType<typeof vi.fn> };
 
 const ai = PROVIDER_REGISTRY[0] as unknown as Configurable;
+const image = IMAGE_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const embeddings = EMBEDDING_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const vectors = VECTORDB_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const storage = STORAGE_REGISTRY[0] as unknown as Configurable;
@@ -47,6 +52,7 @@ const virusScan = VIRUS_SCAN_PROVIDER_REGISTRY[0] as unknown as Configurable;
 
 function configure(options: {
   ai?: boolean;
+  image?: boolean;
   embeddings?: boolean;
   vectors?: boolean;
   storage?: boolean;
@@ -54,6 +60,7 @@ function configure(options: {
   mailTransport?: string;
 }): void {
   ai.isConfigured.mockResolvedValue(options.ai ?? false);
+  image.isConfigured.mockResolvedValue(options.image ?? false);
   embeddings.isConfigured.mockResolvedValue(options.embeddings ?? false);
   vectors.isConfigured.mockResolvedValue(options.vectors ?? false);
   storage.isConfigured.mockResolvedValue(options.storage ?? false);
@@ -153,9 +160,28 @@ describe('getPlatformCapabilities', () => {
     expect(scanning.provider).toBe('clamav');
   });
 
+  it('reports image generation as unconfigured with an honest degradation message', async () => {
+    configure({});
+
+    const img = find(await getPlatformCapabilities(), 'image-generation');
+
+    expect(img.status).toBe('unconfigured');
+    expect(img.degradedBehavior).toMatch(/503|placeholder/i);
+  });
+
+  it('activates image generation when an image provider is configured', async () => {
+    configure({ image: true });
+
+    const img = find(await getPlatformCapabilities(), 'image-generation');
+
+    expect(img.status).toBe('active');
+    expect(img.provider).toBe('openai');
+  });
+
   it('sets allActive only when every capability is live', async () => {
     configure({
       ai: true,
+      image: true,
       embeddings: true,
       vectors: true,
       storage: true,

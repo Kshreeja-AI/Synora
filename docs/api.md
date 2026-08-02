@@ -1369,10 +1369,44 @@ Use this to confirm credentials took effect after deploying them.
 }
 ```
 
-Reported capabilities: `text-generation`, `semantic-memory`,
-`embeddings`, `vector-database`, `object-storage`, `email`. `status` is
-`active` or `unconfigured`; `semantic-memory` requires both an embedding
-provider and a vector database before it reports active.
+Reported capabilities: `text-generation`, `image-generation`,
+`semantic-memory`, `embeddings`, `vector-database`, `object-storage`,
+`virus-scanning`, `email`. `status` is `active` or `unconfigured`;
+`semantic-memory` requires both an embedding provider and a vector
+database before it reports active.
+
+---
+
+## Image Generation
+
+### `POST /api/images/generate`
+
+Generate an image from a prompt. Requires authentication.
+
+**Request**
+```http
+POST /api/images/generate
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "prompt": "a corgi in a spacesuit", "size": "1024x1024", "projectId": "..." }
+```
+
+`size` is `${width}x${height}` and is passed to the underlying provider,
+which validates supported combinations. Only OpenAI's image models are
+supported today.
+
+**Success** (201): the persisted `GeneratedImage` row, whose `imageUrl` is
+a durable URL served by Synora's own object storage (never a
+provider-hosted URL, which would expire). `status` is `COMPLETED` on
+success and `FAILED` when the provider or storage step errored.
+
+**503 Service Unavailable** when no image provider is configured for
+this deployment — callers see this instead of a fabricated placeholder.
+Confirm with `GET /api/capabilities`.
+
+### `GET /api/images` — list your generated images
+### `GET /api/images/:id` — one image
 
 ---
 

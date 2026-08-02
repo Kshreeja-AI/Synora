@@ -101,6 +101,47 @@ export interface TextGenerationProvider {
 }
 
 /**
+ * Image generation. A separate provider interface from text (as the module
+ * header describes) — the wire shape and result are entirely different, so
+ * forcing it through `generateText` would be dishonest. Providers return raw
+ * image bytes (base64) rather than a provider-hosted URL: those URLs expire,
+ * and Synora stores the bytes in its own object storage so the returned URL
+ * is durable and workspace-controlled.
+ */
+export interface ImageGenerationRequest {
+  prompt: string;
+  /** `${width}x${height}`, e.g. "1024x1024". Providers validate supported sizes. */
+  size?: string;
+  /** How many images to generate. Defaults to 1. */
+  count?: number;
+  /** Override the provider's configured default model for this one call. */
+  model?: string;
+}
+
+export interface GeneratedImageData {
+  /** Raw image bytes, base64-encoded. */
+  base64: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+export interface ImageGenerationResult {
+  images: readonly GeneratedImageData[];
+  /** The provider id that actually served this request, e.g. "openai". */
+  provider: string;
+  /** The concrete model used, e.g. "gpt-image-1". */
+  model: string;
+}
+
+/** Implemented by any provider that can serve image generation. */
+export interface ImageGenerationProvider {
+  readonly id: string;
+  readonly capabilities: readonly AICapability[];
+  generateImages(request: ImageGenerationRequest): Promise<ImageGenerationResult>;
+}
+
+/**
  * Thrown when a provider call fails for a reason the caller can act on
  * (missing configuration, upstream error, invalid response) — never a raw
  * SDK/HTTP error, so route code never needs to know which provider failed or

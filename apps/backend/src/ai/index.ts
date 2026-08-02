@@ -10,11 +10,20 @@ export type {
   TextGenerationResult,
   TextGenerationUsage,
   TextGenerationProvider,
+  ImageGenerationRequest,
+  ImageGenerationResult,
+  GeneratedImageData,
+  ImageGenerationProvider,
 } from './types';
 export { AIProviderError, NoProviderConfiguredError } from './types';
 export { PROVIDER_REGISTRY, getProviderDescriptor, providersForCapability } from './registry';
 export type { AIProviderDescriptor } from './registry';
 export { resolveProvider, resolveTextGenerationProvider } from './resolver';
+export {
+  IMAGE_PROVIDER_REGISTRY,
+  resolveImageProvider,
+  isImageGenerationConfigured,
+} from './imageRegistry';
 
 /**
  * The one function the rest of the application calls to generate text or
