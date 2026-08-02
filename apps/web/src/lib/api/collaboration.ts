@@ -1,201 +1,216 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useCurrentUser } from '@/hooks/useCurrentUser';
+/**
+ * Realtime collaboration client.
+ *
+ * Speaks socket.io to the backend RealtimeService — the actual
+ * protocol the server runs (the previous implementation opened a raw
+ * WebSocket, which socket.io cannot accept, so it never connected).
+ *
+ * Server contract (services/realtime.service.ts):
+ *   emit  join:conversation / leave:conversation  { conversationId }
+ *   emit  typing:start / typing:stop              { conversationId }
+ *   on    presence      { userId, action: 'joined'|'left', timestamp }
+ *   on    typing        { userId, action: 'start'|'stop', timestamp }
+ *   on    error:join    { conversationId, reason }
+ *
+ * Auth rides on the httpOnly accessToken cookie: the browser attaches
+ * it to the handshake request when `withCredentials` is set — the
+ * client never sees the token itself.
+ *
+ * The server knows only userIds. Mapping ids to names/avatars is the
+ * component's job (workspace members API) — this module never invents
+ * profile data.
+ */
 
-export interface User {
-  id: string;
-  name: string;
-  avatar?: string;
-  email?: string;
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { io, type Socket } from 'socket.io-client';
+import { getApiBaseUrl } from './client';
+
+let socketInstance: Socket | null = null;
+
+/**
+ * Lazily-created shared socket. One connection per tab regardless of
+ * how many conversations/hooks use it; socket.io multiplexes rooms
+ * over it and auto-reconnects with backoff.
+ */
+export function getRealtimeSocket(): Socket {
+  if (!socketInstance) {
+    socketInstance = io(getApiBaseUrl(), {
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+      autoConnect: false,
+    });
+  }
+  return socketInstance;
 }
 
-export interface PresenceUser extends User {
-  lastSeen: string;
-  isTyping?: boolean;
+/** Test seam: drop the shared instance so each test starts clean. */
+export function resetRealtimeSocketForTests(): void {
+  socketInstance?.disconnect();
+  socketInstance = null;
 }
 
-export interface PresenceState {
+export interface PresenceEntry {
   userId: string;
-  conversationId: string;
-  joinedAt: string;
   isTyping: boolean;
 }
 
-let wsInstance: WebSocket | null = null;
-let reconnectTimeout: NodeJS.Timeout | null = null;
-
-function getWebSocketUrl(): string {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  return baseUrl.replace(/^http/, 'ws');
+interface PresenceEventPayload {
+  userId: string;
+  action: 'joined' | 'left';
 }
 
-function ensureWebSocketConnection(): Promise<WebSocket> {
-  return new Promise((resolve, reject) => {
-    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
-      resolve(wsInstance);
-      return;
-    }
-
-    try {
-      wsInstance = new WebSocket(`${getWebSocketUrl()}/api/realtime`);
-      wsInstance.onopen = () => {
-        resolve(wsInstance!);
-      };
-      wsInstance.onerror = () => reject(new Error('WebSocket connection failed'));
-    } catch (error) {
-      reject(error);
-    }
-  });
+interface TypingEventPayload {
+  userId: string;
+  action: 'start' | 'stop';
 }
 
-export function usePresence(conversationId: string) {
-  const { data: currentUser } = useCurrentUser();
-  const [users, setUsers] = useState<PresenceUser[]>([]);
+const TYPING_EXPIRY_MS = 4000;
+
+/**
+ * Join a conversation's realtime room and track who's present and
+ * typing. Handles reconnects by re-joining on every 'connect' event,
+ * and leaves the room (without tearing down the shared socket) on
+ * unmount.
+ */
+export function useConversationPresence(conversationId: string | undefined): {
+  participants: PresenceEntry[];
+  isConnected: boolean;
+} {
+  const [present, setPresent] = useState<Map<string, { isTyping: boolean }>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const typingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    if (!currentUser || !conversationId) return;
+    if (!conversationId) return;
 
-    let mounted = true;
+    const socket = getRealtimeSocket();
 
-    async function connect() {
-      try {
-        const ws = await ensureWebSocketConnection();
-        wsRef.current = ws;
+    const join = () => {
+      socket.emit('join:conversation', { conversationId });
+      setIsConnected(true);
+    };
 
-        if (!mounted) return;
-
-        ws.addEventListener('message', (event) => {
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'presence') {
-            if (mounted) {
-              setUsers(data.users);
-            }
-          } else if (data.type === 'typing') {
-            if (mounted) {
-              setUsers((prev) =>
-                prev.map((u) =>
-                  u.id === data.userId ? { ...u, isTyping: data.isTyping } : u
-                )
-              );
-
-              if (data.isTyping && typingTimeoutRef.current) {
-                clearTimeout(typingTimeoutRef.current);
-              }
-
-              if (data.isTyping) {
-                typingTimeoutRef.current = setTimeout(() => {
-                  setUsers((prev) =>
-                    prev.map((u) =>
-                      u.id === data.userId ? { ...u, isTyping: false } : u
-                    )
-                  );
-                }, 3000);
-              }
-            }
-          }
-        });
-
-        ws.send(
-          JSON.stringify({
-            type: 'join',
-            conversationId,
-            userId: currentUser?.id,
-            user: currentUser ? {
-              id: currentUser.id,
-              name: currentUser.name || 'Anonymous',
-              avatar: currentUser.image || undefined,
-              email: currentUser.email,
-            } : undefined,
-          })
-        );
-
-        if (mounted) {
-          setIsConnected(true);
+    const handlePresence = (event: PresenceEventPayload) => {
+      setPresent((prev) => {
+        const next = new Map(prev);
+        if (event.action === 'joined') {
+          next.set(event.userId, { isTyping: prev.get(event.userId)?.isTyping ?? false });
+        } else {
+          next.delete(event.userId);
         }
-      } catch (error) {
-        console.error('Failed to connect to presence service:', error);
-        if (mounted) {
-          setIsConnected(false);
-          // Retry after 3 seconds
-          reconnectTimeout = setTimeout(() => {
-            if (mounted) {
-              connect();
-            }
-          }, 3000);
-        }
-      }
-    }
+        return next;
+      });
+    };
 
-    connect();
+    const handleTyping = (event: TypingEventPayload) => {
+      const isTyping = event.action === 'start';
+      setPresent((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(event.userId);
+        if (existing) next.set(event.userId, { ...existing, isTyping });
+        return next;
+      });
 
-    return () => {
-      mounted = false;
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-      }
-      if (wsRef.current && wsRef.current === wsInstance) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'leave',
-            conversationId,
-            userId: currentUser.id,
-          })
+      // Safety expiry: if a typing:stop is lost (tab close mid-type),
+      // clear the flag locally rather than showing it forever.
+      const timers = typingTimers.current;
+      const pending = timers.get(event.userId);
+      if (pending) clearTimeout(pending);
+      if (isTyping) {
+        timers.set(
+          event.userId,
+          setTimeout(() => {
+            setPresent((prev) => {
+              const next = new Map(prev);
+              const entry = next.get(event.userId);
+              if (entry) next.set(event.userId, { ...entry, isTyping: false });
+              return next;
+            });
+          }, TYPING_EXPIRY_MS)
         );
       }
     };
-  }, [currentUser, conversationId]);
 
-  const broadcastTyping = useCallback(
-    (isTyping: boolean) => {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(
-          JSON.stringify({
-            type: 'typing',
-            conversationId,
-            userId: currentUser?.id,
-            isTyping,
-          })
-        );
+    const handleDisconnect = () => setIsConnected(false);
+
+    socket.on('connect', join);
+    socket.on('presence', handlePresence);
+    socket.on('typing', handleTyping);
+    socket.on('disconnect', handleDisconnect);
+
+    if (socket.connected) {
+      join();
+    } else {
+      socket.connect();
+    }
+
+    const timers = typingTimers.current;
+    return () => {
+      if (socket.connected) {
+        socket.emit('leave:conversation', { conversationId });
       }
-    },
-    [conversationId, currentUser?.id]
-  );
+      socket.off('connect', join);
+      socket.off('presence', handlePresence);
+      socket.off('typing', handleTyping);
+      socket.off('disconnect', handleDisconnect);
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+      setPresent(new Map());
+    };
+  }, [conversationId]);
 
-  return { users, isConnected, broadcastTyping };
+  return {
+    participants: Array.from(present.entries()).map(([userId, state]) => ({
+      userId,
+      isTyping: state.isTyping,
+    })),
+    isConnected,
+  };
 }
 
-export function useTypingIndicator(conversationId: string, isTyping: boolean) {
-  const { users, broadcastTyping } = usePresence(conversationId);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+const TYPING_IDLE_STOP_MS = 2000;
+
+/**
+ * Broadcast the local user's typing state. Call `notifyTyping()` on
+ * every keystroke — it throttles to one typing:start per burst and
+ * emits typing:stop after 2s of idleness (and on unmount).
+ */
+export function useTypingBroadcast(conversationId: string | undefined): {
+  notifyTyping: () => void;
+} {
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+
+  const stop = useCallback(() => {
+    if (!conversationId || !isTypingRef.current) return;
+    isTypingRef.current = false;
+    const socket = getRealtimeSocket();
+    if (socket.connected) {
+      socket.emit('typing:stop', { conversationId });
+    }
+  }, [conversationId]);
+
+  const notifyTyping = useCallback(() => {
+    if (!conversationId) return;
+    const socket = getRealtimeSocket();
+    if (!socket.connected) return;
+
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socket.emit('typing:start', { conversationId });
+    }
+    if (stopTimer.current) clearTimeout(stopTimer.current);
+    stopTimer.current = setTimeout(stop, TYPING_IDLE_STOP_MS);
+  }, [conversationId, stop]);
 
   useEffect(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-
-    broadcastTyping(isTyping);
-
-    if (isTyping) {
-      timeoutRef.current = setTimeout(() => {
-        broadcastTyping(false);
-      }, 5000);
-    }
-
     return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
+      if (stopTimer.current) clearTimeout(stopTimer.current);
+      stop();
     };
-  }, [isTyping, broadcastTyping]);
+  }, [stop]);
 
-  const typingUsers = users.filter((u) => u.isTyping);
-  return { typingUsers };
+  return { notifyTyping };
 }

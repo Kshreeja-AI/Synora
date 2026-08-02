@@ -20,6 +20,9 @@ import { Composer } from '@/components/chat/Composer';
 import { ConversationFilesPanel } from '@/components/files/ConversationFilesPanel';
 import { ShareDialog } from '@/components/sharing/ShareDialog';
 import { ConversationExport } from '@/components/history/ConversationExport';
+import { PresenceIndicator } from '@/components/collaboration/PresenceIndicator';
+import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
+import { useTypingBroadcast } from '@/lib/api/collaboration';
 import { Share2 } from 'lucide-react';
 import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
@@ -57,6 +60,7 @@ export default function ConversationDetailPage() {
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const { notifyTyping } = useTypingBroadcast(conversationId);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -248,7 +252,8 @@ export default function ConversationDetailPage() {
               <p className="mt-1 text-sm text-muted-foreground">{conversation.description}</p>
             )}
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-3">
+            <PresenceIndicator workspaceId={workspaceId} conversationId={conversationId} />
             <ConversationExport workspaceId={workspaceId} conversationId={conversationId} />
             <Button
               variant="outline"
@@ -306,10 +311,15 @@ export default function ConversationDetailPage() {
 
       <ConversationFilesPanel workspaceId={workspaceId} conversationId={conversationId} />
 
+      <TypingIndicator workspaceId={workspaceId} conversationId={conversationId} />
+
       <div className="border-t border-border bg-card p-6">
         <Composer
           value={inputValue}
-          onChange={setInputValue}
+          onChange={(value) => {
+            setInputValue(value);
+            notifyTyping();
+          }}
           onSubmit={handleSend}
           onStop={handleStop}
           isGenerating={streamingId !== null}

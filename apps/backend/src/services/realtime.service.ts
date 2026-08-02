@@ -1,6 +1,7 @@
 import { Server as SocketIOServer, Socket } from 'socket.io';
 import { Server as HTTPServer } from 'http';
 import jwt from 'jsonwebtoken';
+import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { secretsManager } from '../secrets';
 
@@ -11,11 +12,28 @@ interface PresenceEvent {
   timestamp: number;
 }
 
-interface StreamEvent {
-  conversationId: string;
-  messageId: string;
-  type: 'token' | 'done' | 'error';
-  data: string | Record<string, unknown>;
+/**
+ * Minimal single-key cookie extraction for the handshake. Browser
+ * clients cannot read the httpOnly accessToken cookie to place it in
+ * `auth.token` (P0-002) — the browser attaches it to the handshake
+ * request itself, so we read it from the Cookie header. Not a general
+ * cookie parser on purpose: one key, no decoding surprises beyond
+ * standard percent-encoding.
+ */
+function readCookie(header: string | undefined, name: string): string | null {
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) {
+      try {
+        return decodeURIComponent(part.slice(eq + 1).trim());
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
 }
 
 export class RealtimeService {
@@ -47,7 +65,14 @@ export class RealtimeService {
 
     this.io.use(async (socket, next) => {
       try {
-        const token = socket.handshake.auth.token;
+        // Two accepted credential channels, same JWT either way:
+        // - `auth.token`: programmatic clients that hold a bearer token.
+        // - accessToken cookie: browsers, which cannot read the
+        //   httpOnly cookie into auth.token but do attach it to the
+        //   handshake request (withCredentials).
+        const token =
+          socket.handshake.auth.token ??
+          readCookie(socket.handshake.headers.cookie, 'accessToken');
         if (!token) {
           return next(new Error('Missing authentication token'));
         }
@@ -69,7 +94,7 @@ export class RealtimeService {
       logger.info('WebSocket client connected', { userId, socketId: socket.id });
 
       socket.on('join:conversation', (data) => {
-        this.handleJoinConversation(socket, userId, data);
+        void this.handleJoinConversation(socket, userId, data);
       });
 
       socket.on('leave:conversation', (data) => {
@@ -84,9 +109,10 @@ export class RealtimeService {
         this.handleTypingStop(socket, userId, data);
       });
 
-      socket.on('message:stream', (data) => {
-        this.handleMessageStream(socket, userId, data);
-      });
+      // Deliberately NO client-emitted stream relay: message streams
+      // originate exclusively from server-side generation (SSE +
+      // broadcastMessage below). A client-triggered relay would let
+      // any room member broadcast fabricated model output to everyone.
 
       socket.on('disconnect', () => {
         this.handleDisconnect(socket, userId);
@@ -98,9 +124,49 @@ export class RealtimeService {
     });
   }
 
-  private handleJoinConversation(socket: Socket, userId: string, data: { conversationId: string }): void {
+  private async handleJoinConversation(
+    socket: Socket,
+    userId: string,
+    data: { conversationId: string }
+  ): Promise<void> {
     const { conversationId } = data;
+    if (typeof conversationId !== 'string' || conversationId.length === 0) {
+      socket.emit('error:join', { conversationId, reason: 'Invalid conversation id' });
+      return;
+    }
     const room = `conversation:${conversationId}`;
+
+    // Authorization gate: a room carries presence, typing, and message
+    // broadcasts — joining must require the same workspace membership
+    // as reading the conversation over HTTP. Unauthorized and
+    // nonexistent conversations get the same response so a socket
+    // can't be used to probe for conversation ids.
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { workspaceId: true },
+      });
+      const membership = conversation
+        ? await prisma.workspaceMember.findUnique({
+            where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
+            select: { id: true },
+          })
+        : null;
+
+      if (!membership) {
+        logger.warn('Rejected conversation join', { userId, conversationId });
+        socket.emit('error:join', { conversationId, reason: 'Conversation not found' });
+        return;
+      }
+    } catch (error) {
+      logger.error('Conversation join check failed', {
+        userId,
+        conversationId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      socket.emit('error:join', { conversationId, reason: 'Join failed' });
+      return;
+    }
 
     socket.join(room);
 
@@ -169,11 +235,6 @@ export class RealtimeService {
       action: 'stop',
       timestamp: Date.now(),
     });
-  }
-
-  private handleMessageStream(socket: Socket, userId: string, data: StreamEvent): void {
-    const room = `conversation:${data.conversationId}`;
-    this.io?.to(room).emit('message:stream', data);
   }
 
   private handleDisconnect(socket: Socket, userId: string): void {
