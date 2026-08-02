@@ -34,7 +34,7 @@ export default function ConversationsPage() {
 
   const createMutation = useCreateConversation(workspaceId);
 
-  const conversations = conversationsData?.pages.flatMap((page) => page.items) ?? [];
+  const conversations = conversationsData?.pages.flatMap((page) => page.conversations) ?? [];
   const error = fetchError || createMutation.error;
 
   const refreshList = () =>

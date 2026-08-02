@@ -23,7 +23,8 @@ import {
 import { ArrowLeft, File, Folder as FolderIcon, Plus, Trash2, Upload } from 'lucide-react';
 import { useCurrentWorkspace } from '../../../../hooks/useCurrentWorkspace';
 import { getProject, deleteProject } from '../../../../lib/api/projects';
-import { listFolders, createFolder, deleteFolder, type ConversationFolder } from '../../../../lib/api/folders';
+import { listFolders, createFolder, deleteFolder } from '../../../../lib/api/folders';
+import type { Folder } from '../../../../lib/api/types';
 import { listAssets, uploadAsset, deleteAsset } from '../../../../lib/api/assets';
 import { ApiError } from '../../../../lib/api/client';
 
@@ -222,7 +223,7 @@ export default function ProjectDetailPage(): React.JSX.Element {
             >
               Unfiled
             </button>
-            {folders?.map((folder: ConversationFolder) => (
+            {folders?.map((folder: Folder) => (
               <span key={folder.id} className="group relative">
                 <button
                   type="button"

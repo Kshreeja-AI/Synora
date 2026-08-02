@@ -49,6 +49,7 @@ describe('Conversations Routes', () => {
   afterEach(async () => {
     await prisma.message.deleteMany({ where: { conversation: { workspaceId } } });
     await prisma.conversation.deleteMany({ where: { workspaceId } });
+    await prisma.conversationFolder.deleteMany({ where: { workspaceId } });
     await prisma.workspaceMember.deleteMany({ where: { workspaceId } });
     await prisma.workspace.delete({ where: { id: workspaceId } });
     await prisma.user.delete({ where: { id: userId } });
@@ -92,6 +93,61 @@ describe('Conversations Routes', () => {
       expect(response.body.data.conversations).toHaveLength(1);
       expect(response.body.data.conversations[0].title).toBe('First Conversation');
       expect(response.body.data.total).toBe(1);
+    });
+
+    // Folder scoping is what makes a folder readable rather than
+    // write-only: before this filter existed, a conversation could be
+    // filed into a folder and then never listed by it.
+    describe('?folderId=', () => {
+      let folderId: string;
+
+      beforeEach(async () => {
+        const folder = await prisma.conversationFolder.create({
+          data: { workspaceId, name: 'Scoped', createdById: userId },
+        });
+        folderId = folder.id;
+
+        await prisma.conversation.create({
+          data: {
+            workspaceId,
+            title: 'Filed Conversation',
+            folderId,
+            provider: 'anthropic',
+            model: 'claude-3-sonnet',
+          },
+        });
+      });
+
+      it('lists only the conversations in that folder', async () => {
+        const response = await request(app)
+          .get(`/api/workspaces/${workspaceId}/conversations`)
+          .query({ folderId })
+          .set('Authorization', `Bearer ${token}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.conversations).toHaveLength(1);
+        expect(response.body.data.conversations[0].title).toBe('Filed Conversation');
+      });
+
+      it('lists only unfiled conversations for folderId=none', async () => {
+        const response = await request(app)
+          .get(`/api/workspaces/${workspaceId}/conversations`)
+          .query({ folderId: 'none' })
+          .set('Authorization', `Bearer ${token}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.conversations).toHaveLength(1);
+        expect(response.body.data.conversations[0].title).toBe('First Conversation');
+      });
+
+      it('lists every folder when no filter is given', async () => {
+        const response = await request(app)
+          .get(`/api/workspaces/${workspaceId}/conversations`)
+          .set('Authorization', `Bearer ${token}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.conversations).toHaveLength(2);
+      });
     });
   });
 

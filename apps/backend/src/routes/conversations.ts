@@ -41,7 +41,7 @@ router.post('/:workspaceId/conversations', authMiddleware, async (req: AuthReque
 router.get('/:workspaceId/conversations', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params
-    const { skip, take, search, archived, pinned, sortBy, sortDirection } = req.query
+    const { skip, take, search, archived, pinned, sortBy, sortDirection, folderId } = req.query
 
     const result = await conversationService.listByWorkspace(req.userId!, workspaceId, {
       skip: skip ? parseInt(skip as string) : undefined,
@@ -49,6 +49,7 @@ router.get('/:workspaceId/conversations', authMiddleware, async (req: AuthReques
       search: search as string | undefined,
       archived: archived === 'true',
       pinned: pinned === 'true' ? true : undefined,
+      folderId: typeof folderId === 'string' && folderId.length > 0 ? folderId : undefined,
       sortBy: sortBy ? sortFieldSchema.parse(sortBy) : undefined,
       sortDirection: sortDirection ? sortDirectionSchema.parse(sortDirection) : undefined,
     })

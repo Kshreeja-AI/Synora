@@ -68,7 +68,10 @@ describe('folders routes (M5)', () => {
     const listed = await request(app)
       .get(`/api/workspaces/${workspace.id}/folders`)
       .set('Cookie', owner.accessToken);
-    expect(listed.body.data.items).toHaveLength(1);
+    // The list endpoint returns the folder array directly, matching the
+    // web client (lib/api/folders.ts). It briefly returned `{ items }`
+    // while this route was serving conversation folders by mistake.
+    expect(listed.body.data).toHaveLength(1);
 
     const renamed = await request(app)
       .patch(`/api/workspaces/${workspace.id}/folders/${created.body.data.id}`)

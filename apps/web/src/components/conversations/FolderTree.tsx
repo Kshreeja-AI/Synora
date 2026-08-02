@@ -2,10 +2,12 @@
 
 import React, { useState } from 'react';
 import { ChevronRight, Folder, FolderOpen, MoreVertical } from 'lucide-react';
-import { ConversationFolder } from '@/lib/api/folders';
+import { ConversationFolder } from '@/lib/api/conversationFolders';
 
 interface FolderTreeProps {
   folders: ConversationFolder[];
+  /** Currently filtered folder, so the active row can be marked. */
+  selectedFolderId?: string | null;
   onSelectFolder?: (folderId: string) => void;
   onDeleteFolder?: (folderId: string) => void;
   onRenameFolder?: (folderId: string, name: string) => void;
@@ -14,6 +16,7 @@ interface FolderTreeProps {
 interface FolderItemProps {
   folder: ConversationFolder;
   level: number;
+  selectedFolderId?: string | null;
   onSelectFolder?: (folderId: string) => void;
   onDeleteFolder?: (folderId: string) => void;
   onRenameFolder?: (folderId: string, name: string) => void;
@@ -22,6 +25,7 @@ interface FolderItemProps {
 function FolderItem({
   folder,
   level,
+  selectedFolderId,
   onSelectFolder,
   onDeleteFolder,
   onRenameFolder,
@@ -42,7 +46,11 @@ function FolderItem({
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-900 rounded transition group"
+        className={`flex items-center gap-1 rounded px-2 py-1.5 transition group ${
+          selectedFolderId === folder.id
+            ? 'bg-accent text-accent-foreground'
+            : 'hover:bg-accent/50'
+        }`}
         style={{ paddingLeft: `${level * 16}px` }}
       >
         {hasChildren && (
@@ -60,7 +68,9 @@ function FolderItem({
         {!hasChildren && <div className="w-4" />}
 
         <button
+          type="button"
           onClick={() => onSelectFolder?.(folder.id)}
+          aria-current={selectedFolderId === folder.id ? 'true' : undefined}
           className="flex items-center gap-2 flex-1 text-left min-w-0"
         >
           {isExpanded ? (
@@ -89,9 +99,9 @@ function FolderItem({
               {folder.name}
             </span>
           )}
-          {folder.conversationCount !== undefined && (
-            <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-              ({folder.conversationCount})
+          {folder._count?.conversations !== undefined && (
+            <span className="flex-shrink-0 text-xs text-muted-foreground">
+              ({folder._count.conversations})
             </span>
           )}
         </button>
@@ -132,6 +142,7 @@ function FolderItem({
               key={child.id}
               folder={child}
               level={level + 1}
+              selectedFolderId={selectedFolderId}
               onSelectFolder={onSelectFolder}
               onDeleteFolder={onDeleteFolder}
               onRenameFolder={onRenameFolder}
@@ -145,6 +156,7 @@ function FolderItem({
 
 export function FolderTree({
   folders,
+  selectedFolderId,
   onSelectFolder,
   onDeleteFolder,
   onRenameFolder,
@@ -164,6 +176,7 @@ export function FolderTree({
           key={folder.id}
           folder={folder}
           level={0}
+          selectedFolderId={selectedFolderId}
           onSelectFolder={onSelectFolder}
           onDeleteFolder={onDeleteFolder}
           onRenameFolder={onRenameFolder}

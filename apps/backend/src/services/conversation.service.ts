@@ -32,6 +32,13 @@ export interface ListConversationsOptions {
   search?: string
   sortBy?: ConversationSortField
   sortDirection?: SortDirection
+  /**
+   * Folder scope. A folder id lists that folder's conversations;
+   * `'none'` lists only unfiled ones. Omitted means every folder —
+   * these are three distinct answers, so an absent filter can't be
+   * conflated with "unfiled".
+   */
+  folderId?: string | 'none'
 }
 
 const MAX_TAGS_PER_CONVERSATION = 20
@@ -99,6 +106,10 @@ export class ConversationService {
 
     if (options.pinned !== undefined) {
       where.isPinned = options.pinned
+    }
+
+    if (options.folderId !== undefined) {
+      where.folderId = options.folderId === 'none' ? null : options.folderId
     }
 
     if (options.search) {

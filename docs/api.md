@@ -1194,6 +1194,31 @@ SSE stream and recorded on the `StreamingJob` row (`FAILED`, with
 The user message is never rolled back — the caller can retry the reply
 with the regenerate endpoint.
 
+### Folders — two distinct resources
+
+There are **two folder systems**, backed by different tables, and they
+must not be conflated:
+
+- **Asset folders** (`Folder` model, M5): `/api/workspaces/:id/folders`
+  — workspace- and optionally project-scoped, hold uploaded assets.
+  List returns a flat array; gated by `folder:manage`.
+- **Conversation folders** (`ConversationFolder` model, Release 3):
+  `/api/workspaces/:id/conversation-folders` — hierarchical
+  (`parentId`), hold conversations. List returns root folders (or the
+  children of `?parentId=`) with nested `children`, a preview of
+  `conversations`, and `_count`; gated by `conversation-folder:manage`.
+  - `POST   .../conversation-folders` — create (`{ name, parentId? }`)
+  - `PATCH  .../conversation-folders/:folderId` — rename / re-parent
+    (self-parenting refused)
+  - `DELETE .../conversation-folders/:folderId` — delete
+  - `POST   .../conversation-folders/move` — file a conversation
+    (`{ conversationId, folderId | null }`)
+
+To read a folder's contents, use the conversation list filter:
+`GET .../conversations?folderId=<id>` scopes to one folder,
+`?folderId=none` lists only unfiled conversations, and no filter lists
+everything.
+
 ### Stream a Generation (SSE)
 ```http
 GET /api/workspaces/:workspaceId/conversations/:conversationId/stream?messageId=<assistantMessageId>
