@@ -1,387 +1,435 @@
+import { logger } from '../utils/logger'
 import { prisma } from '@synora/database'
-import {
-  MessageFeedback,
-  ConversationFeedback,
-  MessageFeedbackType,
-  Correction,
-  CorrectionType,
-  PreferredResponse,
-  HallucinationReport,
-  HallucinationSeverity,
-  HallucinationCategory,
-  RewardSignal,
-  RewardType,
-} from '@prisma/client'
+import { NotFoundException } from '@synora/shared'
 
-export interface CreateMessageFeedbackInput {
-  messageId: string;
-  conversationId: string;
-  workspaceId: string;
-  userId: string;
-  rating?: number;
-  thumbsUp?: boolean;
-  thumbsDown?: boolean;
-  feedbackType: MessageFeedbackType;
-  comment?: string;
-  accuracyRating?: number;
-  clarityRating?: number;
-  completenessRating?: number;
-  relevanceRating?: number;
+export interface MessageFeedbackInput {
+  messageId: string
+  conversationId: string
+  rating?: number
+  isHelpful?: boolean
+  thumbsUp?: boolean
+  thumbsDown?: boolean
+  feedbackType: 'RATING' | 'HELPFUL' | 'UNHELPFUL' | 'CORRECTION' | 'HALLUCINATION' | 'TOXICITY' | 'BIAS' | 'INCOMPLETE' | 'IRRELEVANT'
+  comment?: string
+  accuracyRating?: number
+  clarityRating?: number
+  completenessRating?: number
+  relevanceRating?: number
 }
 
-export interface CreateConversationFeedbackInput {
-  conversationId: string;
-  workspaceId: string;
-  userId: string;
-  overallRating?: number;
-  isUseful?: boolean;
-  qualityScore?: number;
-  satisfactionScore?: number;
-  comment?: string;
-  relevanceRating?: number;
-  coherenceRating?: number;
-  usefulnessRating?: number;
+export interface ConversationFeedbackInput {
+  conversationId: string
+  overallRating?: number
+  isUseful?: boolean
+  qualityScore?: number
+  satisfactionScore?: number
+  comment?: string
+  relevanceRating?: number
+  coherenceRating?: number
+  usefulnessRating?: number
 }
 
-export interface CreateCorrectionInput {
-  messageId: string;
-  conversationId: string;
-  workspaceId: string;
-  userId: string;
-  originalContent: string;
-  correctedContent: string;
-  reason?: string;
-  correctionType: CorrectionType;
-  confidence?: number;
+export interface CorrectionInput {
+  messageId: string
+  conversationId: string
+  originalContent: string
+  correctedContent: string
+  correctionType: 'FACTUAL_ERROR' | 'GRAMMAR' | 'CLARITY' | 'TONE' | 'COMPLETENESS' | 'STYLE' | 'TECHNICAL' | 'OTHER'
+  reason?: string
+  confidence?: number
 }
 
-export interface CreatePreferredResponseInput {
-  conversationId: string;
-  workspaceId: string;
-  userId: string;
-  preferredMessageId: string;
-  rejectedMessageId: string;
-  reason?: string;
-  confidence?: number;
+export interface HallucinationReportInput {
+  messageId: string
+  conversationId: string
+  hallucinatedText: string
+  factualCorrection: string
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'
+  category: 'FACTUAL_ERROR' | 'FALSE_CITATION' | 'INVENTED_INFORMATION' | 'OUTDATED_INFORMATION' | 'LOGICAL_ERROR'
+  evidence?: string
+  sourceUrl?: string
 }
 
-export interface CreateHallucinationReportInput {
-  messageId: string;
-  conversationId: string;
-  workspaceId: string;
-  userId: string;
-  hallucinatedText: string;
-  factualCorrection: string;
-  severity: HallucinationSeverity;
-  category: HallucinationCategory;
-  evidence?: string;
-  sourceUrl?: string;
+export interface PreferredResponseInput {
+  conversationId: string
+  preferredMessageId: string
+  rejectedMessageId: string
+  preferenceType: 'ACCURACY' | 'CLARITY' | 'HELPFULNESS' | 'RELEVANCE' | 'STYLE' | 'TONE' | 'COMPLETENESS' | 'SAFETY'
+  reason?: string
+  confidence?: number
 }
 
-export interface CreateRewardSignalInput {
-  conversationId: string;
-  messageId: string;
-  workspaceId: string;
-  userId: string;
-  reward: number;
-  rewardType: RewardType;
-  comment?: string;
-}
+class FeedbackService {
+  async createMessageFeedback(userId: string, workspaceId: string, data: MessageFeedbackInput) {
+    try {
+      const message = await prisma.message.findUnique({
+        where: { id: data.messageId },
+        include: { conversation: true }
+      })
 
-export class FeedbackService {
+      if (!message || message.conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Message not found')
+      }
 
-  // Message Feedback
-  async createMessageFeedback(input: CreateMessageFeedbackInput): Promise<MessageFeedback> {
-    // Validate that message exists and user has access
-    const message = await prisma.message.findUnique({
-      where: { id: input.messageId },
-      include: { conversation: true },
-    });
+      const existingFeedback = await prisma.messageFeedback.findUnique({
+        where: {
+          messageId_userId: {
+            messageId: data.messageId,
+            userId
+          }
+        }
+      })
 
-    if (!message) {
-      throw new Error('Message not found');
-    }
+      if (existingFeedback) {
+        const feedback = await prisma.messageFeedback.update({
+          where: { id: existingFeedback.id },
+          data: {
+            rating: data.rating,
+            isHelpful: data.isHelpful,
+            thumbsUp: data.thumbsUp,
+            thumbsDown: data.thumbsDown,
+            feedbackType: data.feedbackType,
+            comment: data.comment,
+            accuracyRating: data.accuracyRating,
+            clarityRating: data.clarityRating,
+            completenessRating: data.completenessRating,
+            relevanceRating: data.relevanceRating
+          }
+        })
 
-    if (message.conversation.workspaceId !== input.workspaceId) {
-      throw new Error('Unauthorized');
-    }
+        logger.info('[feedback] Updated message feedback', {
+          feedbackId: feedback.id,
+          messageId: data.messageId,
+          userId
+        })
 
-    // Check if feedback already exists from this user
-    const existing = await prisma.messageFeedback.findUnique({
-      where: {
-        messageId_userId: {
-          messageId: input.messageId,
-          userId: input.userId,
-        },
-      },
-    });
+        return feedback
+      }
 
-    if (existing) {
-      // Update existing feedback
-      return prisma.messageFeedback.update({
-        where: { id: existing.id },
+      const feedback = await prisma.messageFeedback.create({
         data: {
-          rating: input.rating,
-          thumbsUp: input.thumbsUp,
-          thumbsDown: input.thumbsDown,
-          feedbackType: input.feedbackType,
-          comment: input.comment,
-          accuracyRating: input.accuracyRating,
-          clarityRating: input.clarityRating,
-          completenessRating: input.completenessRating,
-          relevanceRating: input.relevanceRating,
-        },
-      });
-    }
+          messageId: data.messageId,
+          conversationId: data.conversationId,
+          workspaceId,
+          userId,
+          rating: data.rating,
+          isHelpful: data.isHelpful,
+          thumbsUp: data.thumbsUp,
+          thumbsDown: data.thumbsDown,
+          feedbackType: data.feedbackType,
+          comment: data.comment,
+          accuracyRating: data.accuracyRating,
+          clarityRating: data.clarityRating,
+          completenessRating: data.completenessRating,
+          relevanceRating: data.relevanceRating
+        }
+      })
 
-    // Create new feedback
-    return prisma.messageFeedback.create({
-      data: {
-        messageId: input.messageId,
-        conversationId: input.conversationId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        rating: input.rating,
-        thumbsUp: input.thumbsUp,
-        thumbsDown: input.thumbsDown,
-        feedbackType: input.feedbackType,
-        comment: input.comment,
-        accuracyRating: input.accuracyRating,
-        clarityRating: input.clarityRating,
-        completenessRating: input.completenessRating,
-        relevanceRating: input.relevanceRating,
-      },
-    });
+      logger.info('[feedback] Created message feedback', {
+        feedbackId: feedback.id,
+        messageId: data.messageId,
+        userId
+      })
+
+      return feedback
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error
+      logger.error('[feedback] Failed to create message feedback', {
+        error: error instanceof Error ? error.message : String(error),
+        messageId: data.messageId,
+        userId
+      })
+      throw new NotFoundException('Failed to create feedback')
+    }
   }
 
-  async getMessageFeedback(messageId: string, userId?: string): Promise<MessageFeedback[]> {
-    return prisma.messageFeedback.findMany({
-      where: {
-        messageId,
-        ...(userId && { userId }),
-      },
-    });
-  }
+  async createConversationFeedback(userId: string, workspaceId: string, data: ConversationFeedbackInput) {
+    try {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: data.conversationId }
+      })
 
-  // Conversation Feedback
-  async createConversationFeedback(
-    input: CreateConversationFeedbackInput
-  ): Promise<ConversationFeedback> {
-    // Validate conversation exists
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: input.conversationId },
-    });
+      if (!conversation || conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Conversation not found')
+      }
 
-    if (!conversation || conversation.workspaceId !== input.workspaceId) {
-      throw new Error('Unauthorized');
-    }
+      const existingFeedback = await prisma.conversationFeedback.findUnique({
+        where: {
+          conversationId_userId: {
+            conversationId: data.conversationId,
+            userId
+          }
+        }
+      })
 
-    // Check if feedback exists
-    const existing = await prisma.conversationFeedback.findUnique({
-      where: {
-        conversationId_userId: {
-          conversationId: input.conversationId,
-          userId: input.userId,
-        },
-      },
-    });
+      if (existingFeedback) {
+        const feedback = await prisma.conversationFeedback.update({
+          where: { id: existingFeedback.id },
+          data: {
+            overallRating: data.overallRating,
+            isUseful: data.isUseful,
+            qualityScore: data.qualityScore,
+            satisfactionScore: data.satisfactionScore,
+            comment: data.comment,
+            relevanceRating: data.relevanceRating,
+            coherenceRating: data.coherenceRating,
+            usefulnessRating: data.usefulnessRating
+          }
+        })
 
-    if (existing) {
-      return prisma.conversationFeedback.update({
-        where: { id: existing.id },
+        logger.info('[feedback] Updated conversation feedback', {
+          feedbackId: feedback.id,
+          conversationId: data.conversationId,
+          userId
+        })
+
+        return feedback
+      }
+
+      const feedback = await prisma.conversationFeedback.create({
         data: {
-          overallRating: input.overallRating,
-          isUseful: input.isUseful,
-          qualityScore: input.qualityScore,
-          satisfactionScore: input.satisfactionScore,
-          comment: input.comment,
-          relevanceRating: input.relevanceRating,
-          coherenceRating: input.coherenceRating,
-          usefulnessRating: input.usefulnessRating,
-        },
-      });
-    }
+          conversationId: data.conversationId,
+          workspaceId,
+          userId,
+          overallRating: data.overallRating,
+          isUseful: data.isUseful,
+          qualityScore: data.qualityScore,
+          satisfactionScore: data.satisfactionScore,
+          comment: data.comment,
+          relevanceRating: data.relevanceRating,
+          coherenceRating: data.coherenceRating,
+          usefulnessRating: data.usefulnessRating
+        }
+      })
 
-    return prisma.conversationFeedback.create({
-      data: {
-        conversationId: input.conversationId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        overallRating: input.overallRating,
-        isUseful: input.isUseful,
-        qualityScore: input.qualityScore,
-        satisfactionScore: input.satisfactionScore,
-        comment: input.comment,
-        relevanceRating: input.relevanceRating,
-        coherenceRating: input.coherenceRating,
-        usefulnessRating: input.usefulnessRating,
-      },
-    });
+      logger.info('[feedback] Created conversation feedback', {
+        feedbackId: feedback.id,
+        conversationId: data.conversationId,
+        userId
+      })
+
+      return feedback
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error
+      logger.error('[feedback] Failed to create conversation feedback', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId: data.conversationId,
+        userId
+      })
+      throw new NotFoundException('Failed to create feedback')
+    }
   }
 
-  // Corrections
-  async createCorrection(input: CreateCorrectionInput): Promise<Correction> {
-    // Validate message exists
-    const message = await prisma.message.findUnique({
-      where: { id: input.messageId },
-      include: { conversation: true },
-    });
+  async createCorrection(userId: string, workspaceId: string, data: CorrectionInput) {
+    try {
+      const message = await prisma.message.findUnique({
+        where: { id: data.messageId },
+        include: { conversation: true }
+      })
 
-    if (!message || message.conversation.workspaceId !== input.workspaceId) {
-      throw new Error('Unauthorized');
+      if (!message || message.conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Message not found')
+      }
+
+      const correction = await prisma.correction.create({
+        data: {
+          messageId: data.messageId,
+          conversationId: data.conversationId,
+          workspaceId,
+          userId,
+          originalContent: data.originalContent,
+          correctedContent: data.correctedContent,
+          correctionType: data.correctionType,
+          reason: data.reason,
+          confidence: data.confidence
+        }
+      })
+
+      logger.info('[feedback] Created correction', {
+        correctionId: correction.id,
+        messageId: data.messageId,
+        userId
+      })
+
+      return correction
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error
+      logger.error('[feedback] Failed to create correction', {
+        error: error instanceof Error ? error.message : String(error),
+        messageId: data.messageId,
+        userId
+      })
+      throw new NotFoundException('Failed to create correction')
     }
-
-    return prisma.correction.create({
-      data: {
-        messageId: input.messageId,
-        conversationId: input.conversationId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        originalContent: input.originalContent,
-        correctedContent: input.correctedContent,
-        reason: input.reason,
-        correctionType: input.correctionType,
-        confidence: input.confidence,
-      },
-    });
   }
 
-  async getCorrections(messageId: string): Promise<Correction[]> {
-    return prisma.correction.findMany({
-      where: { messageId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async reportHallucination(userId: string, workspaceId: string, data: HallucinationReportInput) {
+    try {
+      const message = await prisma.message.findUnique({
+        where: { id: data.messageId },
+        include: { conversation: true }
+      })
+
+      if (!message || message.conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Message not found')
+      }
+
+      const report = await prisma.hallucinationReport.create({
+        data: {
+          messageId: data.messageId,
+          conversationId: data.conversationId,
+          workspaceId,
+          userId,
+          hallucinatedText: data.hallucinatedText,
+          factualCorrection: data.factualCorrection,
+          severity: data.severity,
+          category: data.category,
+          evidence: data.evidence,
+          sourceUrl: data.sourceUrl
+        }
+      })
+
+      logger.info('[feedback] Created hallucination report', {
+        reportId: report.id,
+        messageId: data.messageId,
+        userId
+      })
+
+      return report
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error
+      logger.error('[feedback] Failed to create hallucination report', {
+        error: error instanceof Error ? error.message : String(error),
+        messageId: data.messageId,
+        userId
+      })
+      throw new NotFoundException('Failed to create hallucination report')
+    }
   }
 
-  // Preferred Responses (for preference pairs)
-  async createPreferredResponse(input: CreatePreferredResponseInput): Promise<PreferredResponse> {
-    // Validate messages exist
-    const [preferred, rejected] = await Promise.all([
-      prisma.message.findUnique({ where: { id: input.preferredMessageId }, include: { conversation: true } }),
-      prisma.message.findUnique({ where: { id: input.rejectedMessageId }, include: { conversation: true } }),
-    ]);
+  async createPreferredResponse(userId: string, workspaceId: string, data: PreferredResponseInput) {
+    try {
+      const [preferredMessage, rejectedMessage] = await Promise.all([
+        prisma.message.findUnique({
+          where: { id: data.preferredMessageId },
+          include: { conversation: true }
+        }),
+        prisma.message.findUnique({
+          where: { id: data.rejectedMessageId },
+          include: { conversation: true }
+        })
+      ])
 
-    if (!preferred || !rejected) {
-      throw new Error('One or both messages not found');
+      if (!preferredMessage || preferredMessage.conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Preferred message not found')
+      }
+
+      if (!rejectedMessage || rejectedMessage.conversation.workspaceId !== workspaceId) {
+        throw new NotFoundException('Rejected message not found')
+      }
+
+      const preference = await prisma.preferredResponse.create({
+        data: {
+          conversationId: data.conversationId,
+          workspaceId,
+          userId,
+          preferredMessageId: data.preferredMessageId,
+          rejectedMessageId: data.rejectedMessageId,
+          preferenceType: data.preferenceType,
+          reason: data.reason,
+          confidence: data.confidence
+        }
+      })
+
+      logger.info('[feedback] Created preferred response', {
+        preferenceId: preference.id,
+        preferredMessageId: data.preferredMessageId,
+        rejectedMessageId: data.rejectedMessageId,
+        userId
+      })
+
+      return preference
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error
+      logger.error('[feedback] Failed to create preferred response', {
+        error: error instanceof Error ? error.message : String(error),
+        preferredMessageId: data.preferredMessageId,
+        userId
+      })
+      throw new NotFoundException('Failed to create preference')
     }
-
-    if (
-      preferred.conversation.workspaceId !== input.workspaceId ||
-      rejected.conversation.workspaceId !== input.workspaceId
-    ) {
-      throw new Error('Unauthorized');
-    }
-
-    return prisma.preferredResponse.create({
-      data: {
-        conversationId: input.conversationId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        preferredMessageId: input.preferredMessageId,
-        rejectedMessageId: input.rejectedMessageId,
-        reason: input.reason,
-        confidence: input.confidence,
-        preferenceType: 'HELPFULNESS', // Default
-      },
-    });
   }
 
-  // Hallucination Reports
-  async createHallucinationReport(
-    input: CreateHallucinationReportInput
-  ): Promise<HallucinationReport> {
-    // Validate message
-    const message = await prisma.message.findUnique({
-      where: { id: input.messageId },
-      include: { conversation: true },
-    });
+  async listMessageFeedback(workspaceId: string, conversationId: string, skip: number = 0, take: number = 20) {
+    try {
+      const [feedback, total] = await Promise.all([
+        prisma.messageFeedback.findMany({
+          where: {
+            conversationId,
+            workspaceId
+          },
+          skip,
+          take,
+          orderBy: { createdAt: 'desc' }
+        }),
+        prisma.messageFeedback.count({
+          where: {
+            conversationId,
+            workspaceId
+          }
+        })
+      ])
 
-    if (!message || message.conversation.workspaceId !== input.workspaceId) {
-      throw new Error('Unauthorized');
+      return {
+        items: feedback,
+        total,
+        skip,
+        take,
+        hasMore: skip + take < total
+      }
+    } catch (error) {
+      logger.error('[feedback] Failed to list feedback', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId,
+        workspaceId
+      })
+      throw new NotFoundException('Failed to list feedback')
     }
-
-    return prisma.hallucinationReport.create({
-      data: {
-        messageId: input.messageId,
-        conversationId: input.conversationId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        hallucinatedText: input.hallucinatedText,
-        factualCorrection: input.factualCorrection,
-        severity: input.severity,
-        category: input.category,
-        evidence: input.evidence,
-        sourceUrl: input.sourceUrl,
-      },
-    });
   }
 
-  // Reward Signals (for RLHF training)
-  async createRewardSignal(input: CreateRewardSignalInput): Promise<RewardSignal> {
-    // Validate message
-    const message = await prisma.message.findUnique({
-      where: { id: input.messageId },
-      include: { conversation: true },
-    });
+  async getFeedbackStats(workspaceId: string, conversationId?: string) {
+    try {
+      const where = { workspaceId, ...(conversationId && { conversationId }) }
 
-    if (!message || message.conversation.workspaceId !== input.workspaceId) {
-      throw new Error('Unauthorized');
+      const [totalFeedback, helpfulCount, unhelpfulCount, averageRating] = await Promise.all([
+        prisma.messageFeedback.count({ where }),
+        prisma.messageFeedback.count({
+          where: { ...where, isHelpful: true }
+        }),
+        prisma.messageFeedback.count({
+          where: { ...where, isHelpful: false }
+        }),
+        prisma.messageFeedback.aggregate({
+          where: { ...where, rating: { not: null } },
+          _avg: { rating: true }
+        })
+      ])
+
+      return {
+        totalFeedback,
+        helpfulCount,
+        unhelpfulCount,
+        averageRating: averageRating._avg.rating || 0
+      }
+    } catch (error) {
+      logger.error('[feedback] Failed to get stats', {
+        error: error instanceof Error ? error.message : String(error),
+        workspaceId,
+        conversationId
+      })
+      throw new NotFoundException('Failed to get feedback stats')
     }
-
-    return prisma.rewardSignal.create({
-      data: {
-        conversationId: input.conversationId,
-        messageId: input.messageId,
-        workspaceId: input.workspaceId,
-        userId: input.userId,
-        reward: input.reward,
-        rewardType: input.rewardType,
-        comment: input.comment,
-      },
-    });
-  }
-
-  // Analytics aggregation
-  async getWorkspaceFeedbackStats(workspaceId: string): Promise<{
-    totalFeedback: number;
-    averageRating: number;
-    positiveCount: number;
-    negativeCount: number;
-  }> {
-    const feedback = await prisma.messageFeedback.findMany({
-      where: { workspaceId },
-      select: { rating: true, thumbsUp: true, thumbsDown: true },
-    });
-
-    const totalFeedback = feedback.length;
-    const ratings = feedback.filter((f) => f.rating).map((f) => f.rating!);
-    const averageRating = ratings.length > 0 ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
-
-    const positiveCount = feedback.filter((f) => f.thumbsUp || (f.rating && f.rating >= 4)).length;
-    const negativeCount = feedback.filter((f) => f.thumbsDown || (f.rating && f.rating <= 2)).length;
-
-    return {
-      totalFeedback,
-      averageRating,
-      positiveCount,
-      negativeCount,
-    };
-  }
-
-  async deleteMessageFeedback(feedbackId: string, workspaceId: string): Promise<void> {
-    const feedback = await prisma.messageFeedback.findUnique({
-      where: { id: feedbackId },
-    });
-
-    if (!feedback || feedback.workspaceId !== workspaceId) {
-      throw new Error('Unauthorized');
-    }
-
-    await prisma.messageFeedback.delete({
-      where: { id: feedbackId },
-    });
   }
 }
 
 export const feedbackService = new FeedbackService()
-
