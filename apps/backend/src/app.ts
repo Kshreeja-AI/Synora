@@ -51,6 +51,7 @@ import modelRegistryRoutes from './routes/modelRegistry';
 import evaluationRoutes from './routes/evaluation';
 import datasetExportRoutes from './routes/datasetExport';
 import usageRoutes from './routes/usage';
+import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
 
 export interface CreateAppDeps {
@@ -211,6 +212,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/projects', projectRoutes);
   app.use('/api/documents', documentRoutes);
   app.use('/api/images', imageRoutes);
+  app.use('/api/videos', videoRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/workspaces', billingRoutes);

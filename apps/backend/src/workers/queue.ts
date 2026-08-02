@@ -4,6 +4,7 @@ import { processExportDataset, type ExportDatasetJobData } from './export-datase
 import { processRunEvaluation, type RunEvaluationJobData } from './run-evaluation.worker'
 import { processMessageFeedback, type ProcessFeedbackJobData } from './process-feedback.worker'
 import { processFileJob, type ProcessFileJobData } from './processFile.worker'
+import { processVideoGeneration, type VideoGenerationJobData } from './videoGeneration.worker'
 import type { GenerateResponseJob } from './generateResponse.worker'
 
 // Queue configuration
@@ -51,6 +52,10 @@ export const fileProcessingQueue = new Queue<ProcessFileJobData>('file-processin
 // Singleton producer for chat generation. Previously every message
 // send constructed a fresh Queue (and Redis connection) that was
 // never closed — a connection leak on the hottest path in the app.
+export const videoGenerationQueue = new Queue<VideoGenerationJobData>(
+  'video-generation',
+  PRODUCER_CONFIG
+)
 export const generateResponseQueue = new Queue<GenerateResponseJob>(
   'generate_response',
   PRODUCER_CONFIG
@@ -109,6 +114,25 @@ export async function enqueueMessageFeedback(data: ProcessFeedbackJobData): Prom
   logger.info(`[queue] Enqueued message feedback job`, {
     jobId: job.id,
     feedbackId: data.feedbackId,
+  })
+
+  return job.id!
+}
+
+export async function enqueueVideoGeneration(data: VideoGenerationJobData): Promise<string> {
+  const job = await videoGenerationQueue.add('generate', data, {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 10000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  })
+
+  logger.info(`[queue] Enqueued video generation job`, {
+    jobId: job.id,
+    videoId: data.videoId,
   })
 
   return job.id!
@@ -202,6 +226,21 @@ export function setupWorkers(): void {
     }
   )
 
+  // Video generation worker (async poll + storage)
+  const videoWorker = new Worker<VideoGenerationJobData>(
+    'video-generation',
+    async (job) => {
+      logger.info(`[worker] Processing video generation job ${job.id}`, {
+        videoId: job.data.videoId,
+      })
+      await processVideoGeneration(job.data)
+    },
+    {
+      ...WORKER_CONFIG,
+      concurrency: parseInt(process.env.VIDEO_WORKER_CONCURRENCY || '2'),
+    }
+  )
+
   // File processing worker (virus scan + content extraction)
   const fileWorker = new Worker<ProcessFileJobData>(
     'file-processing',
@@ -221,6 +260,7 @@ export function setupWorkers(): void {
   setupWorkerEventHandlers(exportWorker, 'export-dataset')
   setupWorkerEventHandlers(evaluationWorker, 'run-evaluation')
   setupWorkerEventHandlers(feedbackWorker, 'message-feedback')
+  setupWorkerEventHandlers(videoWorker, 'video-generation')
   setupWorkerEventHandlers(fileWorker, 'file-processing')
 
   logger.info('[queue] Workers setup complete')
@@ -282,6 +322,11 @@ export async function checkQueueHealth(): Promise<Record<string, any>> {
       active: (await fileProcessingQueue.getActiveCount()) ?? 0,
       failed: (await fileProcessingQueue.getFailedCount()) ?? 0,
     },
+    videoGeneration: {
+      waiting: await videoGenerationQueue.count(),
+      active: (await videoGenerationQueue.getActiveCount()) ?? 0,
+      failed: (await videoGenerationQueue.getFailedCount()) ?? 0,
+    },
     generateResponse: {
       waiting: await generateResponseQueue.count(),
       active: (await generateResponseQueue.getActiveCount()) ?? 0,
@@ -300,6 +345,7 @@ export async function closeQueues(): Promise<void> {
     runEvaluationQueue.close(),
     messageFeedbackQueue.close(),
     fileProcessingQueue.close(),
+    videoGenerationQueue.close(),
     generateResponseQueue.close(),
   ])
   logger.info('[queue] All queues closed')

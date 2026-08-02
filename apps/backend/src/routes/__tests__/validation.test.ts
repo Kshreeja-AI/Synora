@@ -149,6 +149,34 @@ describe('input validation on mutating routes (R1-b)', () => {
     });
   });
 
+  describe('POST /api/videos/generate', () => {
+    it('rejects a missing prompt with 400, not 500', async () => {
+      const res = await request(app).post('/api/videos/generate').set(auth()).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects a malformed size with 400', async () => {
+      const res = await request(app)
+        .post('/api/videos/generate')
+        .set(auth())
+        .send({ prompt: 'a cat video', size: 'big' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 5xx (not a fabricated 202) when no video provider is configured', async () => {
+      const res = await request(app)
+        .post('/api/videos/generate')
+        .set(auth())
+        .send({ prompt: 'a sunset timelapse', duration: 5 });
+
+      expect(res.status).not.toBe(202);
+      expect(res.status).toBeGreaterThanOrEqual(500);
+    });
+  });
+
   describe('unauthenticated requests are rejected before validation', () => {
     it('returns 401 for a mutating route with no token', async () => {
       const res = await request(app).post('/api/projects').send({ name: 'x' });

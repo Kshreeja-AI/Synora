@@ -142,6 +142,50 @@ export interface ImageGenerationProvider {
 }
 
 /**
+ * Video generation. Inherently asynchronous — providers take 30 seconds to
+ * several minutes to produce a clip — so the interface returns a job handle
+ * rather than finished bytes. The service layer polls the provider for
+ * completion and stores the result in Synora's own object storage.
+ */
+export interface VideoGenerationRequest {
+  prompt: string;
+  /** Duration in seconds. Provider validates supported ranges. */
+  duration?: number;
+  /** `${width}x${height}`, e.g. "1280x720". */
+  size?: string;
+  /** Override the provider's configured default model. */
+  model?: string;
+}
+
+export type VideoJobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+export interface VideoJobHandle {
+  providerJobId: string;
+  provider: string;
+  model: string;
+}
+
+export interface VideoJobPollResult {
+  status: VideoJobStatus;
+  /** Set when status is 'completed'. Raw video bytes or a download URL. */
+  videoUrl?: string;
+  /** Set when status is 'completed'. */
+  durationSeconds?: number;
+  width?: number;
+  height?: number;
+  /** Set when status is 'failed'. */
+  errorMessage?: string;
+}
+
+export interface VideoGenerationProvider {
+  readonly id: string;
+  readonly capabilities: readonly AICapability[];
+  startGeneration(request: VideoGenerationRequest): Promise<VideoJobHandle>;
+  pollJob(handle: VideoJobHandle): Promise<VideoJobPollResult>;
+  downloadVideo(url: string): Promise<Buffer>;
+}
+
+/**
  * Thrown when a provider call fails for a reason the caller can act on
  * (missing configuration, upstream error, invalid response) — never a raw
  * SDK/HTTP error, so route code never needs to know which provider failed or

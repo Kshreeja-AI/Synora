@@ -1,5 +1,6 @@
 import { PROVIDER_REGISTRY } from '../ai/registry';
 import { IMAGE_PROVIDER_REGISTRY } from '../ai/imageRegistry';
+import { VIDEO_PROVIDER_REGISTRY } from '../ai/videoRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb';
 import { TRANSPORT_REGISTRY } from '../mail/registry';
@@ -91,6 +92,7 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
   const [
     aiProvider,
     imageProvider,
+    videoProvider,
     embeddingProvider,
     vectorProvider,
     storageProvider,
@@ -98,6 +100,7 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
   ] = await Promise.all([
     firstConfigured(PROVIDER_REGISTRY),
     firstConfigured(IMAGE_PROVIDER_REGISTRY),
+    firstConfigured(VIDEO_PROVIDER_REGISTRY),
     firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
     firstConfigured(VECTORDB_PROVIDER_REGISTRY),
     firstConfigured(STORAGE_REGISTRY),
@@ -139,6 +142,13 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
       imageProvider,
       IMAGE_PROVIDER_REGISTRY,
       'The image generation endpoint returns 503 rather than a placeholder image; no fabricated image is ever produced.'
+    ),
+    report(
+      'video-generation',
+      'AI video generation',
+      videoProvider,
+      VIDEO_PROVIDER_REGISTRY,
+      'The video generation endpoint returns 503 rather than a fabricated video; no placeholder is ever produced.'
     ),
     report(
       'embeddings',

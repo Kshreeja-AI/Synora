@@ -14,6 +14,11 @@ export type {
   ImageGenerationResult,
   GeneratedImageData,
   ImageGenerationProvider,
+  VideoGenerationRequest,
+  VideoGenerationProvider,
+  VideoJobHandle,
+  VideoJobPollResult,
+  VideoJobStatus,
 } from './types';
 export { AIProviderError, NoProviderConfiguredError } from './types';
 export { PROVIDER_REGISTRY, getProviderDescriptor, providersForCapability } from './registry';
@@ -24,6 +29,11 @@ export {
   resolveImageProvider,
   isImageGenerationConfigured,
 } from './imageRegistry';
+export {
+  VIDEO_PROVIDER_REGISTRY,
+  resolveVideoProvider,
+  isVideoGenerationConfigured,
+} from './videoRegistry';
 
 /**
  * The one function the rest of the application calls to generate text or
