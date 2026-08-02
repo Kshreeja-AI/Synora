@@ -80,9 +80,17 @@ export async function createCheckoutSession(
 
   try {
     const provider = await resolveBillingProvider();
+    const priceIds = plan.providerPriceIds as Record<string, string> | null;
+    const priceId = priceIds?.stripe;
+    if (!priceId) {
+      throw new ServiceUnavailableException(
+        `Plan "${plan.name}" has no Stripe price ID configured. ` +
+        'An admin must set providerPriceIds.stripe on this plan before checkout.'
+      );
+    }
     const session = await provider.createCheckoutSession({
       customerId,
-      priceId: 'price_placeholder', // In production, use Stripe price IDs from plan.providerPriceIds
+      priceId,
       successUrl: input.successUrl,
       cancelUrl: input.cancelUrl,
     });
@@ -118,9 +126,17 @@ export async function changePlan(
 
   try {
     const provider = await resolveBillingProvider();
+    const priceIds = plan.providerPriceIds as Record<string, string> | null;
+    const priceId = priceIds?.stripe;
+    if (!priceId) {
+      throw new ServiceUnavailableException(
+        `Plan "${plan.name}" has no Stripe price ID configured. ` +
+        'An admin must set providerPriceIds.stripe on this plan before changing.'
+      );
+    }
     await provider.updateSubscription({
       subscriptionId: subscription.externalSubscriptionId,
-      priceId: 'price_placeholder',
+      priceId,
     });
 
     const updated = await prisma.subscription.update({

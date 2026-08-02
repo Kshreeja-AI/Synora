@@ -428,7 +428,7 @@ export class MemoryService {
           create: {
             source: 'consolidation',
             isConsolidated: false,
-            confidence: 0.8,
+            confidence: Math.round(avgImportance * 100) / 100,
           },
         },
       },

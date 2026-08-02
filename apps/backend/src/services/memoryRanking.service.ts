@@ -217,10 +217,6 @@ export class MemoryRankingService {
     return Math.log(accessCount + 1) / Math.log(maxCount + 1)
   }
 
-  /**
-   * Calculate relevance signal from text similarity
-   * Mock: based on keyword overlap
-   */
   calculateRelevanceSignal(query: string, memory: Memory): number {
     if (!query || !memory.content) return 0
 

@@ -1,3 +1,4 @@
+import { PDFParse } from 'pdf-parse';
 import { FileProcessor, FileProcessorResult } from './types';
 import { logger } from '../utils/logger';
 
@@ -27,33 +28,50 @@ export class TextFileProcessor implements FileProcessor {
     try {
       const text = buffer.toString('utf-8', 0, Math.min(buffer.length, 1000000)); // Limit to 1MB
       return { extractedText: text, success: true };
-    } catch (error: any) {
-      logger.error('[TextProcessor] Processing failed', { error: error.message });
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[TextProcessor] Processing failed', { error: message });
+      return { success: false, error: message };
     }
   }
 }
 
-// PDF processor (stub - requires pdf-parse or similar)
 export class PDFFileProcessor implements FileProcessor {
-  private supportedTypes = ['application/pdf'];
+  private readonly MAX_PDF_SIZE = 50 * 1024 * 1024; // 50 MB
 
   supports(mimeType: string): boolean {
-    return this.supportedTypes.includes(mimeType);
+    return mimeType === 'application/pdf';
   }
 
-  async process(_buffer: Buffer, _mimeType: string): Promise<FileProcessorResult> {
+  async process(buffer: Buffer, _mimeType: string): Promise<FileProcessorResult> {
+    if (buffer.length === 0) {
+      return { success: false, error: 'Empty PDF buffer' };
+    }
+
+    if (buffer.length > this.MAX_PDF_SIZE) {
+      return { success: false, error: `PDF exceeds maximum size of ${this.MAX_PDF_SIZE / (1024 * 1024)}MB` };
+    }
+
+    let parser: PDFParse | undefined;
     try {
-      // Stub: PDF processing requires pdf-parse library
-      // For now, return placeholder that indicates PDF was received
-      logger.warn('[PDFProcessor] PDF processing not yet implemented, using placeholder');
+      parser = new PDFParse({ data: new Uint8Array(buffer) });
+      const result = await parser.getText();
+
+      const text = result.text?.trim();
+      if (!text) {
+        return { extractedText: '', success: true };
+      }
+
       return {
-        extractedText: '[PDF file received - full text extraction requires pdf-parse library]',
+        extractedText: text.slice(0, 1_000_000),
         success: true,
       };
-    } catch (error: any) {
-      logger.error('[PDFProcessor] Processing failed', { error: error.message });
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[PDFProcessor] Extraction failed', { error: message });
+      return { success: false, error: `PDF extraction failed: ${message}` };
+    } finally {
+      await parser?.destroy().catch(() => {});
     }
   }
 }
@@ -79,9 +97,10 @@ export class ImageFileProcessor implements FileProcessor {
       const sizeKB = (buffer.length / 1024).toFixed(2);
       const extractedText = `[Image file (${mimeType}) - ${sizeKB}KB]\nFor vision analysis, ensure Claude with vision capability is selected.`;
       return { extractedText, success: true };
-    } catch (error: any) {
-      logger.error('[ImageProcessor] Processing failed', { error: error.message });
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[ImageProcessor] Processing failed', { error: message });
+      return { success: false, error: message };
     }
   }
 }
@@ -97,9 +116,10 @@ export class FallbackFileProcessor implements FileProcessor {
       const sizeKB = (buffer.length / 1024).toFixed(2);
       const extractedText = `[File (${mimeType}) - ${sizeKB}KB]\nFile type not natively supported. Upload as context for the model to analyze if you have vision capabilities enabled.`;
       return { extractedText, success: true };
-    } catch (error: any) {
-      logger.error('[FallbackProcessor] Processing failed', { error: error.message });
-      return { success: false, error: error.message };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[FallbackProcessor] Processing failed', { error: message });
+      return { success: false, error: message };
     }
   }
 }

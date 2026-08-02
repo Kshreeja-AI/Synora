@@ -1,32 +1,33 @@
 import { Memory } from '@synora/database'
 import { logger } from '../utils/logger'
 
-/**
- * In-memory cache implementation (mock Redis)
- * In production, replace with real Redis client
- */
 class InMemoryCache {
-  private cache = new Map<string, { value: any; expiresAt: number }>()
-  private ttl = 15 * 60 * 1000 // 15 minutes default
+  private cache = new Map<string, { value: unknown; expiresAt: number }>()
+  private ttl = 15 * 60 * 1000
+  private hits = 0
+  private misses = 0
 
-  set(key: string, value: any, ttl?: number): void {
+  set<T>(key: string, value: T, ttl?: number): void {
     const expiresAt = Date.now() + (ttl || this.ttl)
     this.cache.set(key, { value, expiresAt })
   }
 
-  get(key: string): any {
+  get<T>(key: string): T | null {
     const item = this.cache.get(key)
 
     if (!item) {
+      this.misses++
       return null
     }
 
     if (Date.now() > item.expiresAt) {
       this.cache.delete(key)
+      this.misses++
       return null
     }
 
-    return item.value
+    this.hits++
+    return item.value as T
   }
 
   delete(key: string): void {
@@ -35,6 +36,8 @@ class InMemoryCache {
 
   clear(): void {
     this.cache.clear()
+    this.hits = 0
+    this.misses = 0
   }
 
   has(key: string): boolean {
@@ -44,6 +47,20 @@ class InMemoryCache {
   keys(pattern: string): string[] {
     const regex = new RegExp(pattern.replace('*', '.*'))
     return Array.from(this.cache.keys()).filter((key) => regex.test(key))
+  }
+
+  getHitRate(): number {
+    const total = this.hits + this.misses
+    if (total === 0) return 0
+    return this.hits / total
+  }
+
+  getHits(): number {
+    return this.hits
+  }
+
+  getMisses(): number {
+    return this.misses
   }
 }
 
@@ -67,7 +84,7 @@ export class MemoryCacheService {
    */
   getCachedMemory(memoryId: string): Memory | null {
     const key = `${this.MEMORY_PREFIX}${memoryId}`
-    return this.cache.get(key)
+    return this.cache.get<Memory>(key)
   }
 
   /**
@@ -91,7 +108,7 @@ export class MemoryCacheService {
     query: string,
   ): { memories: Memory[]; total: number } | null {
     const key = `${this.SEARCH_PREFIX}${workspaceId}:${this.hashQuery(query)}`
-    return this.cache.get(key)
+    return this.cache.get<{ memories: Memory[]; total: number }>(key)
   }
 
   /**
@@ -99,7 +116,7 @@ export class MemoryCacheService {
    */
   cacheWorkspaceStats(
     workspaceId: string,
-    stats: any,
+    stats: unknown,
     ttl: number = 60 * 60 * 1000,
   ): void {
     const key = `${this.STATS_PREFIX}${workspaceId}`
@@ -109,7 +126,7 @@ export class MemoryCacheService {
   /**
    * Get cached workspace statistics
    */
-  getCachedWorkspaceStats(workspaceId: string): any {
+  getCachedWorkspaceStats(workspaceId: string): unknown {
     const key = `${this.STATS_PREFIX}${workspaceId}`
     return this.cache.get(key)
   }
@@ -119,7 +136,7 @@ export class MemoryCacheService {
    */
   recordMemoryAccess(memoryId: string, _userId: string): void {
     const key = `${this.MEMORY_PREFIX}access:${memoryId}`
-    const count = this.cache.get(key) || 0
+    const count = this.cache.get<number>(key) || 0
     this.cache.set(key, count + 1, 60 * 60 * 1000) // 1 hour
   }
 
@@ -167,14 +184,12 @@ export class MemoryCacheService {
     logger.info(`Cache warmed with ${memories.length} memories`)
   }
 
-  /**
-   * Get cache size statistics
-   */
-  getStats(): { size: number; hitRate: number } {
-    // Mock stats - in real Redis, query actual stats
+  getStats(): { size: number; hitRate: number; hits: number; misses: number } {
     return {
       size: this.cache.keys('*').length,
-      hitRate: 0.85, // Mock value
+      hitRate: this.cache.getHitRate(),
+      hits: this.cache.getHits(),
+      misses: this.cache.getMisses(),
     }
   }
 

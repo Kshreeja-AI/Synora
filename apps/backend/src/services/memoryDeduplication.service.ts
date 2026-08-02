@@ -85,15 +85,25 @@ export class MemoryDeduplicationService {
 
     const duplicates: Array<{ memory: Memory; similarity: number }> = []
 
+    let semanticMatches = new Map<string, number>()
+    if (memory.embeddingId) {
+      try {
+        const similar = await memoryRetrievalService.findSimilarMemories(
+          memory.id,
+          semanticThreshold,
+          allMemories.length,
+        )
+        semanticMatches = new Map(similar.map((s) => [s.memory.id, s.similarity]))
+      } catch {
+        // Vector DB unavailable — fall through to text similarity
+      }
+    }
+
     for (const candidate of allMemories) {
       if (memory.id === candidate.id) continue
 
-      // Check semantic similarity if embeddings exist
-      let semanticSimilarity = 0
-      if (memory.embeddingId && candidate.embeddingId) {
-        // Would use vector DB in production
-        semanticSimilarity = 0 // placeholder
-      }
+      const semanticSimilarity =
+        memory.embeddingId && candidate.embeddingId ? semanticMatches.get(candidate.id) ?? 0 : 0
 
       // Check text similarity
       const textSimilarity = this.calculateTextSimilarity(memory.content, candidate.content)
@@ -367,13 +377,10 @@ export class MemoryDeduplicationService {
       }),
     ])
 
-    // Estimate duplicates (rough heuristic)
-    const potentialDuplicates = Math.ceil(total * 0.1) // assume ~10% are duplicates
-
     return {
       totalMemories: total,
-      potentialDuplicates,
-      estimatedReduction: Math.ceil(total * 0.05), // estimated space saving
+      potentialDuplicates: 0,
+      estimatedReduction: 0,
       consolidatedMemories: consolidated,
     }
   }

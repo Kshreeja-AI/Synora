@@ -89,11 +89,11 @@ export class MemorySummarizationService {
     const style = config?.style ?? 'brief'
 
     try {
-      // In production: call AIOrchestrator to generate summary
-      // For now: use intelligent extractive summarization
       const summary = await this.extractiveSummarize(memory.content, maxLength, style)
       const keyPoints = config?.highlightKeyPoints ? this.extractKeyPoints(memory.content) : []
       const suggestedTags = config?.extractTags ? this.suggestTags(memory.content) : []
+
+      const confidence = this.computeExtractionConfidence(memory.content, summary)
 
       return {
         memoryId: memory.id,
@@ -101,12 +101,28 @@ export class MemorySummarizationService {
         summary,
         keyPoints,
         suggestedTags,
-        confidence: 0.85, // estimated confidence
+        confidence,
       }
     } catch (error) {
       logger.error('Failed to generate summary', { error, memoryId: memory.id })
       throw new ValidationException('Summary generation failed')
     }
+  }
+
+  private computeExtractionConfidence(original: string, summary: string): number {
+    if (!original || !summary) return 0
+
+    const ratio = summary.length / original.length
+    if (ratio >= 1) return 1
+
+    const originalSentences = original.split(/[.!?]+/).filter((s) => s.trim().length > 0)
+    const summarySentences = summary.split(/[.!?]+/).filter((s) => s.trim().length > 0)
+    const coverage = originalSentences.length > 0 ? summarySentences.length / originalSentences.length : 0
+
+    const truncated = summary.endsWith('...') ? 0.9 : 1.0
+
+    const confidence = Math.min(1, (ratio * 0.3 + coverage * 0.5 + truncated * 0.2))
+    return Math.round(confidence * 100) / 100
   }
 
   /**

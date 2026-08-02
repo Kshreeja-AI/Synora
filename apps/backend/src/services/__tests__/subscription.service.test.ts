@@ -59,6 +59,7 @@ describe('subscription.service', () => {
         priceCents: 9999,
         creditsPerInterval: 5000,
         status: 'ACTIVE',
+        providerPriceIds: { stripe: 'price_test_123' },
       },
     });
     planId = plan.id;
@@ -265,6 +266,42 @@ describe('subscription.service', () => {
         })
       ).rejects.toThrow(ServiceUnavailableException);
     });
+
+    it('throws ServiceUnavailableException when plan has no Stripe price ID configured', async () => {
+      const unpricedPlan = await prisma.plan.create({
+        data: {
+          key: `unpriced-plan-${Date.now()}`,
+          name: 'Unpriced Plan',
+          interval: 'MONTH',
+          priceCents: 4999,
+          creditsPerInterval: 1000,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(unpricedPlan.id);
+
+      const mockProvider = {
+        isConfigured: vi.fn().mockResolvedValue(true),
+        verifyAndParseWebhookEvent: vi.fn(),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await expect(
+        createCheckoutSession('user-id', workspaceId, {
+          planId: unpricedPlan.id,
+          successUrl: 'https://example.com/success',
+          cancelUrl: 'https://example.com/cancel',
+        })
+      ).rejects.toThrow(/no Stripe price ID configured/);
+
+      expect(mockProvider.createCheckoutSession).not.toHaveBeenCalled();
+    });
   });
 
   describe('changePlan', () => {
@@ -284,6 +321,7 @@ describe('subscription.service', () => {
           priceCents: 19999,
           creditsPerInterval: 10000,
           status: 'ACTIVE',
+          providerPriceIds: { stripe: 'price_new_test_456' },
         },
       });
       testPlanIds.push(newPlan.id);
@@ -340,6 +378,38 @@ describe('subscription.service', () => {
       await expect(
         changePlan('user-id', workspaceId, { planId })
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws ServiceUnavailableException when target plan has no Stripe price ID configured', async () => {
+      const unpricedPlan = await prisma.plan.create({
+        data: {
+          key: `unpriced-plan-${Date.now()}`,
+          name: 'Unpriced Plan',
+          interval: 'MONTH',
+          priceCents: 4999,
+          creditsPerInterval: 1000,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(unpricedPlan.id);
+
+      const mockProvider = {
+        isConfigured: vi.fn().mockResolvedValue(true),
+        verifyAndParseWebhookEvent: vi.fn(),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await expect(
+        changePlan('user-id', workspaceId, { planId: unpricedPlan.id })
+      ).rejects.toThrow(/no Stripe price ID configured/);
+
+      expect(mockProvider.updateSubscription).not.toHaveBeenCalled();
     });
   });
 
