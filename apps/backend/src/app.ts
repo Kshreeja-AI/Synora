@@ -19,6 +19,7 @@ import userRoutes from './routes/users';
 import projectRoutes from './routes/projects';
 import documentRoutes from './routes/documents';
 import imageRoutes from './routes/images';
+import audioRoutes from './routes/audio';
 import aiRoutes from './routes/ai';
 import workspaceRoutes from './routes/workspaces';
 import notificationRoutes from './routes/notifications';
@@ -212,6 +213,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/projects', projectRoutes);
   app.use('/api/documents', documentRoutes);
   app.use('/api/images', imageRoutes);
+  app.use('/api/audio', audioRoutes);
   app.use('/api/videos', videoRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);

@@ -19,6 +19,9 @@ export type {
   VideoJobHandle,
   VideoJobPollResult,
   VideoJobStatus,
+  TextToSpeechRequest,
+  TextToSpeechResult,
+  TextToSpeechProvider,
 } from './types';
 export { AIProviderError, NoProviderConfiguredError } from './types';
 export { PROVIDER_REGISTRY, getProviderDescriptor, providersForCapability } from './registry';
@@ -34,6 +37,11 @@ export {
   resolveVideoProvider,
   isVideoGenerationConfigured,
 } from './videoRegistry';
+export {
+  TTS_PROVIDER_REGISTRY,
+  resolveTextToSpeechProvider,
+  isTextToSpeechConfigured,
+} from './ttsRegistry';
 
 /**
  * The one function the rest of the application calls to generate text or

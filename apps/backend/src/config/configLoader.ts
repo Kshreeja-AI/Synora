@@ -115,6 +115,8 @@ export async function loadConfig(
       anthropicModel: readString(env, 'ANTHROPIC_MODEL', defaults.ai.anthropicModel),
       openaiModel: readString(env, 'OPENAI_MODEL', defaults.ai.openaiModel),
       openaiImageModel: readString(env, 'OPENAI_IMAGE_MODEL', defaults.ai.openaiImageModel),
+      openaiTtsModel: readString(env, 'OPENAI_TTS_MODEL', defaults.ai.openaiTtsModel),
+      openaiTtsVoice: readString(env, 'OPENAI_TTS_VOICE', defaults.ai.openaiTtsVoice),
       geminiModel: readString(env, 'GEMINI_MODEL', defaults.ai.geminiModel),
       xaiModel: readString(env, 'XAI_MODEL', defaults.ai.xaiModel),
       openrouterModel: readString(env, 'OPENROUTER_MODEL', defaults.ai.openrouterModel),

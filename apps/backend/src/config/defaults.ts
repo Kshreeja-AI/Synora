@@ -35,6 +35,8 @@ export interface StageDefaults {
     anthropicModel: string;
     openaiModel: string;
     openaiImageModel: string;
+    openaiTtsModel: string;
+    openaiTtsVoice: string;
     geminiModel: string;
     xaiModel: string;
     openrouterModel: string;
@@ -173,6 +175,8 @@ const BASE_DEFAULTS: StageDefaults = {
     anthropicModel: 'claude-sonnet-5',
     openaiModel: 'gpt-4o',
     openaiImageModel: 'gpt-image-1',
+    openaiTtsModel: 'tts-1',
+    openaiTtsVoice: 'alloy',
     geminiModel: 'gemini-1.5-pro',
     xaiModel: 'grok-2-latest',
     openrouterModel: 'anthropic/claude-3.5-sonnet',

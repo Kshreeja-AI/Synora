@@ -1,6 +1,7 @@
 import { PROVIDER_REGISTRY } from '../ai/registry';
 import { IMAGE_PROVIDER_REGISTRY } from '../ai/imageRegistry';
 import { VIDEO_PROVIDER_REGISTRY } from '../ai/videoRegistry';
+import { TTS_PROVIDER_REGISTRY } from '../ai/ttsRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb';
 import { TRANSPORT_REGISTRY } from '../mail/registry';
@@ -93,6 +94,7 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
     aiProvider,
     imageProvider,
     videoProvider,
+    ttsProvider,
     embeddingProvider,
     vectorProvider,
     storageProvider,
@@ -101,6 +103,7 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
     firstConfigured(PROVIDER_REGISTRY),
     firstConfigured(IMAGE_PROVIDER_REGISTRY),
     firstConfigured(VIDEO_PROVIDER_REGISTRY),
+    firstConfigured(TTS_PROVIDER_REGISTRY),
     firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
     firstConfigured(VECTORDB_PROVIDER_REGISTRY),
     firstConfigured(STORAGE_REGISTRY),
@@ -149,6 +152,13 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
       videoProvider,
       VIDEO_PROVIDER_REGISTRY,
       'The video generation endpoint returns 503 rather than a fabricated video; no placeholder is ever produced.'
+    ),
+    report(
+      'text-to-speech',
+      'AI text-to-speech',
+      ttsProvider,
+      TTS_PROVIDER_REGISTRY,
+      'The audio generation endpoint returns 503 rather than fabricated audio; no placeholder is ever produced.'
     ),
     report(
       'embeddings',

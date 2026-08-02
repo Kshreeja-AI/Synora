@@ -3,6 +3,7 @@ import { getPlatformCapabilities } from '../capabilities.service';
 import { PROVIDER_REGISTRY } from '../../ai/registry';
 import { IMAGE_PROVIDER_REGISTRY } from '../../ai/imageRegistry';
 import { VIDEO_PROVIDER_REGISTRY } from '../../ai/videoRegistry';
+import { TTS_PROVIDER_REGISTRY } from '../../ai/ttsRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../../vectordb';
 import { STORAGE_REGISTRY } from '../../storage/registry';
@@ -25,6 +26,9 @@ vi.mock('../../ai/imageRegistry', () => ({
 }));
 vi.mock('../../ai/videoRegistry', () => ({
   VIDEO_PROVIDER_REGISTRY: [{ id: 'replicate', isConfigured: vi.fn() }],
+}));
+vi.mock('../../ai/ttsRegistry', () => ({
+  TTS_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
 }));
 vi.mock('../../embeddings', () => ({
   EMBEDDING_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
@@ -50,6 +54,7 @@ type Configurable = { isConfigured: ReturnType<typeof vi.fn> };
 const ai = PROVIDER_REGISTRY[0] as unknown as Configurable;
 const image = IMAGE_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const video = VIDEO_PROVIDER_REGISTRY[0] as unknown as Configurable;
+const tts = TTS_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const embeddings = EMBEDDING_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const vectors = VECTORDB_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const storage = STORAGE_REGISTRY[0] as unknown as Configurable;
@@ -59,6 +64,7 @@ function configure(options: {
   ai?: boolean;
   image?: boolean;
   video?: boolean;
+  tts?: boolean;
   embeddings?: boolean;
   vectors?: boolean;
   storage?: boolean;
@@ -68,6 +74,7 @@ function configure(options: {
   ai.isConfigured.mockResolvedValue(options.ai ?? false);
   image.isConfigured.mockResolvedValue(options.image ?? false);
   video.isConfigured.mockResolvedValue(options.video ?? false);
+  tts.isConfigured.mockResolvedValue(options.tts ?? false);
   embeddings.isConfigured.mockResolvedValue(options.embeddings ?? false);
   vectors.isConfigured.mockResolvedValue(options.vectors ?? false);
   storage.isConfigured.mockResolvedValue(options.storage ?? false);
@@ -208,6 +215,7 @@ describe('getPlatformCapabilities', () => {
       ai: true,
       image: true,
       video: true,
+      tts: true,
       embeddings: true,
       vectors: true,
       storage: true,

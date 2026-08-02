@@ -81,6 +81,8 @@ export const AppConfigSchema = z.object({
     anthropicModel: z.string().min(1),
     openaiModel: z.string().min(1),
     openaiImageModel: z.string().min(1),
+    openaiTtsModel: z.string().min(1),
+    openaiTtsVoice: z.string().min(1),
     geminiModel: z.string().min(1),
     xaiModel: z.string().min(1),
     openrouterModel: z.string().min(1),

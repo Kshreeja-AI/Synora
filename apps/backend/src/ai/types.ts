@@ -186,6 +186,39 @@ export interface VideoGenerationProvider {
 }
 
 /**
+ * Text-to-speech. Synchronous like image generation (a bounded HTTP call,
+ * not a long-running job) — providers return raw audio bytes rather than a
+ * provider-hosted URL, and Synora stores them in its own object storage.
+ */
+export interface TextToSpeechRequest {
+  /** The text to synthesize. Providers enforce their own length limits. */
+  text: string;
+  /** Provider-specific voice id/name, e.g. "alloy". */
+  voice?: string;
+  format?: 'mp3' | 'wav' | 'ogg' | 'flac' | 'aac';
+  /** Override the provider's configured default model for this one call. */
+  model?: string;
+}
+
+export interface TextToSpeechResult {
+  /** Raw audio bytes. */
+  audio: Buffer;
+  mimeType: string;
+  /** The provider id that actually served this request, e.g. "openai". */
+  provider: string;
+  /** The concrete model used, e.g. "tts-1". */
+  model: string;
+  voice: string;
+}
+
+/** Implemented by any provider that can serve text-to-speech. */
+export interface TextToSpeechProvider {
+  readonly id: string;
+  readonly capabilities: readonly AICapability[];
+  synthesize(request: TextToSpeechRequest): Promise<TextToSpeechResult>;
+}
+
+/**
  * Thrown when a provider call fails for a reason the caller can act on
  * (missing configuration, upstream error, invalid response) — never a raw
  * SDK/HTTP error, so route code never needs to know which provider failed or
