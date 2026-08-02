@@ -177,7 +177,10 @@ describe('Dataset Export Routes', () => {
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
       expect(response.body.data.export.id).toBe(exportId)
-      expect(response.body.data.status).toBe('PENDING')
+      // The real background worker starts processing immediately, so the
+      // status may already have moved past PENDING by the time this GET
+      // lands — assert it's a valid in-flight status, not a specific one.
+      expect(['PENDING', 'PROCESSING']).toContain(response.body.data.status)
     })
 
     it('should return 404 for non-existent export', async () => {
