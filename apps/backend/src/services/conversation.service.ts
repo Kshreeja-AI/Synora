@@ -331,7 +331,7 @@ export class ConversationService {
         where: { id: conversationId },
         data: { title: cleanTitle || 'Untitled Conversation' },
       })
-    } catch (error) {
+    } catch {
       // If title generation fails, return conversation unchanged
       // (better to have auto-title fail gracefully than block the user)
       return conversation

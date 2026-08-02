@@ -223,7 +223,7 @@ export class DatasetExportService {
         const filePath = path.join(process.cwd(), trainingExport.fileUrl)
         await fs.unlink(filePath)
       }
-    } catch (error) {
+    } catch {
       logger.warn(`[datasetExport] Failed to delete file for export ${exportId}`)
     }
 

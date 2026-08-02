@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database'
-import { NotFoundException, ValidationException } from '@synora/shared'
+import { NotFoundException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requireMembership } from './checks'
 

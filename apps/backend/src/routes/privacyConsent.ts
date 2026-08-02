@@ -1,4 +1,4 @@
-import { Router, type NextFunction } from 'express'
+import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { privacyConsentService } from '../services/privacyConsent.service'
 import { createApiResponse } from '@synora/shared'
@@ -56,7 +56,7 @@ router.post('/:workspaceId/privacy/consent/revoke', authMiddleware, async (req: 
 // Set conversation training consent
 router.post('/:workspaceId/conversations/:conversationId/training-consent', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { workspaceId, conversationId } = req.params
+    const { conversationId } = req.params
     const { allowUseInTraining, allowUseInEvaluation } = req.body
 
     const result = await privacyConsentService.setConversationTrainingConsent(

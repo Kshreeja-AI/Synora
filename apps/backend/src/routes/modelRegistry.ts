@@ -1,4 +1,4 @@
-import { Router, type NextFunction } from 'express'
+import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { modelRegistryService } from '../services/modelRegistry.service'
 import { createApiResponse } from '@synora/shared'
@@ -85,7 +85,7 @@ router.post('/:workspaceId/models/:modelId/versions', authMiddleware, async (req
 // Promote version
 router.post('/:workspaceId/models/:modelId/versions/:versionId/promote', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const { workspaceId, modelId, versionId } = req.params
+    const { workspaceId, versionId } = req.params
     const { newStatus } = PromoteVersionSchema.parse(req.body)
 
     const result = await modelRegistryService.promoteVersion(req.userId!, workspaceId, versionId, newStatus)

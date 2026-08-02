@@ -1,8 +1,7 @@
-import { Router, type NextFunction } from 'express'
+import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { evaluationService } from '../services/evaluation.service'
 import { createApiResponse } from '@synora/shared'
-import { EvaluationStatus } from '@prisma/client'
 import { z } from 'zod'
 import { enqueueRunEvaluation } from '../workers/queue'
 
@@ -34,7 +33,6 @@ router.get('/:workspaceId/evaluations', authMiddleware, async (req: AuthRequest,
     const { workspaceId } = req.params
     const skip = req.query.skip ? parseInt(req.query.skip as string) : 0
     const take = req.query.take ? parseInt(req.query.take as string) : 20
-    const status = req.query.status as EvaluationStatus | undefined
 
     const result = await evaluationService.listEvaluationRuns(req.userId!, workspaceId, {
       skip,
