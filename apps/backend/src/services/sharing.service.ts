@@ -80,8 +80,25 @@ export class SharingService {
     await prisma.sharedConversation.delete({ where: { id: shareId } })
   }
 
+  /**
+   * Resolve a share token for ANONYMOUS viewing. Three deliberate
+   * restrictions, all security/privacy-driven:
+   *
+   * - Only `isPublic` shares resolve here. A non-public share link is
+   *   reserved for a future authenticated flow; serving it to anyone
+   *   holding the token would make the flag meaningless.
+   * - Soft-deleted messages are excluded. "Deleted" must mean deleted
+   *   to an outside viewer, whatever the workspace still retains.
+   * - The response is shaped to public-safe fields only. Full message
+   *   rows carry token counts and cost data, which are workspace
+   *   billing internals — never anonymous-visible.
+   *
+   * All three failure modes return the same 404 so a token probe
+   * can't distinguish "wrong token" from "real but not public".
+   */
   async getByShareToken(shareToken: string): Promise<{
-    conversation: unknown
+    conversation: { id: string; title: string; description: string | null; createdAt: Date }
+    messages: { id: string; role: string; content: string; createdAt: Date }[]
     permissions: SharePermission
   }> {
     const share = await prisma.sharedConversation.findUnique({
@@ -89,13 +106,17 @@ export class SharingService {
       include: {
         conversation: {
           include: {
-            messages: { orderBy: { createdAt: 'asc' } },
+            messages: {
+              where: { deletedAt: null },
+              orderBy: { createdAt: 'asc' },
+              select: { id: true, role: true, content: true, createdAt: true },
+            },
           },
         },
       },
     })
 
-    if (!share) {
+    if (!share || !share.isPublic) {
       throw new NotFoundException('Shared conversation not found')
     }
 
@@ -103,7 +124,17 @@ export class SharingService {
       throw new NotFoundException('This share link has expired')
     }
 
-    return { conversation: share.conversation, permissions: share.permissions }
+    const { conversation } = share
+    return {
+      conversation: {
+        id: conversation.id,
+        title: conversation.title,
+        description: conversation.description,
+        createdAt: conversation.createdAt,
+      },
+      messages: conversation.messages,
+      permissions: share.permissions,
+    }
   }
 
   async addCollaborator(

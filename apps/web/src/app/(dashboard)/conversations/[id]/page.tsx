@@ -18,6 +18,8 @@ import {
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Composer } from '@/components/chat/Composer';
 import { ConversationFilesPanel } from '@/components/files/ConversationFilesPanel';
+import { ShareDialog } from '@/components/sharing/ShareDialog';
+import { Share2 } from 'lucide-react';
 import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { AlertCircle, MessageSquarePlus } from 'lucide-react';
@@ -53,6 +55,7 @@ export default function ConversationDetailPage() {
   const [inputValue, setInputValue] = useState('');
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -237,10 +240,23 @@ export default function ConversationDetailPage() {
   return (
     <div className="flex h-full flex-col bg-background">
       <header className="border-b border-border bg-card px-6 py-4">
-        <h1 className="text-xl font-semibold text-foreground">{conversation.title}</h1>
-        {conversation.description && (
-          <p className="mt-1 text-sm text-muted-foreground">{conversation.description}</p>
-        )}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold text-foreground">{conversation.title}</h1>
+            {conversation.description && (
+              <p className="mt-1 text-sm text-muted-foreground">{conversation.description}</p>
+            )}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShareOpen(true)}
+            className="shrink-0 gap-2"
+          >
+            <Share2 className="h-4 w-4" />
+            Share
+          </Button>
+        </div>
         <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
           <span>
             Provider: <span className="font-medium">{conversation.provider}</span>
@@ -250,6 +266,14 @@ export default function ConversationDetailPage() {
           </span>
         </div>
       </header>
+
+      <ShareDialog
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+        workspaceId={workspaceId}
+        conversationId={conversationId}
+        conversationTitle={conversation.title}
+      />
 
       <div className="flex-1 space-y-6 overflow-y-auto p-6">
         {messages.length === 0 ? (
