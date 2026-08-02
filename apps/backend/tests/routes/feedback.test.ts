@@ -157,6 +157,70 @@ describe('Feedback Routes', () => {
     })
   })
 
+  describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/feedback/messages/mine', () => {
+    it('returns only the requesting user\'s feedback', async () => {
+      // The requesting user rates one message...
+      await request(app)
+        .post(`/api/workspaces/${workspaceId}/feedback/messages`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ messageId, conversationId, feedbackType: 'HELPFUL', isHelpful: true })
+        .expect(201)
+
+      // ...while a second workspace member rates a different one. The
+      // /mine endpoint must not leak the other member's record.
+      const otherUser = await prisma.user.create({
+        data: { email: `other-feedback-${Date.now()}@example.com`, name: 'Other' },
+      })
+      await prisma.workspaceMember.create({
+        data: { userId: otherUser.id, workspaceId, role: 'MEMBER' },
+      })
+      await prisma.messageFeedback.create({
+        data: {
+          messageId: otherMessageId,
+          conversationId,
+          workspaceId,
+          userId: otherUser.id,
+          feedbackType: 'HELPFUL',
+          isHelpful: true,
+        },
+      })
+
+      const response = await request(app)
+        .get(
+          `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages/mine`
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200)
+
+      expect(response.body.data.items).toHaveLength(1)
+      expect(response.body.data.items[0].messageId).toBe(messageId)
+      expect(response.body.data.items[0].userId).toBe(userId)
+
+      await prisma.messageFeedback.deleteMany({ where: { userId: otherUser.id } })
+      await prisma.workspaceMember.deleteMany({ where: { userId: otherUser.id } })
+      await prisma.user.delete({ where: { id: otherUser.id } })
+    })
+
+    it('returns an empty list when the user has left no feedback', async () => {
+      const response = await request(app)
+        .get(
+          `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages/mine`
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200)
+
+      expect(response.body.data.items).toEqual([])
+    })
+
+    it('requires authentication', async () => {
+      await request(app)
+        .get(
+          `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages/mine`
+        )
+        .expect(401)
+    })
+  })
+
   describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/feedback/stats', () => {
     it('should return feedback statistics', async () => {
       const response = await request(app)

@@ -64,12 +64,31 @@ export interface FeedbackStats {
   averageRating: number
 }
 
+// Feedback records the backend returns. Only the fields the UI
+// currently reads are typed — the shape has many more optional
+// per-dimension ratings (accuracy, clarity, completeness, relevance)
+// that reflection UIs don't need today.
+export interface MessageFeedbackRecord {
+  id: string
+  messageId: string
+  conversationId: string
+  workspaceId: string
+  userId: string
+  feedbackType: MessageFeedbackInput['feedbackType']
+  rating?: number | null
+  isHelpful?: boolean | null
+  thumbsUp?: boolean | null
+  thumbsDown?: boolean | null
+  comment?: string | null
+  createdAt: string
+}
+
 export const feedbackApi = {
   async createMessageFeedback(workspaceId: string, input: MessageFeedbackInput) {
-    return api.post(`/workspaces/${workspaceId}/feedback/messages`, {
-      ...input,
-      feedbackType: input.feedbackType,
-    })
+    return api.post<MessageFeedbackRecord>(
+      `/api/workspaces/${workspaceId}/feedback/messages`,
+      { ...input, feedbackType: input.feedbackType }
+    )
   },
 
   async listMessageFeedback(
@@ -82,23 +101,33 @@ export const feedbackApi = {
     if (options?.take !== undefined) params.append('take', String(options.take))
 
     const queryString = params.toString()
-    const url = `/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages${queryString ? `?${queryString}` : ''}`
+    const url = `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages${queryString ? `?${queryString}` : ''}`
 
     return api.get(url)
   },
 
+  // Only the current user's feedback records for this conversation.
+  // The chat UI uses this to reflect existing thumbs state after a
+  // reload — the general listMessageFeedback returns *all* users'
+  // feedback and is for aggregation, not per-user UI state.
+  async listMyMessageFeedback(workspaceId: string, conversationId: string) {
+    return api.get<{ items: MessageFeedbackRecord[] }>(
+      `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages/mine`
+    )
+  },
+
   async getFeedbackStats(workspaceId: string, conversationId: string) {
     return api.get<FeedbackStats>(
-      `/workspaces/${workspaceId}/conversations/${conversationId}/feedback/stats`
+      `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/stats`
     )
   },
 
   async createConversationFeedback(workspaceId: string, input: ConversationFeedbackInput) {
-    return api.post(`/workspaces/${workspaceId}/feedback/conversations`, input)
+    return api.post(`/api/workspaces/${workspaceId}/feedback/conversations`, input)
   },
 
   async createCorrection(workspaceId: string, input: CorrectionInput) {
-    return api.post(`/workspaceId/feedback/corrections`, {
+    return api.post(`/api/workspaces/${workspaceId}/feedback/corrections`, {
       messageId: input.messageId,
       conversationId: input.conversationId,
       originalContent: input.originalContent,
@@ -110,7 +139,7 @@ export const feedbackApi = {
   },
 
   async reportHallucination(workspaceId: string, input: HallucinationReportInput) {
-    return api.post(`/workspaces/${workspaceId}/feedback/hallucinations`, {
+    return api.post(`/api/workspaces/${workspaceId}/feedback/hallucinations`, {
       messageId: input.messageId,
       conversationId: input.conversationId,
       hallucinatedText: input.hallucinatedText,
@@ -123,7 +152,7 @@ export const feedbackApi = {
   },
 
   async createPreferredResponse(workspaceId: string, input: PreferredResponseInput) {
-    return api.post(`/workspaces/${workspaceId}/feedback/preferences`, {
+    return api.post(`/api/workspaces/${workspaceId}/feedback/preferences`, {
       conversationId: input.conversationId,
       preferredMessageId: input.preferredMessageId,
       rejectedMessageId: input.rejectedMessageId,

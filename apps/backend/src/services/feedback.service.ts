@@ -360,6 +360,34 @@ class FeedbackService {
     }
   }
 
+  /**
+   * Return every MessageFeedback record the given user has ever
+   * submitted within a conversation. Used by the chat UI to reflect
+   * the user's own thumbs-up/down state on each message after a
+   * reload — separate from `listMessageFeedback`, which returns all
+   * users' feedback and is intended for aggregation/analytics.
+   *
+   * Returns a plain array (not paginated) — a single user can have at
+   * most one feedback record per message, so the ceiling is bounded
+   * by the conversation's message count.
+   */
+  async listMyMessageFeedback(userId: string, workspaceId: string, conversationId: string) {
+    try {
+      return await prisma.messageFeedback.findMany({
+        where: { workspaceId, conversationId, userId },
+        orderBy: { createdAt: 'desc' },
+      })
+    } catch (error) {
+      logger.error('[feedback] Failed to list user feedback', {
+        error: error instanceof Error ? error.message : String(error),
+        conversationId,
+        workspaceId,
+        userId,
+      })
+      throw new NotFoundException('Failed to list feedback')
+    }
+  }
+
   async listMessageFeedback(workspaceId: string, conversationId: string, skip: number = 0, take: number = 20) {
     try {
       const [feedback, total] = await Promise.all([

@@ -91,6 +91,28 @@ router.get('/:workspaceId/conversations/:conversationId/feedback/messages', auth
   }
 })
 
+// Reflection endpoint for the chat UI: returns only the requesting
+// user's own feedback records for messages in this conversation, so a
+// reloaded chat can show which messages they've already thumbed up or
+// down without pulling in everyone else's ratings.
+router.get(
+  '/:workspaceId/conversations/:conversationId/feedback/messages/mine',
+  authMiddleware,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { workspaceId, conversationId } = req.params
+      const feedback = await feedbackService.listMyMessageFeedback(
+        req.userId!,
+        workspaceId,
+        conversationId
+      )
+      res.json(createApiResponse({ items: feedback }))
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
 router.get('/:workspaceId/conversations/:conversationId/feedback/stats', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, conversationId } = req.params

@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { Check, Copy, RefreshCw, Trash2, User, Sparkles, Info } from 'lucide-react';
 import { Markdown } from './Markdown';
+import { FeedbackControls } from './FeedbackControls';
 import { ForkNavigator } from '@/components/branching/ForkNavigator';
 import { CreateBranchButton } from '@/components/branching/CreateBranchButton';
 import type { ConversationMessage } from '@/lib/api/messages';
@@ -54,6 +55,15 @@ export function MessageBubble({
     message.role === 'ASSISTANT' &&
     !isStreaming &&
     !!message.parentId;
+  // Feedback (thumbs + report) applies to completed assistant
+  // responses only. User turns have nothing to rate against; system
+  // turns are configuration, not model output; streaming messages are
+  // still being generated.
+  const showFeedback =
+    branchingEnabled &&
+    message.role === 'ASSISTANT' &&
+    !isStreaming &&
+    !!message.content;
 
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'USER';
@@ -139,6 +149,15 @@ export function MessageBubble({
               <RefreshCw className="h-3 w-3" />
               Retry
             </button>
+          )}
+
+          {showFeedback && (
+            <FeedbackControls
+              workspaceId={workspaceId!}
+              conversationId={conversationId!}
+              messageId={message.id}
+              messageContent={message.content}
+            />
           )}
 
           {showBranchButton && (
