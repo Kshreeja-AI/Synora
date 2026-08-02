@@ -101,56 +101,6 @@ export function useSearchMessages(
 }
 
 /**
- * Unified search across conversations and messages
- */
-export function useUnifiedSearch(
-  workspaceId: string,
-  query: string,
-  options?: {
-    skip?: number;
-    take?: number;
-    enabled?: boolean;
-    type?: 'conversations' | 'messages' | 'all';
-  }
-): UseQueryResult<SearchResponse> {
-  const conversations = useSearchConversations(workspaceId, query, {
-    ...options,
-    enabled: options?.enabled !== false && (options?.type === 'conversations' || options?.type === 'all'),
-  });
-
-  const messages = useSearchMessages(workspaceId, query, {
-    ...options,
-    enabled: options?.enabled !== false && (options?.type === 'messages' || options?.type === 'all'),
-  });
-
-  return useQuery({
-    queryKey: [SEARCH_KEY, 'unified', workspaceId, query, options?.type || 'all'],
-    queryFn: async () => {
-      const conversationResults = conversations.data?.items || [];
-      const messageResults = messages.data?.items || [];
-
-      const combined = [
-        ...conversationResults,
-        ...messageResults,
-      ].sort((a, b) => (b.relevance || 0) - (a.relevance || 0));
-
-      return {
-        items: combined.slice(0, options?.take || 20),
-        total: (conversations.data?.total || 0) + (messages.data?.total || 0),
-        hasMore: combined.length > (options?.take || 20),
-      };
-    },
-    enabled:
-      !!workspaceId &&
-      !!query?.trim() &&
-      options?.enabled !== false &&
-      conversations.isSuccess &&
-      messages.isSuccess,
-    staleTime: 30000,
-  });
-}
-
-/**
  * Index a conversation and its messages for search
  */
 export async function indexConversation(
