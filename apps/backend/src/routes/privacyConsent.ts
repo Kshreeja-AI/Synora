@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { privacyConsentService } from '../services/privacyConsent.service'
-import { createApiResponse } from '@synora/shared'
+import { createApiResponse, NotFoundException } from '@synora/shared'
 import { z } from 'zod'
 
 const ConsentPolicySchema = z.object({
@@ -33,6 +33,9 @@ router.get('/:workspaceId/privacy/consent', authMiddleware, async (req: AuthRequ
     const { workspaceId } = req.params
 
     const result = await privacyConsentService.getUserConsent(req.userId!, workspaceId)
+    if (!result) {
+      throw new NotFoundException('Consent not found')
+    }
 
     res.json(createApiResponse(result))
   } catch (error) {

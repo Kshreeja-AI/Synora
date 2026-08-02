@@ -1,61 +1,99 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
-import { createApp } from '../../src/app'
-import type { AppConfig } from '../../src/config/types'
-
-const mockConfig: AppConfig = {
-  stage: 'test',
-  modes: [],
-  server: {
-    port: 3001,
-    corsOrigins: ['http://localhost:3000'],
-  },
-  rateLimit: {
-    windowMs: 15 * 60 * 1000,
-    maxRequests: 100,
-  },
-  jwt: {
-    secret: 'test-secret',
-    expiresIn: '15m',
-  },
-  storage: {
-    provider: 'local',
-    publicBasePath: '/uploads',
-    localDirectory: './uploads',
-  },
-}
+import jwt from 'jsonwebtoken'
+import { prisma } from '@synora/database'
+import { initializeApp } from '../../src/index'
 
 describe('Feedback Routes', () => {
   let app: any
-  let testUserId: string
-  let testWorkspaceId: string
+  let workspaceId: string
+  let userId: string
+  let token: string
+  let conversationId: string
+  let messageId: string
+  let otherMessageId: string
 
-  beforeEach(() => {
-    app = createApp(mockConfig)
+  beforeEach(async () => {
+    const { app: expressApp } = await initializeApp()
+    app = expressApp
 
-    testUserId = 'test-user-123'
-    testWorkspaceId = 'test-workspace-123'
-
-    vi.mock('../../src/middleware/auth', () => ({
-      authMiddleware: (req: any, res: any, next: any) => {
-        req.userId = testUserId
-        req.workspaceId = testWorkspaceId
-        next()
+    const user = await prisma.user.create({
+      data: {
+        email: `test-feedback-${Date.now()}@example.com`,
+        name: 'Test User',
       },
-    }))
+    })
+    userId = user.id
+
+    const workspace = await prisma.workspace.create({
+      data: {
+        name: 'Test Workspace',
+        slug: `test-ws-feedback-${Date.now()}`,
+      },
+    })
+    workspaceId = workspace.id
+
+    await prisma.workspaceMember.create({
+      data: { userId, workspaceId, role: 'OWNER' },
+    })
+
+    const conversation = await prisma.conversation.create({
+      data: {
+        workspaceId,
+        title: 'Test Conversation',
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+      },
+    })
+    conversationId = conversation.id
+
+    const message = await prisma.message.create({
+      data: {
+        conversationId,
+        content: 'Hello there',
+        role: 'ASSISTANT',
+      },
+    })
+    messageId = message.id
+
+    const otherMessage = await prisma.message.create({
+      data: {
+        conversationId,
+        content: 'A different reply',
+        role: 'ASSISTANT',
+      },
+    })
+    otherMessageId = otherMessage.id
+
+    token = jwt.sign({ userId, workspaceId }, process.env.JWT_SECRET || 'test-secret', {
+      expiresIn: '24h',
+    })
   })
 
-  describe('POST /api/:workspaceId/feedback/messages', () => {
+  afterEach(async () => {
+    await prisma.preferredResponse.deleteMany({ where: { workspaceId } })
+    await prisma.hallucinationReport.deleteMany({ where: { workspaceId } })
+    await prisma.correction.deleteMany({ where: { workspaceId } })
+    await prisma.conversationFeedback.deleteMany({ where: { workspaceId } })
+    await prisma.messageFeedback.deleteMany({ where: { workspaceId } })
+    await prisma.message.deleteMany({ where: { conversationId } })
+    await prisma.conversation.deleteMany({ where: { workspaceId } })
+    await prisma.workspaceMember.deleteMany({ where: { workspaceId } })
+    await prisma.workspace.delete({ where: { id: workspaceId } })
+    await prisma.user.delete({ where: { id: userId } })
+  })
+
+  describe('POST /api/workspaces/:workspaceId/feedback/messages', () => {
     it('should create message feedback', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/messages`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/messages`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           rating: 5,
           feedbackType: 'RATING',
-          comment: 'Great response'
+          comment: 'Great response',
         })
         .expect(201)
 
@@ -65,13 +103,13 @@ describe('Feedback Routes', () => {
 
     it('should validate rating range', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/messages`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/messages`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           rating: 6,
-          feedbackType: 'RATING'
+          feedbackType: 'RATING',
         })
         .expect(400)
 
@@ -80,13 +118,13 @@ describe('Feedback Routes', () => {
 
     it('should allow helpful feedback without rating', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/messages`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/messages`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           isHelpful: true,
-          feedbackType: 'HELPFUL'
+          feedbackType: 'HELPFUL',
         })
         .expect(201)
 
@@ -95,11 +133,11 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('GET /api/:workspaceId/conversations/:conversationId/feedback/messages', () => {
+  describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/feedback/messages', () => {
     it('should list message feedback', async () => {
       const response = await request(app)
-        .get(`/api/${testWorkspaceId}/conversations/conv-123/feedback/messages`)
-        .set('Authorization', `Bearer test-token`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages`)
+        .set('Authorization', `Bearer ${token}`)
         .expect(200)
 
       expect(response.body.data).toBeDefined()
@@ -108,8 +146,10 @@ describe('Feedback Routes', () => {
 
     it('should support pagination', async () => {
       const response = await request(app)
-        .get(`/api/${testWorkspaceId}/conversations/conv-123/feedback/messages?skip=0&take=10`)
-        .set('Authorization', `Bearer test-token`)
+        .get(
+          `/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/messages?skip=0&take=10`
+        )
+        .set('Authorization', `Bearer ${token}`)
         .expect(200)
 
       expect(response.body.data.skip).toBe(0)
@@ -117,11 +157,11 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('GET /api/:workspaceId/conversations/:conversationId/feedback/stats', () => {
+  describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/feedback/stats', () => {
     it('should return feedback statistics', async () => {
       const response = await request(app)
-        .get(`/api/${testWorkspaceId}/conversations/conv-123/feedback/stats`)
-        .set('Authorization', `Bearer test-token`)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/feedback/stats`)
+        .set('Authorization', `Bearer ${token}`)
         .expect(200)
 
       expect(response.body.data).toBeDefined()
@@ -132,16 +172,16 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('POST /api/:workspaceId/feedback/conversations', () => {
+  describe('POST /api/workspaces/:workspaceId/feedback/conversations', () => {
     it('should create conversation feedback', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/conversations`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/conversations`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          conversationId: 'conv-123',
+          conversationId,
           overallRating: 4,
           isUseful: true,
-          comment: 'Very helpful conversation'
+          comment: 'Very helpful conversation',
         })
         .expect(201)
 
@@ -151,11 +191,11 @@ describe('Feedback Routes', () => {
 
     it('should validate quality score range', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/conversations`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/conversations`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          conversationId: 'conv-123',
-          qualityScore: 101
+          conversationId,
+          qualityScore: 101,
         })
         .expect(400)
 
@@ -163,18 +203,18 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('POST /api/:workspaceId/feedback/corrections', () => {
+  describe('POST /api/workspaces/:workspaceId/feedback/corrections', () => {
     it('should create correction', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/corrections`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/corrections`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           originalContent: 'The capital of France is London',
           correctedContent: 'The capital of France is Paris',
           correctionType: 'FACTUAL_ERROR',
-          reason: 'Factually incorrect'
+          reason: 'Factually incorrect',
         })
         .expect(201)
 
@@ -184,14 +224,14 @@ describe('Feedback Routes', () => {
 
     it('should validate correction type', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/corrections`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/corrections`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           originalContent: 'Original',
           correctedContent: 'Corrected',
-          correctionType: 'INVALID_TYPE'
+          correctionType: 'INVALID_TYPE',
         })
         .expect(400)
 
@@ -199,18 +239,18 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('POST /api/:workspaceId/feedback/hallucinations', () => {
+  describe('POST /api/workspaces/:workspaceId/feedback/hallucinations', () => {
     it('should report hallucination', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/hallucinations`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/hallucinations`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           hallucinatedText: 'This product was invented in 2050',
           factualCorrection: 'This product was invented in 2020',
           severity: 'HIGH',
-          category: 'INVENTED_INFORMATION'
+          category: 'INVENTED_INFORMATION',
         })
         .expect(201)
 
@@ -220,15 +260,15 @@ describe('Feedback Routes', () => {
 
     it('should validate severity enum', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/hallucinations`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/hallucinations`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          messageId: 'msg-123',
-          conversationId: 'conv-123',
+          messageId,
+          conversationId,
           hallucinatedText: 'Text',
           factualCorrection: 'Correct',
           severity: 'UNKNOWN',
-          category: 'FACTUAL_ERROR'
+          category: 'FACTUAL_ERROR',
         })
         .expect(400)
 
@@ -236,16 +276,16 @@ describe('Feedback Routes', () => {
     })
   })
 
-  describe('POST /api/:workspaceId/feedback/preferences', () => {
+  describe('POST /api/workspaces/:workspaceId/feedback/preferences', () => {
     it('should create preference', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/preferences`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/preferences`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          conversationId: 'conv-123',
-          preferredMessageId: 'msg-456',
-          rejectedMessageId: 'msg-789',
-          preferenceType: 'CLARITY'
+          conversationId,
+          preferredMessageId: messageId,
+          rejectedMessageId: otherMessageId,
+          preferenceType: 'CLARITY',
         })
         .expect(201)
 
@@ -255,13 +295,13 @@ describe('Feedback Routes', () => {
 
     it('should validate preference type', async () => {
       const response = await request(app)
-        .post(`/api/${testWorkspaceId}/feedback/preferences`)
-        .set('Authorization', `Bearer test-token`)
+        .post(`/api/workspaces/${workspaceId}/feedback/preferences`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
-          conversationId: 'conv-123',
-          preferredMessageId: 'msg-456',
-          rejectedMessageId: 'msg-789',
-          preferenceType: 'INVALID'
+          conversationId,
+          preferredMessageId: messageId,
+          rejectedMessageId: otherMessageId,
+          preferenceType: 'INVALID',
         })
         .expect(400)
 

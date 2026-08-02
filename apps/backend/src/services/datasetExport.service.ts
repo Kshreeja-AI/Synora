@@ -194,7 +194,12 @@ export class DatasetExportService {
     }
 
     return {
-      export: trainingExport,
+      // fileSize is a Prisma BigInt, which JSON.stringify cannot serialize —
+      // convert it at the API boundary rather than passing the raw row through.
+      export: {
+        ...trainingExport,
+        fileSize: trainingExport.fileSize === null ? null : trainingExport.fileSize.toString(),
+      },
       status: trainingExport.status,
     }
   }

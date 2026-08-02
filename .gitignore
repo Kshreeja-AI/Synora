@@ -154,3 +154,9 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .env.local
+
+# Local Redis dump (created by a locally-run redis-server during dev/testing)
+dump.rdb
+
+# Dataset export output files written by datasetExport.service.ts during local testing
+apps/backend/exports/

@@ -109,6 +109,9 @@ describe('ToolSecretService', () => {
           slug: `other-workspace-${Date.now()}`,
         },
       })
+      await prisma.workspaceMember.create({
+        data: { userId, workspaceId: otherWorkspace.id, role: 'OWNER' },
+      })
 
       await expect(
         toolSecretService.createSecret(userId, {
@@ -120,6 +123,7 @@ describe('ToolSecretService', () => {
         })
       ).rejects.toThrow(NotFoundException)
 
+      await prisma.workspaceMember.deleteMany({ where: { workspaceId: otherWorkspace.id } })
       await prisma.workspace.delete({ where: { id: otherWorkspace.id } })
     })
 
@@ -217,11 +221,15 @@ describe('ToolSecretService', () => {
           slug: `other-workspace-${Date.now()}`,
         },
       })
+      await prisma.workspaceMember.create({
+        data: { userId, workspaceId: otherWorkspace.id, role: 'OWNER' },
+      })
 
       await expect(toolSecretService.getSecret(userId, secretId, otherWorkspace.id)).rejects.toThrow(
         NotFoundException
       )
 
+      await prisma.workspaceMember.deleteMany({ where: { workspaceId: otherWorkspace.id } })
       await prisma.workspace.delete({ where: { id: otherWorkspace.id } })
     })
 
@@ -451,15 +459,18 @@ describe('ToolSecretService', () => {
       await prisma.user.delete({ where: { id: otherUser.id } })
     })
 
-    it('should audit log deletion', async () => {
+    it('should audit log deletion, surviving the secret it describes', async () => {
       await toolSecretService.deleteSecret(userId, secretId, workspaceId)
 
+      // secretId is set to null by the SetNull FK once the secret is gone,
+      // so the surviving record must be found by workspaceId instead.
       const auditLogs = await prisma.toolSecretAuditLog.findMany({
-        where: { secretId },
+        where: { workspaceId, action: 'DELETED' },
       })
 
-      const deletedLog = auditLogs.find((log) => log.action === 'DELETED')
+      const deletedLog = auditLogs.find((log) => log.reason?.includes('api-key'))
       expect(deletedLog).toBeDefined()
+      expect(deletedLog?.secretId).toBeNull()
     })
   })
 

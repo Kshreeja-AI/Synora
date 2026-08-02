@@ -2009,7 +2009,11 @@ model ToolSecret {
 // Immutable audit trail for all secret access and modifications
 model ToolSecretAuditLog {
   id                String          @id @default(cuid())
-  secretId          String
+  // Nullable + SetNull (not Cascade): this log is the immutable record that a
+  // secret was deleted, so it must outlive the secret it describes — a
+  // cascading FK would destroy the DELETED entry in the same transaction
+  // that creates it.
+  secretId          String?
   workspaceId       String
 
   // Action tracking
@@ -2026,7 +2030,7 @@ model ToolSecretAuditLog {
   requestId         String?         // Correlation ID from request middleware
 
   // Relations
-  secret            ToolSecret      @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  secret            ToolSecret?     @relation(fields: [secretId], references: [id], onDelete: SetNull)
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime        @default(now())

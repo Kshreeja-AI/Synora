@@ -1,60 +1,69 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
-import { createApp } from '../../src/app'
-import type { AppConfig } from '../../src/config/types'
+import jwt from 'jsonwebtoken'
 import { prisma } from '@synora/database'
-
-const mockConfig: AppConfig = {
-  stage: 'test',
-  modes: [],
-  server: {
-    port: 3001,
-    corsOrigins: ['http://localhost:3000'],
-  },
-  rateLimit: {
-    windowMs: 15 * 60 * 1000,
-    maxRequests: 100,
-  },
-  jwt: {
-    secret: 'test-secret',
-    expiresIn: '15m',
-  },
-  storage: {
-    provider: 'local',
-    publicBasePath: '/uploads',
-    localDirectory: './uploads',
-  },
-}
+import { initializeApp } from '../../src/index'
 
 describe('Privacy Consent Routes', () => {
   let app: any
-  let testUserId: string
-  let testWorkspaceId: string
-  let testToken: string
+  let workspaceId: string
+  let userId: string
+  let token: string
+  let conversationId: string
 
   beforeEach(async () => {
-    app = createApp(mockConfig)
+    const { app: expressApp } = await initializeApp()
+    app = expressApp
 
-    // Mock auth token verification
-    vi.mock('../../src/middleware/auth', () => ({
-      authMiddleware: (req: any, res: any, next: any) => {
-        req.userId = testUserId
-        req.workspaceId = testWorkspaceId
-        next()
+    const user = await prisma.user.create({
+      data: {
+        email: `test-privacy-${Date.now()}@example.com`,
+        name: 'Test User',
       },
-    }))
+    })
+    userId = user.id
 
-    // Setup test data
-    testUserId = 'test-user-123'
-    testWorkspaceId = 'test-workspace-123'
-    testToken = 'Bearer test-token'
+    const workspace = await prisma.workspace.create({
+      data: {
+        name: 'Test Workspace',
+        slug: `test-ws-privacy-${Date.now()}`,
+      },
+    })
+    workspaceId = workspace.id
+
+    await prisma.workspaceMember.create({
+      data: { userId, workspaceId, role: 'OWNER' },
+    })
+
+    const conversation = await prisma.conversation.create({
+      data: {
+        workspaceId,
+        title: 'Test Conversation',
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+      },
+    })
+    conversationId = conversation.id
+
+    token = jwt.sign({ userId, workspaceId }, process.env.JWT_SECRET || 'test-secret', {
+      expiresIn: '24h',
+    })
+  })
+
+  afterEach(async () => {
+    await prisma.trainingConsent.deleteMany({ where: { workspaceId } })
+    await prisma.privacyConsent.deleteMany({ where: { workspaceId } })
+    await prisma.conversation.deleteMany({ where: { workspaceId } })
+    await prisma.workspaceMember.deleteMany({ where: { workspaceId } })
+    await prisma.workspace.delete({ where: { id: workspaceId } })
+    await prisma.user.delete({ where: { id: userId } })
   })
 
   describe('POST /api/workspaces/:workspaceId/privacy/consent', () => {
     it('should set user consent for workspace', async () => {
       const response = await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: true,
           useForTraining: true,
@@ -68,19 +77,17 @@ describe('Privacy Consent Routes', () => {
     })
 
     it('should update existing consent', async () => {
-      // First consent
       await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: true,
           useForTraining: false,
         })
 
-      // Update consent
       const response = await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: false,
           useForTraining: true,
@@ -92,8 +99,8 @@ describe('Privacy Consent Routes', () => {
 
     it('should validate zod schema', async () => {
       const response = await request(app)
-        .post(`/api/workspaceId/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: 'not-a-boolean',
         })
@@ -104,18 +111,17 @@ describe('Privacy Consent Routes', () => {
 
   describe('GET /api/workspaces/:workspaceId/privacy/consent', () => {
     it('should get user consent for workspace', async () => {
-      // Set consent first
       await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: true,
           useForTraining: true,
         })
 
       const response = await request(app)
-        .get(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .get(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
@@ -124,8 +130,8 @@ describe('Privacy Consent Routes', () => {
 
     it('should return 404 if consent not found', async () => {
       const response = await request(app)
-        .get(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .get(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
 
       expect(response.status).toBe(404)
     })
@@ -133,18 +139,17 @@ describe('Privacy Consent Routes', () => {
 
   describe('POST /api/workspaces/:workspaceId/privacy/consent/revoke', () => {
     it('should revoke user consent', async () => {
-      // Set consent first
       await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           collectFeedback: true,
           useForTraining: true,
         })
 
       const response = await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/consent/revoke`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/consent/revoke`)
+        .set('Authorization', `Bearer ${token}`)
 
       expect(response.status).toBe(200)
       expect(response.body.data.success).toBe(true)
@@ -153,11 +158,9 @@ describe('Privacy Consent Routes', () => {
 
   describe('POST /api/workspaces/:workspaceId/conversations/:conversationId/training-consent', () => {
     it('should set conversation training consent', async () => {
-      const conversationId = 'test-conv-123'
-
       const response = await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/conversations/${conversationId}/training-consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/training-consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           allowUseInTraining: true,
           allowUseInEvaluation: false,
@@ -170,20 +173,17 @@ describe('Privacy Consent Routes', () => {
 
   describe('GET /api/workspaces/:workspaceId/conversations/:conversationId/training-consent', () => {
     it('should get conversation training consent', async () => {
-      const conversationId = 'test-conv-123'
-
-      // Set consent first
       await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/conversations/${conversationId}/training-consent`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/training-consent`)
+        .set('Authorization', `Bearer ${token}`)
         .send({
           allowUseInTraining: true,
           allowUseInEvaluation: true,
         })
 
       const response = await request(app)
-        .get(`/api/workspaces/${testWorkspaceId}/conversations/${conversationId}/training-consent`)
-        .set('Authorization', testToken)
+        .get(`/api/workspaces/${workspaceId}/conversations/${conversationId}/training-consent`)
+        .set('Authorization', `Bearer ${token}`)
 
       expect(response.status).toBe(200)
       expect(response.body.data.allowUseInTraining).toBe(true)
@@ -193,8 +193,8 @@ describe('Privacy Consent Routes', () => {
   describe('POST /api/workspaces/:workspaceId/privacy/delete-data', () => {
     it('should delete user data for GDPR compliance', async () => {
       const response = await request(app)
-        .post(`/api/workspaces/${testWorkspaceId}/privacy/delete-data`)
-        .set('Authorization', testToken)
+        .post(`/api/workspaces/${workspaceId}/privacy/delete-data`)
+        .set('Authorization', `Bearer ${token}`)
 
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
