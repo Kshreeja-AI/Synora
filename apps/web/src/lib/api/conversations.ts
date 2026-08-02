@@ -11,6 +11,7 @@ import {
   UseQueryResult,
   UseMutationResult,
   UseInfiniteQueryResult,
+  InfiniteData,
 } from '@tanstack/react-query';
 import { api } from './client';
 import type {
@@ -27,7 +28,9 @@ const CONVERSATIONS_KEY = 'conversations';
 export function useConversations(
   workspaceId: string,
   options?: { enabled?: boolean }
-): UseInfiniteQueryResult<{ items: Conversation[]; total: number; hasMore: boolean }> {
+): UseInfiniteQueryResult<
+  InfiniteData<{ items: Conversation[]; total: number; hasMore: boolean }>
+> {
   return useInfiniteQuery({
     queryKey: [CONVERSATIONS_KEY, workspaceId],
     queryFn: async ({ pageParam = 0 }) => {

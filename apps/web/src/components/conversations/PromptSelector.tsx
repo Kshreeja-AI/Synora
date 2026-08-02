@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, Search, BookOpen, Sparkles } from 'lucide-react';
-import { usePrompts } from '@/lib/api/prompts';
+import { usePrompts, type Prompt } from '@/lib/api/prompts';
 import { useWorkspaceTemplates, type Template } from '@/lib/api/templates';
 
 interface PromptSelectorProps {
@@ -31,13 +31,13 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
       t.description?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleSelectPrompt = (prompt: any) => {
+  const handleSelectPrompt = (prompt: Prompt) => {
     onSelectPrompt({ name: prompt.name, content: prompt.content });
     setIsOpen(false);
     setSearch('');
   };
 
-  const handleSelectTemplate = (template: any) => {
+  const handleSelectTemplate = (template: Template) => {
     onSelectTemplate?.({ title: template.title, systemPrompt: template.systemPrompt });
     setIsOpen(false);
     setSearch('');

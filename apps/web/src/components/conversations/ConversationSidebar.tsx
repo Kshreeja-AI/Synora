@@ -30,7 +30,7 @@ export function ConversationSidebar() {
   const createMutation = useCreateConversation(workspaceId);
 
   const conversations = useMemo(() => {
-    const items = data?.items ?? [];
+    const items = data?.pages.flatMap((page) => page.items) ?? [];
     const needle = query.trim().toLowerCase();
     if (!needle) return items;
     return items.filter((c) => c.title.toLowerCase().includes(needle));

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -11,7 +12,9 @@ import {
 import { api } from '@/lib/api/client';
 import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
+import { ConversationCreateDialog } from '@/components/conversations/ConversationCreateDialog';
 import { AlertCircle, Plus, Trash2, Archive } from 'lucide-react';
+import { toast } from 'sonner';
 
 const DEFAULT_PROVIDER = 'anthropic';
 const DEFAULT_MODEL = 'claude-sonnet-5';
@@ -21,6 +24,7 @@ export default function ConversationsPage() {
   const queryClient = useQueryClient();
   const { currentWorkspace } = useCurrentWorkspace();
   const workspaceId = currentWorkspace?.id || '';
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   const {
     data: conversationsData,
@@ -30,25 +34,77 @@ export default function ConversationsPage() {
 
   const createMutation = useCreateConversation(workspaceId);
 
-  const conversations = conversationsData?.items || [];
+  const conversations = conversationsData?.pages.flatMap((page) => page.items) ?? [];
   const error = fetchError || createMutation.error;
 
   const refreshList = () =>
     queryClient.invalidateQueries({ queryKey: ['conversations', workspaceId] });
 
-  const handleCreateConversation = async () => {
-    try {
-      const conversation = await createMutation.mutateAsync({
-        title: 'New Conversation',
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
-      });
+  const handleCreateConversation = async (title: string) => {
+    const conversation = await createMutation.mutateAsync({
+      title,
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+    });
 
-      if (conversation?.id) {
-        router.push(`/conversations/${conversation.id}`);
-      }
+    if (conversation?.id) {
+      router.push(`/conversations/${conversation.id}`);
+    }
+  };
+
+  const createConversationWithSystemPrompt = async (
+    title: string,
+    systemPromptContent: string
+  ) => {
+    const conversation = await createMutation.mutateAsync({
+      title,
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+    });
+
+    if (!conversation?.id) {
+      throw new Error('Conversation creation did not return an id');
+    }
+
+    await api.post(`/api/workspaces/${workspaceId}/conversations/${conversation.id}/messages`, {
+      content: systemPromptContent,
+      role: 'SYSTEM',
+    });
+
+    return conversation;
+  };
+
+  const handleCreateWithTemplate = async (template: {
+    title: string;
+    systemPrompt: string;
+  }) => {
+    try {
+      const conversation = await createConversationWithSystemPrompt(
+        template.title,
+        template.systemPrompt
+      );
+      toast.success('Conversation created from template');
+      router.push(`/conversations/${conversation.id}`);
     } catch (err) {
-      console.error('Failed to create conversation', err);
+      console.error('Failed to create conversation from template', err);
+      toast.error('Failed to create conversation');
+    }
+  };
+
+  const handleCreateWithPrompt = async (prompt: {
+    name: string;
+    content: string;
+  }) => {
+    try {
+      const conversation = await createConversationWithSystemPrompt(
+        prompt.name,
+        prompt.content
+      );
+      toast.success('Conversation created with prompt');
+      router.push(`/conversations/${conversation.id}`);
+    } catch (err) {
+      console.error('Failed to create conversation with prompt', err);
+      toast.error('Failed to create conversation');
     }
   };
 
@@ -91,9 +147,9 @@ export default function ConversationsPage() {
             <h1 className="text-2xl font-bold text-foreground">Conversations</h1>
             <p className="text-sm text-muted-foreground mt-1">Chat with AI across multiple conversations</p>
           </div>
-          <Button onClick={handleCreateConversation} className="gap-2" disabled={createMutation.isPending}>
+          <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            {createMutation.isPending ? 'Creating...' : 'New Conversation'}
+            New Conversation
           </Button>
         </div>
       </div>
@@ -121,7 +177,7 @@ export default function ConversationsPage() {
             <p className="text-sm text-muted-foreground mb-6 max-w-sm">
               Get started by creating your first conversation to chat with AI
             </p>
-            <Button onClick={handleCreateConversation} className="gap-2" disabled={createMutation.isPending}>
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="gap-2">
               <Plus className="h-4 w-4" />
               Create Conversation
             </Button>
@@ -171,6 +227,16 @@ export default function ConversationsPage() {
           </div>
         )}
       </div>
+
+      <ConversationCreateDialog
+        isOpen={isCreateDialogOpen}
+        workspaceId={workspaceId}
+        isLoading={createMutation.isPending}
+        onClose={() => setIsCreateDialogOpen(false)}
+        onCreateBasic={handleCreateConversation}
+        onCreateWithTemplate={handleCreateWithTemplate}
+        onCreateWithPrompt={handleCreateWithPrompt}
+      />
     </div>
   );
 }

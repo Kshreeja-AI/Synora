@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Loader2, Plus, Search, Star, Trash2, Copy } from 'lucide-react';
-import { usePrompts, useCreatePrompt, useDeletePrompt, useTogglePromptFavorite } from '@/lib/api/prompts';
+import { usePrompts, useCreatePrompt, useDeletePrompt, useTogglePromptFavorite, type Prompt } from '@/lib/api/prompts';
 import { Button } from '@synora/design-system';
 import { toast } from 'sonner';
 
@@ -44,7 +44,7 @@ export default function PromptsPage() {
     }
   };
 
-  const handleCopy = (prompt: any) => {
+  const handleCopy = (prompt: Prompt) => {
     navigator.clipboard.writeText(prompt.content);
     toast.success('Prompt copied to clipboard');
   };

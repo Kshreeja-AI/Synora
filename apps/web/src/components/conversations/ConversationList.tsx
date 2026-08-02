@@ -40,7 +40,7 @@ export function ConversationList({
     );
   }
 
-  const conversations = (data as any)?.pages?.flatMap((page: any) => page.items) || [];
+  const conversations = data?.pages.flatMap((page) => page.items) ?? [];
 
   if (conversations.length === 0) {
     return (
