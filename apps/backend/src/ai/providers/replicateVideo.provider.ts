@@ -1,5 +1,4 @@
 import { secretsManager } from '../../secrets';
-import { getConfig } from '../../config';
 import {
   AICapability,
   AIProviderError,
