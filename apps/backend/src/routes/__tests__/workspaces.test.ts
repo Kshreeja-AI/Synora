@@ -37,8 +37,9 @@ describe('workspaces routes (M4)', () => {
     return email;
   }
 
-  function cookieHeader(setCookieHeaders: string[] | undefined): string {
-    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
   }
 
   async function register(prefix: string) {

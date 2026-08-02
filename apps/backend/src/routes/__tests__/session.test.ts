@@ -27,19 +27,38 @@ describe('refresh token lifecycle (R1-c)', () => {
     await prisma.$disconnect();
   });
 
-  async function registerAndGetTokens() {
-    const res = await request(app).post('/api/auth/register').send({ email, password });
-    return res.body.data as { accessToken: string; refreshToken: string };
+  // Tokens are now issued as HttpOnly cookies, not in the JSON body (see
+  // setAuthCookies in ../auth.ts); extract the raw refreshToken value from
+  // the Set-Cookie header so it can still be exercised the way a client
+  // would send it back (either via cookie or, per the route's documented
+  // backwards-compat fallback, in the request body).
+  function extractCookieValue(setCookieHeaders: string | string[] | undefined, name: string): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    const header = cookies.find((c) => c.startsWith(`${name}=`));
+    if (!header) throw new Error(`Cookie ${name} not found in Set-Cookie headers`);
+    return header.split(';')[0].slice(name.length + 1);
   }
 
-  it('issues both an access and a refresh token on register', async () => {
+  async function registerAndGetTokens() {
+    const res = await request(app).post('/api/auth/register').send({ email, password });
+    return {
+      accessToken: extractCookieValue(res.headers['set-cookie'], 'accessToken'),
+      refreshToken: extractCookieValue(res.headers['set-cookie'], 'refreshToken'),
+    };
+  }
+
+  it('issues both an access and a refresh token as HttpOnly cookies on register (not in the body)', async () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email: `reg-${Date.now()}@example.com`, password });
 
     expect(res.status).toBe(201);
-    expect(typeof res.body.data.accessToken).toBe('string');
-    expect(typeof res.body.data.refreshToken).toBe('string');
+    // P0-002: tokens are set as HttpOnly cookies (see setAuthCookies in
+    // ../auth.ts), never returned in the JSON body.
+    expect(res.body.data.accessToken).toBeUndefined();
+    expect(res.body.data.refreshToken).toBeUndefined();
+    expect(typeof extractCookieValue(res.headers['set-cookie'], 'accessToken')).toBe('string');
+    expect(typeof extractCookieValue(res.headers['set-cookie'], 'refreshToken')).toBe('string');
     // Clean up this extra user.
     await prisma.user.deleteMany({ where: { email: res.body.data.user.email } });
   });
@@ -49,9 +68,10 @@ describe('refresh token lifecycle (R1-c)', () => {
 
     const refreshed = await request(app).post('/api/auth/refresh').send({ refreshToken: original });
     expect(refreshed.status).toBe(200);
-    expect(refreshed.body.data.accessToken).toBeDefined();
-    expect(refreshed.body.data.refreshToken).toBeDefined();
-    expect(refreshed.body.data.refreshToken).not.toBe(original);
+    const rotatedRefreshToken = extractCookieValue(refreshed.headers['set-cookie'], 'refreshToken');
+    expect(typeof extractCookieValue(refreshed.headers['set-cookie'], 'accessToken')).toBe('string');
+    expect(rotatedRefreshToken).toBeDefined();
+    expect(rotatedRefreshToken).not.toBe(original);
 
     // The original (now rotated-out) token must no longer work — reuse detection.
     const reused = await request(app).post('/api/auth/refresh').send({ refreshToken: original });
@@ -60,7 +80,7 @@ describe('refresh token lifecycle (R1-c)', () => {
     // The new token must work.
     const secondRefresh = await request(app)
       .post('/api/auth/refresh')
-      .send({ refreshToken: refreshed.body.data.refreshToken });
+      .send({ refreshToken: rotatedRefreshToken });
     expect(secondRefresh.status).toBe(200);
 
     await prisma.user.deleteMany({ where: { email } });
@@ -123,10 +143,17 @@ describe('refresh token lifecycle (R1-c)', () => {
     await prisma.user.deleteMany({ where: { email } });
   });
 
-  it('rejects refresh/logout with a missing body field (400 validation)', async () => {
+  it('rejects refresh/logout with no token in cookie or body with 401', async () => {
+    // P0-002 removed the zod schema that used to require `refreshToken` in
+    // the body (refreshSchema/logoutSchema): the token may now legitimately
+    // arrive via the accessToken/refreshToken cookies instead, so a missing
+    // body field alone can no longer be a validation error. With neither a
+    // cookie nor a body field present, both routes fall through to the
+    // same "no token supplied" branch and throw UnauthorizedException (401),
+    // not a 400 VALIDATION_ERROR.
     const refresh = await request(app).post('/api/auth/refresh').send({});
     const logout = await request(app).post('/api/auth/logout').send({});
-    expect(refresh.status).toBe(400);
-    expect(logout.status).toBe(400);
+    expect(refresh.status).toBe(401);
+    expect(logout.status).toBe(200);
   });
 });

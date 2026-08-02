@@ -26,7 +26,9 @@ describe('input validation on mutating routes (R1-b)', () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    token = (res.headers['set-cookie'] ?? []).map((c: string) => c.split(';')[0]).join('; ');
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    token = cookies.map((c: string) => c.split(';')[0]).join('; ');
   });
 
   afterAll(async () => {

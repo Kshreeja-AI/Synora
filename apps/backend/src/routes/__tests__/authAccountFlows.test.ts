@@ -47,12 +47,14 @@ describe('auth account flows (M3)', () => {
   // on an authenticated request; `extractCookieValue` pulls out one cookie's
   // raw value for tests that need the literal token (e.g. to send it in a
   // request body, or to hash it for a DB lookup).
-  function cookieHeader(setCookieHeaders: string[] | undefined): string {
-    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
   }
 
-  function extractCookieValue(setCookieHeaders: string[] | undefined, name: string): string {
-    const header = (setCookieHeaders ?? []).find((c) => c.startsWith(`${name}=`));
+  function extractCookieValue(setCookieHeaders: string | string[] | undefined, name: string): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    const header = cookies.find((c) => c.startsWith(`${name}=`));
     if (!header) throw new Error(`Cookie ${name} not found in Set-Cookie headers`);
     return header.split(';')[0].slice(name.length + 1);
   }

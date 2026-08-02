@@ -39,12 +39,14 @@ describe('users routes (account/profile settings — M3)', () => {
     return email;
   }
 
-  function cookieHeader(setCookieHeaders: string[] | undefined): string {
-    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
   }
 
-  function extractCookieValue(setCookieHeaders: string[] | undefined, name: string): string {
-    const header = (setCookieHeaders ?? []).find((c) => c.startsWith(`${name}=`));
+  function extractCookieValue(setCookieHeaders: string | string[] | undefined, name: string): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    const header = cookies.find((c) => c.startsWith(`${name}=`));
     if (!header) throw new Error(`Cookie ${name} not found in Set-Cookie headers`);
     return header.split(';')[0].slice(name.length + 1);
   }
