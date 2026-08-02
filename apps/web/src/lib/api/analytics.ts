@@ -6,14 +6,21 @@ import {
 } from '@tanstack/react-query';
 import { api } from './client';
 
+/**
+ * Mirrors the backend ConversationUsage record (aggregate-only
+ * accounting, one row per conversation). The route returns a zeroed
+ * shape when no usage has been recorded yet, so `id`/timestamps are
+ * optional.
+ */
 export interface ConversationUsage {
-  id: string;
+  id?: string;
   conversationId: string;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  costByProvider: Record<string, number>;
-  totalCostCents: number;
-  updatedAt: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  estimatedCost: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface UsageMetric {

@@ -1,13 +1,18 @@
 'use client';
 
-import { useParams } from 'next/navigation';
 import { Card } from '@synora/design-system';
 import { useCreditBalance, useUsageSummary, useCreditLedger } from '../../../hooks/useBilling';
 import { EmptyState } from '@synora/design-system';
+import { useCurrentWorkspace } from '../../../hooks/useCurrentWorkspace';
+import { UsageOverview } from '../../../components/analytics/UsageOverview';
+import { UsageLedger } from '../../../components/analytics/UsageLedger';
 
 export default function UsagePage() {
-  const params = useParams();
-  const workspaceId = typeof params.id === 'string' ? params.id : '';
+  // This route has no URL params — the previous `useParams().id` read
+  // always yielded '' here, leaving every query disabled and the page
+  // stuck on its empty state. The active workspace is the real scope.
+  const { currentWorkspace } = useCurrentWorkspace();
+  const workspaceId = currentWorkspace?.id || '';
 
   const { data: credits, isLoading: isLoadingCredits } = useCreditBalance(workspaceId);
   const { data: usage, isLoading: isLoadingUsage } = useUsageSummary(workspaceId);
@@ -172,6 +177,23 @@ export default function UsagePage() {
             </table>
           </div>
         </Card>
+      )}
+
+      {/* AI token/cost analytics, aggregated from per-generation
+          accounting. Distinct from the credit ledger above: credits
+          are the billing currency, this is the underlying provider
+          usage that consumes them. */}
+      {workspaceId && (
+        <section aria-label="AI usage analytics" className="space-y-6">
+          <div>
+            <h2 className="text-xl font-semibold">AI Usage</h2>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+              Tokens and provider costs across this workspace&apos;s conversations
+            </p>
+          </div>
+          <UsageOverview workspaceId={workspaceId} />
+          <UsageLedger workspaceId={workspaceId} />
+        </section>
       )}
     </div>
   );

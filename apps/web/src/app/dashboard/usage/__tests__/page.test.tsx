@@ -10,12 +10,26 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({
     push: vi.fn(),
   }),
-  useParams: () => ({
-    id: 'workspace_1',
-  }),
 }));
 vi.mock('../../../../lib/auth/token-storage', () => ({
   getAccessToken: vi.fn(() => 'test_token'),
+}));
+// The page scopes all queries to the ACTIVE workspace (the route has
+// no URL params — reading useParams().id here was a bug that left
+// every query disabled).
+vi.mock('../../../../hooks/useCurrentWorkspace', () => ({
+  useCurrentWorkspace: () => ({
+    currentWorkspace: { id: 'workspace_1', name: 'Workspace One' },
+  }),
+}));
+// The AI Usage section's data layer has its own component tests —
+// stub the components so this file stays focused on the page's
+// billing view.
+vi.mock('../../../../components/analytics/UsageOverview', () => ({
+  UsageOverview: () => <div data-testid="usage-overview" />,
+}));
+vi.mock('../../../../components/analytics/UsageLedger', () => ({
+  UsageLedger: () => <div data-testid="usage-ledger" />,
 }));
 
 describe('UsagePage', () => {

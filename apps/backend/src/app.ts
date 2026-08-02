@@ -50,6 +50,7 @@ import privacyConsentRoutes from './routes/privacyConsent';
 import modelRegistryRoutes from './routes/modelRegistry';
 import evaluationRoutes from './routes/evaluation';
 import datasetExportRoutes from './routes/datasetExport';
+import usageRoutes from './routes/usage';
 
 export interface CreateAppDeps {
   /**
@@ -234,6 +235,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', modelRegistryRoutes);
   app.use('/api/workspaces', evaluationRoutes);
   app.use('/api/workspaces', datasetExportRoutes);
+  app.use('/api/workspaces', usageRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
