@@ -1,4 +1,5 @@
 import { prisma } from '@synora/database'
+import { Prisma } from '@prisma/client'
 import { logger } from '../utils/logger'
 import { NotFoundException, ForbiddenException, ValidationException } from '@synora/shared'
 import {
@@ -46,12 +47,21 @@ export interface SearchStats {
   cachedHitRate: number
 }
 
+interface FtsRow {
+  id: string
+  resourceType: SearchResourceType
+  resourceId: string
+  title: string | null
+  content: string
+  summary: string | null
+  createdAt: Date
+  updatedAt: Date
+  rank: number
+}
+
 export class SearchService {
-  private readonly CACHE_TTL_SECONDS = 300
-  private readonly DEFAULT_CHUNK_SIZE = 1000
   private readonly MIN_SEARCH_LENGTH = 2
 
-  // Feature 1: Hybrid Search
   async hybridSearch(options: SearchOptions): Promise<{ results: SearchResult[]; stats: SearchStats }> {
     const startTime = Date.now()
 
@@ -62,14 +72,19 @@ export class SearchService {
         query: options.query,
       })
 
-      const [fullTextResults, vectorResults, semanticResults] = await Promise.all([
-        this.fullTextSearch(options),
-        this.vectorSearch(options),
-        this.semanticSearch(options),
-      ])
+      const ftsResults = await this.fullTextSearch(options)
+
+      let vectorResults: SearchResult[] = []
+      try {
+        vectorResults = await this.vectorSearch(options)
+      } catch (err) {
+        logger.debug('[hybridSearch] Vector search unavailable, continuing with FTS only', {
+          reason: err instanceof Error ? err.message : 'unknown',
+        })
+      }
 
       const mergedResults = this.mergeAndRankResults(
-        [fullTextResults, vectorResults, semanticResults],
+        vectorResults.length > 0 ? [ftsResults, vectorResults] : [ftsResults],
         options.sortBy || 'relevance'
       )
 
@@ -105,106 +120,161 @@ export class SearchService {
     }
   }
 
-  // Feature 2: Full-Text Search
   private async fullTextSearch(options: SearchOptions): Promise<SearchResult[]> {
     try {
-      const searchIndices = await prisma.searchIndex.findMany({
-        where: {
-          workspaceId: options.workspaceId,
-          isIndexed: true,
-          ...(options.filters?.resourceTypes && {
-            resourceType: { in: options.filters.resourceTypes },
-          }),
-        },
-        orderBy: { indexedAt: 'desc' },
-        take: options.limit || 50,
-      })
+      const resourceFilter = options.filters?.resourceTypes
+      const limit = options.limit || 50
 
-      return searchIndices.map((index, idx) => ({
-        id: index.id,
-        resourceType: index.resourceType,
-        resourceId: index.resourceId,
-        title: index.title,
-        content: index.content,
-        summary: index.summary,
-        score: this.calculateFullTextScore(index.content, options.query),
+      const results = await prisma.$queryRawUnsafe<FtsRow[]>(
+        `SELECT
+           id,
+           "resourceType"::text AS "resourceType",
+           "resourceId",
+           title,
+           content,
+           summary,
+           "createdAt",
+           "updatedAt",
+           ts_rank(to_tsvector('english', content), plainto_tsquery('english', $1)) AS rank
+         FROM "SearchIndex"
+         WHERE "workspaceId" = $2
+           AND "isIndexed" = true
+           AND to_tsvector('english', content) @@ plainto_tsquery('english', $1)
+           ${resourceFilter && resourceFilter.length > 0 ? `AND "resourceType"::text = ANY($4::text[])` : ''}
+         ORDER BY rank DESC
+         LIMIT $3`,
+        options.query,
+        options.workspaceId,
+        limit,
+        ...(resourceFilter && resourceFilter.length > 0 ? [resourceFilter] : [])
+      )
+
+      return results.map((row, idx) => ({
+        id: row.id,
+        resourceType: row.resourceType as SearchResourceType,
+        resourceId: row.resourceId,
+        title: row.title,
+        content: row.content,
+        summary: row.summary,
+        score: Number(row.rank),
         rank: idx + 1,
-        createdAt: index.createdAt,
-        updatedAt: index.updatedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
       }))
     } catch (error) {
-      logger.warn('[fullTextSearch] Full-text search failed', { error })
-      return []
+      logger.warn('[fullTextSearch] PostgreSQL FTS query failed, falling back to ILIKE', { error })
+      return this.ilikeFallback(options)
     }
   }
 
-  // Feature 3: Vector Search
+  private async ilikeFallback(options: SearchOptions): Promise<SearchResult[]> {
+    const searchIndices = await prisma.searchIndex.findMany({
+      where: {
+        workspaceId: options.workspaceId,
+        isIndexed: true,
+        content: { contains: options.query, mode: Prisma.QueryMode.insensitive },
+        ...(options.filters?.resourceTypes && {
+          resourceType: { in: options.filters.resourceTypes },
+        }),
+      },
+      orderBy: { indexedAt: 'desc' },
+      take: options.limit || 50,
+    })
+
+    return searchIndices.map((index, idx) => ({
+      id: index.id,
+      resourceType: index.resourceType,
+      resourceId: index.resourceId,
+      title: index.title,
+      content: index.content,
+      summary: index.summary,
+      score: 0.5,
+      rank: idx + 1,
+      createdAt: index.createdAt,
+      updatedAt: index.updatedAt,
+    }))
+  }
+
   private async vectorSearch(options: SearchOptions): Promise<SearchResult[]> {
+    let embed: typeof import('../embeddings').embed
+    let queryVectors: typeof import('../vectordb').queryVectors
+
     try {
-      const results = await prisma.searchIndex.findMany({
-        where: {
-          workspaceId: options.workspaceId,
-          isIndexed: true,
-          embeddingId: { not: null },
-          ...(options.filters?.resourceTypes && {
-            resourceType: { in: options.filters.resourceTypes },
-          }),
+      const embeddingsModule = await import('../embeddings')
+      const vectordbModule = await import('../vectordb')
+      embed = embeddingsModule.embed
+      queryVectors = vectordbModule.queryVectors
+    } catch {
+      logger.debug('[vectorSearch] Embedding or vectordb modules unavailable')
+      return []
+    }
+
+    let embeddingResult
+    try {
+      embeddingResult = await embed(options.query, { workspaceId: options.workspaceId })
+    } catch (err) {
+      logger.debug('[vectorSearch] No embedding provider configured, skipping vector search', {
+        reason: err instanceof Error ? err.name : 'unknown',
+      })
+      return []
+    }
+
+    try {
+      const queryResult = await queryVectors({
+        workspaceId: options.workspaceId,
+        namespace: 'search',
+        vector: Array.from(embeddingResult.embedding.values),
+        topK: options.limit || 50,
+        includeMetadata: true,
+        permissionFilter: (match) => {
+          if (!match.metadata) return true
+          if (options.filters?.resourceTypes) {
+            return options.filters.resourceTypes.includes(match.metadata.resourceType as SearchResourceType)
+          }
+          return true
         },
-        take: options.limit || 50,
       })
 
-      return results.map((index, idx) => ({
-        id: index.id,
-        resourceType: index.resourceType,
-        resourceId: index.resourceId,
-        title: index.title,
-        content: index.content,
-        summary: index.summary,
-        score: 0.85,
-        rank: idx + 1,
-        createdAt: index.createdAt,
-        updatedAt: index.updatedAt,
-      }))
-    } catch (error) {
-      logger.warn('[vectorSearch] Vector search failed', { error })
+      if (queryResult.matches.length === 0) return []
+
+      const resourceIds = queryResult.matches
+        .map((m) => m.metadata?.resourceId as string)
+        .filter(Boolean)
+
+      const indexRecords = await prisma.searchIndex.findMany({
+        where: { resourceId: { in: resourceIds }, workspaceId: options.workspaceId },
+      })
+
+      const indexMap = new Map(indexRecords.map((r) => [r.resourceId, r]))
+
+      return queryResult.matches
+        .map((match, idx) => {
+          const resourceId = match.metadata?.resourceId as string
+          const record = indexMap.get(resourceId)
+          if (!record) return null
+
+          return {
+            id: record.id,
+            resourceType: record.resourceType,
+            resourceId: record.resourceId,
+            title: record.title,
+            content: record.content,
+            summary: record.summary,
+            score: match.score,
+            rank: idx + 1,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt,
+          }
+        })
+        .filter((r): r is SearchResult => r !== null)
+    } catch (err) {
+      logger.debug('[vectorSearch] Vector query failed', {
+        reason: err instanceof Error ? err.message : 'unknown',
+      })
       return []
     }
   }
 
-  // Feature 4: Semantic Search
-  private async semanticSearch(options: SearchOptions): Promise<SearchResult[]> {
-    try {
-      const results = await prisma.searchIndex.findMany({
-        where: {
-          workspaceId: options.workspaceId,
-          isIndexed: true,
-          embeddingId: { not: null },
-          ...(options.filters?.resourceTypes && {
-            resourceType: { in: options.filters.resourceTypes },
-          }),
-        },
-        take: options.limit || 50,
-      })
-
-      return results.map((index, idx) => ({
-        id: index.id,
-        resourceType: index.resourceType,
-        resourceId: index.resourceId,
-        title: index.title,
-        content: index.content,
-        summary: index.summary,
-        score: 0.75,
-        rank: idx + 1,
-        createdAt: index.createdAt,
-        updatedAt: index.updatedAt,
-      }))
-    } catch (error) {
-      logger.warn('[semanticSearch] Semantic search failed', { error })
-      return []
-    }
-  }
-
-  // Feature 5: Ranking
   private mergeAndRankResults(resultSets: SearchResult[][], sortBy: string): SearchResult[] {
     const merged = new Map<string, SearchResult>()
     const scores = new Map<string, number[]>()
@@ -236,7 +306,6 @@ export class SearchService {
     return ranked.map((result, idx) => ({ ...result, rank: idx + 1 }))
   }
 
-  // Feature 6: Permission Filtering & Workspace Isolation
   private async filterByPermissions(
     results: SearchResult[],
     userId: string,
@@ -296,7 +365,6 @@ export class SearchService {
     }
   }
 
-  // Feature 7: Highlighting
   private applyHighlighting(results: SearchResult[], query: string): SearchResult[] {
     const queryTerms = query.toLowerCase().split(/\s+/)
 
@@ -314,12 +382,13 @@ export class SearchService {
 
   private highlightTerms(text: string, terms: string[]): string {
     let result = text
-    const regex = new RegExp(`(${terms.join('|')})`, 'gi')
+    const escaped = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    if (escaped.length === 0) return result
+    const regex = new RegExp(`(${escaped.join('|')})`, 'gi')
     result = result.replace(regex, '<mark>$1</mark>')
     return result
   }
 
-  // Feature 8: Chunk Indexing
   async indexContent(
     workspaceId: string,
     resourceType: SearchResourceType,
@@ -332,7 +401,7 @@ export class SearchService {
     }
   ): Promise<void> {
     try {
-      const chunks = this.chunkContent(content, this.DEFAULT_CHUNK_SIZE)
+      const chunks = this.chunkContent(content, 1000)
 
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i]
@@ -342,6 +411,7 @@ export class SearchService {
             id: `${resourceId}-chunk-${i}`,
           },
           create: {
+            id: `${resourceId}-chunk-${i}`,
             workspaceId,
             resourceType,
             resourceId,
@@ -351,17 +421,22 @@ export class SearchService {
             keywords: metadata.keywords || [],
             chunkIndex: i,
             totalChunks: chunks.length,
-            isIndexed: false,
+            isIndexed: true,
+            indexedAt: new Date(),
           },
           update: {
             content: chunk,
             title: metadata.title,
             summary: metadata.summary,
             keywords: metadata.keywords || [],
+            isIndexed: true,
+            indexedAt: new Date(),
             lastUpdatedAt: new Date(),
           },
         })
       }
+
+      await this.tryIndexVectors(workspaceId, resourceType, resourceId, chunks, metadata)
 
       logger.info(`[indexContent] Indexed ${chunks.length} chunks for ${resourceId}`, {
         workspaceId,
@@ -369,6 +444,50 @@ export class SearchService {
     } catch (error) {
       logger.error('[indexContent] Indexing failed', { error })
       throw new ValidationException('Failed to index content')
+    }
+  }
+
+  private async tryIndexVectors(
+    workspaceId: string,
+    resourceType: SearchResourceType,
+    resourceId: string,
+    chunks: string[],
+    metadata: { title?: string; summary?: string; keywords?: string[] }
+  ): Promise<void> {
+    try {
+      const { embedBatch } = await import('../embeddings')
+      const { upsertVectors } = await import('../vectordb')
+
+      const batchResult = await embedBatch(chunks, { workspaceId })
+
+      const vectors = batchResult.results.map((result, i) => ({
+        id: `${resourceId}-chunk-${i}`,
+        values: Array.from(result.embedding.values),
+        metadata: {
+          resourceType,
+          resourceId,
+          chunkIndex: i,
+          title: metadata.title ?? '',
+          keywords: (metadata.keywords ?? []).join(','),
+        },
+      }))
+
+      await upsertVectors(vectors, { workspaceId, namespace: 'search' })
+
+      for (let i = 0; i < chunks.length; i++) {
+        await prisma.searchIndex.update({
+          where: { id: `${resourceId}-chunk-${i}` },
+          data: {
+            embeddingId: `${resourceId}-chunk-${i}`,
+            embeddingModel: batchResult.results[0]?.model,
+            embeddingDimension: batchResult.results[0]?.embedding.dimensions,
+          },
+        })
+      }
+    } catch (err) {
+      logger.debug('[tryIndexVectors] Embedding/vector indexing unavailable, FTS only', {
+        reason: err instanceof Error ? err.name : 'unknown',
+      })
     }
   }
 
@@ -380,7 +499,6 @@ export class SearchService {
     return chunks.length === 0 ? [''] : chunks
   }
 
-  // Feature 10: Search Analytics
   private async recordSearchQuery(
     workspaceId: string,
     userId: string,
@@ -406,7 +524,6 @@ export class SearchService {
     }
   }
 
-  // Feature 11: Suggestions
   private async updateSuggestions(workspaceId: string, query: string): Promise<void> {
     try {
       const existing = await prisma.searchSuggestion.findUnique({
@@ -456,7 +573,6 @@ export class SearchService {
     }
   }
 
-  // Feature 12: Saved Searches
   async createSavedSearch(
     workspaceId: string,
     userId: string,
@@ -466,7 +582,7 @@ export class SearchService {
       description?: string
       queryType?: SearchQueryType
     }
-  ): Promise<any> {
+  ): Promise<SavedSearch> {
     try {
       const saved = await prisma.savedSearch.create({
         data: {
@@ -487,7 +603,7 @@ export class SearchService {
     }
   }
 
-  async getSavedSearches(workspaceId: string, userId: string): Promise<any[]> {
+  async getSavedSearches(workspaceId: string, userId: string): Promise<SavedSearch[]> {
     try {
       return await prisma.savedSearch.findMany({
         where: { workspaceId, userId },
@@ -499,8 +615,7 @@ export class SearchService {
     }
   }
 
-  // Feature 13: Pinned Ranking
-  async pinSearch(workspaceId: string, userId: string, searchId: string): Promise<void> {
+  async pinSearch(_workspaceId: string, _userId: string, searchId: string): Promise<void> {
     try {
       await prisma.savedSearch.update({
         where: { id: searchId },
@@ -509,16 +624,20 @@ export class SearchService {
           pinnedOrder: Math.floor(Date.now() / 1000),
         },
       })
-
-      logger.info(`[pinSearch] Pinned search ${searchId}`, { workspaceId })
     } catch (error) {
       logger.error('[pinSearch] Failed to pin search', { error })
       throw new ValidationException('Failed to pin search')
     }
   }
 
-  // Feature 14: Analytics
-  async getSearchAnalytics(workspaceId: string, periodDays = 30): Promise<any> {
+  async getSearchAnalytics(workspaceId: string, periodDays = 30): Promise<{
+    totalSearches: number
+    avgExecutionTime: number
+    avgResultCount: number
+    topQueries: { term: string; count: number }[]
+    periodStart: Date
+    periodEnd: Date
+  } | null> {
     try {
       const periodStart = new Date()
       periodStart.setDate(periodStart.getDate() - periodDays)
@@ -556,21 +675,6 @@ export class SearchService {
       logger.error('[getSearchAnalytics] Failed to fetch analytics', { error })
       return null
     }
-  }
-
-  private calculateFullTextScore(content: string, query: string): number {
-    const queryTerms = query.toLowerCase().split(/\s+/)
-    const contentLower = content.toLowerCase()
-    let matches = 0
-
-    queryTerms.forEach((term) => {
-      if (contentLower.includes(term)) {
-        const regex = new RegExp(term, 'g')
-        matches += (content.match(regex) || []).length
-      }
-    })
-
-    return Math.min(1.0, matches / (queryTerms.length * 3))
   }
 
   private async getSearchStats(
@@ -624,13 +728,15 @@ export class SearchService {
   async searchConversations(options: {
     workspaceId: string
     query: string
+    userId?: string
     skip?: number
     take?: number
   }): Promise<{ items: SearchResult[]; total: number }> {
     try {
+      const userId = options.userId || ''
       const result = await this.hybridSearch({
         workspaceId: options.workspaceId,
-        userId: '', // This will be set by routes if needed
+        userId,
         query: options.query,
         limit: options.take || 20,
         offset: options.skip || 0,
@@ -652,13 +758,15 @@ export class SearchService {
   async searchMessages(options: {
     workspaceId: string
     query: string
+    userId?: string
     skip?: number
     take?: number
   }): Promise<{ items: SearchResult[]; total: number }> {
     try {
+      const userId = options.userId || ''
       const result = await this.hybridSearch({
         workspaceId: options.workspaceId,
-        userId: '', // This will be set by routes if needed
+        userId,
         query: options.query,
         limit: options.take || 20,
         offset: options.skip || 0,
@@ -680,36 +788,78 @@ export class SearchService {
   async indexConversation(conversationId: string): Promise<void> {
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
-      select: { id: true, title: true },
+      select: { id: true, title: true, workspaceId: true, description: true },
     })
 
     if (!conversation) {
       throw new NotFoundException('Conversation not found')
     }
 
-    logger.info('Conversation indexed', { conversationId })
+    const searchableContent = [conversation.title, conversation.description].filter(Boolean).join('\n')
+
+    if (searchableContent.length > 0) {
+      await this.indexContent(
+        conversation.workspaceId,
+        'CONVERSATION',
+        conversationId,
+        searchableContent,
+        { title: conversation.title ?? undefined }
+      )
+    }
+
+    logger.info('[indexConversation] Conversation indexed', { conversationId })
   }
 
   async indexMessage(messageId: string): Promise<void> {
     const message = await prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, content: true },
+      select: { id: true, content: true, conversationId: true, conversation: { select: { workspaceId: true } } },
     })
 
     if (!message) {
       throw new NotFoundException('Message not found')
     }
 
-    logger.info('Message indexed', { messageId })
+    if (message.content && message.content.length > 0) {
+      await this.indexContent(
+        message.conversation.workspaceId,
+        'MESSAGE',
+        messageId,
+        message.content,
+        {}
+      )
+    }
+
+    logger.info('[indexMessage] Message indexed', { messageId })
   }
 
   async deleteConversationIndex(conversationId: string): Promise<void> {
-    logger.info('Conversation index deleted', { conversationId })
+    await prisma.searchIndex.deleteMany({
+      where: { resourceId: conversationId },
+    })
+
+    try {
+      const { deleteVectors } = await import('../vectordb')
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: { workspaceId: true },
+      })
+      if (conversation) {
+        await deleteVectors({
+          workspaceId: conversation.workspaceId,
+          namespace: 'search',
+          filter: { resourceId: conversationId },
+        })
+      }
+    } catch {
+      // Vector DB unavailable — FTS index already deleted
+    }
+
+    logger.info('[deleteConversationIndex] Conversation index deleted', { conversationId })
   }
 
   async searchSuggestions(workspaceId: string, partial: string, limit: number = 10): Promise<string[]> {
     try {
-      // Get previous search queries for this workspace that match the partial
       const queries = await prisma.searchQuery.findMany({
         where: {
           workspaceId,
@@ -731,7 +881,6 @@ export class SearchService {
 
   async saveSearch(userId: string, workspaceId: string, name: string, query: string): Promise<SavedSearch> {
     try {
-      // Check for duplicate name
       const existing = await prisma.savedSearch.findFirst({
         where: { workspaceId, userId, name },
       })
@@ -747,30 +896,10 @@ export class SearchService {
       logger.info('[saveSearch] Search saved', { workspaceId, userId, savedSearchId: saved.id, name })
       return saved
     } catch (error) {
-      logger.error('[saveSearch] Failed to save search', { error, workspaceId, userId, name })
-      throw error
+      if (error instanceof ValidationException) throw error
+      logger.error('[saveSearch] Failed to save search', { error })
+      throw new ValidationException('Failed to save search')
     }
-  }
-
-  async getSavedSearch(workspaceId: string, id: string): Promise<SavedSearch> {
-    const search = await prisma.savedSearch.findUnique({ where: { id } })
-    if (!search || search.workspaceId !== workspaceId) {
-      throw new NotFoundException('Saved search not found')
-    }
-    return search
-  }
-
-  async listSavedSearches(workspaceId: string): Promise<SavedSearch[]> {
-    return prisma.savedSearch.findMany({
-      where: { workspaceId },
-      orderBy: { createdAt: 'desc' },
-    })
-  }
-
-  async deleteSavedSearch(workspaceId: string, id: string): Promise<void> {
-    const search = await this.getSavedSearch(workspaceId, id)
-    await prisma.savedSearch.delete({ where: { id: search.id } })
-    logger.info('[deleteSavedSearch] Saved search deleted', { id })
   }
 }
 
