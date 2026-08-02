@@ -138,6 +138,13 @@ async function handleSubscriptionUpdated(data: Record<string, unknown>) {
         status: mappedStatus,
         currentPeriodStart: new Date((data.current_period_start as number) * 1000),
         currentPeriodEnd: new Date((data.current_period_end as number) * 1000),
+        // Any transition away from PAST_DUE (recovered, canceled, trial
+        // restarted, etc.) clears the dunning clock; a transition INTO
+        // it starts one only if it wasn't already running, so repeated
+        // "still past due" updates don't reset how long it's been failing.
+        ...(mappedStatus === 'PAST_DUE'
+          ? { pastDueSince: subscription.pastDueSince ?? new Date() }
+          : { pastDueSince: null, paymentFailureCount: 0 }),
       },
     });
   }
@@ -171,6 +178,8 @@ async function handleSubscriptionDeleted(data: Record<string, unknown>) {
           planId: defaultPlan.id,
           status: 'ACTIVE',
           externalSubscriptionId: null,
+          pastDueSince: null,
+          paymentFailureCount: 0,
         },
       });
     }
@@ -218,6 +227,23 @@ async function handleInvoicePaid(data: Record<string, unknown>) {
       paidAt: new Date(),
     },
   });
+
+  // A successful payment always means the subscription is no longer
+  // struggling, even if it was PAST_DUE — this was previously never
+  // reset here, so a workspace that fixed its card stayed flagged
+  // PAST_DUE forever with no way back to ACTIVE short of Stripe
+  // separately emitting a customer.subscription.updated event.
+  if (subscription.status === 'PAST_DUE') {
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: { status: 'ACTIVE', pastDueSince: null, paymentFailureCount: 0 },
+    });
+    await notifyWorkspaceOwner(
+      subscription.workspaceId,
+      'Payment Recovered',
+      'Your payment succeeded and your subscription is active again.',
+    );
+  }
 
   const plan = await prisma.plan.findUnique({
     where: { id: subscription.planId },
@@ -273,7 +299,15 @@ async function handleInvoicePaymentFailed(data: Record<string, unknown>) {
 
   await prisma.subscription.update({
     where: { id: subscription.id },
-    data: { status: 'PAST_DUE' },
+    data: {
+      status: 'PAST_DUE',
+      // Only the first failure in a run starts the clock; Stripe's Smart
+      // Retries fire this event multiple times for the same underlying
+      // decline, and each one should extend the failure count without
+      // resetting how long the workspace has actually been struggling.
+      pastDueSince: subscription.pastDueSince ?? new Date(),
+      paymentFailureCount: { increment: 1 },
+    },
   });
 
   await prisma.invoice.upsert({

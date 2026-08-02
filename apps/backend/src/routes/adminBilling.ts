@@ -92,6 +92,38 @@ router.post('/plans/:planId/set-default', async (req: AuthRequest, res, next) =>
   }
 });
 
+// GET /api/admin/billing/past-due
+// Surfaces workspaces currently failing payment, ordered longest-struggling
+// first, so support can proactively reach out. There is no automatic
+// suspension/downgrade of a PAST_DUE workspace — Stripe's own dunning
+// retries run independently, and this gives a human the visibility to
+// intervene without racing that process.
+router.get('/billing/past-due', async (req: AuthRequest, res, next) => {
+  try {
+    const subscriptions = await prisma.subscription.findMany({
+      where: { status: 'PAST_DUE' },
+      include: {
+        plan: { select: { name: true, priceCents: true } },
+        workspace: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: { pastDueSince: 'asc' },
+    });
+
+    res.json(
+      subscriptions.map((s) => ({
+        workspaceId: s.workspace.id,
+        workspaceName: s.workspace.name,
+        workspaceSlug: s.workspace.slug,
+        planName: s.plan.name,
+        pastDueSince: s.pastDueSince,
+        paymentFailureCount: s.paymentFailureCount,
+      })),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/admin/workspaces/:workspaceId/billing
 router.get('/workspaces/:workspaceId/billing', async (req: AuthRequest, res, next) => {
   try {

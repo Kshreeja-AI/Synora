@@ -739,6 +739,12 @@ model Subscription {
   currentPeriodEnd        DateTime?
   cancelAtPeriodEnd       Boolean             @default(false)
   trialEndsAt             DateTime?
+  // Dunning tracking: set on the first invoice.payment_failed after a
+  // healthy period, cleared on the next successful payment/status
+  // transition away from PAST_DUE. Lets support see how long a workspace
+  // has actually been struggling, not just that it currently is.
+  pastDueSince            DateTime?
+  paymentFailureCount     Int                 @default(0)
 
   workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   plan                    Plan                @relation(fields: [planId], references: [id])

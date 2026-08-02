@@ -311,6 +311,91 @@ describe('admin billing routes', () => {
     });
   });
 
+  describe('GET /api/admin/billing/past-due', () => {
+    it('lists past-due workspaces ordered longest-struggling first', async () => {
+      const plan = await prisma.plan.create({
+        data: {
+          key: `past-due-plan-${Date.now()}`,
+          name: 'Past Due Plan',
+          interval: 'MONTH',
+          priceCents: 4999,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(plan.id);
+
+      const olderWorkspace = await prisma.workspace.create({
+        data: { name: 'Struggling Longer', slug: `struggling-longer-${Date.now()}` },
+      });
+      testWorkspaceIds.push(olderWorkspace.id);
+      await prisma.subscription.create({
+        data: {
+          workspaceId: olderWorkspace.id,
+          planId: plan.id,
+          status: 'PAST_DUE',
+          pastDueSince: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+          paymentFailureCount: 3,
+        },
+      });
+
+      await prisma.subscription.create({
+        data: {
+          workspaceId,
+          planId: plan.id,
+          status: 'PAST_DUE',
+          pastDueSince: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+          paymentFailureCount: 1,
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/admin/billing/past-due')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      expect(res.body[0].workspaceId).toBe(olderWorkspace.id);
+      expect(res.body[0].paymentFailureCount).toBe(3);
+      expect(res.body[1].workspaceId).toBe(workspaceId);
+
+      await prisma.subscription.deleteMany({ where: { workspaceId: olderWorkspace.id } });
+      await prisma.subscription.deleteMany({ where: { workspaceId } });
+    });
+
+    it('excludes ACTIVE and CANCELED subscriptions', async () => {
+      const plan = await prisma.plan.create({
+        data: {
+          key: `not-past-due-plan-${Date.now()}`,
+          name: 'Not Past Due Plan',
+          interval: 'MONTH',
+          priceCents: 1999,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(plan.id);
+      await prisma.subscription.create({
+        data: { workspaceId, planId: plan.id, status: 'ACTIVE' },
+      });
+
+      const res = await request(app)
+        .get('/api/admin/billing/past-due')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+
+      await prisma.subscription.deleteMany({ where: { workspaceId } });
+    });
+
+    it('requires admin role', async () => {
+      const res = await request(app)
+        .get('/api/admin/billing/past-due')
+        .set('Authorization', `Bearer ${regularToken}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('GET /api/admin/workspaces/:workspaceId/billing', () => {
     it('returns composed subscription, credit balance, invoices, and ledger', async () => {
       const plan = await prisma.plan.create({

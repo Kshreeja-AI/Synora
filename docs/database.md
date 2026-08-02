@@ -440,6 +440,8 @@ model Subscription {
   currentPeriodStart      DateTime?   // Billing period start
   currentPeriodEnd        DateTime?   // Billing period end
   cancelAtPeriodEnd       Boolean     // Scheduled for cancellation
+  pastDueSince            DateTime?   // Set on first invoice.payment_failed since last recovery; cleared on the next successful payment or any status change away from PAST_DUE
+  paymentFailureCount     Int         // Incremented on each invoice.payment_failed while already PAST_DUE; reset to 0 on recovery
   
   // Relations
   workspace               Workspace
