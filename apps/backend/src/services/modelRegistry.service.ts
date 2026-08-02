@@ -239,9 +239,20 @@ export class ModelRegistryService {
   }
 
   async getProductionVersion(
+    userId: string,
     workspaceId: string,
     modelId: string
   ): Promise<any | null> {
+    await requireMembership(userId, workspaceId)
+
+    const model = await prisma.modelRegistry.findUnique({
+      where: { id: modelId },
+    })
+
+    if (!model || model.workspaceId !== workspaceId) {
+      throw new NotFoundException('Model not found')
+    }
+
     return prisma.modelVersion.findFirst({
       where: {
         modelId,

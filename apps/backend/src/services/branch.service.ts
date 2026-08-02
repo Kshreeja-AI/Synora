@@ -91,10 +91,11 @@ export class BranchService {
     }
 
     return prisma.message.findMany({
-      where: { conversationId, parentId },
+      where: { conversationId, parentId, deletedAt: null },
       include: {
         branch: true,
         children: {
+          where: { deletedAt: null },
           orderBy: { createdAt: 'asc' },
           take: 1,
         },
@@ -198,10 +199,11 @@ export class BranchService {
     }
 
     return prisma.message.findMany({
-      where: { conversationId },
+      where: { conversationId, deletedAt: null },
       include: {
         branch: true,
         children: {
+          where: { deletedAt: null },
           take: 1000,
           orderBy: { createdAt: 'asc' },
         },

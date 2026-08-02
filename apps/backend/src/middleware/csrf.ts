@@ -81,7 +81,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
       path: req.path,
       ip: req.ip,
     });
-    throw new ForbiddenException('CSRF token missing. Make a GET request first to obtain a token.');
+    return next(new ForbiddenException('CSRF token missing. Make a GET request first to obtain a token.'));
   }
 
   if (!providedToken) {
@@ -90,7 +90,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
       path: req.path,
       ip: req.ip,
     });
-    throw new ForbiddenException('CSRF token not provided in request header or body.');
+    return next(new ForbiddenException('CSRF token not provided in request header or body.'));
   }
 
   // Constant-time comparison to prevent timing attacks
@@ -106,7 +106,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
       path: req.path,
       ip: req.ip,
     });
-    throw new ForbiddenException('CSRF token validation failed.');
+    return next(new ForbiddenException('CSRF token validation failed.'));
   }
 
   // Token is valid; regenerate for next request

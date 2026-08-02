@@ -1,3 +1,6 @@
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const apiWsUrl = apiUrl.replace(/^http/, 'ws');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -14,7 +17,7 @@ const nextConfig = {
     ],
   },
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
+    NEXT_PUBLIC_API_URL: apiUrl,
   },
   async headers() {
     return [
@@ -43,7 +46,7 @@ const nextConfig = {
           },
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' http://localhost:3001 https://api.stripe.com; frame-src 'self'; object-src 'none'",
+            value: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ${apiUrl} ${apiWsUrl} https://api.stripe.com; frame-src 'self'; object-src 'none'`,
           },
           {
             key: 'Strict-Transport-Security',

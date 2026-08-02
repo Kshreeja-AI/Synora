@@ -221,11 +221,12 @@ function renderInline(tokens: InlineToken[], keyPrefix: string): React.ReactNode
             {tok.content}
           </code>
         );
-      case 'link':
+      case 'link': {
+        const safeHref = /^https?:\/\/|^mailto:/i.test(tok.href ?? '') ? tok.href : undefined;
         return (
           <a
             key={key}
-            href={tok.href}
+            href={safeHref}
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-2 hover:opacity-80"
@@ -233,6 +234,7 @@ function renderInline(tokens: InlineToken[], keyPrefix: string): React.ReactNode
             {tok.content}
           </a>
         );
+      }
       default:
         return null;
     }

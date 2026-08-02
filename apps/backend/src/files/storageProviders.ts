@@ -3,6 +3,14 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger';
 
+function assertWithinDir(base: string, target: string): void {
+  const resolved = path.resolve(target);
+  const resolvedBase = path.resolve(base);
+  if (!resolved.startsWith(resolvedBase + path.sep) && resolved !== resolvedBase) {
+    throw new Error('Path traversal detected');
+  }
+}
+
 export class LocalStorageProvider implements FileStorageProvider {
   private uploadDir: string;
 
@@ -18,6 +26,7 @@ export class LocalStorageProvider implements FileStorageProvider {
   ): Promise<{ url: string; key: string }> {
     try {
       const fullPath = path.join(this.uploadDir, key);
+      assertWithinDir(this.uploadDir, fullPath);
       const dir = path.dirname(fullPath);
 
       // Create directory if it doesn't exist
@@ -35,6 +44,7 @@ export class LocalStorageProvider implements FileStorageProvider {
   async delete(key: string): Promise<void> {
     try {
       const fullPath = path.join(this.uploadDir, key);
+      assertWithinDir(this.uploadDir, fullPath);
       await fs.unlink(fullPath);
       logger.info('[LocalStorage] File deleted', { key });
     } catch (error: any) {
@@ -49,6 +59,7 @@ export class LocalStorageProvider implements FileStorageProvider {
   async download(key: string): Promise<Buffer> {
     try {
       const fullPath = path.join(this.uploadDir, key);
+      assertWithinDir(this.uploadDir, fullPath);
       const buffer = await fs.readFile(fullPath);
       logger.info('[LocalStorage] File downloaded', { key, size: buffer.length });
       return buffer;

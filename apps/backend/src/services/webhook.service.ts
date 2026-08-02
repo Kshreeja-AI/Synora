@@ -1,4 +1,4 @@
-import { prisma } from '@synora/database';
+import { prisma, Prisma } from '@synora/database';
 import { resolveBillingProvider, BillingProviderError } from '../billing/index.js';
 import { ServiceUnavailableException } from '@synora/shared';
 import { logger } from '../utils/logger.js';
@@ -24,26 +24,30 @@ export async function handleBillingWebhook(rawBody: Buffer, signatureHeader: str
 
     const event = await provider.verifyAndParseWebhookEvent(rawBody, signatureHeader);
 
-    const existing = await prisma.processedWebhookEvent.findUnique({
-      where: {
-        provider_externalEventId: {
+    // Dedup via the unique constraint itself rather than a check-then-create:
+    // Stripe redelivers events (retries, at-least-once delivery), and two
+    // concurrent deliveries of the same event could both pass a separate
+    // findUnique() before either commits its create(). Attempting the
+    // create() directly closes that race — the DB enforces uniqueness
+    // atomically, and a collision here means "already processed," not
+    // an error.
+    try {
+      await prisma.processedWebhookEvent.create({
+        data: {
           provider: 'stripe',
           externalEventId: event.id,
         },
-      },
-    });
-
-    if (existing) {
-      logger.info('Webhook event already processed', { eventId: event.id });
-      return;
+      });
+    } catch (dedupError) {
+      if (
+        dedupError instanceof Prisma.PrismaClientKnownRequestError &&
+        dedupError.code === 'P2002'
+      ) {
+        logger.info('Webhook event already processed', { eventId: event.id });
+        return;
+      }
+      throw dedupError;
     }
-
-    await prisma.processedWebhookEvent.create({
-      data: {
-        provider: 'stripe',
-        externalEventId: event.id,
-      },
-    });
 
     const data = event.data as Record<string, unknown>;
 

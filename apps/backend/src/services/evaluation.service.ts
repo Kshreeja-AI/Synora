@@ -3,6 +3,7 @@ import { NotFoundException, ValidationException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requireMembership } from './checks'
 import { EvaluationStatus, BenchmarkStatus } from '@prisma/client'
+import { enqueueRunEvaluation } from '../workers/queue'
 
 export interface CreateEvaluationRunInput {
   datasetId: string
@@ -176,6 +177,29 @@ export class EvaluationService {
     }
 
     return correctCount / samples.length
+  }
+
+  async enqueueRun(userId: string, workspaceId: string, runId: string): Promise<{ success: true }> {
+    await requireMembership(userId, workspaceId)
+
+    const run = await prisma.evaluationRun.findUnique({
+      where: { id: runId },
+    })
+
+    if (!run || run.workspaceId !== workspaceId) {
+      throw new NotFoundException('Evaluation run not found')
+    }
+
+    await enqueueRunEvaluation({
+      evaluationRunId: run.id,
+      datasetId: run.datasetId,
+      modelId: run.modelId,
+      workspaceId,
+      userId,
+      metrics: run.metrics,
+    })
+
+    return { success: true }
   }
 
   async getEvaluationResults(

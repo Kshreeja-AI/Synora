@@ -176,10 +176,9 @@ export async function exportUsageCSV(
     ? `/api/workspaces/${workspaceId}/usage/export/csv?${queryString}`
     : `/api/workspaces/${workspaceId}/usage/export/csv`;
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${typeof window !== 'undefined' ? localStorage.getItem('token') || '' : ''}`,
-    },
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const response = await fetch(`${baseUrl}${url}`, {
+    credentials: 'include',
   });
 
   if (!response.ok) {

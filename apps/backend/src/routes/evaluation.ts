@@ -3,12 +3,16 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth'
 import { evaluationService } from '../services/evaluation.service'
 import { createApiResponse } from '@synora/shared'
 import { z } from 'zod'
-import { enqueueRunEvaluation } from '../workers/queue'
 
 const CreateEvaluationRunSchema = z.object({
   datasetId: z.string().min(1),
   modelId: z.string().min(1),
   metrics: z.array(z.string()).min(1),
+})
+
+const CompareModelsSchema = z.object({
+  datasetId: z.string().min(1),
+  modelIds: z.array(z.string().min(1)).min(2).max(10),
 })
 
 const router: Router = Router({ mergeParams: true })
@@ -63,18 +67,9 @@ router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req: 
   try {
     const { workspaceId, runId } = req.params
 
-    // Enqueue background job for evaluation processing
-    // The worker will fetch the evaluation run details itself
-    await enqueueRunEvaluation({
-      evaluationRunId: runId,
-      datasetId: '', // Will be fetched by worker
-      modelId: '', // Will be fetched by worker
-      workspaceId,
-      userId: req.userId!,
-      metrics: [],
-    })
+    const result = await evaluationService.enqueueRun(req.userId!, workspaceId, runId)
 
-    res.json(createApiResponse({ success: true }))
+    res.json(createApiResponse(result))
   } catch (error) {
     next(error)
   }
@@ -84,7 +79,7 @@ router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req: 
 router.post('/:workspaceId/evaluations/compare', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params
-    const { datasetId, modelIds } = req.body
+    const { datasetId, modelIds } = CompareModelsSchema.parse(req.body)
 
     const result = await evaluationService.compareModels(req.userId!, workspaceId, datasetId, modelIds)
 

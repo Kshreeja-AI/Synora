@@ -21,6 +21,10 @@ const PromoteVersionSchema = z.object({
   newStatus: z.nativeEnum(ModelVersionStatus),
 })
 
+const CompareVersionsSchema = z.object({
+  versionIds: z.array(z.string().min(1)).min(1).max(10),
+})
+
 const router: Router = Router({ mergeParams: true })
 
 // Create model
@@ -110,11 +114,11 @@ router.get('/:workspaceId/models/:modelId/versions', authMiddleware, async (req:
 })
 
 // Get production version
-router.get('/:workspaceId/models/:modelId/production', authMiddleware, async (req, res, next) => {
+router.get('/:workspaceId/models/:modelId/production', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, modelId } = req.params
 
-    const result = await modelRegistryService.getProductionVersion(workspaceId, modelId)
+    const result = await modelRegistryService.getProductionVersion(req.userId!, workspaceId, modelId)
 
     res.json(createApiResponse(result))
   } catch (error) {
@@ -126,7 +130,7 @@ router.get('/:workspaceId/models/:modelId/production', authMiddleware, async (re
 router.post('/:workspaceId/models/compare', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params
-    const { versionIds } = req.body
+    const { versionIds } = CompareVersionsSchema.parse(req.body)
 
     const result = await modelRegistryService.compareVersions(req.userId!, workspaceId, versionIds)
 

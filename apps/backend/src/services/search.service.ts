@@ -615,8 +615,14 @@ export class SearchService {
     }
   }
 
-  async pinSearch(_workspaceId: string, _userId: string, searchId: string): Promise<void> {
+  async pinSearch(workspaceId: string, userId: string, searchId: string): Promise<void> {
     try {
+      const saved = await prisma.savedSearch.findFirst({
+        where: { id: searchId, workspaceId, userId },
+      })
+      if (!saved) {
+        throw new NotFoundException('Saved search not found')
+      }
       await prisma.savedSearch.update({
         where: { id: searchId },
         data: {

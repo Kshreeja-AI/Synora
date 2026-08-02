@@ -1743,8 +1743,8 @@ model ToolDefinition {
   toolSecrets       ToolSecret[]
   toolFeedback      ToolFeedback[]
 
-  createdBy         String
-  createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy         String?
+  createdByUser     User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull)
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt

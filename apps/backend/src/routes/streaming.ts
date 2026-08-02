@@ -80,7 +80,7 @@ router.get(
 
       subscriber.subscribe(streamChannel).catch((err: Error) => {
         logger.error('[Streaming] Subscribe error', { error: err.message });
-        res.write(`event: error\ndata: ${JSON.stringify({ code: 'SUBSCRIBE_ERROR', message: err.message })}\n\n`);
+        res.write(`event: error\ndata: ${JSON.stringify({ code: 'SUBSCRIBE_ERROR', message: 'Stream subscription failed' })}\n\n`);
         res.end();
       });
 
@@ -113,7 +113,7 @@ router.get(
     } catch (err: any) {
       logger.error('[Streaming] Error', { error: err.message });
       if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error' });
       }
     }
   }
@@ -174,7 +174,7 @@ router.post(
       res.json({ success: true, jobId });
     } catch (err: any) {
       logger.error('[Cancel] Error', { error: err.message });
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
