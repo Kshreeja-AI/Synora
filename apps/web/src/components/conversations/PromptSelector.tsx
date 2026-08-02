@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { ChevronDown, Search, BookOpen, Sparkles } from 'lucide-react';
-import { usePrompts, useWorkspaceTemplates } from '@/lib/api/prompts';
+import { usePrompts } from '@/lib/api/prompts';
+import { useWorkspaceTemplates, type Template } from '@/lib/api/templates';
 
 interface PromptSelectorProps {
   workspaceId: string;
@@ -25,7 +26,7 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
   );
 
   const filteredTemplates = templates.filter(
-    (t) =>
+    (t: Template) =>
       t.title.toLowerCase().includes(search.toLowerCase()) ||
       t.description?.toLowerCase().includes(search.toLowerCase())
   );
@@ -141,7 +142,7 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
                 {filteredTemplates.map((template) => (
                   <button
                     key={template.id}
-                    onClick={() => handleSelectTemplate(template)}
+                    onClick={() => handleSelectTemplate(template as Template)}
                     className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
                     <div className="font-medium text-sm text-gray-900 dark:text-white">
