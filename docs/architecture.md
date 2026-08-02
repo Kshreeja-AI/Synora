@@ -235,16 +235,39 @@ pluggable source chain with audit-logged reads. Full detail:
   keyboard-shortcuts trigger, logout), `Breadcrumbs` (derived from
   `usePathname()`), `CommandPalette` (global ⌘K/Ctrl+K via a
   `window` keydown listener; also binds ⌘/ to the shortcuts dialog),
-  `KeyboardShortcutsDialog`. `dashboard/layout.tsx` composes these and
-  renders the three dialog-based components (`CommandPalette`,
+  `KeyboardShortcutsDialog`. `components/shell/AppShell.tsx` composes
+  these and renders the three dialog-based components (`CommandPalette`,
   `KeyboardShortcutsDialog`, `CreateWorkspaceDialog`) once, outside the
   scrollable content area, so they're available from anywhere in the
   shell.
+- **Two authenticated route trees, one shell**: signed-in surfaces live
+  under either `/dashboard/*` (`app/dashboard/layout.tsx`) or the
+  `(dashboard)` route group, which holds the full-bleed surfaces that
+  sit at the URL root — `/conversations/*` and `/knowledge/*`
+  (`app/(dashboard)/layout.tsx`). Both layouts are thin wrappers around
+  the same `AppShell`, so the auth guard (`useRequireAuth`) and the
+  application frame are defined in exactly one place. The group layout
+  passes empty content padding because every page in it brings its own
+  chrome (the conversation rail, the knowledge tab bar). Adding a new
+  authenticated tree means wrapping `AppShell`, never re-implementing
+  the guard.
+- **Workspace scoping in the UI**: no authenticated page is
+  workspace-*routed*; there is no `/workspaces/:id/...` route. The
+  active workspace comes from `useCurrentWorkspace()`. Reading
+  `useParams().workspaceId` (or `.id`) on a route that has no such
+  segment silently yields `undefined`, which disables every query on
+  the page and leaves it stuck on an empty state — this was a real bug
+  on the usage and knowledge pages.
 - **Pages today**: landing/pricing/features/changelog (`(marketing)`
   route group, M2), `/auth/{login,register,forgot-password,
   reset-password,verify-email}`, `/dashboard` (real empty-state/
   workspace-overview, M4), `/dashboard/settings/{profile,account,
-  sessions,workspace}` — all composed from design-system components on
+  sessions,workspace}`, `/dashboard/{projects,tools,usage,billing}`,
+  and in the `(dashboard)` group `/conversations`,
+  `/conversations/[id]`, `/knowledge/{prompts,templates}`; plus the
+  unauthenticated `/share/[token]` and `/invite/[token]`. The sidebar
+  links every one of these primary surfaces — composed from
+  design-system components on
   the typed API client; no page reads `localStorage` directly or wires
   its own token logic. Pages that read a URL query param (`login`,
   `reset-password`, `verify-email`) split into a server `page.tsx`

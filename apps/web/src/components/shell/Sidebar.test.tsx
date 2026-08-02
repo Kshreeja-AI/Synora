@@ -44,4 +44,48 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: /^projects$/i })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: /^dashboard$/i })).not.toHaveAttribute('aria-current');
   });
+
+  // The chat and knowledge surfaces live at the URL root (the
+  // `(dashboard)` route group), not under /dashboard — they were absent
+  // from this nav entirely, making them unreachable by navigation.
+  it('links to every primary surface, including the root-level ones', () => {
+    pathname = '/dashboard';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+
+    expect(screen.getByRole('link', { name: /^conversations$/i })).toHaveAttribute(
+      'href',
+      '/conversations'
+    );
+    expect(screen.getByRole('link', { name: /^knowledge$/i })).toHaveAttribute(
+      'href',
+      '/knowledge/prompts'
+    );
+    expect(screen.getByRole('link', { name: /^tools$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tools'
+    );
+    expect(screen.getByRole('link', { name: /^usage$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/usage'
+    );
+  });
+
+  it('keeps Knowledge active on the templates tab, whose path is not its href', () => {
+    pathname = '/knowledge/templates';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^knowledge$/i })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
+
+  it('marks Conversations active inside an individual chat', () => {
+    pathname = '/conversations/abc123';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^conversations$/i })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(screen.getByRole('link', { name: /^dashboard$/i })).not.toHaveAttribute('aria-current');
+  });
 });

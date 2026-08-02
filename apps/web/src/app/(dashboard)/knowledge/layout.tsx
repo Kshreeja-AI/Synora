@@ -1,50 +1,48 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { Sparkles, BookOpen } from 'lucide-react';
 
+const TABS = [
+  { label: 'Prompts', href: '/knowledge/prompts', icon: Sparkles },
+  { label: 'Templates', href: '/knowledge/templates', icon: BookOpen },
+];
+
+/**
+ * Knowledge library tab bar. These are workspace-scoped surfaces but
+ * not workspace-*routed* ones — the active workspace comes from
+ * `useCurrentWorkspace`, so the hrefs are plain paths. (They previously
+ * pointed at `/workspaces/${workspaceId}/knowledge/...`, a route that
+ * has never existed, with a workspaceId that was always undefined.)
+ */
 export default function KnowledgeLayout({
   children,
 }: {
   children: React.ReactNode;
-}) {
+}): React.JSX.Element {
   const pathname = usePathname();
-  const params = useParams();
-  const workspaceId = params.workspaceId as string;
-
-  const tabs = [
-    {
-      label: 'Prompts',
-      href: `/workspaces/${workspaceId}/knowledge/prompts`,
-      icon: Sparkles,
-    },
-    {
-      label: 'Templates',
-      href: `/workspaces/${workspaceId}/knowledge/templates`,
-      icon: BookOpen,
-    },
-  ];
 
   return (
-    <>
-      <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-        <div className="max-w-7xl mx-auto px-6">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border bg-card">
+        <div className="mx-auto max-w-7xl px-6">
           <nav className="flex gap-8" aria-label="Knowledge tabs">
-            {tabs.map((tab) => {
+            {TABS.map((tab) => {
               const Icon = tab.icon;
-              const isActive = pathname.includes(tab.label.toLowerCase());
+              const isActive = pathname === tab.href;
               return (
                 <Link
                   key={tab.href}
                   href={tab.href}
-                  className={`flex items-center gap-2 px-1 py-4 border-b-2 transition-colors ${
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`flex items-center gap-2 border-b-2 px-1 py-4 transition-colors ${
                     isActive
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      ? 'border-primary text-primary'
+                      : 'border-transparent text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="h-4 w-4" aria-hidden />
                   {tab.label}
                 </Link>
               );
@@ -52,7 +50,7 @@ export default function KnowledgeLayout({
           </nav>
         </div>
       </div>
-      {children}
-    </>
+      <div className="min-h-0 flex-1">{children}</div>
+    </div>
   );
 }

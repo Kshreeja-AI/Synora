@@ -2,7 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban, Wrench } from 'lucide-react';
+import {
+  LayoutDashboard,
+  MessageSquare,
+  BookOpen,
+  FolderKanban,
+  Wrench,
+  BarChart3,
+} from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
@@ -12,11 +19,22 @@ export interface SidebarProps {
   onNavigate: () => void;
 }
 
+// Chat and the knowledge library live at the URL root (the `(dashboard)`
+// route group) rather than under /dashboard; everything else is a
+// /dashboard child. Both trees render inside the same AppShell.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/conversations', label: 'Conversations', icon: MessageSquare },
+  { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/tools', label: 'Tools', icon: Wrench },
+  { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
 ];
+
+/** Prefix used for the active-state check, where it differs from href. */
+const ACTIVE_PREFIX: Record<string, string> = {
+  '/knowledge/prompts': '/knowledge',
+};
 
 export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
@@ -44,7 +62,10 @@ export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-          const active = item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href);
+          const active =
+            item.href === '/dashboard'
+              ? pathname === item.href
+              : pathname.startsWith(ACTIVE_PREFIX[item.href] ?? item.href);
           return (
             <Link
               key={item.href}
