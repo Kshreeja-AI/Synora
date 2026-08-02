@@ -250,10 +250,13 @@ async function writeExportFile(filePath: string, samples: any[], format: ExportF
     )
     const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
     await fs.writeFile(filePath, csv, 'utf-8')
-  } else if (format === ExportFormat.PARQUET) {
-    // PARQUET requires parquetjs library, store as JSON for now with warning
-    logger.warn(`[worker] PARQUET format not yet implemented, using JSON instead`)
-    await fs.writeFile(filePath, JSON.stringify(samples, null, 2), 'utf-8')
+  } else {
+    // PARQUET and HUGGINGFACE are declared in the ExportFormat enum but have
+    // no writer implemented yet. Failing here (rather than silently writing
+    // JSON under the requested extension) means callers never receive a file
+    // that lies about its own format — see datasetExport.service.ts, which
+    // also rejects these formats before an export is ever created.
+    throw new Error(`Export format ${format} is not yet supported`)
   }
 }
 

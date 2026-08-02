@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { EvaluationStatus } from '@prisma/client'
 import { logger } from '../utils/logger'
+import { resolveProvider } from '../ai/resolver'
 
 export interface RunEvaluationJobData {
   evaluationRunId: string
@@ -13,7 +14,6 @@ export interface RunEvaluationJobData {
 
 interface MetricScores {
   accuracy?: number
-  perplexity?: number
   bleu?: number
   rouge?: number
   f1?: number
@@ -21,16 +21,12 @@ interface MetricScores {
 }
 
 export async function processRunEvaluation(data: RunEvaluationJobData): Promise<void> {
-  const { evaluationRunId, datasetId, modelId, metrics } = data
+  const { evaluationRunId } = data
 
   try {
-    logger.info(`[worker] Starting evaluation run ${evaluationRunId}`, {
-      datasetId,
-      modelId,
-      metrics,
-    })
-
-    // Fetch evaluation run
+    // Fetch evaluation run — the source of truth for which dataset/model/metrics
+    // to evaluate. The job payload's copies of these fields may be stale or
+    // absent (the "/run" route enqueues with placeholders), so it is never used.
     const evaluationRun = await prisma.evaluationRun.findUnique({
       where: { id: evaluationRunId },
     })
@@ -38,6 +34,29 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
     if (!evaluationRun) {
       throw new Error(`Evaluation run not found: ${evaluationRunId}`)
     }
+
+    const { datasetId, modelId, metrics } = evaluationRun
+
+    logger.info(`[worker] Starting evaluation run ${evaluationRunId}`, {
+      datasetId,
+      modelId,
+      metrics,
+    })
+
+    // Fetch the model being evaluated to know which provider/model to call
+    const model = await prisma.modelRegistry.findUnique({
+      where: { id: modelId },
+    })
+
+    if (!model) {
+      throw new Error(`Model not found: ${modelId}`)
+    }
+
+    // Resolve the provider once, up front — if it isn't configured, fail the
+    // whole run honestly now rather than fail every sample individually.
+    const provider = await resolveProvider('text-generation', {
+      explicitProviderId: model.providerId,
+    })
 
     // Fetch dataset with samples
     const dataset = await prisma.dataset.findUnique({
@@ -83,8 +102,11 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
       const progress = 5 + (i / samples.length) * 90
 
       try {
-        // Generate prediction (mock LLM call - in production, call actual model)
-        const prediction = await generatePrediction(sample.input, modelId)
+        const generation = await provider.generateText({
+          prompt: sample.input,
+          model: model.modelName,
+        })
+        const prediction = generation.text
 
         // Calculate metrics
         const metricScores = await calculateMetrics(
@@ -200,21 +222,6 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
   }
 }
 
-// Mock LLM prediction (in production, call actual model via AI provider)
-async function generatePrediction(input: string, _modelId: string): Promise<string> {
-  // Simulate LLM latency
-  await new Promise((resolve) => setTimeout(resolve, 100))
-
-  // Simple echo + variation for testing
-  const predictions = [
-    `Response to: "${input.substring(0, 50)}..."`,
-    `Based on input: "${input.substring(0, 30)}...": This is a generated response.`,
-    `The answer to "${input.substring(0, 40)}..." is that this requires further analysis.`,
-  ]
-
-  return predictions[Math.floor(Math.random() * predictions.length)]
-}
-
 async function calculateMetrics(
   prediction: string,
   groundTruth: string,
@@ -235,9 +242,6 @@ async function calculateMetrics(
         break
       case 'F1':
         scores.f1 = calculateF1(prediction, groundTruth)
-        break
-      case 'PERPLEXITY':
-        scores.perplexity = calculatePerplexity(prediction)
         break
       default:
         // Custom metric: string similarity
@@ -284,11 +288,6 @@ function calculateF1(prediction: string, groundTruth: string): number {
   const recall = truthTokens.size > 0 ? intersection.size / truthTokens.size : 0
 
   return precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0
-}
-
-function calculatePerplexity(_prediction: string): number {
-  // Simplified: random perplexity (real calculation requires language model probabilities)
-  return Math.random() * 100
 }
 
 function calculateStringSimilarity(a: string, b: string): number {

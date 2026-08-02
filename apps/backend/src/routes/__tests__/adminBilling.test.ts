@@ -311,6 +311,85 @@ describe('admin billing routes', () => {
     });
   });
 
+  describe('GET /api/admin/workspaces/:workspaceId/billing', () => {
+    it('returns composed subscription, credit balance, invoices, and ledger', async () => {
+      const plan = await prisma.plan.create({
+        data: {
+          key: `billing-view-plan-${Date.now()}`,
+          name: 'Billing View Plan',
+          interval: 'MONTH',
+          priceCents: 2999,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(plan.id);
+
+      const subscription = await prisma.subscription.create({
+        data: { workspaceId, planId: plan.id, status: 'ACTIVE' },
+      });
+
+      await prisma.invoice.create({
+        data: {
+          subscriptionId: subscription.id,
+          workspaceId,
+          provider: 'stripe',
+          externalInvoiceId: `inv_${Date.now()}`,
+          status: 'PAID',
+          amountDueCents: 2999,
+          amountPaidCents: 2999,
+        },
+      });
+
+      const res = await request(app)
+        .get(`/api/admin/workspaces/${workspaceId}/billing`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.workspaceId).toBe(workspaceId);
+      expect(res.body.subscription).toHaveProperty('planId', plan.id);
+      expect(res.body.subscription.plan).toHaveProperty('id', plan.id);
+      expect(res.body.creditBalance).toBe(10000);
+      expect(res.body.recentInvoices).toHaveLength(1);
+      expect(res.body.recentInvoices[0]).toHaveProperty('status', 'PAID');
+      expect(Array.isArray(res.body.recentLedgerEntries)).toBe(true);
+
+      await prisma.invoice.deleteMany({ where: { workspaceId } });
+      await prisma.subscription.deleteMany({ where: { workspaceId } });
+    });
+
+    it('returns null subscription/credits for a workspace with no billing data yet', async () => {
+      const bareWorkspace = await prisma.workspace.create({
+        data: { name: 'Bare Workspace', slug: `bare-${Date.now()}` },
+      });
+      testWorkspaceIds.push(bareWorkspace.id);
+
+      const res = await request(app)
+        .get(`/api/admin/workspaces/${bareWorkspace.id}/billing`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.subscription).toBeNull();
+      expect(res.body.creditBalance).toBeNull();
+      expect(res.body.recentInvoices).toHaveLength(0);
+    });
+
+    it('returns 404 for a non-existent workspace', async () => {
+      const res = await request(app)
+        .get('/api/admin/workspaces/nonexistent/billing')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+    });
+
+    it('requires admin role', async () => {
+      const res = await request(app)
+        .get(`/api/admin/workspaces/${workspaceId}/billing`)
+        .set('Authorization', `Bearer ${regularToken}`);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
   describe('POST /api/admin/workspaces/:workspaceId/credits/grant', () => {
     it('grants credits to workspace', async () => {
       const creditsBefore = await prisma.workspaceCredits.findUnique({

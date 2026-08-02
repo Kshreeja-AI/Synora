@@ -4,6 +4,24 @@ import jwt from 'jsonwebtoken'
 import { prisma } from '@synora/database'
 import { initializeApp } from '../../src/index'
 
+// initializeApp() starts the real BullMQ file-processing worker against the
+// test Redis instance, so an uploaded file is genuinely scanned/processed in
+// the background — poll for that to finish before asserting on fields it
+// writes, rather than racing it.
+const TERMINAL_PROCESSING_STATUSES = ['COMPLETED', 'FAILED', 'SKIPPED']
+
+async function waitForFileProcessingStatus(fileId: string, timeoutMs = 10000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const file = await prisma.conversationFile.findUnique({ where: { id: fileId } })
+    if (file && TERMINAL_PROCESSING_STATUSES.includes(file.processingStatus)) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`File ${fileId} did not finish processing within ${timeoutMs}ms`)
+}
+
 /**
  * Conversation file routes: the full user loop — upload, list,
  * download, delete — plus the two security gates that must never
@@ -158,6 +176,11 @@ describe('Conversation Files Routes', () => {
     it('refuses to serve a file flagged by the virus scan', async () => {
       const uploaded = await uploadFile('malicious payload')
       const fileId = uploaded.body.data.id
+
+      // Let the real background file-processing job run to completion first —
+      // otherwise it can race the manual override below and clobber it back
+      // to whatever an unconfigured scanner reports (FAILED, in this env).
+      await waitForFileProcessingStatus(fileId)
 
       await prisma.conversationFile.update({
         where: { id: fileId },

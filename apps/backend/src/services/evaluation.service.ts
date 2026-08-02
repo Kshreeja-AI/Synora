@@ -53,6 +53,13 @@ export class EvaluationService {
       throw new NotFoundException('Model not found')
     }
 
+    if (input.metrics.some((m) => m.toUpperCase() === 'PERPLEXITY')) {
+      throw new ValidationException(
+        'PERPLEXITY is not supported: it requires token log-probabilities that no configured ' +
+        'provider currently exposes. Choose ACCURACY, BLEU, ROUGE, F1, or a custom metric instead.'
+      )
+    }
+
     const evaluationRun = await prisma.evaluationRun.create({
       data: {
         datasetId: input.datasetId,

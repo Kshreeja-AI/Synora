@@ -178,7 +178,7 @@ export async function enqueueGenerateResponse(data: GenerateResponseJob): Promis
 }
 
 // Worker setup
-export function setupWorkers(): void {
+export function setupWorkers(): Worker[] {
   logger.info('[queue] Setting up workers...')
 
   // Export dataset worker
@@ -264,6 +264,8 @@ export function setupWorkers(): void {
   setupWorkerEventHandlers(fileWorker, 'file-processing')
 
   logger.info('[queue] Workers setup complete')
+
+  return [exportWorker, evaluationWorker, feedbackWorker, videoWorker, fileWorker]
 }
 
 function setupWorkerEventHandlers(worker: Worker, workerName: string): void {

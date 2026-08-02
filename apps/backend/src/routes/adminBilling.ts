@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
+import { NotFoundException } from '@synora/shared';
 import * as planService from '../services/plan.service.js';
 import * as creditService from '../services/credit.service.js';
 
@@ -95,8 +97,36 @@ router.get('/workspaces/:workspaceId/billing', async (req: AuthRequest, res, nex
   try {
     const workspaceId = req.params.workspaceId;
 
-    // Placeholder: in production, compose subscription + credits + recent invoices
-    res.json({ workspaceId, message: 'Support view not yet implemented' });
+    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+    if (!workspace) {
+      throw new NotFoundException('Workspace');
+    }
+
+    const [subscription, credits, recentInvoices, recentLedgerEntries] = await Promise.all([
+      prisma.subscription.findUnique({
+        where: { workspaceId },
+        include: { plan: true },
+      }),
+      prisma.workspaceCredits.findUnique({ where: { workspaceId } }),
+      prisma.invoice.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.creditLedgerEntry.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    res.json({
+      workspaceId,
+      subscription,
+      creditBalance: credits?.balance ?? null,
+      recentInvoices,
+      recentLedgerEntries,
+    });
   } catch (error) {
     next(error);
   }

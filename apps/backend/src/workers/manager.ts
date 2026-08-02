@@ -8,17 +8,38 @@
 import { Worker } from 'bullmq';
 import { logger } from '../utils/logger';
 import { createGenerateResponseWorker } from './generateResponse.worker';
+import { setupWorkers as setupQueueWorkers } from './queue';
 
 let workers: Worker[] = [];
+let initialized = false;
 
+/**
+ * Idempotent: `initializeApp()` (and therefore this) can legitimately be
+ * called more than once per process — every test file that calls
+ * `initializeApp()` would otherwise create a fresh, never-closed set of
+ * BullMQ Worker/Redis connections on top of the last set, leaking
+ * connections across the whole suite. Only the first call actually starts
+ * workers; later calls are a no-op until `shutdownWorkers()` runs.
+ */
 export async function initializeWorkers(): Promise<void> {
+  if (initialized) {
+    logger.debug('[WorkerManager] Workers already initialized, skipping');
+    return;
+  }
+
   try {
     logger.info('[WorkerManager] Initializing workers...');
 
-    // Create and start generate response worker
+    // Chat generation (streaming) worker
     const { worker: generateResponseWorker } = createGenerateResponseWorker();
     workers.push(generateResponseWorker);
 
+    // Dataset export, evaluation, message feedback, video generation, and
+    // file processing workers — previously defined in queue.ts but never
+    // started anywhere, so their queues were never consumed.
+    workers.push(...setupQueueWorkers());
+
+    initialized = true;
     logger.info('[WorkerManager] Workers initialized successfully');
     logger.info(`[WorkerManager] Active workers: ${workers.length}`);
   } catch (error) {
@@ -43,6 +64,7 @@ export async function shutdownWorkers(): Promise<void> {
   }
 
   workers = [];
+  initialized = false;
   logger.info('[WorkerManager] All workers shut down');
 }
 

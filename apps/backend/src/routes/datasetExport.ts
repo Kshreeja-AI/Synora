@@ -25,7 +25,8 @@ router.post('/:workspaceId/datasets/:datasetId/exports', authMiddleware, async (
       ...input,
     })
 
-    // Enqueue background job for actual export processing
+    // Enqueue the background job that actually writes the export file —
+    // exportDataset() above only validates the request and records it.
     await enqueueExportDataset({
       exportId: result.exportId,
       datasetId,
@@ -36,7 +37,7 @@ router.post('/:workspaceId/datasets/:datasetId/exports', authMiddleware, async (
       maxSamples: input.maxSamples,
     })
 
-    res.status(201).json(createApiResponse(result))
+    res.status(202).json(createApiResponse(result))
   } catch (error) {
     next(error)
   }

@@ -3,7 +3,28 @@ import request from 'supertest'
 import jwt from 'jsonwebtoken'
 import { prisma } from '@synora/database'
 import { initializeApp } from '../../src/index'
-import { ExportFormat } from '@prisma/client'
+import { ExportFormat, ExportStatus } from '@prisma/client'
+
+// initializeApp() starts the real BullMQ workers against the test Redis
+// instance, so an enqueued export is genuinely processed in the background —
+// poll for the terminal status rather than invoking the worker function
+// directly (which would race the real worker over the same DB row).
+const TERMINAL_EXPORT_STATUSES: ExportStatus[] = [ExportStatus.COMPLETED, ExportStatus.FAILED]
+
+async function waitForExportStatus(
+  exportId: string,
+  timeoutMs = 10000
+): Promise<{ status: ExportStatus; fileUrl: string | null }> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const record = await prisma.trainingExport.findUnique({ where: { id: exportId } })
+    if (record && TERMINAL_EXPORT_STATUSES.includes(record.status)) {
+      return { status: record.status, fileUrl: record.fileUrl }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error(`Export ${exportId} did not reach a terminal status within ${timeoutMs}ms`)
+}
 
 describe('Dataset Export Routes', () => {
   let app: any
@@ -46,12 +67,24 @@ describe('Dataset Export Routes', () => {
     })
     datasetId = dataset.id
 
+    await prisma.datasetSample.create({
+      data: {
+        datasetId,
+        sourceType: 'SYNTHETIC',
+        input: 'What is 2+2?',
+        output: '4',
+        inputTokens: 5,
+        outputTokens: 1,
+      },
+    })
+
     token = jwt.sign({ userId, workspaceId }, process.env.JWT_SECRET || 'test-secret', {
       expiresIn: '24h',
     })
   })
 
   afterEach(async () => {
+    await prisma.datasetSample.deleteMany({ where: { datasetId } })
     await prisma.trainingExport.deleteMany({ where: { workspaceId } })
     await prisma.dataset.deleteMany({ where: { workspaceId } })
     await prisma.workspaceMember.deleteMany({ where: { workspaceId } })
@@ -68,27 +101,32 @@ describe('Dataset Export Routes', () => {
   }
 
   describe('POST /api/workspaces/:workspaceId/datasets/:datasetId/exports', () => {
-    it('should create a dataset export', async () => {
+    it('should queue a dataset export', async () => {
       const response = await createExport(ExportFormat.JSONL)
 
-      expect(response.status).toBe(201)
+      expect(response.status).toBe(202)
       expect(response.body.success).toBe(true)
       expect(response.body.data.exportId).toBeDefined()
-      expect(response.body.data.stats.format).toBe(ExportFormat.JSONL)
+      expect(response.body.data.status).toBe('PENDING')
     })
 
     it('should support CSV format', async () => {
       const response = await createExport(ExportFormat.CSV, { includePII: true })
 
-      expect(response.status).toBe(201)
-      expect(response.body.data.stats.format).toBe(ExportFormat.CSV)
+      expect(response.status).toBe(202)
+      expect(response.body.data.status).toBe('PENDING')
     })
 
     it('should support JSON format', async () => {
       const response = await createExport(ExportFormat.JSON)
 
-      expect(response.status).toBe(201)
-      expect(response.body.data.stats.format).toBe(ExportFormat.JSON)
+      expect(response.status).toBe(202)
+    })
+
+    it('should reject PARQUET as an unsupported format rather than silently substituting JSON', async () => {
+      const response = await createExport(ExportFormat.PARQUET)
+
+      expect(response.status).toBeGreaterThanOrEqual(400)
     })
 
     it('should validate export format', async () => {
@@ -100,13 +138,6 @@ describe('Dataset Export Routes', () => {
       expect(response.status).toBeGreaterThanOrEqual(400)
     })
 
-    it('should handle sample limit parameter', async () => {
-      const response = await createExport(ExportFormat.JSONL, { maxSamples: 500 })
-
-      expect(response.status).toBe(201)
-      expect(response.body.data.stats.samplesExported).toBeLessThanOrEqual(500)
-    })
-
     it('should validate maxSamples is positive', async () => {
       const response = await request(app)
         .post(`/api/workspaces/${workspaceId}/datasets/${datasetId}/exports`)
@@ -114,6 +145,23 @@ describe('Dataset Export Routes', () => {
         .send({ format: ExportFormat.JSONL, maxSamples: -100 })
 
       expect(response.status).toBeGreaterThanOrEqual(400)
+    })
+  })
+
+  describe('export completion (background worker)', () => {
+    it('writes a real file and marks the export COMPLETED', async () => {
+      const createRes = await createExport(ExportFormat.JSONL, { maxSamples: 500 })
+      const exportId = createRes.body.data.exportId
+
+      await waitForExportStatus(exportId)
+
+      const response = await request(app)
+        .get(`/api/workspaces/${workspaceId}/datasets/${datasetId}/exports/${exportId}`)
+        .set('Authorization', `Bearer ${token}`)
+
+      expect(response.status).toBe(200)
+      expect(response.body.data.status).toBe('COMPLETED')
+      expect(response.body.data.export.fileUrl).toMatch(/\.jsonl$/)
     })
   })
 
@@ -129,7 +177,7 @@ describe('Dataset Export Routes', () => {
       expect(response.status).toBe(200)
       expect(response.body.success).toBe(true)
       expect(response.body.data.export.id).toBe(exportId)
-      expect(response.body.data.status).toBeDefined()
+      expect(response.body.data.status).toBe('PENDING')
     })
 
     it('should return 404 for non-existent export', async () => {
@@ -142,18 +190,20 @@ describe('Dataset Export Routes', () => {
   })
 
   describe('GET /api/workspaces/:workspaceId/datasets/:datasetId/exports/:exportId/download', () => {
-    it('should redirect to download URL when export is ready', async () => {
+    it('should redirect to the file once the export has completed', async () => {
       const createRes = await createExport(ExportFormat.JSONL)
       const exportId = createRes.body.data.exportId
+
+      await waitForExportStatus(exportId)
 
       const response = await request(app)
         .get(`/api/workspaces/${workspaceId}/datasets/${datasetId}/exports/${exportId}/download`)
         .set('Authorization', `Bearer ${token}`)
 
-      expect([200, 302, 404]).toContain(response.status)
+      expect(response.status).toBe(302)
     })
 
-    it('should return 404 if export not ready', async () => {
+    it('should return 404 if export not found', async () => {
       const response = await request(app)
         .get(`/api/workspaces/${workspaceId}/datasets/${datasetId}/exports/non-existent/download`)
         .set('Authorization', `Bearer ${token}`)
@@ -186,6 +236,8 @@ describe('Dataset Export Routes', () => {
     it('should clean up exported files on deletion', async () => {
       const createRes = await createExport(ExportFormat.CSV)
       const exportId = createRes.body.data.exportId
+
+      await waitForExportStatus(exportId)
 
       const deleteRes = await request(app)
         .delete(`/api/workspaces/${workspaceId}/datasets/${datasetId}/exports/${exportId}`)
@@ -224,11 +276,11 @@ describe('Dataset Export Routes', () => {
     const formats = [ExportFormat.JSONL, ExportFormat.CSV, ExportFormat.JSON]
 
     formats.forEach((format) => {
-      it(`should handle ${format} format export`, async () => {
+      it(`should queue a ${format} format export`, async () => {
         const response = await createExport(format)
 
-        expect(response.status).toBe(201)
-        expect(response.body.data.stats.format).toBe(format)
+        expect(response.status).toBe(202)
+        expect(response.body.data.status).toBe('PENDING')
       })
     })
   })
