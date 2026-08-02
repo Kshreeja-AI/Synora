@@ -1,12 +1,30 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { Check, Copy, RefreshCw, Trash2, User, Sparkles, Info } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  Pencil,
+  Pin,
+  PinOff,
+  RefreshCw,
+  Trash2,
+  User,
+  Sparkles,
+  Info,
+} from 'lucide-react';
 import { Markdown } from './Markdown';
 import { FeedbackControls } from './FeedbackControls';
+import { MessageAttachments } from './MessageAttachments';
+import { MessageEditor } from './MessageEditor';
 import { ForkNavigator } from '@/components/branching/ForkNavigator';
 import { CreateBranchButton } from '@/components/branching/CreateBranchButton';
-import type { ConversationMessage } from '@/lib/api/messages';
+import {
+  useUpdateMessage,
+  usePinMessage,
+  useUnpinMessage,
+  type ConversationMessage,
+} from '@/lib/api/messages';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -26,6 +44,12 @@ interface MessageBubbleProps {
    * regenerate) so the fork isn't left as an empty message.
    */
   onBranchCreated?: (newMessageId: string) => void;
+  /**
+   * Called after this message's content has been successfully edited.
+   * The container decides what follows — normally regenerating the
+   * assistant reply underneath, since the turn it answered has changed.
+   */
+  onEdited?: (messageId: string, content: string) => void;
 }
 
 const ROLE_ICON = {
@@ -42,6 +66,7 @@ export function MessageBubble({
   workspaceId,
   conversationId,
   onBranchCreated,
+  onEdited,
 }: MessageBubbleProps) {
   const branchingEnabled = Boolean(workspaceId && conversationId);
   const showFork = branchingEnabled && (message.siblingCount ?? 1) > 1;
@@ -66,9 +91,50 @@ export function MessageBubble({
     !!message.content;
 
   const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const isUser = message.role === 'USER';
   const isAssistant = message.role === 'ASSISTANT';
   const Icon = ROLE_ICON[message.role] ?? Info;
+
+  const updateMessage = useUpdateMessage(workspaceId ?? '', conversationId ?? '', message.id);
+  const pinMessage = usePinMessage(workspaceId ?? '', conversationId ?? '');
+  const unpinMessage = useUnpinMessage(workspaceId ?? '', conversationId ?? '');
+
+  // Editing is offered on user turns only. An assistant bubble holds
+  // model output; letting a human rewrite it in place would leave the
+  // transcript claiming the model said something it never said. To
+  // change an assistant response you regenerate or branch it.
+  const showEdit = branchingEnabled && isUser && !isStreaming && !!onEdited;
+  const showPin = branchingEnabled && !isStreaming;
+  const isPinBusy = pinMessage.isPending || unpinMessage.isPending;
+
+  const handleSaveEdit = useCallback(
+    (content: string) => {
+      setActionError(null);
+      updateMessage.mutate(
+        { content },
+        {
+          onSuccess: () => {
+            setIsEditing(false);
+            onEdited?.(message.id, content);
+          },
+          onError: (err) =>
+            setActionError(err instanceof Error ? err.message : 'Failed to save changes'),
+        }
+      );
+    },
+    [updateMessage, onEdited, message.id]
+  );
+
+  const handleTogglePin = useCallback(() => {
+    setActionError(null);
+    const mutation = message.isPinned ? unpinMessage : pinMessage;
+    mutation.mutate(message.id, {
+      onError: (err) =>
+        setActionError(err instanceof Error ? err.message : 'Failed to update pin'),
+    });
+  }, [message.isPinned, message.id, pinMessage, unpinMessage]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -98,6 +164,26 @@ export function MessageBubble({
       </div>
 
       <div className={`flex min-w-0 max-w-2xl flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+        {message.isPinned && (
+          <span className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <Pin className="h-3 w-3" aria-hidden />
+            Pinned
+          </span>
+        )}
+
+        {isEditing ? (
+          <div className="w-full">
+            <MessageEditor
+              initialContent={message.content}
+              isLoading={updateMessage.isPending}
+              onSave={handleSaveEdit}
+              onCancel={() => {
+                setIsEditing(false);
+                setActionError(null);
+              }}
+            />
+          </div>
+        ) : (
         <div
           className={`w-full rounded-lg px-4 py-3 ${
             isUser
@@ -126,7 +212,18 @@ export function MessageBubble({
           ) : (
             <p className="text-sm italic opacity-60">No content</p>
           )}
+
+          {message.attachments && message.attachments.length > 0 && (
+            <MessageAttachments attachments={message.attachments} />
+          )}
         </div>
+        )}
+
+        {actionError && (
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            {actionError}
+          </p>
+        )}
 
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
           <button
@@ -148,6 +245,31 @@ export function MessageBubble({
             >
               <RefreshCw className="h-3 w-3" />
               Retry
+            </button>
+          )}
+
+          {showEdit && !isEditing && (
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground"
+              aria-label="Edit message"
+            >
+              <Pencil className="h-3 w-3" />
+              Edit
+            </button>
+          )}
+
+          {showPin && (
+            <button
+              type="button"
+              onClick={handleTogglePin}
+              disabled={isPinBusy}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted hover:text-foreground disabled:opacity-50"
+              aria-label={message.isPinned ? 'Unpin message' : 'Pin message'}
+            >
+              {message.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+              {message.isPinned ? 'Unpin' : 'Pin'}
             </button>
           )}
 

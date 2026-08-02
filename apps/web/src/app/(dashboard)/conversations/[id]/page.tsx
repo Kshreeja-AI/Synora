@@ -206,6 +206,24 @@ export default function ConversationDetailPage() {
     [regenerate, startStream, queryClient, conversationId]
   );
 
+  // Editing a user turn invalidates the assistant reply that answered
+  // it, so the reply is regenerated against the new text. If the edited
+  // message has no assistant reply after it (the user edited the last
+  // turn before sending), there is nothing to regenerate.
+  const handleEdited = useCallback(
+    (messageId: string, content: string) => {
+      setError(null);
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content } : m)));
+
+      const index = messages.findIndex((m) => m.id === messageId);
+      const reply = index >= 0 ? messages[index + 1] : undefined;
+      if (!reply || reply.role !== 'ASSISTANT') return;
+
+      handleRegenerate(reply.id);
+    },
+    [messages, handleRegenerate]
+  );
+
   useEffect(() => {
     return () => {
       unsubscribeRef.current?.();
@@ -303,6 +321,7 @@ export default function ConversationDetailPage() {
               workspaceId={workspaceId}
               conversationId={conversationId}
               onBranchCreated={handleBranchCreated}
+              onEdited={handleEdited}
             />
           ))
         )}

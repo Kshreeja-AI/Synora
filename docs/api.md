@@ -1209,6 +1209,20 @@ Content-Type: application/json
 
 { "content": "Edited content" }
 ```
+Requires `message:manage`. The UI offers this on **user** turns only —
+rewriting an assistant message in place would leave the transcript
+claiming the model produced text it never produced; to change an
+assistant response, regenerate or branch it. Editing a user turn
+invalidates the assistant reply that answered it, so the client
+regenerates that reply against the new text.
+
+### Pin / Unpin Message
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/pin
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/unpin
+Authorization: Bearer <token>
+```
+Toggles `Message.isPinned`. Pinning is workspace-visible, not per-user.
 
 ### Delete Message (soft delete)
 ```http

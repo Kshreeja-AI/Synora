@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MessageBubble } from '../MessageBubble';
 import type { ConversationMessage } from '@/lib/api/messages';
@@ -111,5 +111,134 @@ describe('MessageBubble branch controls', () => {
       conversationId: 'c',
     });
     expect(screen.queryByTestId('fork-navigator')).toBeNull();
+  });
+});
+
+/**
+ * Attachments, editing, and pinning were all backend-supported and
+ * client-hooked but had no mounted UI at all: attachments rendered
+ * nowhere, and the edit/pin hooks had zero callers. These pin the
+ * wiring, including the rule that only user turns are editable.
+ */
+describe('MessageBubble attachments', () => {
+  it('renders image and file attachments', () => {
+    renderBubble({
+      message: {
+        ...baseAssistant,
+        attachments: [
+          {
+            id: 'att-1',
+            url: 'https://cdn.example.com/pic.png',
+            mimeType: 'image/png',
+            name: 'pic.png',
+            size: 2048,
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 'att-2',
+            url: 'https://cdn.example.com/report.pdf',
+            mimeType: 'application/pdf',
+            name: 'report.pdf',
+            size: 10240,
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+      },
+      workspaceId: 'ws',
+      conversationId: 'c',
+    });
+
+    expect(screen.getByAltText('pic.png')).toHaveAttribute(
+      'src',
+      'https://cdn.example.com/pic.png'
+    );
+    expect(screen.getByText('report.pdf')).toBeInTheDocument();
+  });
+
+  it('renders nothing extra when there are no attachments', () => {
+    renderBubble({ message: baseAssistant, workspaceId: 'ws', conversationId: 'c' });
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+});
+
+describe('MessageBubble edit and pin controls', () => {
+  const userMessage: ConversationMessage = {
+    id: 'u1',
+    role: 'USER',
+    content: 'What is the weather?',
+    createdAt: '2026-01-01T00:00:00Z',
+    parentId: null,
+  };
+
+  it('offers Edit on a user turn when an onEdited handler is wired', () => {
+    renderBubble({
+      message: userMessage,
+      workspaceId: 'ws',
+      conversationId: 'c',
+      onEdited: vi.fn(),
+    });
+    expect(screen.getByLabelText('Edit message')).toBeInTheDocument();
+  });
+
+  // Rewriting an assistant bubble in place would leave the transcript
+  // claiming the model said something it never said.
+  it('never offers Edit on an assistant turn', () => {
+    renderBubble({
+      message: baseAssistant,
+      workspaceId: 'ws',
+      conversationId: 'c',
+      onEdited: vi.fn(),
+    });
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+  });
+
+  it('swaps in the editor and back out on cancel', () => {
+    renderBubble({
+      message: userMessage,
+      workspaceId: 'ws',
+      conversationId: 'c',
+      onEdited: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByLabelText('Edit message'));
+    const textarea = screen.getByDisplayValue('What is the weather?');
+    expect(textarea).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
+    expect(screen.queryByDisplayValue('What is the weather?')).toBeNull();
+  });
+
+  it('labels the pin control by current state and marks pinned messages', () => {
+    const { unmount } = renderBubble({
+      message: userMessage,
+      workspaceId: 'ws',
+      conversationId: 'c',
+    });
+    expect(screen.getByLabelText('Pin message')).toBeInTheDocument();
+    unmount();
+
+    renderBubble({
+      message: { ...userMessage, isPinned: true },
+      workspaceId: 'ws',
+      conversationId: 'c',
+    });
+    expect(screen.getByLabelText('Unpin message')).toBeInTheDocument();
+    expect(screen.getByText('Pinned')).toBeInTheDocument();
+  });
+
+  it('hides edit and pin without workspace/conversation context', () => {
+    renderBubble({ message: userMessage, onEdited: vi.fn() });
+    expect(screen.queryByLabelText('Edit message')).toBeNull();
+    expect(screen.queryByLabelText('Pin message')).toBeNull();
+  });
+
+  it('hides pin while the message is still streaming', () => {
+    renderBubble({
+      message: baseAssistant,
+      workspaceId: 'ws',
+      conversationId: 'c',
+      isStreaming: true,
+    });
+    expect(screen.queryByLabelText('Pin message')).toBeNull();
   });
 });
