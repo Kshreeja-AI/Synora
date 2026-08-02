@@ -32,19 +32,23 @@ describe('assets routes (M5)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string[] | undefined): string {
+    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string) {
     const email = uniqueEmail(prefix);
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email };
   }
 
   async function createWorkspace(accessToken: string, name: string) {
     const res = await request(app)
       .post('/api/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Cookie', accessToken)
       .send({ name });
     testWorkspaceIds.push(res.body.data.id);
     return res.body.data as { id: string };
@@ -56,7 +60,7 @@ describe('assets routes (M5)', () => {
 
     const uploaded = await request(app)
       .post(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .set('Cookie', owner.accessToken)
       .attach('file', Buffer.from('hello world'), { filename: 'notes.txt', contentType: 'text/plain' });
 
     expect(uploaded.status).toBe(201);
@@ -64,17 +68,17 @@ describe('assets routes (M5)', () => {
 
     const listed = await request(app)
       .get(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
     expect(listed.body.data).toHaveLength(1);
 
     const deleted = await request(app)
       .delete(`/api/workspaces/${workspace.id}/assets/${uploaded.body.data.id}`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
     expect(deleted.status).toBe(200);
 
     const listedAfter = await request(app)
       .get(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
     expect(listedAfter.body.data).toHaveLength(0);
   });
 
@@ -88,13 +92,13 @@ describe('assets routes (M5)', () => {
 
     const uploaded = await request(app)
       .post(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${member.accessToken}`)
+      .set('Cookie', member.accessToken)
       .attach('file', Buffer.from('member file'), { filename: 'member.txt', contentType: 'text/plain' });
     expect(uploaded.status).toBe(201);
 
     const deleted = await request(app)
       .delete(`/api/workspaces/${workspace.id}/assets/${uploaded.body.data.id}`)
-      .set('Authorization', `Bearer ${member.accessToken}`);
+      .set('Cookie', member.accessToken);
     expect(deleted.status).toBe(403);
   });
 
@@ -108,7 +112,7 @@ describe('assets routes (M5)', () => {
 
     const res = await request(app)
       .post(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('Cookie', viewer.accessToken)
       .attach('file', Buffer.from('nope'), { filename: 'nope.txt', contentType: 'text/plain' });
 
     expect(res.status).toBe(403);
@@ -120,7 +124,7 @@ describe('assets routes (M5)', () => {
 
     const res = await request(app)
       .post(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
 
     expect(res.status).toBe(400);
   });
@@ -132,7 +136,7 @@ describe('assets routes (M5)', () => {
 
     const res = await request(app)
       .get(`/api/workspaces/${workspace.id}/assets`)
-      .set('Authorization', `Bearer ${stranger.accessToken}`);
+      .set('Cookie', stranger.accessToken);
 
     expect(res.status).toBe(404);
   });

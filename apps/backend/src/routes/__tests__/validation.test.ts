@@ -20,11 +20,13 @@ describe('input validation on mutating routes (R1-b)', () => {
     const config = await initConfig();
     app = createApp(config);
 
-    // A real authenticated session: register, then use the returned token.
+    // A real authenticated session: register, then use the accessToken cookie
+    // set on the response (tokens are no longer returned in the JSON body —
+    // see setAuthCookies in ../../routes/auth.ts).
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    token = res.body.data.accessToken;
+    token = (res.headers['set-cookie'] ?? []).map((c: string) => c.split(';')[0]).join('; ');
   });
 
   afterAll(async () => {
@@ -32,7 +34,7 @@ describe('input validation on mutating routes (R1-b)', () => {
     await prisma.$disconnect();
   });
 
-  const auth = () => ({ Authorization: `Bearer ${token}` });
+  const auth = () => ({ Cookie: token });
 
   describe('POST /api/auth/register (already zod-validated) now returns 400 not 500', () => {
     it('rejects an invalid email with 400 VALIDATION_ERROR', async () => {

@@ -41,12 +41,28 @@ describe('auth account flows (M3)', () => {
     return decodeURIComponent(match[1]);
   }
 
+  // Tokens are now issued as HttpOnly cookies, not in the JSON body (see
+  // setAuthCookies in ../auth.ts). `cookieHeader` builds a `Cookie` header
+  // value (both accessToken and refreshToken) suitable for `.set('Cookie', ...)`
+  // on an authenticated request; `extractCookieValue` pulls out one cookie's
+  // raw value for tests that need the literal token (e.g. to send it in a
+  // request body, or to hash it for a DB lookup).
+  function cookieHeader(setCookieHeaders: string[] | undefined): string {
+    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  }
+
+  function extractCookieValue(setCookieHeaders: string[] | undefined, name: string): string {
+    const header = (setCookieHeaders ?? []).find((c) => c.startsWith(`${name}=`));
+    if (!header) throw new Error(`Cookie ${name} not found in Set-Cookie headers`);
+    return header.split(';')[0].slice(name.length + 1);
+  }
+
   async function register(email: string, password: string) {
     const res = await request(app).post('/api/auth/register').send({ email, password });
-    return res.body.data as {
-      accessToken: string;
-      refreshToken: string;
-      user: { id: string; email: string; emailVerified: boolean };
+    return {
+      accessToken: cookieHeader(res.headers['set-cookie']),
+      refreshToken: extractCookieValue(res.headers['set-cookie'], 'refreshToken'),
+      user: res.body.data.user as { id: string; email: string; emailVerified: boolean },
     };
   }
 
@@ -157,7 +173,7 @@ describe('auth account flows (M3)', () => {
 
       const res = await request(app)
         .post('/api/auth/resend-verification')
-        .set('Authorization', `Bearer ${registered.accessToken}`);
+        .set('Cookie', registered.accessToken);
       expect(res.status).toBe(200);
       expect(getConsoleMailLog()).toHaveLength(1);
     });
@@ -171,7 +187,7 @@ describe('auth account flows (M3)', () => {
 
       const res = await request(app)
         .post('/api/auth/resend-verification')
-        .set('Authorization', `Bearer ${registered.accessToken}`);
+        .set('Cookie', registered.accessToken);
       expect(res.status).toBe(200);
       expect(res.body.data.message).toMatch(/already verified/i);
       expect(getConsoleMailLog()).toHaveLength(0);
@@ -190,9 +206,11 @@ describe('auth account flows (M3)', () => {
         .send({ email, password, rememberMe: true });
 
       const { createHash } = await import('node:crypto');
-      const normalHash = createHash('sha256').update(normal.body.data.refreshToken).digest('hex');
+      const normalHash = createHash('sha256')
+        .update(extractCookieValue(normal.headers['set-cookie'], 'refreshToken'))
+        .digest('hex');
       const rememberedHash = createHash('sha256')
-        .update(remembered.body.data.refreshToken)
+        .update(extractCookieValue(remembered.headers['set-cookie'], 'refreshToken'))
         .digest('hex');
 
       const normalRecord = await prisma.refreshToken.findUnique({ where: { tokenHash: normalHash } });
@@ -213,7 +231,7 @@ describe('auth account flows (M3)', () => {
 
       const res = await request(app)
         .get('/api/auth/sessions')
-        .set('Authorization', `Bearer ${registered.accessToken}`);
+        .set('Cookie', registered.accessToken);
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
@@ -225,17 +243,20 @@ describe('auth account flows (M3)', () => {
       const password = 'a-valid-password-123';
       const deviceA = await register(email, password);
       const deviceBLogin = await request(app).post('/api/auth/login').send({ email, password });
-      const deviceB = deviceBLogin.body.data as { accessToken: string; refreshToken: string };
+      const deviceB = {
+        accessToken: cookieHeader(deviceBLogin.headers['set-cookie']),
+        refreshToken: extractCookieValue(deviceBLogin.headers['set-cookie'], 'refreshToken'),
+      };
 
       const listRes = await request(app)
         .get('/api/auth/sessions')
-        .set('Authorization', `Bearer ${deviceA.accessToken}`);
+        .set('Cookie', deviceA.accessToken);
       expect(listRes.body.data).toHaveLength(2);
 
       const otherSession = listRes.body.data.find((s: { isCurrent: boolean }) => !s.isCurrent);
       const revokeRes = await request(app)
         .delete(`/api/auth/sessions/${otherSession.id}`)
-        .set('Authorization', `Bearer ${deviceA.accessToken}`);
+        .set('Cookie', deviceA.accessToken);
       expect(revokeRes.status).toBe(200);
 
       // Device B's refresh token no longer works; device A's still does.
@@ -253,12 +274,12 @@ describe('auth account flows (M3)', () => {
 
       const sessionsA = await request(app)
         .get('/api/auth/sessions')
-        .set('Authorization', `Bearer ${userA.accessToken}`);
+        .set('Cookie', userA.accessToken);
       const sessionId = sessionsA.body.data[0].id;
 
       const res = await request(app)
         .delete(`/api/auth/sessions/${sessionId}`)
-        .set('Authorization', `Bearer ${userB.accessToken}`);
+        .set('Cookie', userB.accessToken);
       expect(res.status).toBe(404);
     });
 
@@ -270,7 +291,7 @@ describe('auth account flows (M3)', () => {
 
       const res = await request(app)
         .post('/api/auth/logout-all')
-        .set('Authorization', `Bearer ${registered.accessToken}`);
+        .set('Cookie', registered.accessToken);
       expect(res.status).toBe(200);
       expect(res.body.data.revokedCount).toBe(2);
 

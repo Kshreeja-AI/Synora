@@ -39,19 +39,35 @@ describe('users routes (account/profile settings — M3)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string[] | undefined): string {
+    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  }
+
+  function extractCookieValue(setCookieHeaders: string[] | undefined, name: string): string {
+    const header = (setCookieHeaders ?? []).find((c) => c.startsWith(`${name}=`));
+    if (!header) throw new Error(`Cookie ${name} not found in Set-Cookie headers`);
+    return header.split(';')[0].slice(name.length + 1);
+  }
+
   async function register(prefix: string, password = 'a-valid-password-123') {
     const email = uniqueEmail(prefix);
     const res = await request(app).post('/api/auth/register').send({ email, password });
-    const data = res.body.data as { accessToken: string; refreshToken: string; user: { id: string; email: string } };
+    const data = res.body.data as { user: { id: string; email: string } };
     testUserIds.push(data.user.id);
-    return { ...data, email, password };
+    return {
+      accessToken: cookieHeader(res.headers['set-cookie']),
+      refreshToken: extractCookieValue(res.headers['set-cookie'], 'refreshToken'),
+      user: data.user,
+      email,
+      password,
+    };
   }
 
   describe('GET /api/users/me', () => {
     it('returns the profile with defaulted preferences and a boolean emailVerified', async () => {
       const user = await register('me');
 
-      const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${user.accessToken}`);
+      const res = await request(app).get('/api/users/me').set('Cookie', user.accessToken);
 
       expect(res.status).toBe(200);
       expect(res.body.data.email).toBe(user.email);
@@ -76,7 +92,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .patch('/api/users/me')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ name: 'Ada Lovelace', bio: 'Builds things.', website: 'https://example.com', location: 'London' });
 
       expect(res.status).toBe(200);
@@ -93,7 +109,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .patch('/api/users/me')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ website: 'not-a-url' });
 
       expect(res.status).toBe(400);
@@ -106,13 +122,13 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .attach('avatar', Buffer.from('fake-png-bytes'), { filename: 'avatar.png', contentType: 'image/png' });
 
       expect(res.status).toBe(200);
       expect(res.body.data.image).toMatch(/\/uploads\/avatars\//);
 
-      const me = await request(app).get('/api/users/me').set('Authorization', `Bearer ${user.accessToken}`);
+      const me = await request(app).get('/api/users/me').set('Cookie', user.accessToken);
       expect(me.body.data.image).toBe(res.body.data.image);
     });
 
@@ -121,7 +137,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .attach('avatar', Buffer.from('not an image'), { filename: 'file.txt', contentType: 'text/plain' });
 
       expect(res.status).toBe(400);
@@ -132,7 +148,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(res.status).toBe(400);
     });
@@ -142,7 +158,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const first = await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .attach('avatar', Buffer.from('first-image'), { filename: 'a.png', contentType: 'image/png' });
       // Strip "<publicBasePath>/" (e.g. "/uploads/") from the returned URL to get the storage key.
       const firstKey = (first.body.data.image as string).split(`${getConfig().storage.publicBasePath}/`)[1];
@@ -150,7 +166,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .attach('avatar', Buffer.from('second-image'), { filename: 'b.png', contentType: 'image/png' });
 
       const { readFile } = await import('node:fs/promises');
@@ -161,15 +177,15 @@ describe('users routes (account/profile settings — M3)', () => {
       const user = await register('avatar-remove');
       await request(app)
         .post('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .attach('avatar', Buffer.from('image-bytes'), { filename: 'avatar.png', contentType: 'image/png' });
 
       const res = await request(app)
         .delete('/api/users/me/avatar')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(res.status).toBe(200);
 
-      const me = await request(app).get('/api/users/me').set('Authorization', `Bearer ${user.accessToken}`);
+      const me = await request(app).get('/api/users/me').set('Cookie', user.accessToken);
       expect(me.body.data.image).toBeNull();
     });
   });
@@ -180,11 +196,11 @@ describe('users routes (account/profile settings — M3)', () => {
       const otherLogin = await request(app)
         .post('/api/auth/login')
         .send({ email: user.email, password: user.password });
-      const otherRefreshToken = otherLogin.body.data.refreshToken as string;
+      const otherRefreshToken = extractCookieValue(otherLogin.headers['set-cookie'], 'refreshToken');
 
       const res = await request(app)
         .post('/api/users/me/password')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ currentPassword: user.password, newPassword: 'the-new-password-456' });
       expect(res.status).toBe(200);
 
@@ -214,7 +230,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .post('/api/users/me/password')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ currentPassword: 'totally-wrong-password', newPassword: 'the-new-password-456' });
 
       expect(res.status).toBe(401);
@@ -227,7 +243,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const patchRes = await request(app)
         .patch('/api/users/me/preferences')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ theme: 'LIGHT', marketingEmails: true });
       expect(patchRes.status).toBe(200);
       expect(patchRes.body.data.theme).toBe('LIGHT');
@@ -235,7 +251,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const getRes = await request(app)
         .get('/api/users/me/preferences')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(getRes.body.data.theme).toBe('LIGHT');
     });
   });
@@ -246,7 +262,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .delete('/api/users/me')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ password: user.password });
       expect(res.status).toBe(200);
 
@@ -273,7 +289,7 @@ describe('users routes (account/profile settings — M3)', () => {
 
       const res = await request(app)
         .delete('/api/users/me')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ password: 'not-the-right-password' });
 
       expect(res.status).toBe(401);

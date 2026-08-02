@@ -32,19 +32,23 @@ describe('projects routes (M5)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string[] | undefined): string {
+    return (setCookieHeaders ?? []).map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string) {
     const email = uniqueEmail(prefix);
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email };
   }
 
   async function createWorkspace(accessToken: string, name: string) {
     const res = await request(app)
       .post('/api/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Cookie', accessToken)
       .send({ name });
     testWorkspaceIds.push(res.body.data.id);
     return res.body.data as { id: string };
@@ -56,14 +60,14 @@ describe('projects routes (M5)', () => {
 
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ name: 'My Project' });
       expect(created.status).toBe(201);
       expect(created.body.data.workspaceId).toBeNull();
 
       const list = await request(app)
         .get('/api/projects')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(list.body.data).toHaveLength(1);
     });
 
@@ -72,12 +76,12 @@ describe('projects routes (M5)', () => {
       const stranger = await register('personal-stranger');
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Private Project' });
 
       const res = await request(app)
         .get(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${stranger.accessToken}`);
+        .set('Cookie', stranger.accessToken);
       expect(res.status).toBe(404);
     });
   });
@@ -93,7 +97,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${editor.accessToken}`)
+        .set('Cookie', editor.accessToken)
         .send({ name: 'Shared Project', workspaceId: workspace.id });
 
       expect(res.status).toBe(201);
@@ -110,7 +114,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${viewer.accessToken}`)
+        .set('Cookie', viewer.accessToken)
         .send({ name: 'Should Fail', workspaceId: workspace.id });
 
       expect(res.status).toBe(403);
@@ -123,7 +127,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${stranger.accessToken}`)
+        .set('Cookie', stranger.accessToken)
         .send({ name: 'Should 404', workspaceId: workspace.id });
 
       expect(res.status).toBe(404);
@@ -134,16 +138,16 @@ describe('projects routes (M5)', () => {
       const workspace = await createWorkspace(owner.accessToken, 'List Projects Co');
       await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'In Workspace', workspaceId: workspace.id });
       await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Personal Only' });
 
       const res = await request(app)
         .get(`/api/projects?workspaceId=${workspace.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('In Workspace');
@@ -158,17 +162,17 @@ describe('projects routes (M5)', () => {
       });
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Viewable', workspaceId: workspace.id });
 
       const viewed = await request(app)
         .get(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`);
+        .set('Cookie', member.accessToken);
       expect(viewed.status).toBe(200);
 
       const updateByMember = await request(app)
         .patch(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`)
+        .set('Cookie', member.accessToken)
         .send({ name: 'Renamed By Member' });
       // requirePermission() deliberately returns 404, not 403, for a
       // permission-denied request -- it never reveals resource existence
@@ -177,13 +181,13 @@ describe('projects routes (M5)', () => {
 
       const updateByOwner = await request(app)
         .patch(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Renamed By Owner' });
       expect(updateByOwner.status).toBe(200);
 
       const deleted = await request(app)
         .delete(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
       expect(deleted.status).toBe(200);
     });
   });
