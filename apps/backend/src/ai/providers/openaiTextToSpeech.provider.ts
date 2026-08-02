@@ -10,7 +10,6 @@ import {
 } from '../types';
 import type { AIProviderDescriptor } from '../types/descriptor';
 
-const DEFAULT_VOICE = 'alloy';
 const DEFAULT_FORMAT = 'mp3';
 
 const MIME_TYPES: Record<string, string> = {
