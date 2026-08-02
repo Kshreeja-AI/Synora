@@ -18,10 +18,14 @@ describe('StreamingAccumulator', () => {
   });
 
   it('should track elapsed time', async () => {
-    const before = Date.now();
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    expect(accumulator.getElapsedMs()).toBeGreaterThanOrEqual(100);
+    // Node's timers are not guaranteed to fire at-or-after their exact
+    // delay (a loaded event loop can clamp a 100ms timer to ~99ms), so
+    // this asserts against a tolerance rather than the literal delay —
+    // the previous hard `>= 100` flaked in CI on timing that was
+    // correct to within a millisecond.
+    expect(accumulator.getElapsedMs()).toBeGreaterThanOrEqual(90);
   });
 
   it('should calculate tokens per second', async () => {
