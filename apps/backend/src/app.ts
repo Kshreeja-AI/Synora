@@ -113,10 +113,19 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-  // Cookie Parser and CSRF Protection (only in production/staging)
-  // Skip in test environment to avoid test complications
+  // Cookie parsing must run in every environment: the access/refresh tokens
+  // (see setAuthCookies in routes/auth.ts) are httpOnly cookies the browser
+  // frontend relies on exclusively (fetch with credentials: 'include', no
+  // Authorization header) — without this, req.cookies is undefined and
+  // every authenticated request 401s.
+  app.use(cookieParser());
+
+  // CSRF Protection (only in production/staging) — the double-submit cookie
+  // pattern here isn't wired up on the frontend yet (no X-CSRF-Token header
+  // sent on mutations), so enabling it in test/development would reject
+  // every real mutating request rather than just forged ones. Tracked
+  // separately; not addressed by this change.
   if (!['test', 'development'].includes(process.env.NODE_ENV || '')) {
-    app.use(cookieParser());
     app.use(csrfProtection);
   }
 
