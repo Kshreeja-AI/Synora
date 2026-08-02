@@ -4,23 +4,57 @@ import { processExportDataset, type ExportDatasetJobData } from './export-datase
 import { processRunEvaluation, type RunEvaluationJobData } from './run-evaluation.worker'
 import { processMessageFeedback, type ProcessFeedbackJobData } from './process-feedback.worker'
 import { processFileJob, type ProcessFileJobData } from './processFile.worker'
+import type { GenerateResponseJob } from './generateResponse.worker'
 
 // Queue configuration
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
-const QUEUE_CONFIG = {
+
+/**
+ * Producers (queue.add from request handlers) must FAIL FAST when
+ * Redis is unreachable. ioredis's default `enableOfflineQueue: true`
+ * buffers commands while disconnected, which turns a Redis outage
+ * into request handlers awaiting `queue.add` indefinitely — a full
+ * chat outage with no error. With the offline queue disabled, add()
+ * rejects immediately and each call site's error handling decides
+ * what degradation looks like (non-fatal for uploads/messages,
+ * explicit 5xx for evaluation/export kickoffs).
+ */
+const PRODUCER_CONFIG = {
   connection: {
     url: REDIS_URL,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
   },
 }
 
-// Create queues for different job types
-export const exportDatasetQueue = new Queue<ExportDatasetJobData>('export-dataset', QUEUE_CONFIG)
-export const runEvaluationQueue = new Queue<RunEvaluationJobData>('run-evaluation', QUEUE_CONFIG)
+/**
+ * Workers hold long-lived blocking connections and are expected to
+ * ride out Redis restarts by reconnecting — BullMQ requires
+ * `maxRetriesPerRequest: null` on worker connections for exactly
+ * that reason.
+ */
+const WORKER_CONFIG = {
+  connection: {
+    url: REDIS_URL,
+    maxRetriesPerRequest: null,
+  },
+}
+
+// Create queues for different job types (producer side)
+export const exportDatasetQueue = new Queue<ExportDatasetJobData>('export-dataset', PRODUCER_CONFIG)
+export const runEvaluationQueue = new Queue<RunEvaluationJobData>('run-evaluation', PRODUCER_CONFIG)
 export const messageFeedbackQueue = new Queue<ProcessFeedbackJobData>(
   'message-feedback',
-  QUEUE_CONFIG
+  PRODUCER_CONFIG
 )
-export const fileProcessingQueue = new Queue<ProcessFileJobData>('file-processing', QUEUE_CONFIG)
+export const fileProcessingQueue = new Queue<ProcessFileJobData>('file-processing', PRODUCER_CONFIG)
+// Singleton producer for chat generation. Previously every message
+// send constructed a fresh Queue (and Redis connection) that was
+// never closed — a connection leak on the hottest path in the app.
+export const generateResponseQueue = new Queue<GenerateResponseJob>(
+  'generate_response',
+  PRODUCER_CONFIG
+)
 
 // Add jobs to queues
 export async function enqueueExportDataset(data: ExportDatasetJobData): Promise<string> {
@@ -99,6 +133,26 @@ export async function enqueueFileProcessing(data: ProcessFileJobData): Promise<s
   return job.id!
 }
 
+/**
+ * Enqueue a chat generation job. Retry semantics live in the worker's
+ * StreamingRetryEngine, not in BullMQ attempts — the job runs once
+ * from the queue's perspective, matching the previous behavior.
+ */
+export async function enqueueGenerateResponse(data: GenerateResponseJob): Promise<string> {
+  const job = await generateResponseQueue.add('generate-response', data, {
+    removeOnComplete: true,
+    removeOnFail: false,
+  })
+
+  logger.info(`[queue] Enqueued generation job`, {
+    jobId: job.id,
+    streamingJobId: data.jobId,
+    messageId: data.messageId,
+  })
+
+  return job.id!
+}
+
 // Worker setup
 export function setupWorkers(): void {
   logger.info('[queue] Setting up workers...')
@@ -113,7 +167,7 @@ export function setupWorkers(): void {
       await processExportDataset(job.data)
     },
     {
-      ...QUEUE_CONFIG,
+      ...WORKER_CONFIG,
       concurrency: parseInt(process.env.EXPORT_WORKER_CONCURRENCY || '2'),
     }
   )
@@ -128,7 +182,7 @@ export function setupWorkers(): void {
       await processRunEvaluation(job.data)
     },
     {
-      ...QUEUE_CONFIG,
+      ...WORKER_CONFIG,
       concurrency: parseInt(process.env.EVALUATION_WORKER_CONCURRENCY || '1'),
     }
   )
@@ -143,7 +197,7 @@ export function setupWorkers(): void {
       await processMessageFeedback(job.data)
     },
     {
-      ...QUEUE_CONFIG,
+      ...WORKER_CONFIG,
       concurrency: parseInt(process.env.FEEDBACK_WORKER_CONCURRENCY || '3'),
     }
   )
@@ -158,7 +212,7 @@ export function setupWorkers(): void {
       await processFileJob(job.data)
     },
     {
-      ...QUEUE_CONFIG,
+      ...WORKER_CONFIG,
       concurrency: parseInt(process.env.FILE_WORKER_CONCURRENCY || '2'),
     }
   )
@@ -228,6 +282,11 @@ export async function checkQueueHealth(): Promise<Record<string, any>> {
       active: (await fileProcessingQueue.getActiveCount()) ?? 0,
       failed: (await fileProcessingQueue.getFailedCount()) ?? 0,
     },
+    generateResponse: {
+      waiting: await generateResponseQueue.count(),
+      active: (await generateResponseQueue.getActiveCount()) ?? 0,
+      failed: (await generateResponseQueue.getFailedCount()) ?? 0,
+    },
   }
 
   return counts
@@ -241,6 +300,7 @@ export async function closeQueues(): Promise<void> {
     runEvaluationQueue.close(),
     messageFeedbackQueue.close(),
     fileProcessingQueue.close(),
+    generateResponseQueue.close(),
   ])
   logger.info('[queue] All queues closed')
 }

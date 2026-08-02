@@ -4,7 +4,7 @@ import { NotFoundException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { requirePermission } from './permissions'
 import { requireMembership } from './checks'
-import { createGenerateResponseQueue } from '../workers/generateResponse.worker'
+import { enqueueGenerateResponse } from '../workers/queue'
 
 export interface CreateMessageInput {
   content: string
@@ -136,9 +136,10 @@ export class MessageService {
         },
       })
 
-      // Enqueue the generation job
-      const queue = createGenerateResponseQueue()
-      await queue.add('generate-response', {
+      // Enqueue the generation job on the shared singleton producer —
+      // constructing a Queue per send leaked a Redis connection per
+      // message.
+      await enqueueGenerateResponse({
         jobId: job.id,
         conversationId,
         messageId: assistantMessage.id,

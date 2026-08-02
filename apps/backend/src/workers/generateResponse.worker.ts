@@ -2,7 +2,7 @@
  * Bull Queue worker: Generate AI responses with streaming
  */
 
-import { Queue, Worker } from 'bullmq';
+import { Worker } from 'bullmq';
 import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { getStreamingResolver } from '../ai/streaming/resolver';
@@ -13,7 +13,7 @@ import { Redis } from 'ioredis';
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const PROMPT_HISTORY_WINDOW = 50;
 
-interface GenerateResponseJob {
+export interface GenerateResponseJob {
   jobId: string;
   conversationId: string;
   messageId: string;
@@ -22,17 +22,7 @@ interface GenerateResponseJob {
   model: string;
 }
 
-export function createGenerateResponseQueue(): Queue<GenerateResponseJob> {
-  return new Queue('generate_response', {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379')
-    }
-  });
-}
-
 export function createGenerateResponseWorker() {
-  const queue = createGenerateResponseQueue();
   const retryEngine = new StreamingRetryEngine();
   const resolver = getStreamingResolver();
 
@@ -264,9 +254,15 @@ export function createGenerateResponseWorker() {
       }
     );
   }, {
+    // Same REDIS_URL as the producer (workers/queue.ts) and the
+    // pub/sub connection above — the previous REDIS_HOST/REDIS_PORT
+    // pair silently split the worker onto a different Redis than the
+    // rest of the system whenever only REDIS_URL was configured.
+    // maxRetriesPerRequest: null is BullMQ's requirement for worker
+    // connections so they ride out Redis restarts by reconnecting.
     connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379')
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
+      maxRetriesPerRequest: null,
     },
     concurrency: 5
   });
@@ -279,5 +275,5 @@ export function createGenerateResponseWorker() {
     logger.error('[Worker] Job failed', { jobId: job?.id, error: err.message });
   });
 
-  return { queue, worker };
+  return { worker };
 }

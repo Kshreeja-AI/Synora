@@ -4,7 +4,7 @@ import { prisma } from '@synora/database'
 import { initializeApp } from '../../index'
 import { issueTokens } from '../../services/token.service'
 import * as aiModule from '../../ai/index.js'
-import * as generateResponseWorker from '../../workers/generateResponse.worker'
+import * as queueModule from '../../workers/queue'
 import type { Express } from 'express'
 
 describe('message routes', () => {
@@ -77,9 +77,9 @@ describe('message routes', () => {
       // enqueueGeneration() deliberately swallows queue errors (see comment
       // in message.service.ts) so a Redis/queue outage doesn't block the
       // user from sending a message — it just never gets a reply.
-      vi.spyOn(generateResponseWorker, 'createGenerateResponseQueue').mockReturnValue({
-        add: vi.fn().mockRejectedValue(new Error('queue unavailable')),
-      } as unknown as ReturnType<typeof generateResponseWorker.createGenerateResponseQueue>)
+      vi.spyOn(queueModule, 'enqueueGenerateResponse').mockRejectedValue(
+        new Error('queue unavailable')
+      )
 
       const res = await request(app)
         .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
