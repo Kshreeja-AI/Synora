@@ -390,23 +390,44 @@ non-negotiable (see `PROJECT_HANDOVER.md` "Things that must never be
 changed"). Interface design for hyperscale self-hosted serving lives in
 the `feature/synora-infra-interfaces` branch (unmerged design work).
 
-### Conversation Generation Flow (Release 3 M2)
+### Conversation Generation Flow
 
-`conversationGeneration.service.ts` is the only place a user message
-becomes an assistant reply:
+Generation is **asynchronous**: the HTTP request enqueues a job and
+returns immediately with an empty assistant placeholder, and the client
+streams tokens over SSE. There is exactly one generation
+implementation — the `generate_response` BullMQ worker
+(`workers/generateResponse.worker.ts`) on top of `ai/streaming/*`.
 
 ```
 POST .../messages (role=USER)
   → messageService.create() persists the user message (final, immediately)
-  → conversationGenerationService.generateReply()
-      → StreamingJob(PENDING → RUNNING)
-      → resolveProvider('text-generation', { explicitProviderId: conversation.provider })
-      → provider.generateText({ prompt, messages: <windowed history>, model })
-          success → Message(role=ASSISTANT) created, StreamingJob COMPLETED,
-                     ConversationUsage upserted, Conversation.lastMessageAt updated
-          failure → retry (up to 2x, 500ms/1500ms backoff), else StreamingJob FAILED
-  ← HTTP response (same request — no queue, no streaming transport yet)
+  → messageService.createPlaceholder(ASSISTANT, parentId=userMessage.id)
+  → messageService.enqueueGeneration() → StreamingJob(PENDING)
+                                       → enqueueGenerateResponse() (BullMQ)
+  ← 201 { userMessage, assistantMessage (empty), jobId }   [request ends here]
+
+generate_response worker
+  → StreamingRetryEngine.executeWithRetry (owns retries + StreamingJob state)
+      → getStreamingResolver().resolve(conversation.provider)
+      → provider streams tokens → StreamingAccumulator
+           tokens published to Redis; the SSE endpoint relays them to the client
+           cancellation: client → SSE cancel → Redis `job:<id>:control` → AbortController
+      → TokenAccountant → ConversationUsage upserted
+      success → assistant Message content filled in, StreamingJob COMPLETED
+      failure → StreamingJob FAILED after the retry budget
 ```
+
+Retries live in `StreamingRetryEngine`, not in the queue: the BullMQ job
+is enqueued with `removeOnComplete` and no BullMQ-level retry, so there
+is a single owner of retry policy and no risk of two layers each
+retrying a billable provider call.
+
+Two earlier generation services — `conversationGeneration.service.ts`
+(synchronous, request-scoped) and `messageGeneration.service.ts`
+(generator-based) — were deleted once this worker superseded them. Each
+carried its own retry loop, prompt window, and usage accounting;
+parallel generation paths are the kind of duplication that ends in
+double-charging a customer for one reply.
 
 Deliberately synchronous: there is no Redis-backed queue or SSE/WebSocket
 transport in Release 3 M2 (see "Queue Architecture" and this section's

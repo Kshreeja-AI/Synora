@@ -699,8 +699,8 @@ model StreamingJob {
                                      // this job produced — set only on success;
                                      // null while running or if every retry failed
   status        StreamingJobStatus  // PENDING, RUNNING, COMPLETED, FAILED, CANCELED
-  attempt       Int                 // Generation attempts made so far (max 3 — see
-                                     // conversationGeneration.service.ts)
+  attempt       Int                 // Generation attempts made so far (bounded by
+                                     // StreamingRetryEngine — ai/streaming/statemachine.ts)
   lastError     String?             // The most recent failure's message, if any
 
   // Timestamps
@@ -713,13 +713,14 @@ model StreamingJob {
 **Indexes:** `conversationId`, `status`.
 
 **Purpose:** the per-generation state machine backing "retry support" and
-"error recovery" — one row per attempted generation, driven end-to-end by
-`conversationGeneration.service.ts`: created `PENDING`, moved to `RUNNING`
-before the first provider call, `attempt` incremented before each retry,
-`lastError` updated after each failure, and finally `COMPLETED` (with
-`messageId` set) or `FAILED`. Not yet consumed by any client-facing
-streaming transport — see `M2_IMPLEMENTATION_PLAN.md` §12 for the
-async/SSE path these fields are already shaped for.
+"error recovery" — one row per attempted generation. It is created
+`PENDING` when `messageService.enqueueGeneration()` enqueues the job, and
+driven from there by `StreamingRetryEngine`
+(`ai/streaming/statemachine.ts`) inside the `generate_response` worker:
+moved to `RUNNING` before the first provider call, `attempt` incremented
+before each retry, `lastError` updated after each failure, and finally
+`COMPLETED` (with `messageId` set) or `FAILED`. The client follows the
+same job over SSE while it runs, and can cancel it.
 
 Release 3 also added a Universal Memory System, a Universal Tool Calling
 Engine, and a Universal Search System — dozens of further models

@@ -1153,25 +1153,28 @@ Content-Type: application/json
 `400`. An assistant message is only ever created by a successful
 generation (see below); a client cannot fabricate one directly.
 
-For a `USER` message, this endpoint is **synchronous**: it creates the
-user message, then calls the conversation's own AI provider (not
-whatever `AI_PROVIDER` happens to be globally set to — see
-`ai/resolver.ts`'s `explicitProviderId`), retrying up to twice with
-backoff on failure, before responding. There is no streaming/async
-transport in Release 3 M2 — the whole exchange happens within one HTTP
-request/response.
+For a `USER` message, this endpoint is **asynchronous**: it persists the
+user message, creates an *empty* assistant message as a placeholder,
+enqueues a `generate_response` job, and returns immediately. The reply
+is produced by the worker against the conversation's own AI provider
+(not whatever `AI_PROVIDER` happens to be globally set to — see
+`ai/resolver.ts`'s `explicitProviderId`); the client streams its tokens
+from the SSE endpoint below, keyed by the returned `jobId`.
 
-**Response (USER message, generation succeeded)**
+**Response (USER message)**
 ```json
 {
   "success": true,
   "data": {
     "userMessage": { "id": "...", "content": "Hello", "role": "USER" },
-    "assistantMessage": { "id": "...", "content": "Hi there!", "role": "ASSISTANT" },
-    "usage": { "inputTokens": 12, "outputTokens": 6 }
+    "assistantMessage": { "id": "...", "content": "", "role": "ASSISTANT" },
+    "jobId": "..."
   }
 }
 ```
+The assistant message's `content` is empty on this response by design —
+it fills in as the stream completes. Token counts land on the message
+once generation finishes.
 
 **Response (SYSTEM message — no generation triggered)**
 ```json
@@ -1179,14 +1182,42 @@ request/response.
 ```
 
 **Status Codes**
-- `201`: Created (and, for a `USER` message, generated)
+- `201`: Created — for a `USER` message, the generation job is enqueued
 - `400`: Invalid body, or `role: "ASSISTANT"`
 - `401`: Unauthorized
 - `404`: Not a member of `:workspaceId`, or the conversation doesn't exist
-- `503`: Every generation attempt failed — the response names the
-  `StreamingJob` id so the failure can be inspected
-  (`services/conversationGeneration.service.ts`). The user message itself
-  is **not** rolled back; the caller can retry with a follow-up message.
+
+Generation failure does not surface on this response, because generation
+has not started when it returns. A failed generation is reported on the
+SSE stream and recorded on the `StreamingJob` row (`FAILED`, with
+`lastError`); retries are owned by `StreamingRetryEngine` in the worker.
+The user message is never rolled back — the caller can retry the reply
+with the regenerate endpoint.
+
+### Stream a Generation (SSE)
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId/stream?messageId=<assistantMessageId>
+Authorization: Bearer <token>
+Accept: text/event-stream
+```
+Relays the `generate_response` worker's output for the `StreamingJob`
+attached to `messageId`. Events are named by the worker's event type
+(tokens as they arrive, then a terminal completion or error event), plus
+a periodic `heartbeat` to keep intermediaries from closing an idle
+connection. `X-Accel-Buffering: no` is set so buffering proxies don't
+withhold tokens.
+
+- `400`: no `messageId` query param
+- `event: error` with `code: JOB_NOT_FOUND` when no job exists for that
+  message (the stream then closes)
+
+### Cancel a Generation
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/stream/:jobId/cancel
+Authorization: Bearer <token>
+```
+Publishes a cancel signal on the job's Redis control channel; the worker
+aborts the in-flight provider request. `404` if the job doesn't exist.
 
 ### List Messages
 ```http
