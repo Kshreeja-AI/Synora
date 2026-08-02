@@ -1,40 +1,24 @@
 import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { NotFoundException } from '@synora/shared';
-import { createWriteStream } from 'fs';
-import { join } from 'path';
-import { randomBytes } from 'crypto';
 
 export type ExportFormat = 'json' | 'markdown';
 
-export interface ExportJob {
-  id: string;
-  conversationId: string;
-  format: ExportFormat;
-  status: 'pending' | 'processing' | 'complete' | 'failed';
-  outputPath?: string;
-  error?: string;
-  createdAt: Date;
-  completedAt?: Date;
-}
-
+/**
+ * Conversation export. Both formats deliberately exclude soft-deleted
+ * messages — "deleted" must hold in every representation of the
+ * conversation that leaves the database, not just the chat view.
+ * Sibling branches ARE included (the JSON format carries parentId so
+ * the tree can be reconstructed): an export is the user's own full
+ * record of the conversation.
+ */
 export class ExportService {
-  async createExportJob(conversationId: string, format: ExportFormat): Promise<ExportJob> {
-    const job: ExportJob = {
-      id: `export-${randomBytes(12).toString('hex')}`,
-      conversationId,
-      format,
-      status: 'pending',
-      createdAt: new Date(),
-    };
-    return job;
-  }
-
   async exportToJSON(conversationId: string): Promise<string> {
     const conversation = await prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
         messages: {
+          where: { deletedAt: null },
           include: {
             attachments: true,
           },
@@ -83,6 +67,7 @@ export class ExportService {
       where: { id: conversationId },
       include: {
         messages: {
+          where: { deletedAt: null },
           include: { attachments: true },
           orderBy: { createdAt: 'asc' },
         },
@@ -121,26 +106,6 @@ export class ExportService {
     }
 
     return markdown;
-  }
-
-  async saveExportToFile(jobId: string, content: string, format: ExportFormat): Promise<string> {
-    const exportDir = join(process.cwd(), 'exports');
-    const filename = `${jobId}.${format === 'markdown' ? 'md' : format}`;
-    const filepath = join(exportDir, filename);
-
-    return new Promise((resolve, reject) => {
-      const stream = createWriteStream(filepath);
-      stream.write(content);
-      stream.end(() => {
-        resolve(filepath);
-      });
-      stream.on('error', reject);
-    });
-  }
-
-  async cleanupOldExports(olderThanDays: number = 30): Promise<number> {
-    logger.info(`Cleanup exports older than ${olderThanDays} days scheduled`);
-    return 0;
   }
 
   async export(userId: string, conversationId: string, options: { format?: string } = {}): Promise<{ content: string; format: ExportFormat }> {

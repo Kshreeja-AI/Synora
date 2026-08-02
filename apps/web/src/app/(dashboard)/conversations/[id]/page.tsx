@@ -19,6 +19,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Composer } from '@/components/chat/Composer';
 import { ConversationFilesPanel } from '@/components/files/ConversationFilesPanel';
 import { ShareDialog } from '@/components/sharing/ShareDialog';
+import { ConversationExport } from '@/components/history/ConversationExport';
 import { Share2 } from 'lucide-react';
 import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
@@ -247,15 +248,18 @@ export default function ConversationDetailPage() {
               <p className="mt-1 text-sm text-muted-foreground">{conversation.description}</p>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShareOpen(true)}
-            className="shrink-0 gap-2"
-          >
-            <Share2 className="h-4 w-4" />
-            Share
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <ConversationExport workspaceId={workspaceId} conversationId={conversationId} />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+              className="gap-2"
+            >
+              <Share2 className="h-4 w-4" />
+              Share
+            </Button>
+          </div>
         </div>
         <div className="mt-3 flex items-center gap-4 text-xs text-muted-foreground">
           <span>

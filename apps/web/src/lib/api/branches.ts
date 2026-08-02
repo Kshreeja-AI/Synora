@@ -11,8 +11,7 @@
  *   POST   /branches/set-main        → mark a sibling as the canonical
  *                                       continuation of its parent
  *   DELETE /branches/:messageId      → delete a non-main sibling
- *   GET    /tree                     → full conversation DAG (see
- *                                       lib/api/messageHistory.ts)
+ *   GET    /tree                     → full conversation DAG
  *
  * These hooks are the only sanctioned client surface for that shape —
  * do not mint your own fetch calls against /branches from components.
