@@ -24,6 +24,19 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      # BullMQ-backed job queues (dataset export, evaluation runs, message
+      # generation) connect to Redis unconditionally — without this service
+      # every test that enqueues a job hangs until it hits vitest's test
+      # timeout rather than failing fast.
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -98,6 +111,7 @@ jobs:
         run: pnpm run test:coverage
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+          REDIS_URL: redis://localhost:6379
           NODE_ENV: test
           TOOL_SECRET_MASTER_KEY: ci-only-not-a-real-secret-tool-master-key-000000
 
