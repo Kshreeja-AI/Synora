@@ -1230,6 +1230,44 @@ Content-Type: application/json
 
 ---
 
+## Tool Endpoints
+
+Workspace-scoped tool definitions and executions. All routes require
+authentication and workspace membership; mutations are additionally
+role-gated by the permissions module (`tool:manage` = EDITOR+,
+`tool:execute` = MEMBER+, `tool:approve` = ADMIN/OWNER).
+
+Only `HTTP` and `Webhook` tool types can be executed — the engine makes a
+real outbound HTTP request built from the tool's `config`
+(`{ url, method?, headers? }`), with the tool's `timeout` and `maxRetries`
+applied. Other declared types are refused at execute time with a 400.
+Outbound requests are SSRF-guarded (private, loopback, link-local, and
+metadata address ranges are blocked at DNS-resolution time; redirects are
+not followed) and header/URL values may reference stored tool secrets via
+`{{secret:NAME}}` placeholders, resolved server-side and never logged.
+
+- `GET    /api/workspaces/:workspaceId/tools` — list active tools (`?category=` filter)
+- `POST   /api/workspaces/:workspaceId/tools` — create tool (`tool:manage`)
+- `GET    /api/workspaces/:workspaceId/tools/:toolId` — get tool
+- `PATCH  /api/workspaces/:workspaceId/tools/:toolId` — update tool (`tool:manage`, bumps `version`)
+- `DELETE /api/workspaces/:workspaceId/tools/:toolId` — soft-delete (`tool:manage`)
+- `POST   /api/workspaces/:workspaceId/tools/:toolId/execute` — run tool (`tool:execute`); body `{ input, conversationId? }`; returns the execution record (`PENDING` when the tool `requiresApproval`, else `RUNNING`)
+- `GET    /api/workspaces/:workspaceId/tools/:toolId/executions` — recent executions for a tool
+- `GET    /api/workspaces/:workspaceId/executions/:executionId` — poll one execution
+- `POST   /api/workspaces/:workspaceId/executions/:executionId/approve` — approve a `PENDING` execution (`tool:approve`); stamps `approvedBy`/`approvedAt` and starts the run
+- `POST   /api/workspaces/:workspaceId/executions/:executionId/reject` — reject a `PENDING` execution (`tool:approve`); body `{ reason }`
+
+Execution `status` values: `PENDING` (awaiting approval), `APPROVED`,
+`RUNNING`, `STREAMING`, `COMPLETED`, `FAILED`, `CANCELLED`, `TIMEOUT`,
+`REJECTED`. Successful executions carry
+`output: { statusCode, body }` from the upstream endpoint plus
+`duration` (ms) and `attemptNumber`. Tool lifecycle and execution
+decisions (create/update/delete, execute, approve, reject) are recorded
+in the workspace audit log; execution audit entries record input *keys*
+only, never values.
+
+---
+
 ## Liveness & Readiness
 
 ### `/health`

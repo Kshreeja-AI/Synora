@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban } from 'lucide-react';
+import { LayoutDashboard, FolderKanban, Wrench } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
@@ -15,6 +15,7 @@ export interface SidebarProps {
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
+  { href: '/dashboard/tools', label: 'Tools', icon: Wrench },
 ];
 
 export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {

@@ -3,6 +3,9 @@ import { ToolDefinition, ToolExecution, ExecutionStatus, ToolType } from '@prism
 import { NotFoundException, ValidationException } from '@synora/shared';
 import { logger } from '../utils/logger';
 import { requireMembership } from './checks';
+import { requirePermission } from './permissions';
+import { recordAuditEvent } from './audit.service';
+import { SUPPORTED_EXECUTION_TYPES, validateToolInput } from './tool-engine.service';
 import type { InputJsonValue } from '@prisma/client/runtime/library';
 
 export interface CreateToolInput {
@@ -31,9 +34,36 @@ export interface ExecuteToolInput {
   conversationId?: string;
 }
 
+/**
+ * HTTP-backed tool types must carry a usable endpoint in their config;
+ * catching a bad URL at definition time beats failing every execution.
+ */
+function validateHttpConfig(type: ToolType, config: unknown): void {
+  if (type !== ToolType.HTTP && type !== ToolType.Webhook) return;
+  const url = (config as { url?: unknown } | null | undefined)?.url;
+  if (typeof url !== 'string' || url.length === 0) {
+    throw new ValidationException(`${type} tools require a "url" in their config`);
+  }
+  // Secret placeholders can appear anywhere in the URL; validate shape on
+  // a version with placeholders collapsed to a syntactically valid token.
+  const probe = url.replace(/\{\{secret:[A-Za-z0-9_.-]+\}\}/g, 'secret');
+  let parsed: URL;
+  try {
+    parsed = new URL(probe);
+  } catch {
+    throw new ValidationException(`${type} tool config "url" is not a valid URL`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new ValidationException(`${type} tool config "url" must use http or https`);
+  }
+}
+
 export class ToolService {
   async createTool(userId: string, workspaceId: string, data: CreateToolInput): Promise<ToolDefinition> {
-    await requireMembership(userId, workspaceId);
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:manage');
+
+    validateHttpConfig(data.type, data.config);
 
     // Validate tool name is unique within workspace
     const existing = await prisma.toolDefinition.findFirst({
@@ -44,7 +74,7 @@ export class ToolService {
       throw new ValidationException(`Tool with name "${data.name}" already exists in this workspace`);
     }
 
-    return prisma.toolDefinition.create({
+    const tool = await prisma.toolDefinition.create({
       data: {
         workspaceId,
         name: data.name,
@@ -68,6 +98,13 @@ export class ToolService {
         createdBy: userId,
       },
     });
+
+    await recordAuditEvent(workspaceId, userId, 'tool.created', 'tool', tool.id, {
+      name: tool.name,
+      type: tool.type,
+    });
+
+    return tool;
   }
 
   async getTool(userId: string, workspaceId: string, toolId: string): Promise<ToolDefinition> {
@@ -98,11 +135,16 @@ export class ToolService {
   }
 
   async updateTool(userId: string, workspaceId: string, toolId: string, data: Partial<CreateToolInput>): Promise<ToolDefinition> {
-    await requireMembership(userId, workspaceId);
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:manage');
 
     const tool = await this.getTool(userId, workspaceId, toolId);
 
-    return prisma.toolDefinition.update({
+    if (data.config !== undefined) {
+      validateHttpConfig(tool.type, data.config);
+    }
+
+    const updated = await prisma.toolDefinition.update({
       where: { id: toolId },
       data: {
         ...(data.name && { name: data.name }),
@@ -125,23 +167,36 @@ export class ToolService {
         version: tool.version + 1,
       },
     });
+
+    await recordAuditEvent(workspaceId, userId, 'tool.updated', 'tool', toolId, {
+      name: updated.name,
+      version: updated.version,
+    });
+
+    return updated;
   }
 
   async deleteTool(userId: string, workspaceId: string, toolId: string): Promise<void> {
-    await requireMembership(userId, workspaceId);
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:manage');
 
-    const _tool = await this.getTool(userId, workspaceId, toolId);
+    const tool = await this.getTool(userId, workspaceId, toolId);
 
     await prisma.toolDefinition.update({
       where: { id: toolId },
       data: { isActive: false },
     });
 
+    await recordAuditEvent(workspaceId, userId, 'tool.deleted', 'tool', toolId, {
+      name: tool.name,
+    });
+
     logger.info('Tool deleted (soft)', { toolId, workspaceId });
   }
 
   async executeTool(userId: string, workspaceId: string, toolId: string, data: ExecuteToolInput): Promise<ToolExecution> {
-    await requireMembership(userId, workspaceId);
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:execute');
 
     const tool = await this.getTool(userId, workspaceId, toolId);
 
@@ -149,21 +204,15 @@ export class ToolService {
       throw new ValidationException('Tool is not active');
     }
 
-    // Validate input against schema
-    try {
-      // Simple validation: check required fields exist
-      if (tool.inputSchema && typeof tool.inputSchema === 'object') {
-        const schema = tool.inputSchema as Record<string, unknown>;
-        const required = (schema.required || []) as string[];
-        for (const field of required) {
-          if (!(field in data.input)) {
-            throw new Error(`Missing required field: ${field}`);
-          }
-        }
-      }
-    } catch (error) {
-      throw new ValidationException(`Invalid tool input: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    // Honest capability gate: types without a real executor are refused
+    // up front instead of producing an execution that pretends to run.
+    if (!SUPPORTED_EXECUTION_TYPES.has(tool.type)) {
+      throw new ValidationException(
+        `Execution for ${tool.type} tools is not supported yet (supported: ${[...SUPPORTED_EXECUTION_TYPES].join(', ')})`
+      );
     }
+
+    validateToolInput(data.input, tool.inputSchema as Record<string, unknown>);
 
     // Check rate limit
     if (tool.rateLimit) {
@@ -189,25 +238,24 @@ export class ToolService {
         conversationId: data.conversationId || null,
         input: data.input as InputJsonValue,
         status: tool.requiresApproval ? ExecutionStatus.PENDING : ExecutionStatus.RUNNING,
+        maxAttempts: tool.maxRetries,
       },
     });
 
     logger.info('Tool execution started', { executionId: execution.id, toolId, userId });
 
+    // Input values may be sensitive; the audit trail records shape, not content.
+    await recordAuditEvent(workspaceId, userId, 'tool.executed', 'tool_execution', execution.id, {
+      toolId,
+      toolName: tool.name,
+      conversationId: data.conversationId ?? null,
+      inputKeys: Object.keys(data.input),
+      requiresApproval: tool.requiresApproval,
+    });
+
     // Trigger async execution if approval not required
     if (!tool.requiresApproval) {
-      setImmediate(async () => {
-        try {
-          const { toolEngineService } = await import('./tool-engine.service');
-          await toolEngineService.executeWithRetries(execution.id, toolId, data.input, { timeout: tool.timeout || 30000 });
-        } catch (error) {
-          logger.error('[toolService] Tool execution failed', {
-            executionId: execution.id,
-            toolId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      });
+      this.runAsync(execution.id, toolId, data.input, tool.timeout);
     }
 
     return execution;
@@ -240,70 +288,82 @@ export class ToolService {
     });
   }
 
-  async updateExecutionStatus(
-    userId: string,
-    workspaceId: string,
-    executionId: string,
-    status: ExecutionStatus,
-    output?: Record<string, unknown>,
-    error?: string
-  ): Promise<ToolExecution> {
-    await requireMembership(userId, workspaceId);
+  async approveExecution(userId: string, workspaceId: string, executionId: string): Promise<ToolExecution> {
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:approve');
 
     const execution = await this.getExecution(userId, workspaceId, executionId);
+    if (execution.status !== ExecutionStatus.PENDING) {
+      throw new ValidationException('Only pending executions can be approved');
+    }
 
-    const completedAt = ['COMPLETED', 'FAILED', 'CANCELLED', 'TIMEOUT', 'REJECTED'].includes(status)
-      ? new Date()
-      : null;
+    const tool = await this.getTool(userId, workspaceId, execution.toolId);
 
-    const duration = completedAt && execution.startedAt ? completedAt.getTime() - execution.startedAt.getTime() : null;
-
-    return prisma.toolExecution.update({
+    const approved = await prisma.toolExecution.update({
       where: { id: executionId },
       data: {
-        status,
-        output: output ? (output as InputJsonValue) : undefined,
-        error: error || null,
-        completedAt,
-        duration: duration || execution.duration,
+        status: ExecutionStatus.APPROVED,
+        approvedBy: userId,
+        approvedAt: new Date(),
       },
     });
-  }
 
-  async approveExecution(userId: string, workspaceId: string, executionId: string): Promise<ToolExecution> {
-    const execution = await this.updateExecutionStatus(userId, workspaceId, executionId, ExecutionStatus.APPROVED);
-
-    // Trigger async execution after approval
-    setImmediate(async () => {
-      try {
-        const tool = await this.getTool(userId, workspaceId, execution.toolId);
-        const { toolEngineService } = await import('./tool-engine.service');
-        await toolEngineService.executeWithRetries(execution.id, execution.toolId, execution.input as Record<string, unknown>, {
-          timeout: tool.timeout || 30000,
-        });
-      } catch (error) {
-        logger.error('[toolService] Tool execution after approval failed', {
-          executionId: execution.id,
-          toolId: execution.toolId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+    await recordAuditEvent(workspaceId, userId, 'tool.execution.approved', 'tool_execution', executionId, {
+      toolId: execution.toolId,
+      requestedBy: execution.userId,
     });
 
-    return execution;
+    this.runAsync(executionId, execution.toolId, execution.input as Record<string, unknown>, tool.timeout);
+
+    return approved;
   }
 
   async rejectExecution(userId: string, workspaceId: string, executionId: string, reason: string): Promise<ToolExecution> {
-    const _execution = await this.getExecution(userId, workspaceId, executionId);
+    const membership = await requireMembership(userId, workspaceId);
+    requirePermission(membership.role, 'tool:approve');
 
-    return prisma.toolExecution.update({
+    const execution = await this.getExecution(userId, workspaceId, executionId);
+    if (execution.status !== ExecutionStatus.PENDING) {
+      throw new ValidationException('Only pending executions can be rejected');
+    }
+
+    const rejected = await prisma.toolExecution.update({
       where: { id: executionId },
       data: {
         status: ExecutionStatus.REJECTED,
         rejectedBy: userId,
         rejectedAt: new Date(),
         rejectionReason: reason,
+        completedAt: new Date(),
       },
+    });
+
+    await recordAuditEvent(workspaceId, userId, 'tool.execution.rejected', 'tool_execution', executionId, {
+      toolId: execution.toolId,
+      requestedBy: execution.userId,
+      reason,
+    });
+
+    return rejected;
+  }
+
+  /**
+   * Hand an accepted execution to the engine off the request path. The
+   * engine records terminal state on the execution row; this wrapper
+   * only guards against the engine itself rejecting unexpectedly.
+   */
+  private runAsync(executionId: string, toolId: string, input: Record<string, unknown>, timeout: number): void {
+    setImmediate(async () => {
+      try {
+        const { toolEngineService } = await import('./tool-engine.service');
+        await toolEngineService.executeWithRetries(executionId, toolId, input, { timeout });
+      } catch (error) {
+        logger.error('[toolService] Tool execution failed', {
+          executionId,
+          toolId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
   }
 }

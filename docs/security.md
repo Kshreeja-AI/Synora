@@ -202,6 +202,36 @@ compliance requirement to encrypt at the application layer) — don't
 treat their absence as an oversight; Postgres-level encryption at rest
 (via the managed hosting provider) is the current baseline.
 
+### SSRF protection for tool executions
+
+Workspace tools (HTTP/Webhook types) make outbound requests to
+user-configured URLs, which is a server-side request forgery vector by
+construction. `apps/backend/src/services/tool-transport.ts` enforces:
+
+- **Address policy at DNS-resolution time**: every address a hostname
+  resolves to is validated inside the socket `lookup` hook (not before
+  the request), so a DNS answer can't swap in a private address between
+  check and connect. Blocked: loopback, RFC 1918 private ranges, CGNAT,
+  link-local (including the 169.254.169.254 cloud-metadata endpoint),
+  benchmarking, multicast/reserved ranges, and their IPv6 equivalents
+  including IPv4-mapped (`::ffff:…`) and NAT64 forms. IP-literal hosts
+  are validated directly.
+- **No redirect following**: a 3xx response fails the execution — a
+  redirect to an internal address would bypass the original hostname's
+  validation.
+- **`http:`/`https:` only**, a hard 1 MB response-size cap, and the
+  tool's own wall-clock timeout on the whole exchange.
+- **Secret hygiene**: `{{secret:NAME}}` placeholders in tool config are
+  resolved server-side from the encrypted `ToolSecret` store at request
+  time; only names declared in the tool's `secrets` list resolve, and
+  resolved values never appear in logs, audit entries, or execution
+  records.
+
+Role gates (`tool:manage`, `tool:execute`, `tool:approve` in
+`permissions.ts`) control who can define, run, and approve tools;
+approval-gated executions can only be approved or rejected by
+ADMIN/OWNER while in `PENDING` state.
+
 ## Dependency & Secret Security
 
 ### Vulnerability scanning (real, CI-enforced)

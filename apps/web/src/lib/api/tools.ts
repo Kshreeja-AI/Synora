@@ -9,6 +9,13 @@ import {
 } from '@tanstack/react-query';
 import { api } from './client';
 
+/**
+ * Tool types the backend can actually execute today. Other types can be
+ * defined via the API but the execute endpoint refuses them, so the UI
+ * only offers these.
+ */
+export const EXECUTABLE_TOOL_TYPES = ['HTTP', 'Webhook'] as const;
+
 export interface Tool {
   id: string;
   workspaceId: string;
@@ -18,35 +25,70 @@ export interface Tool {
   category: string;
   type: 'HTTP' | 'GraphQL' | 'Database' | 'Search' | 'File' | 'Browser' | 'Python' | 'Webhook' | 'MCP' | 'Custom';
   inputSchema: Record<string, unknown>;
-  outputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown> | null;
   config: Record<string, unknown>;
   permission: 'PRIVATE' | 'WORKSPACE' | 'SHARED' | 'PUBLIC';
   maxParallelCalls?: number;
-  rateLimit?: number;
+  rateLimit?: number | null;
   timeout?: number;
   maxRetries?: number;
+  isActive?: boolean;
   isAsync?: boolean;
   supportsStreaming?: boolean;
   requiresApproval?: boolean;
+  version?: number;
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Mirrors the backend's Prisma `ExecutionStatus` enum exactly. PENDING
+ * means "waiting for approval" (only approval-gated tools ever hold it);
+ * COMPLETED is the success state.
+ */
+export type ToolExecutionStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'RUNNING'
+  | 'STREAMING'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'TIMEOUT'
+  | 'REJECTED';
+
+const ACTIVE_STATUSES: ReadonlySet<ToolExecutionStatus> = new Set([
+  'PENDING',
+  'APPROVED',
+  'RUNNING',
+  'STREAMING',
+]);
+
+export function isActiveExecution(status: ToolExecutionStatus): boolean {
+  return ACTIVE_STATUSES.has(status);
 }
 
 export interface ToolExecution {
   id: string;
   toolId: string;
-  conversationId?: string;
+  workspaceId: string;
+  userId: string;
+  conversationId?: string | null;
   input: Record<string, unknown>;
-  output?: Record<string, unknown>;
-  error?: string;
-  status: 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'REQUIRES_APPROVAL' | 'REJECTED';
-  approvedAt?: string;
-  approvedBy?: string;
-  rejectionReason?: string;
-  rejectedAt?: string;
-  rejectedBy?: string;
+  output?: { statusCode: number; body: unknown } | null;
+  error?: string | null;
+  status: ToolExecutionStatus;
+  attemptNumber?: number;
+  duration?: number | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  rejectionReason?: string | null;
+  rejectedAt?: string | null;
+  rejectedBy?: string | null;
+  startedAt?: string | null;
   createdAt: string;
-  completedAt?: string;
+  completedAt?: string | null;
 }
 
 export interface CreateToolInput {
@@ -257,7 +299,10 @@ export function useToolExecutions(
 }
 
 /**
- * Get single execution
+ * Get single execution. Polls while the execution is still active
+ * (pending approval, approved, or running) so the UI tracks the async
+ * engine without a manual refresh, and stops once it reaches a terminal
+ * state.
  */
 export function useToolExecution(
   workspaceId: string,
@@ -272,6 +317,10 @@ export function useToolExecution(
       );
     },
     enabled: !!workspaceId && !!executionId && options?.enabled !== false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === undefined || isActiveExecution(status) ? 1500 : false;
+    },
   });
 }
 
@@ -290,10 +339,11 @@ export function useApproveExecution(
         {}
       );
     },
-    onSuccess: (_data, executionId) => {
+    onSuccess: (data, executionId) => {
       queryClient.invalidateQueries({
         queryKey: [EXECUTIONS_KEY, 'execution', executionId],
       });
+      queryClient.invalidateQueries({ queryKey: [EXECUTIONS_KEY, data.toolId] });
     },
   });
 }
@@ -313,10 +363,11 @@ export function useRejectExecution(
         { reason }
       );
     },
-    onSuccess: (_data, { executionId }) => {
+    onSuccess: (data, { executionId }) => {
       queryClient.invalidateQueries({
         queryKey: [EXECUTIONS_KEY, 'execution', executionId],
       });
+      queryClient.invalidateQueries({ queryKey: [EXECUTIONS_KEY, data.toolId] });
     },
   });
 }
