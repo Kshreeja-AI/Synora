@@ -57,6 +57,13 @@ export interface StageDefaults {
     maxUploadBytes: number;
     maxAssetUploadBytes: number;
   };
+  virusScan: {
+    provider: 'none' | 'clamav';
+    clamavPort: number;
+    clamavTimeoutMs: number;
+    maxScanBytes: number;
+    forceBlockUnscanned: boolean;
+  };
   billing: {
     provider: 'stripe';
     defaultCurrency: string;
@@ -189,6 +196,13 @@ const BASE_DEFAULTS: StageDefaults = {
     maxUploadBytes: 5 * 1024 * 1024, // 5 MiB — plenty for an avatar image
     maxAssetUploadBytes: 25 * 1024 * 1024, // 25 MiB — workspace assets (docs, images, etc.), not just avatars
   },
+  virusScan: {
+    provider: 'none', // no scanner until a clamd host is configured
+    clamavPort: 3310,
+    clamavTimeoutMs: 30000,
+    maxScanBytes: 25 * 1024 * 1024, // 25 MiB — matches the largest upload limit above
+    forceBlockUnscanned: false, // production is fail-closed regardless; this hardens other stages
+  },
   billing: {
     provider: 'stripe',
     defaultCurrency: 'USD',
@@ -316,6 +330,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     ai: { ...BASE_DEFAULTS.ai, ...override.ai },
     mail: { ...BASE_DEFAULTS.mail, ...override.mail },
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
+    virusScan: { ...BASE_DEFAULTS.virusScan, ...override.virusScan },
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
     queue: { ...BASE_DEFAULTS.queue, ...override.queue },
     embeddings: { ...BASE_DEFAULTS.embeddings, ...override.embeddings },

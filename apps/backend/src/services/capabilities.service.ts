@@ -3,6 +3,7 @@ import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb';
 import { TRANSPORT_REGISTRY } from '../mail/registry';
 import { STORAGE_REGISTRY } from '../storage/registry';
+import { VIRUS_SCAN_PROVIDER_REGISTRY } from '../files/virusScanRegistry';
 import { getConfig } from '../config';
 
 /**
@@ -86,12 +87,14 @@ function report(
 }
 
 export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
-  const [aiProvider, embeddingProvider, vectorProvider, storageProvider] = await Promise.all([
-    firstConfigured(PROVIDER_REGISTRY),
-    firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
-    firstConfigured(VECTORDB_PROVIDER_REGISTRY),
-    firstConfigured(STORAGE_REGISTRY),
-  ]);
+  const [aiProvider, embeddingProvider, vectorProvider, storageProvider, virusScanProvider] =
+    await Promise.all([
+      firstConfigured(PROVIDER_REGISTRY),
+      firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
+      firstConfigured(VECTORDB_PROVIDER_REGISTRY),
+      firstConfigured(STORAGE_REGISTRY),
+      firstConfigured(VIRUS_SCAN_PROVIDER_REGISTRY),
+    ]);
 
   // Mail is the one subsystem that is never auto-detected: `console` is
   // always valid, so the configured transport is an explicit choice rather
@@ -142,6 +145,13 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
       storageProvider,
       STORAGE_REGISTRY,
       'Uploads have nowhere to be stored.'
+    ),
+    report(
+      'virus-scanning',
+      'Upload malware scanning',
+      virusScanProvider,
+      VIRUS_SCAN_PROVIDER_REGISTRY,
+      'Uploaded files are not scanned and are recorded as unscanned (never marked clean). In production they cannot be downloaded until a scanner is configured; other stages allow download unless VIRUS_SCAN_FORCE_BLOCK_UNSCANNED is set. Infected files are always blocked.'
     ),
     {
       id: 'email',

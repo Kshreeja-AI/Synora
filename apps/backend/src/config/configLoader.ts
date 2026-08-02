@@ -157,6 +157,28 @@ export async function loadConfig(
         defaults.storage.maxAssetUploadBytes
       ),
     },
+    virusScan: {
+      provider: readString(
+        env,
+        'VIRUS_SCAN_PROVIDER',
+        defaults.virusScan.provider
+      ) as AppConfig['virusScan']['provider'],
+      clamavHost: env.VIRUS_SCAN_CLAMAV_HOST || undefined,
+      clamavPort: readNumber(env, 'VIRUS_SCAN_CLAMAV_PORT', defaults.virusScan.clamavPort),
+      clamavTimeoutMs: readNumber(
+        env,
+        'VIRUS_SCAN_CLAMAV_TIMEOUT_MS',
+        defaults.virusScan.clamavTimeoutMs
+      ),
+      maxScanBytes: readNumber(env, 'VIRUS_SCAN_MAX_BYTES', defaults.virusScan.maxScanBytes),
+      forceBlockUnscanned:
+        readString(
+          env,
+          'VIRUS_SCAN_FORCE_BLOCK_UNSCANNED',
+          String(defaults.virusScan.forceBlockUnscanned)
+        ) === 'true',
+    },
+
     billing: {
       provider: readString(env, 'BILLING_PROVIDER', defaults.billing.provider) as AppConfig['billing']['provider'],
       defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),

@@ -232,6 +232,37 @@ Role gates (`tool:manage`, `tool:execute`, `tool:approve` in
 approval-gated executions can only be approved or rejected by
 ADMIN/OWNER while in `PENDING` state.
 
+### Upload malware scanning (real, credential-gated)
+
+Uploaded files are scanned through a provider-agnostic abstraction
+(`apps/backend/src/files/virusScanRegistry.ts`). The scan result is a
+three-state outcome — `clean`, `infected`, or `error` — deliberately not a
+boolean: a boolean forces "couldn't scan" to be reported as clean (a lie)
+or infected (a false alarm). A file's `virusScanStatus` records the literal
+truth: `CLEAN` only when a real scanner confirmed it, `INFECTED` on a
+signature match, `FAILED` when no scanner is configured or the scan didn't
+conclude. **A file is never recorded `CLEAN` without an actual clean scan.**
+
+- **Real provider**: ClamAV over the clamd `zINSTREAM` protocol
+  (`providers/clamav.provider.ts`) — streams bytes to clamd without giving
+  it filesystem access, works against a local clamd, a sidecar, or a
+  managed service, selected by `VIRUS_SCAN_CLAMAV_HOST`/`PORT`. No API key
+  (clamd is a private-network daemon).
+- **Download gate (fail-closed)**: infected files are blocked in every
+  stage, always. Files that were not confirmed clean (no scanner, pending,
+  or errored) are blocked from download in **production** and wherever
+  `VIRUS_SCAN_FORCE_BLOCK_UNSCANNED=true` — so an unscanned file is never
+  served as if it had passed a scan it never had. Non-production stages
+  allow them by default so local work isn't blocked by a scanner that isn't
+  running.
+- **Capability detection**: `GET /api/capabilities` reports whether a
+  scanner is configured and, when not, exactly what the platform does
+  instead.
+
+There is deliberately no "always returns clean" stub. The previous
+implementation marked every upload clean without scanning, which silently
+defeated the infected-file download gate.
+
 ## Dependency & Secret Security
 
 ### Vulnerability scanning (real, CI-enforced)

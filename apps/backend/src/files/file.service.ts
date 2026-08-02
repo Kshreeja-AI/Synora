@@ -1,11 +1,25 @@
 import { prisma } from '@synora/database';
-import { ConversationFile } from '@prisma/client';
+import { ConversationFile, VirusScanStatus } from '@prisma/client';
 import { NotFoundException, ForbiddenException } from '@synora/shared';
 import { FileStorageProvider } from './types';
 import { processorRegistry } from './processors';
-import { virusScanProvider } from './virusScan';
+import { resolveVirusScanProvider } from './virusScanRegistry';
+import { getConfig } from '../config';
 import { logger } from '../utils/logger';
 import crypto from 'crypto';
+
+/**
+ * Whether a file that was not scanned clean may be downloaded. Infected
+ * files are always blocked; this governs the ambiguous states (no scanner
+ * configured, scan pending, scan errored). Production is always fail-closed;
+ * other stages fail-closed only when explicitly hardened. This mirrors how
+ * mature platforms treat AV as a hard gate in production and a soft gate in
+ * development so local work isn't blocked by a scanner that isn't running.
+ */
+function blocksUnscannedDownloads(): boolean {
+  const { stage, virusScan } = getConfig();
+  return stage === 'production' || virusScan.forceBlockUnscanned;
+}
 
 export interface UploadFileInput {
   conversationId: string;
@@ -144,12 +158,27 @@ export class FileService {
       throw new NotFoundException('File not found');
     }
 
+    // Infected files are blocked in every stage, always.
     if (file.virusScanStatus === 'INFECTED') {
       logger.warn('[FileService] Blocked download of infected file', {
         fileId,
         fileName: file.fileName,
       });
       throw new ForbiddenException('This file failed a security scan and cannot be downloaded');
+    }
+
+    // Files that were never confirmed clean (no scanner configured, scan
+    // pending, or scan errored) are blocked under the fail-closed policy —
+    // never served as if they had passed a scan they never had.
+    if (file.virusScanStatus !== 'CLEAN' && blocksUnscannedDownloads()) {
+      logger.warn('[FileService] Blocked download of unscanned file', {
+        fileId,
+        fileName: file.fileName,
+        virusScanStatus: file.virusScanStatus,
+      });
+      throw new ForbiddenException(
+        'This file has not completed a security scan and cannot be downloaded yet'
+      );
     }
 
     const buffer = await this.storage.download(file.storageKey);
@@ -214,15 +243,34 @@ export class FileService {
       // Download from storage
       const buffer = await this.storage.download(file.storageKey);
 
-      // Virus scan
-      const scanResult = await virusScanProvider.scan(buffer, file.fileName);
-      let virusScanStatus: 'CLEAN' | 'INFECTED' = 'CLEAN';
+      // Virus scan. The status recorded is the literal truth of what
+      // happened: CLEAN only when a real scanner confirmed it, INFECTED
+      // when a signature was found, FAILED when no scanner is configured or
+      // the scan could not conclude. A file is never marked CLEAN without an
+      // actual clean result.
+      const scanner = await resolveVirusScanProvider();
+      let virusScanStatus: VirusScanStatus;
       let virusScanError: string | null = null;
 
-      if (!scanResult.clean) {
-        virusScanStatus = 'INFECTED';
-        virusScanError = scanResult.error || 'Unknown virus detected';
-        logger.warn('[FileService] Virus detected', { fileId, error: virusScanError });
+      if (!scanner) {
+        virusScanStatus = 'FAILED';
+        virusScanError = 'No virus scanner is configured for this deployment';
+        logger.warn('[FileService] File stored without a virus scan (no scanner configured)', {
+          fileId,
+        });
+      } else {
+        const outcome = await scanner.scan(buffer, file.fileName);
+        if (outcome.status === 'clean') {
+          virusScanStatus = 'CLEAN';
+        } else if (outcome.status === 'infected') {
+          virusScanStatus = 'INFECTED';
+          virusScanError = `Malware detected: ${outcome.signature}`;
+          logger.warn('[FileService] Virus detected', { fileId, signature: outcome.signature });
+        } else {
+          virusScanStatus = 'FAILED';
+          virusScanError = outcome.error;
+          logger.error('[FileService] Virus scan did not conclude', { fileId, error: outcome.error });
+        }
       }
 
       // Process file content

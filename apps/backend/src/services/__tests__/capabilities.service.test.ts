@@ -4,6 +4,7 @@ import { PROVIDER_REGISTRY } from '../../ai/registry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../../vectordb';
 import { STORAGE_REGISTRY } from '../../storage/registry';
+import { VIRUS_SCAN_PROVIDER_REGISTRY } from '../../files/virusScanRegistry';
 import { getConfig } from '../../config';
 
 /**
@@ -26,6 +27,9 @@ vi.mock('../../vectordb', () => ({
 vi.mock('../../storage/registry', () => ({
   STORAGE_REGISTRY: [{ id: 'local', isConfigured: vi.fn() }],
 }));
+vi.mock('../../files/virusScanRegistry', () => ({
+  VIRUS_SCAN_PROVIDER_REGISTRY: [{ id: 'clamav', isConfigured: vi.fn() }],
+}));
 vi.mock('../../mail/registry', () => ({
   TRANSPORT_REGISTRY: [{ id: 'console' }, { id: 'smtp' }],
 }));
@@ -39,18 +43,21 @@ const ai = PROVIDER_REGISTRY[0] as unknown as Configurable;
 const embeddings = EMBEDDING_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const vectors = VECTORDB_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const storage = STORAGE_REGISTRY[0] as unknown as Configurable;
+const virusScan = VIRUS_SCAN_PROVIDER_REGISTRY[0] as unknown as Configurable;
 
 function configure(options: {
   ai?: boolean;
   embeddings?: boolean;
   vectors?: boolean;
   storage?: boolean;
+  virusScan?: boolean;
   mailTransport?: string;
 }): void {
   ai.isConfigured.mockResolvedValue(options.ai ?? false);
   embeddings.isConfigured.mockResolvedValue(options.embeddings ?? false);
   vectors.isConfigured.mockResolvedValue(options.vectors ?? false);
   storage.isConfigured.mockResolvedValue(options.storage ?? false);
+  virusScan.isConfigured.mockResolvedValue(options.virusScan ?? false);
   vi.mocked(getConfig).mockReturnValue({
     mail: { transport: options.mailTransport ?? 'console' },
   } as never);
@@ -128,12 +135,31 @@ describe('getPlatformCapabilities', () => {
     expect(email.degradedBehavior).toBeUndefined();
   });
 
+  it('reports virus scanning as unconfigured with a fail-closed explanation', async () => {
+    configure({});
+
+    const scanning = find(await getPlatformCapabilities(), 'virus-scanning');
+
+    expect(scanning.status).toBe('unconfigured');
+    expect(scanning.degradedBehavior).toContain('never marked clean');
+  });
+
+  it('activates virus scanning when a scanner is configured', async () => {
+    configure({ virusScan: true });
+
+    const scanning = find(await getPlatformCapabilities(), 'virus-scanning');
+
+    expect(scanning.status).toBe('active');
+    expect(scanning.provider).toBe('clamav');
+  });
+
   it('sets allActive only when every capability is live', async () => {
     configure({
       ai: true,
       embeddings: true,
       vectors: true,
       storage: true,
+      virusScan: true,
       mailTransport: 'smtp',
     });
 

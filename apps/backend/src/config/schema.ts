@@ -123,6 +123,31 @@ export const AppConfigSchema = z.object({
     maxAssetUploadBytes: z.number().int().positive(),
   }),
 
+  /**
+   * Malware scanning for uploaded files. `provider: 'none'` (the default)
+   * means no scanner is configured — uploads are NOT marked clean, they are
+   * recorded as unscanned, and whether they can be downloaded is governed by
+   * the fail-closed policy below. Configuring `clamav` with a reachable clamd
+   * host activates real scanning automatically. API keys aren't needed
+   * (clamd is a network daemon), so all fields here are non-secret config.
+   */
+  virusScan: z.object({
+    provider: z.enum(['none', 'clamav']).default('none'),
+    clamavHost: z.string().optional(),
+    clamavPort: z.number().int().positive().default(3310),
+    clamavTimeoutMs: z.number().int().positive().default(30000),
+    /** Files larger than this are not sent to the scanner (clamd's own limit). */
+    maxScanBytes: z.number().int().positive().default(26214400), // 25 MiB
+    /**
+     * Force fail-closed everywhere: files that were not scanned clean
+     * (no scanner configured, scan pending, or scan errored) cannot be
+     * downloaded. Production is ALWAYS fail-closed regardless of this flag;
+     * setting it true makes non-production stages fail-closed too. Infected
+     * files are always blocked in every stage.
+     */
+    forceBlockUnscanned: z.boolean().default(false),
+  }),
+
   billing: z.object({
     provider: z.enum(['stripe']).default('stripe'),
     defaultCurrency: z.string().min(1).default('USD'),
