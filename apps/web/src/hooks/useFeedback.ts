@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import {
   feedbackApi,
-  type MessageFeedbackInput,
   type ConversationFeedbackInput,
   type CorrectionInput,
   type HallucinationReportInput,
