@@ -517,14 +517,33 @@ async job queue → worker → S3-compatible object storage → 202-enqueue /
 poll-or-notify API shape for image, video, and audio generation. Do not
 read the current images route as a preview of that design.
 
-## Future Memory Architecture — not implemented
+## Memory Architecture — storage and retrieval real, semantic search disabled
 
-No conversation memory, embedding store, or vector database exists, and
-none is scoped before Release 3. When scoped, it will live behind its own
-provider-agnostic abstraction exactly like AI generation (pluggable
-vector store, config-selected), so switching pgvector ↔ dedicated vector
-DB is configuration, not rewrite. Treat any memory-related code you find
-as nonexistent until a release plan names it.
+Conversation memory **does** exist as of Release 3: `Memory` and related
+tables in the Prisma schema, `memory.service` / `memoryRetrieval.service`
+/ `memoryGdpr.service`, and routes mounted at
+`/api/workspaces/:workspaceId/memories`. Storage, permissions
+(PRIVATE/WORKSPACE/SHARED/PUBLIC), GDPR erasure, and retrieval are
+implemented and tested.
+
+**No embedding store or vector database exists.** Nothing in the AI
+provider abstraction implements the `embeddings` capability, and no
+vector DB is provisioned. Semantic search is therefore *disabled*, not
+approximated: `memoryEmbedding.service` requires real providers to be
+registered via `configureMemoryEmbeddings({ embeddings, vectorDB })` and,
+until they are, refuses to generate vectors, returns 503 from the
+semantic search route, and skips indexing rather than writing
+`embeddingId` values for embeddings that don't exist.
+
+Retrieval stays useful meanwhile: `memoryRetrieval.service` ranks on
+lexical term overlap, importance, recency, and access frequency, dropping
+the semantic weight and renormalizing the rest so scores remain
+comparable. Results carry `rankingDetails.semanticSearchUsed` so callers
+can distinguish "no vector signal available" from "not similar".
+
+When a real embedding provider and vector store are added, they plug in
+behind the `IEmbeddingModel` / `IVectorDB` interfaces — pgvector ↔
+dedicated vector DB is a configuration change, not a rewrite.
 
 ## Database Architecture
 

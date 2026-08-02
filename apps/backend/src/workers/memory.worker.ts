@@ -150,8 +150,13 @@ export class MemoryWorker {
 
       const result = await memoryEmbeddingService.batchIndexMemories(memories.map((m: typeof memories[0]) => m.id))
 
+      if (result.skipped) {
+        logger.debug('Embedding generation skipped: no embedding provider configured', { workspaceId })
+        return { indexed: 0, failed: 0 }
+      }
+
       logger.info(`Embedding generation complete: ${result.indexed} indexed, ${result.failed} failed`)
-      return result
+      return { indexed: result.indexed, failed: result.failed }
     } catch (error) {
       logger.error('Embedding generation worker error', { error, workspaceId })
       return { indexed: 0, failed: 0 }

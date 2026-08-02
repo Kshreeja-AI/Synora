@@ -1,107 +1,111 @@
 import { prisma as db } from '@synora/database'
 import { Memory } from '@synora/database'
-import { ValidationException, NotFoundException } from '@synora/shared'
+import { NotFoundException, ServiceUnavailableException } from '@synora/shared'
 import { logger } from '../utils/logger'
 
 /**
- * Abstract interface for vector database providers
+ * Memory embeddings and vector search.
+ *
+ * Semantic search requires two real dependencies: an embedding model and
+ * a vector database. Synora ships neither today — no provider in the AI
+ * abstraction implements the `embeddings` capability (see
+ * `src/ai/types.ts`), and no vector DB is provisioned. Rather than
+ * fabricate vectors (an earlier version hashed text through `Math.sin`
+ * and served the resulting cosine distances as "semantic similarity",
+ * which is noise dressed as relevance), this module is **disabled until
+ * real providers are registered** via `configureMemoryEmbeddings`.
+ *
+ * While disabled:
+ * - `isSemanticSearchAvailable()` returns false;
+ * - `semanticSearch` throws `ServiceUnavailableException` (routes surface
+ *   a 503 rather than empty-but-successful results, so callers can tell
+ *   "not configured" from "no matches");
+ * - indexing calls no-op and report `skipped`, leaving `embeddingId` null
+ *   so nothing in the database claims an embedding that doesn't exist.
+ *
+ * Memory retrieval stays useful meanwhile: `memoryRetrieval.service`
+ * falls back to real lexical matching over stored content.
  */
+
+/** Vector database provider. Implement to enable semantic search. */
 export interface IVectorDB {
-  upsert(id: string, embedding: number[], metadata: Record<string, any>): Promise<void>
+  upsert(id: string, embedding: number[], metadata: Record<string, unknown>): Promise<void>
   delete(id: string): Promise<void>
   query(embedding: number[], topK: number, namespace?: string): Promise<Array<{ id: string; score: number }>>
 }
 
-/**
- * Mock Pinecone implementation
- */
-class MockPinecone implements IVectorDB {
-  private store: Map<string, { embedding: number[]; metadata: Record<string, any> }> = new Map()
-
-  async upsert(id: string, embedding: number[], metadata: Record<string, any>): Promise<void> {
-    this.store.set(id, { embedding, metadata })
-  }
-
-  async delete(id: string): Promise<void> {
-    this.store.delete(id)
-  }
-
-  async query(embedding: number[], topK: number, _namespace?: string): Promise<Array<{ id: string; score: number }>> {
-    const results: Array<{ id: string; score: number }> = []
-
-    for (const [id, { embedding: stored }] of this.store) {
-      const similarity = this.cosineSimilarity(embedding, stored)
-      results.push({ id, score: similarity })
-    }
-
-    return results.sort((a, b) => b.score - a.score).slice(0, topK)
-  }
-
-  private cosineSimilarity(a: number[], b: number[]): number {
-    const dotProduct = a.reduce((sum, val, i) => sum + val * b[i], 0)
-    const magnitudeA = Math.sqrt(a.reduce((sum, val) => sum + val * val, 0))
-    const magnitudeB = Math.sqrt(b.reduce((sum, val) => sum + val * val, 0))
-    return dotProduct / (magnitudeA * magnitudeB)
-  }
+/** Embedding model provider. Implement to enable semantic search. */
+export interface IEmbeddingModel {
+  /** Model identifier recorded on indexed memories, e.g. "text-embedding-3-small". */
+  readonly model: string
+  embed(text: string): Promise<number[]>
 }
 
+interface EmbeddingProviders {
+  embeddings: IEmbeddingModel
+  vectorDB: IVectorDB
+}
+
+let providers: EmbeddingProviders | null = null
+
 /**
- * Mock embedding model (OpenAI-compatible)
+ * Register real embedding + vector DB providers. Call once at startup
+ * when both are configured; semantic search stays disabled until then.
  */
-class MockEmbeddings {
-  async embed(text: string): Promise<number[]> {
-    // Mock embedding: hash text into 1536-dim vector
-    const hash = this.hashString(text)
-    const embedding: number[] = []
+export function configureMemoryEmbeddings(next: EmbeddingProviders): void {
+  providers = next
+  logger.info('Memory semantic search enabled', { model: next.embeddings.model })
+}
 
-    for (let i = 0; i < 1536; i++) {
-      embedding.push(Math.sin((hash + i) * 0.1) * 0.5 + 0.5)
-    }
+/** Test/teardown hook — returns the module to its unconfigured state. */
+export function resetMemoryEmbeddings(): void {
+  providers = null
+}
 
-    return embedding
+export function isSemanticSearchAvailable(): boolean {
+  return providers !== null
+}
+
+const UNAVAILABLE_MESSAGE =
+  'Semantic memory search is not available: no embedding provider is configured for this deployment.'
+
+function requireProviders(): EmbeddingProviders {
+  if (!providers) {
+    throw new ServiceUnavailableException(UNAVAILABLE_MESSAGE)
   }
+  return providers
+}
 
-  private hashString(str: string): number {
-    let hash = 0
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i)
-      hash = (hash << 5) - hash + char
-      hash = hash & hash // Convert to 32bit integer
-    }
-    return Math.abs(hash)
-  }
+export interface IndexResult {
+  status: 'indexed' | 'skipped'
 }
 
 export class MemoryEmbeddingService {
-  private vectorDB: IVectorDB = new MockPinecone()
-  private embeddings = new MockEmbeddings()
-
   /**
-   * Generate embedding for memory content
+   * Generate an embedding for arbitrary content. Throws when no
+   * embedding provider is configured — callers must not substitute a
+   * synthetic vector.
    */
-  async generateEmbedding(content: string, model: string = 'text-embedding-3-small'): Promise<number[]> {
-    try {
-      const embedding = await this.embeddings.embed(content)
-      return embedding
-    } catch (error) {
-      logger.error('Failed to generate embedding', { error, model })
-      throw new ValidationException('Failed to generate embedding')
-    }
+  async generateEmbedding(content: string): Promise<number[]> {
+    const { embeddings } = requireProviders()
+    return embeddings.embed(content)
   }
 
   /**
-   * Index memory in vector DB
+   * Index a memory in the vector DB. No-ops (reporting `skipped`) when
+   * semantic search is disabled, leaving embedding columns untouched.
    */
-  async indexMemory(memory: Memory): Promise<void> {
-    try {
-      // Generate embedding
-      const embedding = await this.generateEmbedding(memory.content)
+  async indexMemory(memory: Memory): Promise<IndexResult> {
+    if (!providers) {
+      return { status: 'skipped' }
+    }
+    const { embeddings, vectorDB } = providers
 
-      // Store embedding ID
+    try {
+      const embedding = await embeddings.embed(memory.content)
       const embeddingId = `memory_${memory.id}`
 
-      // Upsert to vector DB
-      await this.vectorDB.upsert(embeddingId, embedding, {
+      await vectorDB.upsert(embeddingId, embedding, {
         memoryId: memory.id,
         workspaceId: memory.workspaceId,
         conversationId: memory.conversationId,
@@ -112,18 +116,18 @@ export class MemoryEmbeddingService {
         createdAt: memory.createdAt,
       })
 
-      // Update memory metadata
       await db.memory.update({
         where: { id: memory.id },
         data: {
           embeddingId,
-          embeddingModel: 'text-embedding-3-small',
+          embeddingModel: embeddings.model,
           embeddingVersion: 1,
           embeddingRefreshNeeded: false,
         },
       })
 
       logger.debug(`Memory indexed: ${memory.id}`)
+      return { status: 'indexed' }
     } catch (error) {
       logger.error('Failed to index memory', { error, memoryId: memory.id })
       throw error
@@ -131,26 +135,24 @@ export class MemoryEmbeddingService {
   }
 
   /**
-   * Regenerate embedding for memory
+   * Regenerate a memory's embedding. No-ops when disabled.
    */
-  async regenerateEmbedding(memoryId: string): Promise<void> {
-    const memory = await db.memory.findUnique({
-      where: { id: memoryId },
-    })
+  async regenerateEmbedding(memoryId: string): Promise<IndexResult> {
+    if (!providers) {
+      return { status: 'skipped' }
+    }
 
+    const memory = await db.memory.findUnique({ where: { id: memoryId } })
     if (!memory) {
       throw new NotFoundException('Memory not found')
     }
 
-    // Delete old embedding
     if (memory.embeddingId) {
-      await this.vectorDB.delete(memory.embeddingId)
+      await providers.vectorDB.delete(memory.embeddingId)
     }
 
-    // Generate and index new embedding
-    await this.indexMemory(memory)
+    const result = await this.indexMemory(memory)
 
-    // Mark as refreshed
     await db.memory.update({
       where: { id: memoryId },
       data: {
@@ -160,57 +162,56 @@ export class MemoryEmbeddingService {
     })
 
     logger.info(`Embedding regenerated: ${memoryId}`)
+    return result
   }
 
   /**
-   * Semantic search across memories
+   * Semantic search across memories. Throws
+   * `ServiceUnavailableException` when no provider is configured — an
+   * empty result would misrepresent "unavailable" as "no matches".
    */
   async semanticSearch(
     query: string,
     workspaceId: string,
     limit: number = 10,
   ): Promise<Array<{ memoryId: string; memory: Memory; score: number }>> {
-    try {
-      // Generate query embedding
-      const queryEmbedding = await this.generateEmbedding(query)
+    const { embeddings, vectorDB } = requireProviders()
 
-      // Search vector DB
-      const results = await this.vectorDB.query(queryEmbedding, limit, workspaceId)
+    const queryEmbedding = await embeddings.embed(query)
+    const results = await vectorDB.query(queryEmbedding, limit, workspaceId)
 
-      // Fetch full memory records
-      const memories = await db.memory.findMany({
-        where: {
-          id: { in: results.map((r) => r.id.replace('memory_', '')) },
-          workspaceId,
-        },
-        include: { metadata: true },
-      })
+    const memories = await db.memory.findMany({
+      where: {
+        id: { in: results.map((r) => r.id.replace('memory_', '')) },
+        workspaceId,
+      },
+      include: { metadata: true },
+    })
 
-      // Merge results with scores
-      const resultMap = new Map(results.map((r) => [r.id.replace('memory_', ''), r.score]))
+    const resultMap = new Map(results.map((r) => [r.id.replace('memory_', ''), r.score]))
 
-      const merged = memories
-        .map((memory) => ({
-          memoryId: memory.id,
-          memory,
-          score: resultMap.get(memory.id) || 0,
-        }))
-        .sort((a, b) => b.score - a.score)
-
-      return merged
-    } catch (error) {
-      logger.error('Semantic search failed', { error, query })
-      throw new ValidationException('Semantic search failed')
-    }
+    return memories
+      .map((memory) => ({
+        memoryId: memory.id,
+        memory,
+        score: resultMap.get(memory.id) || 0,
+      }))
+      .sort((a, b) => b.score - a.score)
   }
 
   /**
-   * Batch index memories (for background worker)
+   * Batch index memories (background worker). Reports `skipped` when
+   * semantic search is disabled instead of pretending to have worked.
    */
-  async batchIndexMemories(memoryIds: string[], batchSize: number = 10): Promise<{ indexed: number; failed: number }> {
-    const memories = await db.memory.findMany({
-      where: { id: { in: memoryIds } },
-    })
+  async batchIndexMemories(
+    memoryIds: string[],
+    batchSize: number = 10,
+  ): Promise<{ indexed: number; failed: number; skipped: boolean }> {
+    if (!providers) {
+      return { indexed: 0, failed: 0, skipped: true }
+    }
+
+    const memories = await db.memory.findMany({ where: { id: { in: memoryIds } } })
 
     let indexed = 0
     let failed = 0
@@ -231,13 +232,17 @@ export class MemoryEmbeddingService {
       )
     }
 
-    return { indexed, failed }
+    return { indexed, failed, skipped: false }
   }
 
   /**
-   * Refresh embeddings for memories that need it
+   * Refresh embeddings flagged as stale. No-ops when disabled.
    */
   async refreshPendingEmbeddings(workspaceId: string, limit: number = 100): Promise<number> {
+    if (!providers) {
+      return 0
+    }
+
     const memories = await db.memory.findMany({
       where: {
         workspaceId,
@@ -261,19 +266,19 @@ export class MemoryEmbeddingService {
   }
 
   /**
-   * Delete embedding from vector DB
+   * Delete a memory's embedding from the vector DB.
    */
   async deleteEmbedding(memoryId: string): Promise<void> {
-    const memory = await db.memory.findUnique({
-      where: { id: memoryId },
-    })
+    const memory = await db.memory.findUnique({ where: { id: memoryId } })
 
     if (!memory || !memory.embeddingId) {
       return
     }
 
     try {
-      await this.vectorDB.delete(memory.embeddingId)
+      if (providers) {
+        await providers.vectorDB.delete(memory.embeddingId)
+      }
 
       await db.memory.update({
         where: { id: memoryId },
@@ -288,9 +293,12 @@ export class MemoryEmbeddingService {
   }
 
   /**
-   * Get embedding statistics
+   * Embedding coverage for a workspace. `semanticSearchEnabled` tells
+   * callers whether the zeroes below mean "nothing indexed yet" or
+   * "indexing is switched off in this deployment".
    */
   async getEmbeddingStats(workspaceId: string): Promise<{
+    semanticSearchEnabled: boolean
     total: number
     indexed: number
     needsRefresh: number
@@ -314,6 +322,7 @@ export class MemoryEmbeddingService {
     })
 
     return {
+      semanticSearchEnabled: isSemanticSearchAvailable(),
       total: memories.length,
       indexed: memories.filter((m) => m.embeddingId).length,
       needsRefresh: memories.filter((m) => m.embeddingRefreshNeeded).length,

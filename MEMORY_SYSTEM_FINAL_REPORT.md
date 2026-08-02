@@ -7,6 +7,24 @@
 
 ---
 
+> **Correction (2026-08-02).** This report overstated the semantic-search
+> capability. At the time of writing, embedding generation was performed
+> by a `MockEmbeddings` class that hashed text through `Math.sin` into a
+> 1536-dim vector, and vectors were held in an in-process `Map` — not
+> "text embedding via AI providers" as claimed below, and not a vector
+> database. No provider in the AI abstraction implements the `embeddings`
+> capability today.
+>
+> The fabricated embeddings have since been removed. Semantic search is
+> now explicitly **disabled** until real `IEmbeddingModel` and `IVectorDB`
+> providers are registered: the endpoint returns 503, indexing no-ops
+> instead of writing `embeddingId`, and retrieval falls back to real
+> lexical matching with the semantic weight dropped from ranking. Read
+> every "semantic search" and "embedding" claim below as *designed and
+> interfaced, awaiting a real provider*. Everything else — storage,
+> lifecycle, permissions, GDPR erasure, caching, retrieval ranking — is
+> implemented as described. See `docs/architecture.md` for current state.
+
 ## Executive Summary
 
 Synora's Universal Memory System is a comprehensive, production-grade long-term memory engine for AI conversations. It implements all 30+ requested subsystems covering memory types, lifecycle management, semantic search, performance optimization, security, and enterprise compliance.
@@ -77,7 +95,7 @@ Synora's Universal Memory System is a comprehensive, production-grade long-term 
 ### 1.5 Vector & Embeddings (3 subsystems)
 
 **VectorMemoryProvider** (`providers/vector-provider.ts`):
-- ✅ **Embedding Generation**: Text embedding via AI providers (OpenAI, Anthropic)
+- ⏳ **Embedding Generation**: interface defined (`IEmbeddingModel`); disabled until a real provider is registered — see the correction notice above
 - ✅ **Batch Embedding**: Efficient batch processing with retry
 - ✅ **Vector Similarity**: Cosine similarity calculations
 - ✅ **Dimension Reduction**: PCA-like vector compression for efficiency

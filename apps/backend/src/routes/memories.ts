@@ -6,14 +6,17 @@ import { memoryService } from '../services/memory.service'
 import { memoryEmbeddingService } from '../services/memoryEmbedding.service'
 import { memoryCacheService } from '../services/memoryCache.service'
 import { memoryGdprService } from '../services/memoryGdpr.service'
-import { ValidationException } from '@synora/shared'
+import { ApiException, ValidationException } from '@synora/shared'
 import { logger } from '../utils/logger'
 
 const router: ExpressRouter = Router()
 
 /**
  * POST /api/workspaces/:workspaceId/memories/search/semantic
- * Semantic search using embeddings
+ * Semantic search using embeddings. Returns 503 when the deployment has
+ * no embedding provider configured — callers must be able to tell
+ * "unavailable" from "no matches" and fall back to the lexical search
+ * on `GET /memories?search=` instead.
  * IMPORTANT: Must be defined BEFORE routes with dynamic :memoryId parameter
  */
 router.post('/:workspaceId/memories/search/semantic', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
@@ -29,6 +32,10 @@ router.post('/:workspaceId/memories/search/semantic', authMiddleware, requireWor
 
     res.json({ success: true, data: results })
   } catch (error) {
+    if (error instanceof ApiException) {
+      res.status(error.statusCode).json({ error: error.message })
+      return
+    }
     logger.error('Semantic search failed', { error })
     res.status(500).json({ error: 'Search failed' })
   }
