@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { MessageCircle, Flag, Zap, MoreVertical, X } from 'lucide-react'
+import { MessageCircle, Flag, Zap, X } from 'lucide-react'
 import { Button } from './Button'
 import { FeedbackRating } from './FeedbackRating'
 import { FeedbackCorrection } from './FeedbackCorrection'
@@ -37,7 +37,7 @@ export interface MessageFeedbackBarProps {
 }
 
 export function MessageFeedbackBar({
-  messageId,
+  messageId: _unused,
   messageContent,
   onRatingSubmit,
   onCorrectionSubmit,

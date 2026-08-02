@@ -28,7 +28,7 @@ export interface FeedbackHallucinationProps {
 }
 
 export function FeedbackHallucination({
-  messageContent,
+  messageContent: _unused,
   onSubmit,
   onCancel,
   isLoading = false,
