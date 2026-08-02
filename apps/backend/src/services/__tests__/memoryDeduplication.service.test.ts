@@ -12,6 +12,9 @@ vi.mock('@synora/database', () => ({
       updateMany: vi.fn(),
       count: vi.fn(),
     },
+    memoryRelation: {
+      upsert: vi.fn().mockResolvedValue(undefined),
+    },
   },
 }))
 
@@ -192,6 +195,41 @@ describe('MemoryDeduplicationService', () => {
       )
       expect(memoryCacheService.invalidateMemory).toHaveBeenCalledWith('p')
       expect(memoryCacheService.invalidateMemory).toHaveBeenCalledWith('d')
+    })
+
+    it('records a duplicate_of relation for every merged memory, carrying its similarity as strength', async () => {
+      const { prisma } = await import('@synora/database')
+      const primary = makeMemory({ id: 'p' })
+      const dup = makeMemory({ id: 'd' })
+      vi.mocked(prisma.memory.findUnique).mockResolvedValue(primary as never)
+      vi.mocked(prisma.memory.findMany).mockResolvedValue([dup] as never)
+      vi.mocked(prisma.memory.update).mockResolvedValue(primary as never)
+      vi.mocked(prisma.memory.updateMany).mockResolvedValue({ count: 1 } as never)
+
+      await service.mergeDuplicates('p', ['d'], undefined, { d: 0.92 })
+
+      expect(prisma.memoryRelation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { fromId_toId_relationType: { fromId: 'd', toId: 'p', relationType: 'duplicate_of' } },
+          create: expect.objectContaining({ fromId: 'd', toId: 'p', relationType: 'duplicate_of', strength: 0.92 }),
+        }),
+      )
+    })
+
+    it('defaults relation strength to 1 when no similarity score is supplied', async () => {
+      const { prisma } = await import('@synora/database')
+      const primary = makeMemory({ id: 'p' })
+      const dup = makeMemory({ id: 'd' })
+      vi.mocked(prisma.memory.findUnique).mockResolvedValue(primary as never)
+      vi.mocked(prisma.memory.findMany).mockResolvedValue([dup] as never)
+      vi.mocked(prisma.memory.update).mockResolvedValue(primary as never)
+      vi.mocked(prisma.memory.updateMany).mockResolvedValue({ count: 1 } as never)
+
+      await service.mergeDuplicates('p', ['d'])
+
+      expect(prisma.memoryRelation.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ create: expect.objectContaining({ strength: 1 }) }),
+      )
     })
 
     it('deletes embeddings only for duplicates that actually had one', async () => {

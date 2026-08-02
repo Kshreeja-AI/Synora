@@ -1,5 +1,6 @@
 import { prisma as db } from '@synora/database'
 import { memoryWorker } from '../workers/memory.worker'
+import { memoryDeduplicationService } from './memoryDeduplication.service'
 import { logger } from '../utils/logger'
 
 export interface WorkspaceMaintenanceResult {
@@ -11,6 +12,7 @@ export interface WorkspaceMaintenanceResult {
   cleanedUp: number
   importanceUpdated: number
   archived: number
+  deduplicated: number
   errors: string[]
 }
 
@@ -47,12 +49,21 @@ export class MemoryLifecycleService {
       cleanedUp: 0,
       importanceUpdated: 0,
       archived: 0,
+      deduplicated: 0,
       errors: [],
     }
 
     await this.runStep(result, 'consolidation', async () => {
       const { consolidated } = await memoryWorker.consolidateMemories(workspaceId)
       result.consolidated = consolidated
+    })
+
+    // Runs before decay/archival/cleanup so a memory doesn't get decayed or
+    // archived under its own identity right before being folded into a
+    // duplicate — the merge already carries its importance/tags forward.
+    await this.runStep(result, 'deduplication', async () => {
+      const { duplicatesRemoved } = await memoryDeduplicationService.deduplicateWorkspace(workspaceId)
+      result.deduplicated = duplicatesRemoved
     })
 
     await this.runStep(result, 'decay', async () => {

@@ -20,6 +20,12 @@ vi.mock('../../workers/memory.worker', () => ({
   },
 }))
 
+vi.mock('../memoryDeduplication.service', () => ({
+  memoryDeduplicationService: {
+    deduplicateWorkspace: vi.fn(),
+  },
+}))
+
 describe('MemoryLifecycleService', () => {
   let service: MemoryLifecycleService
 
@@ -36,6 +42,13 @@ describe('MemoryLifecycleService', () => {
     vi.mocked(memoryWorker.archiveUnusedMemories).mockResolvedValue(1)
     vi.mocked(memoryWorker.cleanupExpiredMemories).mockResolvedValue(6)
     vi.mocked(memoryWorker.updateMemoryQuotas).mockResolvedValue(9)
+
+    const { memoryDeduplicationService } = await import('../memoryDeduplication.service')
+    vi.mocked(memoryDeduplicationService.deduplicateWorkspace).mockResolvedValue({
+      clustersFound: 2,
+      memoriesMerged: 2,
+      duplicatesRemoved: 3,
+    })
   })
 
   describe('runWorkspaceMaintenance', () => {
@@ -51,15 +64,18 @@ describe('MemoryLifecycleService', () => {
         importanceUpdated: 7,
         archived: 1,
         cleanedUp: 6,
+        deduplicated: 3,
         errors: [],
       })
     })
 
     it('calls every step with the workspace id', async () => {
       const { memoryWorker } = await import('../../workers/memory.worker')
+      const { memoryDeduplicationService } = await import('../memoryDeduplication.service')
       await service.runWorkspaceMaintenance('ws-42')
 
       expect(memoryWorker.consolidateMemories).toHaveBeenCalledWith('ws-42')
+      expect(memoryDeduplicationService.deduplicateWorkspace).toHaveBeenCalledWith('ws-42')
       expect(memoryWorker.applyMemoryDecay).toHaveBeenCalledWith('ws-42')
       expect(memoryWorker.generateEmbeddingsBatch).toHaveBeenCalledWith('ws-42')
       expect(memoryWorker.refreshStaleEmbeddings).toHaveBeenCalledWith('ws-42')
@@ -146,6 +162,7 @@ describe('MemoryLifecycleService', () => {
           importanceUpdated: 0,
           archived: 0,
           cleanedUp: 0,
+          deduplicated: 0,
           errors: [],
         }))
 
