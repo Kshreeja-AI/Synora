@@ -1,4 +1,6 @@
 import { prisma } from '@synora/database';
+import { ConversationFile } from '@prisma/client';
+import { NotFoundException, ForbiddenException } from '@synora/shared';
 import { FileStorageProvider } from './types';
 import { processorRegistry } from './processors';
 import { virusScanProvider } from './virusScan';
@@ -112,6 +114,46 @@ export class FileService {
       logger.error('[FileService] Delete failed', { fileId, error: error.message });
       throw error;
     }
+  }
+
+  /**
+   * Fetch a file's record and raw bytes for download.
+   *
+   * Scoping is deliberately strict: the file must belong to BOTH the
+   * workspace (the authorization boundary — the route has already
+   * verified membership) and the conversation named in the URL, so a
+   * valid file id can't be pulled through a different conversation's
+   * path. Infected files are never served — the whole point of
+   * scanning is that the quarantine holds.
+   */
+  async downloadFile(
+    fileId: string,
+    workspaceId: string,
+    conversationId: string
+  ): Promise<{ file: ConversationFile; buffer: Buffer }> {
+    const file = await prisma.conversationFile.findUnique({
+      where: { id: fileId },
+    });
+
+    if (
+      !file ||
+      file.workspaceId !== workspaceId ||
+      file.conversationId !== conversationId ||
+      file.isArchived
+    ) {
+      throw new NotFoundException('File not found');
+    }
+
+    if (file.virusScanStatus === 'INFECTED') {
+      logger.warn('[FileService] Blocked download of infected file', {
+        fileId,
+        fileName: file.fileName,
+      });
+      throw new ForbiddenException('This file failed a security scan and cannot be downloaded');
+    }
+
+    const buffer = await this.storage.download(file.storageKey);
+    return { file, buffer };
   }
 
   async getConversationFiles(conversationId: string, workspaceId: string) {
@@ -233,6 +275,11 @@ export class FileService {
           processingError: error.message,
         },
       });
+
+      // Rethrow after recording: the queue's retry/backoff only
+      // engages on a thrown error. A successful retry overwrites the
+      // FAILED status above, so recording first loses nothing.
+      throw error;
     }
   }
 }

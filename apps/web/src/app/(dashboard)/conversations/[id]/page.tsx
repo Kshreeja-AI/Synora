@@ -17,6 +17,7 @@ import {
 } from '@/lib/api/messages';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Composer } from '@/components/chat/Composer';
+import { ConversationFilesPanel } from '@/components/files/ConversationFilesPanel';
 import { Button } from '@synora/design-system/components/Button';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { AlertCircle, MessageSquarePlus } from 'lucide-react';
@@ -274,6 +275,8 @@ export default function ConversationDetailPage() {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      <ConversationFilesPanel workspaceId={workspaceId} conversationId={conversationId} />
 
       <div className="border-t border-border bg-card p-6">
         <Composer

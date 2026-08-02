@@ -4,7 +4,9 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { requireMembership } from '../services/checks';
 import { FileService } from '../files/file.service';
 import { LocalStorageProvider } from '../files/storageProviders';
+import { enqueueFileProcessing } from '../workers/queue';
 import { createApiResponse } from '@synora/shared';
+import { logger } from '../utils/logger';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -54,7 +56,56 @@ router.post(
         uploadedBy: req.userId!,
       });
 
+      // Kick off virus scan + content extraction in the background.
+      // Non-fatal on enqueue failure: the file stays PENDING and can
+      // be re-enqueued; failing the upload over a queue hiccup would
+      // lose the user's work for no benefit.
+      try {
+        await enqueueFileProcessing({ fileId: result.id, conversationId, workspaceId });
+      } catch (queueError) {
+        logger.error('[files] Failed to enqueue file processing', {
+          fileId: result.id,
+          error: queueError instanceof Error ? queueError.message : String(queueError),
+        });
+      }
+
       res.status(201).json(createApiResponse(result));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/workspaces/:workspaceId/conversations/:conversationId/files/:fileId/download
+ * Download a file's raw bytes.
+ *
+ * Served as an attachment with nosniff so a stored HTML/SVG upload
+ * can never execute in the app's origin, and refused outright (403)
+ * for files whose virus scan flagged them.
+ */
+router.get(
+  '/:workspaceId/conversations/:conversationId/files/:fileId/download',
+  authMiddleware,
+  async (req: AuthRequest, res: Response, next) => {
+    try {
+      const { workspaceId, conversationId, fileId } = req.params;
+
+      await requireMembership(req.userId!, workspaceId);
+
+      const { file, buffer } = await fileService.downloadFile(fileId, workspaceId, conversationId);
+
+      // RFC 5987 encoding handles quotes/unicode in user-supplied
+      // names without letting them break out of the header value.
+      const encodedName = encodeURIComponent(file.fileName);
+      res.setHeader('Content-Type', file.mimeType);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename*=UTF-8''${encodedName}`
+      );
+      res.setHeader('Content-Length', String(buffer.length));
+      res.send(buffer);
     } catch (error) {
       next(error);
     }

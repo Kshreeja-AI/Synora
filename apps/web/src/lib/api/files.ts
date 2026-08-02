@@ -5,19 +5,31 @@ import {
   UseMutationResult,
   UseQueryResult,
 } from '@tanstack/react-query';
-import { api } from './client';
+import { api, getApiBaseUrl } from './client';
 
+/**
+ * Shape returned by the backend's file list endpoint
+ * (fileService.getConversationFiles select clause). `storageKey` is
+ * deliberately NOT exposed to clients — storage layout is a backend
+ * concern.
+ */
 export interface ConversationFile {
   id: string;
   fileName: string;
   mimeType: string;
   fileSize: number;
-  storageKey: string;
-  uploadedAt: string;
+  processingStatus: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  virusScanStatus: 'PENDING' | 'CLEAN' | 'INFECTED';
+  extractedText?: string | null;
+  createdAt: string;
 }
 
-export interface UploadFileInput {
-  file: File;
+/** Shape returned by the upload endpoint (fileService.uploadFile). */
+export interface UploadFileResponse {
+  id: string;
+  fileName: string;
+  url: string;
+  status: string;
 }
 
 const FILES_KEY = 'conversation-files';
@@ -48,7 +60,7 @@ export function useConversationFiles(
 export function useUploadFile(
   workspaceId: string,
   conversationId: string
-): UseMutationResult<ConversationFile, Error, File> {
+): UseMutationResult<UploadFileResponse, Error, File> {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -56,7 +68,7 @@ export function useUploadFile(
       const formData = new FormData();
       formData.append('file', file);
 
-      return api.upload<ConversationFile>(
+      return api.upload<UploadFileResponse>(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/files`,
         formData
       );
@@ -93,12 +105,16 @@ export function useDeleteFile(
 }
 
 /**
- * Get download URL for a file
+ * Absolute download URL for a file. Must target the backend origin —
+ * a relative path would resolve against the Next.js origin, which
+ * has no such route. Auth rides on the accessToken cookie, which the
+ * browser sends automatically on same-site top-level navigations
+ * (i.e. clicking a download link).
  */
 export function getFileDownloadUrl(
   workspaceId: string,
   conversationId: string,
   fileId: string
 ): string {
-  return `/api/workspaces/${workspaceId}/conversations/${conversationId}/files/${fileId}/download`;
+  return `${getApiBaseUrl()}/api/workspaces/${workspaceId}/conversations/${conversationId}/files/${fileId}/download`;
 }

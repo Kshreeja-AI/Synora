@@ -3,6 +3,7 @@ import { logger } from '../utils/logger'
 import { processExportDataset, type ExportDatasetJobData } from './export-dataset.worker'
 import { processRunEvaluation, type RunEvaluationJobData } from './run-evaluation.worker'
 import { processMessageFeedback, type ProcessFeedbackJobData } from './process-feedback.worker'
+import { processFileJob, type ProcessFileJobData } from './processFile.worker'
 
 // Queue configuration
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -19,6 +20,7 @@ export const messageFeedbackQueue = new Queue<ProcessFeedbackJobData>(
   'message-feedback',
   QUEUE_CONFIG
 )
+export const fileProcessingQueue = new Queue<ProcessFileJobData>('file-processing', QUEUE_CONFIG)
 
 // Add jobs to queues
 export async function enqueueExportDataset(data: ExportDatasetJobData): Promise<string> {
@@ -78,6 +80,25 @@ export async function enqueueMessageFeedback(data: ProcessFeedbackJobData): Prom
   return job.id!
 }
 
+export async function enqueueFileProcessing(data: ProcessFileJobData): Promise<string> {
+  const job = await fileProcessingQueue.add('process', data, {
+    attempts: 3,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+    removeOnComplete: true,
+    removeOnFail: false,
+  })
+
+  logger.info(`[queue] Enqueued file processing job`, {
+    jobId: job.id,
+    fileId: data.fileId,
+  })
+
+  return job.id!
+}
+
 // Worker setup
 export function setupWorkers(): void {
   logger.info('[queue] Setting up workers...')
@@ -127,10 +148,26 @@ export function setupWorkers(): void {
     }
   )
 
+  // File processing worker (virus scan + content extraction)
+  const fileWorker = new Worker<ProcessFileJobData>(
+    'file-processing',
+    async (job) => {
+      logger.info(`[worker] Processing file job ${job.id}`, {
+        fileId: job.data.fileId,
+      })
+      await processFileJob(job.data)
+    },
+    {
+      ...QUEUE_CONFIG,
+      concurrency: parseInt(process.env.FILE_WORKER_CONCURRENCY || '2'),
+    }
+  )
+
   // Event handlers
   setupWorkerEventHandlers(exportWorker, 'export-dataset')
   setupWorkerEventHandlers(evaluationWorker, 'run-evaluation')
   setupWorkerEventHandlers(feedbackWorker, 'message-feedback')
+  setupWorkerEventHandlers(fileWorker, 'file-processing')
 
   logger.info('[queue] Workers setup complete')
 }
@@ -186,6 +223,11 @@ export async function checkQueueHealth(): Promise<Record<string, any>> {
       active: (await messageFeedbackQueue.getActiveCount()) ?? 0,
       failed: (await messageFeedbackQueue.getFailedCount()) ?? 0,
     },
+    fileProcessing: {
+      waiting: await fileProcessingQueue.count(),
+      active: (await fileProcessingQueue.getActiveCount()) ?? 0,
+      failed: (await fileProcessingQueue.getFailedCount()) ?? 0,
+    },
   }
 
   return counts
@@ -198,6 +240,7 @@ export async function closeQueues(): Promise<void> {
     exportDatasetQueue.close(),
     runEvaluationQueue.close(),
     messageFeedbackQueue.close(),
+    fileProcessingQueue.close(),
   ])
   logger.info('[queue] All queues closed')
 }
