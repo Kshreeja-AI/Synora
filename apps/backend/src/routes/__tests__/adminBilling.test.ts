@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { prisma } from '@synora/database';
 import { initializeApp } from '../../index';
 import { issueTokens } from '../../services/token.service';
+import * as billingModule from '../../billing/index.js';
 import type { Express } from 'express';
 
 describe('admin billing routes', () => {
@@ -531,6 +532,96 @@ describe('admin billing routes', () => {
         });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('POST /api/admin/workspaces/:workspaceId/invoices/:invoiceId/refund', () => {
+    function mockProviderWithRefund(amountCents: number) {
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        refundInvoice: vi.fn().mockResolvedValue({ externalRefundId: `re_${Date.now()}`, amountCents }),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        createSetupSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+        listPaymentMethods: vi.fn(),
+        removePaymentMethod: vi.fn(),
+        verifyAndParseWebhookEvent: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+    }
+
+    async function createPaidInvoice() {
+      const plan = await prisma.plan.create({
+        data: {
+          key: `refund-route-plan-${Date.now()}`,
+          name: 'Refund Route Plan',
+          interval: 'MONTH',
+          priceCents: 4999,
+          status: 'ACTIVE',
+        },
+      });
+      testPlanIds.push(plan.id);
+
+      const subscription = await prisma.subscription.create({
+        data: { workspaceId, planId: plan.id, status: 'ACTIVE' },
+      });
+
+      const invoice = await prisma.invoice.create({
+        data: {
+          subscriptionId: subscription.id,
+          workspaceId,
+          provider: 'stripe',
+          externalInvoiceId: `inv_route_refund_${Date.now()}`,
+          status: 'PAID',
+          amountDueCents: 4999,
+          amountPaidCents: 4999,
+        },
+      });
+
+      return invoice;
+    }
+
+    it('issues a refund and returns the created record', async () => {
+      const invoice = await createPaidInvoice();
+      mockProviderWithRefund(4999);
+
+      const res = await request(app)
+        .post(`/api/admin/workspaces/${workspaceId}/invoices/${invoice.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Customer requested' });
+
+      expect(res.status).toBe(201);
+      expect(res.body).toHaveProperty('amountCents', 4999);
+      expect(res.body).toHaveProperty('invoiceId', invoice.id);
+
+      await prisma.invoice.deleteMany({ where: { id: invoice.id } });
+      await prisma.subscription.deleteMany({ where: { workspaceId } });
+    });
+
+    it('returns 400 when reason is missing', async () => {
+      const res = await request(app)
+        .post(`/api/admin/workspaces/${workspaceId}/invoices/nonexistent/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+
+      expect(res.status).toBe(400);
+    });
+
+    it('requires admin role', async () => {
+      const invoice = await createPaidInvoice();
+
+      const res = await request(app)
+        .post(`/api/admin/workspaces/${workspaceId}/invoices/${invoice.id}/refund`)
+        .set('Authorization', `Bearer ${regularToken}`)
+        .send({ reason: 'Customer requested' });
+
+      expect(res.status).toBe(403);
+
+      await prisma.invoice.deleteMany({ where: { id: invoice.id } });
+      await prisma.subscription.deleteMany({ where: { workspaceId } });
     });
   });
 });

@@ -211,6 +211,7 @@ model Workspace {
   // Billing relations (M6)
   subscription  Subscription?
   invoices      Invoice[]
+  refunds       Refund[]
   paymentMethods PaymentMethod[]
   credits       WorkspaceCredits?
   creditLedger  CreditLedgerEntry[]
@@ -783,9 +784,16 @@ model Invoice {
   periodEnd         DateTime?
   issuedAt          DateTime?
   paidAt            DateTime?
+  // Running total of amounts refunded against this invoice. Stripe itself
+  // does not change an invoice's own status on refund (the refund lives on
+  // the underlying charge), so this is the local source of truth for
+  // "how much of what was paid has since been returned" — fullyRefunded
+  // is refundedAmountCents >= amountPaidCents, not a status value.
+  refundedAmountCents Int           @default(0)
 
   subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  refunds           Refund[]
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -801,6 +809,28 @@ enum InvoiceStatus {
   PAID
   VOID
   UNCOLLECTIBLE
+}
+
+// Audit trail of refunds issued against a paid invoice. Multiple partial
+// refunds against the same invoice are supported; Invoice.refundedAmountCents
+// is the running total kept in sync with this table.
+model Refund {
+  id                String    @id @default(cuid())
+  invoiceId         String
+  workspaceId       String
+  provider          String
+  externalRefundId  String    @unique
+  amountCents       Int
+  reason            String
+  actorId           String
+
+  invoice           Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([invoiceId])
+  @@index([workspaceId])
 }
 
 // Payment methods synced from provider via webhooks. Supports multiple

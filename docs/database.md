@@ -530,14 +530,41 @@ model Invoice {
   amountPaidCents     Int         // Amount paid in cents
   hostedInvoiceUrl    String?     // URL to hosted invoice PDF
   paidAt              DateTime?   // Payment timestamp
+  refundedAmountCents Int         // Running total refunded against this invoice (see Refund below); fully refunded = refundedAmountCents >= amountPaidCents
   
   // Relations
   subscription        Subscription?
   workspace           Workspace
+  refunds             Refund[]
   
   // Timestamps
   createdAt           DateTime
   updatedAt           DateTime
+}
+```
+
+#### Refund
+Audit trail of refunds issued against a paid invoice. An invoice can have
+multiple partial refunds; `Invoice.refundedAmountCents` is kept in sync
+with the sum of these rows.
+
+```prisma
+model Refund {
+  id                String    // Unique identifier
+  invoiceId         String    // FK to Invoice
+  workspaceId       String    // FK to Workspace
+  provider          String    // "stripe"
+  externalRefundId  String    // Stripe refund ID (unique per provider)
+  amountCents       Int       // Amount refunded in cents
+  reason            String    // Admin-supplied reason
+  actorId           String    // Admin user who issued the refund
+
+  // Relations
+  invoice           Invoice
+  workspace         Workspace
+
+  // Timestamps
+  createdAt         DateTime
 }
 ```
 

@@ -12,6 +12,16 @@ export interface BillingProvider {
   listPaymentMethods(input: { customerId: string }): Promise<PaymentMethodSummary[]>;
   removePaymentMethod(input: { paymentMethodId: string }): Promise<void>;
   verifyAndParseWebhookEvent(rawBody: Buffer, signatureHeader: string): Promise<WebhookEvent>;
+  /**
+   * Refunds all or part of a previously paid invoice. `amountCents` omitted
+   * means a full refund of whatever has not already been refunded.
+   */
+  refundInvoice(input: { externalInvoiceId: string; amountCents?: number }): Promise<RefundResult>;
+}
+
+export interface RefundResult {
+  externalRefundId: string;
+  amountCents: number;
 }
 
 export interface NormalizedSubscription {

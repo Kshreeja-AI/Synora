@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { BillingProvider, BillingProviderError, PaymentMethodSummary, WebhookEvent } from '../types.js';
+import { BillingProvider, BillingProviderError, PaymentMethodSummary, RefundResult, WebhookEvent } from '../types.js';
 import { PlaceholderSecretSource } from '../../secrets/sources/placeholderSource.js';
 
 export class StripeProvider implements BillingProvider {
@@ -148,6 +148,27 @@ export class StripeProvider implements BillingProvider {
       await this.stripe.paymentMethods.detach(input.paymentMethodId);
     } catch (error) {
       throw new BillingProviderError('REMOVE_PAYMENT_METHOD_FAILED', `Failed to remove payment method: ${error}`);
+    }
+  }
+
+  async refundInvoice(input: { externalInvoiceId: string; amountCents?: number }): Promise<RefundResult> {
+    try {
+      const invoice = await this.stripe.invoices.retrieve(input.externalInvoiceId);
+      const paymentIntent = invoice.payment_intent;
+      const paymentIntentId = typeof paymentIntent === 'string' ? paymentIntent : paymentIntent?.id;
+
+      if (!paymentIntentId) {
+        throw new Error(`Invoice ${input.externalInvoiceId} has no payment intent to refund`);
+      }
+
+      const refund = await this.stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        ...(input.amountCents !== undefined ? { amount: input.amountCents } : {}),
+      });
+
+      return { externalRefundId: refund.id, amountCents: refund.amount };
+    } catch (error) {
+      throw new BillingProviderError('REFUND_FAILED', `Failed to refund invoice: ${error}`);
     }
   }
 

@@ -6,6 +6,7 @@ import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { NotFoundException } from '@synora/shared';
 import * as planService from '../services/plan.service.js';
 import * as creditService from '../services/credit.service.js';
+import * as refundService from '../services/refund.service.js';
 
 const router: Router = Router();
 
@@ -197,6 +198,26 @@ router.post('/workspaces/:workspaceId/credits/adjust', async (req: AuthRequest, 
     const credits = await creditService.adjustCredits(req.userId!, workspaceId, input);
 
     res.json(credits);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/admin/workspaces/:workspaceId/invoices/:invoiceId/refund
+router.post('/workspaces/:workspaceId/invoices/:invoiceId/refund', async (req: AuthRequest, res, next) => {
+  try {
+    const workspaceId = req.params.workspaceId;
+    const invoiceId = req.params.invoiceId;
+
+    const schema = z.object({
+      amountCents: z.number().int().positive().optional(),
+      reason: z.string().min(1),
+    });
+
+    const input = schema.parse(req.body);
+    const refund = await refundService.refundInvoice(req.userId!, workspaceId, invoiceId, input);
+
+    res.status(201).json(refund);
   } catch (error) {
     next(error);
   }
