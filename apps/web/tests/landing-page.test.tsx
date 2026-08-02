@@ -161,6 +161,9 @@ describe('Landing Page - Production Quality', () => {
       expect(container.querySelectorAll('h3').length).toBeGreaterThan(0);
     });
 
+    // getAllByRole('link') walks jsdom's accessibility tree over this page's
+    // full DOM, which takes ~2s in isolation and can exceed the default 5s
+    // timeout under the CPU contention of a full parallel test run.
     it('renders buttons with proper accessibility', () => {
       render(<HomePage />, { wrapper: Wrapper });
       const buttons = screen.getAllByRole('link');
@@ -173,7 +176,7 @@ describe('Landing Page - Production Quality', () => {
         );
       });
       expect(actionButtons.length).toBeGreaterThan(0);
-    });
+    }, 15000);
 
     it('includes aria-hidden on decorative elements', () => {
       const { container } = render(<HomePage />, { wrapper: Wrapper });
