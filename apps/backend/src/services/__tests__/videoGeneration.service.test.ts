@@ -20,6 +20,10 @@ vi.mock('../../storage', () => ({
   resolveStorageProvider: vi.fn(),
 }));
 
+vi.mock('../../workers/queue', () => ({
+  enqueueVideoGeneration: vi.fn().mockResolvedValue('job-1'),
+}));
+
 vi.mock('@synora/database', () => ({
   prisma: {
     generatedVideo: {
@@ -74,10 +78,36 @@ describe('VideoGenerationService', () => {
     );
     expect(prisma.generatedVideo.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ model: 'replicate:minimax/video-01' }),
+        data: expect.objectContaining({
+          model: 'replicate:minimax/video-01',
+          providerJobId: 'job-123',
+        }),
       })
     );
     expect(result.id).toBe('vid-1');
+  });
+
+  it('schedules the first poll after successfully starting generation', async () => {
+    await fakeCreate({ status: 'PROCESSING' });
+
+    vi.mocked(resolveVideoProvider).mockResolvedValue({
+      id: 'replicate',
+      capabilities: ['video-generation'],
+      startGeneration: vi.fn().mockResolvedValue(validHandle),
+      pollJob: vi.fn(),
+      downloadVideo: vi.fn(),
+    } as never);
+
+    const { prisma } = await import('@synora/database');
+    vi.mocked(prisma.generatedVideo.update).mockResolvedValue({ id: 'vid-1' } as never);
+
+    await service.startGeneration({ userId: 'u-1', prompt: 'a sunset' });
+
+    const { enqueueVideoGeneration } = await import('../../workers/queue');
+    expect(enqueueVideoGeneration).toHaveBeenCalledWith(
+      { videoId: 'vid-1' },
+      expect.objectContaining({ delayMs: expect.any(Number) })
+    );
   });
 
   it('propagates NoProviderConfiguredError so the route can return 503', async () => {
@@ -110,81 +140,195 @@ describe('VideoGenerationService', () => {
     expect(update.data).toMatchObject({ status: 'FAILED' });
   });
 
-  it('pollAndFinalize downloads video bytes and stores them durably on completion', async () => {
-    const { prisma } = await import('@synora/database');
-    vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
-      id: 'vid-1',
-      userId: 'u-1',
-      model: 'replicate:minimax/video-01',
-      status: 'PROCESSING',
-    } as never);
+  describe('pollAndFinalize', () => {
+    it('polls using the real provider job id, not the internal video id', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'real-provider-job-id',
+        status: 'PROCESSING',
+        pollAttempts: 0,
+      } as never);
 
-    const download = vi.fn().mockResolvedValue(Buffer.from('fake-mp4'));
-    vi.mocked(resolveVideoProvider).mockResolvedValue({
-      id: 'replicate',
-      capabilities: ['video-generation'],
-      startGeneration: vi.fn(),
-      pollJob: vi.fn().mockResolvedValue({
-        status: 'completed',
-        videoUrl: 'https://replicate.delivery/video.mp4',
-        width: 1280,
-        height: 720,
-        durationSeconds: 5,
-      }),
-      downloadVideo: download,
-    } as never);
+      const pollJob = vi.fn().mockResolvedValue({ status: 'processing' });
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob,
+        downloadVideo: vi.fn(),
+      } as never);
 
-    const upload = vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/vid-1.mp4' });
-    vi.mocked(resolveStorageProvider).mockResolvedValue({ id: 'local', upload, delete: vi.fn() } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({
+        id: 'vid-1',
+        status: 'PROCESSING',
+        pollAttempts: 1,
+      } as never);
 
-    vi.mocked(prisma.generatedVideo.update).mockResolvedValue({
-      id: 'vid-1',
-      videoUrl: 'https://cdn.example.com/vid-1.mp4',
-      status: 'COMPLETED',
-    } as never);
+      await service.pollAndFinalize('vid-1');
 
-    const result = await service.pollAndFinalize('vid-1');
+      expect(pollJob).toHaveBeenCalledWith(
+        expect.objectContaining({ providerJobId: 'real-provider-job-id' })
+      );
+    });
 
-    expect(download).toHaveBeenCalledWith('https://replicate.delivery/video.mp4');
-    expect(upload).toHaveBeenCalledWith(
-      expect.objectContaining({
-        key: 'generated-videos/u-1/vid-1.mp4',
-        contentType: 'video/mp4',
-      })
-    );
-    expect(result.status).toBe('COMPLETED');
-    expect(result.videoUrl).not.toMatch(/replicate\.delivery/);
-  });
+    it('marks FAILED instead of polling when providerJobId was never recorded', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: null,
+        status: 'PROCESSING',
+        pollAttempts: 0,
+      } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({ id: 'vid-1', status: 'FAILED' } as never);
 
-  it('records FAILED when storage fails after successful generation', async () => {
-    const { prisma } = await import('@synora/database');
-    vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
-      id: 'vid-1',
-      userId: 'u-1',
-      model: 'replicate:minimax/video-01',
-      status: 'PROCESSING',
-    } as never);
+      const result = await service.pollAndFinalize('vid-1');
 
-    vi.mocked(resolveVideoProvider).mockResolvedValue({
-      id: 'replicate',
-      capabilities: ['video-generation'],
-      startGeneration: vi.fn(),
-      pollJob: vi.fn().mockResolvedValue({
-        status: 'completed',
-        videoUrl: 'https://replicate.delivery/video.mp4',
-      }),
-      downloadVideo: vi.fn().mockResolvedValue(Buffer.from('bytes')),
-    } as never);
+      expect(result.status).toBe('FAILED');
+      expect(resolveVideoProvider).not.toHaveBeenCalled();
+    });
 
-    vi.mocked(resolveStorageProvider).mockResolvedValue({
-      id: 'local',
-      upload: vi.fn().mockRejectedValue(new Error('disk full')),
-      delete: vi.fn(),
-    } as never);
+    it('increments pollAttempts while still processing, without changing status', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-abc',
+        status: 'PROCESSING',
+        pollAttempts: 3,
+      } as never);
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({ status: 'processing' }),
+        downloadVideo: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({
+        id: 'vid-1',
+        status: 'PROCESSING',
+        pollAttempts: 4,
+      } as never);
 
-    await expect(service.pollAndFinalize('vid-1')).rejects.toThrow(/disk full/);
-    expect(vi.mocked(prisma.generatedVideo.update).mock.calls[0][0].data).toMatchObject({
-      status: 'FAILED',
+      await service.pollAndFinalize('vid-1');
+
+      expect(prisma.generatedVideo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { pollAttempts: 4 } })
+      );
+    });
+
+    it('gives up and marks FAILED after exceeding the max poll attempts', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-abc',
+        status: 'PROCESSING',
+        pollAttempts: 89,
+      } as never);
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({ status: 'processing' }),
+        downloadVideo: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({ id: 'vid-1', status: 'FAILED' } as never);
+
+      const result = await service.pollAndFinalize('vid-1');
+
+      expect(result.status).toBe('FAILED');
+      expect(prisma.generatedVideo.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { status: 'FAILED' } })
+      );
+    });
+
+    it('downloads video bytes and stores them durably on completion', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-abc',
+        status: 'PROCESSING',
+        pollAttempts: 0,
+      } as never);
+
+      const download = vi.fn().mockResolvedValue(Buffer.from('fake-mp4'));
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({
+          status: 'completed',
+          videoUrl: 'https://replicate.delivery/video.mp4',
+          width: 1280,
+          height: 720,
+          durationSeconds: 5,
+        }),
+        downloadVideo: download,
+      } as never);
+
+      const upload = vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/vid-1.mp4' });
+      vi.mocked(resolveStorageProvider).mockResolvedValue({ id: 'local', upload, delete: vi.fn() } as never);
+
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({
+        id: 'vid-1',
+        videoUrl: 'https://cdn.example.com/vid-1.mp4',
+        status: 'COMPLETED',
+      } as never);
+
+      const result = await service.pollAndFinalize('vid-1');
+
+      expect(download).toHaveBeenCalledWith('https://replicate.delivery/video.mp4');
+      expect(upload).toHaveBeenCalledWith(
+        expect.objectContaining({
+          key: 'generated-videos/u-1/vid-1.mp4',
+          contentType: 'video/mp4',
+        })
+      );
+      expect(result.status).toBe('COMPLETED');
+      expect(result.videoUrl).not.toMatch(/replicate\.delivery/);
+    });
+
+    it('records FAILED when storage fails after successful generation', async () => {
+      const { prisma } = await import('@synora/database');
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-abc',
+        status: 'PROCESSING',
+        pollAttempts: 0,
+      } as never);
+
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({
+          status: 'completed',
+          videoUrl: 'https://replicate.delivery/video.mp4',
+        }),
+        downloadVideo: vi.fn().mockResolvedValue(Buffer.from('bytes')),
+      } as never);
+
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockRejectedValue(new Error('disk full')),
+        delete: vi.fn(),
+      } as never);
+
+      await expect(service.pollAndFinalize('vid-1')).rejects.toThrow(/disk full/);
+      expect(vi.mocked(prisma.generatedVideo.update).mock.calls[0][0].data).toMatchObject({
+        status: 'FAILED',
+      });
     });
   });
 });

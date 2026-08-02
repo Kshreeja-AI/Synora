@@ -508,6 +508,10 @@ model GeneratedVideo {
   height        Int
   model         String
   status        ContentStatus @default(PROCESSING)
+  // The provider's own job/prediction ID (e.g. a Replicate prediction id),
+  // required to poll that job later — this is NOT the same as our own `id`.
+  providerJobId String?
+  pollAttempts  Int       @default(0)
 
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)

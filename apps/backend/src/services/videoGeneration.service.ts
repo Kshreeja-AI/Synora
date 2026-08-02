@@ -13,6 +13,14 @@ export interface GenerateVideoInput {
 }
 
 export class VideoGenerationService {
+  // Replicate-class providers take a few seconds just to schedule the job,
+  // so the first poll waits longer than the steady-state interval below.
+  private readonly INITIAL_POLL_DELAY_MS = 5000;
+  // ~15 minutes of polling at the worker's 10s interval before giving up —
+  // long enough for real video generation, bounded so a stuck provider job
+  // can't keep a row (and a queue slot) PROCESSING forever.
+  private readonly MAX_POLL_ATTEMPTS = 90;
+
   async startGeneration(input: GenerateVideoInput): Promise<GeneratedVideo> {
     const provider = await resolveVideoProvider();
 
@@ -41,8 +49,20 @@ export class VideoGenerationService {
         where: { id: pending.id },
         data: {
           model: `${handle.provider}:${handle.model}`,
+          // The provider's own job/prediction ID — required to poll this
+          // job later. Previously discarded here, which meant polling
+          // could never actually find the job again (see pollAndFinalize).
+          providerJobId: handle.providerJobId,
         },
       });
+
+      // Dynamic import breaks a circular init: workers/queue.ts imports
+      // videoGeneration.worker.ts, which imports this service.
+      const { enqueueVideoGeneration } = await import('../workers/queue');
+      await enqueueVideoGeneration(
+        { videoId: pending.id },
+        { delayMs: this.INITIAL_POLL_DELAY_MS }
+      );
 
       return await prisma.generatedVideo.findUniqueOrThrow({
         where: { id: pending.id },
@@ -67,17 +87,39 @@ export class VideoGenerationService {
       return video!;
     }
 
+    if (!video.providerJobId) {
+      logger.error('[VideoGeneration] Cannot poll: missing providerJobId', { videoId });
+      return await prisma.generatedVideo.update({
+        where: { id: videoId },
+        data: { status: 'FAILED' },
+      });
+    }
+
     const provider = await resolveVideoProvider();
     const [providerName, modelName] = (video.model || '').split(':');
 
     const result = await provider.pollJob({
-      providerJobId: videoId,
+      providerJobId: video.providerJobId,
       provider: providerName || provider.id,
       model: modelName || '',
     });
 
     if (result.status === 'processing' || result.status === 'queued') {
-      return video;
+      const pollAttempts = video.pollAttempts + 1;
+      if (pollAttempts >= this.MAX_POLL_ATTEMPTS) {
+        logger.error('[VideoGeneration] Exceeded max poll attempts, marking failed', {
+          videoId,
+          pollAttempts,
+        });
+        return await prisma.generatedVideo.update({
+          where: { id: videoId },
+          data: { status: 'FAILED' },
+        });
+      }
+      return await prisma.generatedVideo.update({
+        where: { id: videoId },
+        data: { pollAttempts },
+      });
     }
 
     if (result.status === 'failed') {

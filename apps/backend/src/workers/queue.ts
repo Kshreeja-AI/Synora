@@ -163,7 +163,10 @@ export async function enqueueMessageFeedback(data: ProcessFeedbackJobData): Prom
   return job.id!
 }
 
-export async function enqueueVideoGeneration(data: VideoGenerationJobData): Promise<string> {
+export async function enqueueVideoGeneration(
+  data: VideoGenerationJobData,
+  options?: { delayMs?: number }
+): Promise<string> {
   const job = await addWithTimeout(
     videoGenerationQueue.add('generate', data, {
       attempts: 5,
@@ -171,6 +174,7 @@ export async function enqueueVideoGeneration(data: VideoGenerationJobData): Prom
         type: 'exponential',
         delay: 10000,
       },
+      delay: options?.delayMs,
       removeOnComplete: true,
       removeOnFail: false,
     }),
