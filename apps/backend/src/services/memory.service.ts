@@ -449,14 +449,25 @@ export class MemoryService {
   /**
    * Resolve version conflicts
    */
-  async resolveConflict(memoryId: string, selectedVersion: 'current' | 'previous'): Promise<Memory> {
-    const memory = await db.memory.findUnique({
-      where: { id: memoryId },
+  async resolveConflict(
+    memoryId: string,
+    selectedVersion: 'current' | 'previous',
+    userId: string,
+    workspaceId: string,
+  ): Promise<Memory> {
+    const memory = await db.memory.findFirst({
+      where: { id: memoryId, workspaceId },
       include: { parent: true },
     })
 
     if (!memory || !memory.parent) {
       throw new NotFoundException('Memory or previous version not found')
+    }
+
+    this.validateMemoryAccess(memory, userId)
+
+    if (memory.permission === MemoryPermission.PRIVATE && memory.userId !== userId) {
+      throw new ForbiddenException('Cannot resolve conflict on private memory of other user')
     }
 
     if (selectedVersion === 'previous') {

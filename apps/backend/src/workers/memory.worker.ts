@@ -78,7 +78,7 @@ export class MemoryWorker {
       }
 
       // Invalidate cache
-      memoryCacheService.invalidateWorkspace(workspaceId)
+      await memoryCacheService.invalidateWorkspace(workspaceId)
 
       logger.info(`Consolidation complete: ${consolidated} succeeded, ${failed} failed`)
       return { consolidated, failed }

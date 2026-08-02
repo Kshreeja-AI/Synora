@@ -5,6 +5,7 @@ import { processRunEvaluation, type RunEvaluationJobData } from './run-evaluatio
 import { processMessageFeedback, type ProcessFeedbackJobData } from './process-feedback.worker'
 import { processFileJob, type ProcessFileJobData } from './processFile.worker'
 import { processVideoGeneration, type VideoGenerationJobData } from './videoGeneration.worker'
+import { processMemoryMaintenance, type MemoryMaintenanceJobData } from './memoryMaintenance.worker'
 import type { GenerateResponseJob } from './generateResponse.worker'
 
 // Queue configuration
@@ -58,6 +59,10 @@ export const videoGenerationQueue = new Queue<VideoGenerationJobData>(
 )
 export const generateResponseQueue = new Queue<GenerateResponseJob>(
   'generate_response',
+  PRODUCER_CONFIG
+)
+export const memoryMaintenanceQueue = new Queue<MemoryMaintenanceJobData>(
+  'memory-maintenance',
   PRODUCER_CONFIG
 )
 
@@ -177,6 +182,45 @@ export async function enqueueGenerateResponse(data: GenerateResponseJob): Promis
   return job.id!
 }
 
+/**
+ * Schedules the recurring memory maintenance sweep (see
+ * memoryMaintenance.worker.ts / memoryLifecycle.service.ts). Uses a fixed
+ * `jobId` so calling this on every app startup is idempotent — BullMQ
+ * replaces the existing repeatable job definition rather than stacking a
+ * second one, so restarts never multiply the schedule.
+ */
+export async function scheduleMemoryMaintenance(): Promise<void> {
+  const intervalMs = parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MS || String(24 * 60 * 60 * 1000))
+
+  await memoryMaintenanceQueue.add(
+    'sweep',
+    { triggeredBy: 'schedule' },
+    {
+      repeat: { every: intervalMs },
+      jobId: 'memory-maintenance-schedule',
+      removeOnComplete: true,
+      removeOnFail: false,
+    }
+  )
+
+  logger.info('[queue] Memory maintenance scheduled', { intervalMs })
+}
+
+export async function enqueueMemoryMaintenance(
+  data: MemoryMaintenanceJobData = { triggeredBy: 'manual' }
+): Promise<string> {
+  const job = await memoryMaintenanceQueue.add('sweep', data, {
+    attempts: 2,
+    backoff: { type: 'exponential', delay: 5000 },
+    removeOnComplete: true,
+    removeOnFail: false,
+  })
+
+  logger.info('[queue] Enqueued memory maintenance job', { jobId: job.id, triggeredBy: data.triggeredBy })
+
+  return job.id!
+}
+
 // Worker setup
 export function setupWorkers(): Worker[] {
   logger.info('[queue] Setting up workers...')
@@ -256,16 +300,31 @@ export function setupWorkers(): Worker[] {
     }
   )
 
+  // Memory maintenance worker (consolidation, decay, embedding refresh,
+  // importance recalculation, archival, cleanup, quota reset)
+  const memoryMaintenanceWorker = new Worker<MemoryMaintenanceJobData>(
+    'memory-maintenance',
+    async (job) => {
+      logger.info(`[worker] Processing memory maintenance job ${job.id}`)
+      await processMemoryMaintenance(job.data)
+    },
+    {
+      ...WORKER_CONFIG,
+      concurrency: 1,
+    }
+  )
+
   // Event handlers
   setupWorkerEventHandlers(exportWorker, 'export-dataset')
   setupWorkerEventHandlers(evaluationWorker, 'run-evaluation')
   setupWorkerEventHandlers(feedbackWorker, 'message-feedback')
   setupWorkerEventHandlers(videoWorker, 'video-generation')
   setupWorkerEventHandlers(fileWorker, 'file-processing')
+  setupWorkerEventHandlers(memoryMaintenanceWorker, 'memory-maintenance')
 
   logger.info('[queue] Workers setup complete')
 
-  return [exportWorker, evaluationWorker, feedbackWorker, videoWorker, fileWorker]
+  return [exportWorker, evaluationWorker, feedbackWorker, videoWorker, fileWorker, memoryMaintenanceWorker]
 }
 
 function setupWorkerEventHandlers(worker: Worker, workerName: string): void {

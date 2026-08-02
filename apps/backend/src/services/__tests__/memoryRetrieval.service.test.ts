@@ -23,7 +23,7 @@ vi.mock('@synora/database', () => ({
 
 vi.mock('../memoryCache.service', () => ({
   memoryCacheService: {
-    recordMemoryAccess: vi.fn(),
+    recordMemoryAccess: vi.fn().mockResolvedValue(undefined),
   },
 }))
 

@@ -74,7 +74,7 @@ router.post('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), 
     })
 
     // Cache the memory
-    memoryCacheService.cacheMemory(memory)
+    await memoryCacheService.cacheMemory(memory)
 
     res.status(201).json({ success: true, data: memory })
   } catch (error) {
@@ -103,7 +103,7 @@ router.post('/:workspaceId/memories/:memoryId/consolidate', authMiddleware, requ
     const consolidated = await memoryService.consolidateMemories(memoryIds)
 
     // Invalidate workspace cache
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: consolidated })
   } catch (error) {
@@ -124,8 +124,8 @@ router.post('/:workspaceId/memories/:memoryId/pin', authMiddleware, requireWorks
 
     const updated = await memoryService.updateMemory(memoryId, { isPinned: true }, userId, workspaceId)
 
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: updated })
   } catch (error) {
@@ -146,12 +146,43 @@ router.post('/:workspaceId/memories/:memoryId/unpin', authMiddleware, requireWor
 
     const updated = await memoryService.updateMemory(memoryId, { isPinned: false }, userId, workspaceId)
 
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: updated })
   } catch (error) {
     logger.error('Failed to unpin memory', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * POST /api/workspaces/:workspaceId/memories/:memoryId/resolve-conflict
+ * Pick which version wins after a version conflict (e.g. concurrent edits)
+ * IMPORTANT: Must be defined BEFORE catch-all GET/:memoryId route
+ */
+router.post('/:workspaceId/memories/:memoryId/resolve-conflict', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId, memoryId } = req.params
+    const { selectedVersion } = req.body
+    const userId = req.user!.id
+
+    if (selectedVersion !== 'current' && selectedVersion !== 'previous') {
+      throw new ValidationException('selectedVersion must be "current" or "previous"')
+    }
+
+    const resolved = await memoryService.resolveConflict(memoryId, selectedVersion, userId, workspaceId)
+
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
+
+    res.json({ success: true, data: resolved })
+  } catch (error) {
+    if (error instanceof ApiException) {
+      res.status(error.statusCode).json({ error: error.message })
+      return
+    }
+    logger.error('Failed to resolve memory conflict', { error })
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -166,11 +197,11 @@ router.get('/:workspaceId/memories/stats', authMiddleware, requireWorkspaceAcces
     const { workspaceId } = req.params
 
     // Check cache
-    let stats = memoryCacheService.getCachedWorkspaceStats(workspaceId)
+    let stats = await memoryCacheService.getCachedWorkspaceStats(workspaceId)
 
     if (!stats) {
       stats = await memoryService.getWorkspaceStats(workspaceId)
-      memoryCacheService.cacheWorkspaceStats(workspaceId, stats)
+      await memoryCacheService.cacheWorkspaceStats(workspaceId, stats)
     }
 
     res.json({ success: true, data: stats })
@@ -236,11 +267,11 @@ router.get('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspaceA
     const userId = req.user!.id
 
     // Check cache first
-    let memory = memoryCacheService.getCachedMemory(memoryId)
+    let memory = await memoryCacheService.getCachedMemory(memoryId)
 
     if (!memory) {
       memory = await memoryService.getMemory(memoryId, userId, workspaceId)
-      memoryCacheService.cacheMemory(memory)
+      await memoryCacheService.cacheMemory(memory)
     }
 
     res.json({ success: true, data: memory })
@@ -263,7 +294,7 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
 
     // Check cache for search results
     const cacheKey = `${workspaceId}:${search || ''}`
-    const cached = memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
+    const cached = await memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
 
     if (cached) {
       return res.json({ success: true, data: cached })
@@ -286,7 +317,7 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
     )
 
     // Cache results
-    memoryCacheService.cacheSearchResults(workspaceId, cacheKey, result)
+    await memoryCacheService.cacheSearchResults(workspaceId, cacheKey, result)
 
     res.json({ success: true, data: result })
   } catch (error) {
@@ -313,8 +344,8 @@ router.patch('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspac
     )
 
     // Invalidate cache
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     // Queue embedding refresh if content changed
     if (content) {
@@ -342,8 +373,8 @@ router.delete('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspa
     await memoryService.deleteMemory(memoryId, userId, workspaceId)
 
     // Invalidate cache
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, message: 'Memory deleted' })
   } catch (error) {
@@ -364,7 +395,7 @@ router.delete('/:workspaceId/memories/erase', authMiddleware, requireWorkspaceAc
 
     const result = await memoryGdprService.eraseUserData(userId, workspaceId)
 
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: result })
   } catch (error) {

@@ -286,8 +286,8 @@ export class MemoryDeduplicationService {
       }
 
       // Invalidate cache
-      memoryCacheService.invalidateMemory(merged.id)
-      duplicates.forEach((d) => memoryCacheService.invalidateMemory(d.id))
+      await memoryCacheService.invalidateMemory(merged.id)
+      await Promise.all(duplicates.map((d) => memoryCacheService.invalidateMemory(d.id)))
 
       logger.info(`Successfully merged ${duplicateIds.length} duplicates`)
       return updated

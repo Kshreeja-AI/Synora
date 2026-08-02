@@ -8,7 +8,7 @@
 import { Worker } from 'bullmq';
 import { logger } from '../utils/logger';
 import { createGenerateResponseWorker } from './generateResponse.worker';
-import { setupWorkers as setupQueueWorkers } from './queue';
+import { setupWorkers as setupQueueWorkers, scheduleMemoryMaintenance } from './queue';
 
 let workers: Worker[] = [];
 let initialized = false;
@@ -34,10 +34,21 @@ export async function initializeWorkers(): Promise<void> {
     const { worker: generateResponseWorker } = createGenerateResponseWorker();
     workers.push(generateResponseWorker);
 
-    // Dataset export, evaluation, message feedback, video generation, and
-    // file processing workers — previously defined in queue.ts but never
-    // started anywhere, so their queues were never consumed.
+    // Dataset export, evaluation, message feedback, video generation,
+    // file processing, and memory maintenance workers — previously defined
+    // in queue.ts but never started anywhere, so their queues were never
+    // consumed.
     workers.push(...setupQueueWorkers());
+
+    try {
+      await scheduleMemoryMaintenance();
+    } catch (error) {
+      // Non-fatal: the worker above is still running and will process any
+      // manually-enqueued sweep; only the automatic schedule is affected.
+      logger.error('[WorkerManager] Failed to schedule memory maintenance', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     initialized = true;
     logger.info('[WorkerManager] Workers initialized successfully');

@@ -409,13 +409,10 @@ export class MemoryRetrievalService {
    * Record memory retrieval for analytics
    */
   private recordRetrieval(memoryId: string, userId?: string): void {
-    try {
-      if (userId) {
-        memoryCacheService.recordMemoryAccess(memoryId, userId)
-      }
-    } catch (error) {
+    if (!userId) return
+    memoryCacheService.recordMemoryAccess(memoryId, userId).catch((error) => {
       logger.warn('Failed to record memory access', { error, memoryId })
-    }
+    })
   }
 
   /**
