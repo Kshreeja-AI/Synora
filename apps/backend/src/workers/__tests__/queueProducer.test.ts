@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Queue } from 'bullmq'
 
 /**
@@ -12,6 +12,18 @@ import { Queue } from 'bullmq'
  * test points a producer-configured queue at a port with nothing
  * listening and asserts the rejection actually happens — if someone
  * removes the flag, this hangs into its timeout and fails.
+ *
+ * That contract, on its own, only holds once a connection has already
+ * been established and then drops. It does NOT bound the *initial*
+ * connection attempt — BullMQ's `add()` waits for the connection to
+ * reach `ready` before enableOfflineQueue/maxRetriesPerRequest are
+ * even consulted, so a Redis that has never been reachable makes
+ * add() hang forever regardless of those options (this exact bug
+ * hung the docker CI smoke test to its 30s timeout when
+ * scheduleMemoryMaintenance() started running at app boot). The
+ * second test below exercises the real exported queue.ts producers —
+ * including their addWithTimeout wrapper — against an unreachable
+ * Redis, not a hand-rolled config, so it would have caught that.
  */
 describe('queue producer configuration', () => {
   it('rejects add() promptly when Redis is unreachable', async () => {
@@ -36,4 +48,50 @@ describe('queue producer configuration', () => {
       })
     }
   }, 15000)
+
+  describe('real producers against a never-reachable Redis', () => {
+    const originalRedisUrl = process.env.REDIS_URL
+
+    afterEach(async () => {
+      if (originalRedisUrl === undefined) {
+        delete process.env.REDIS_URL
+      } else {
+        process.env.REDIS_URL = originalRedisUrl
+      }
+      vi.resetModules()
+    })
+
+    it('enqueueExportDataset rejects on a bounded timeout instead of hanging forever', async () => {
+      vi.resetModules()
+      process.env.REDIS_URL = 'redis://127.0.0.1:6399'
+      const queueModule = await import('../queue')
+
+      const start = Date.now()
+      await expect(
+        queueModule.enqueueExportDataset({
+          exportId: 'exp-1',
+          datasetId: 'ds-1',
+          workspaceId: 'ws-1',
+          format: 'JSONL',
+        } as never)
+      ).rejects.toThrow()
+      // Must resolve well under BullMQ's default reconnect backoff
+      // ceiling, not just "eventually".
+      expect(Date.now() - start).toBeLessThan(10000)
+
+      await queueModule.exportDatasetQueue.close().catch(() => {})
+    }, 15000)
+
+    it('scheduleMemoryMaintenance rejects on a bounded timeout instead of hanging app startup', async () => {
+      vi.resetModules()
+      process.env.REDIS_URL = 'redis://127.0.0.1:6399'
+      const queueModule = await import('../queue')
+
+      const start = Date.now()
+      await expect(queueModule.scheduleMemoryMaintenance()).rejects.toThrow()
+      expect(Date.now() - start).toBeLessThan(10000)
+
+      await queueModule.memoryMaintenanceQueue.close().catch(() => {})
+    }, 15000)
+  })
 })

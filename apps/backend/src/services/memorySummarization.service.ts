@@ -82,7 +82,8 @@ export class MemorySummarizationService {
   }
 
   /**
-   * Generate summary using AI (placeholder for real AI integration)
+   * Generate summary via extractive sentence selection (see
+   * extractiveSummarize below) — no AI provider call, no network I/O.
    */
   private async generateSummary(memory: Memory, config?: SummarizationConfig): Promise<SummarizationResult> {
     const maxLength = config?.maxLength ?? this.DEFAULT_MAX_LENGTH

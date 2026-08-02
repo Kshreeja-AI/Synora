@@ -17,9 +17,16 @@ const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
  * buffers commands while disconnected, which turns a Redis outage
  * into request handlers awaiting `queue.add` indefinitely — a full
  * chat outage with no error. With the offline queue disabled, add()
- * rejects immediately and each call site's error handling decides
- * what degradation looks like (non-fatal for uploads/messages,
- * explicit 5xx for evaluation/export kickoffs).
+ * rejects immediately once the connection is known to be down.
+ *
+ * The connection itself is deliberately NOT given a bounded
+ * `retryStrategy`: these Queue instances live for the whole process,
+ * so a Redis restart must be reconnected to automatically rather than
+ * leaving the client permanently in the `end` state (which is what a
+ * `retryStrategy` returning `null` does — no amount of Redis coming
+ * back would ever be noticed again without a process restart).
+ * Bounding the *initial* connection wait is instead the job of
+ * `addWithTimeout` below, applied per-call at every enqueue site.
  */
 const PRODUCER_CONFIG = {
   connection: {
@@ -27,6 +34,29 @@ const PRODUCER_CONFIG = {
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
   },
+}
+
+const PRODUCER_ADD_TIMEOUT_MS = 3000
+
+/**
+ * BullMQ's `Queue#add` waits for the underlying connection to reach
+ * `ready` before evaluating `enableOfflineQueue`/`maxRetriesPerRequest`,
+ * so those options alone do not bound how long `add()` can hang while
+ * Redis is unreachable and the connection is still retrying in the
+ * background. This wraps any producer `add()` call with an explicit
+ * timeout so callers (route handlers, startup scheduling) get an
+ * honest rejection instead of hanging indefinitely.
+ */
+function addWithTimeout<T>(promise: Promise<T>, queueName: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Queue '${queueName}' unavailable: add() timed out after ${PRODUCER_ADD_TIMEOUT_MS}ms`))
+      }, PRODUCER_ADD_TIMEOUT_MS)
+      timer.unref?.()
+    }),
+  ])
 }
 
 /**
@@ -68,15 +98,18 @@ export const memoryMaintenanceQueue = new Queue<MemoryMaintenanceJobData>(
 
 // Add jobs to queues
 export async function enqueueExportDataset(data: ExportDatasetJobData): Promise<string> {
-  const job = await exportDatasetQueue.add('export', data, {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 2000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    exportDatasetQueue.add('export', data, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000,
+      },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'export-dataset'
+  )
 
   logger.info(`[queue] Enqueued export dataset job`, {
     jobId: job.id,
@@ -87,15 +120,18 @@ export async function enqueueExportDataset(data: ExportDatasetJobData): Promise<
 }
 
 export async function enqueueRunEvaluation(data: RunEvaluationJobData): Promise<string> {
-  const job = await runEvaluationQueue.add('run', data, {
-    attempts: 2,
-    backoff: {
-      type: 'exponential',
-      delay: 2000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    runEvaluationQueue.add('run', data, {
+      attempts: 2,
+      backoff: {
+        type: 'exponential',
+        delay: 2000,
+      },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'run-evaluation'
+  )
 
   logger.info(`[queue] Enqueued run evaluation job`, {
     jobId: job.id,
@@ -106,15 +142,18 @@ export async function enqueueRunEvaluation(data: RunEvaluationJobData): Promise<
 }
 
 export async function enqueueMessageFeedback(data: ProcessFeedbackJobData): Promise<string> {
-  const job = await messageFeedbackQueue.add('process', data, {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 1000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    messageFeedbackQueue.add('process', data, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 1000,
+      },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'message-feedback'
+  )
 
   logger.info(`[queue] Enqueued message feedback job`, {
     jobId: job.id,
@@ -125,15 +164,18 @@ export async function enqueueMessageFeedback(data: ProcessFeedbackJobData): Prom
 }
 
 export async function enqueueVideoGeneration(data: VideoGenerationJobData): Promise<string> {
-  const job = await videoGenerationQueue.add('generate', data, {
-    attempts: 5,
-    backoff: {
-      type: 'exponential',
-      delay: 10000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    videoGenerationQueue.add('generate', data, {
+      attempts: 5,
+      backoff: {
+        type: 'exponential',
+        delay: 10000,
+      },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'video-generation'
+  )
 
   logger.info(`[queue] Enqueued video generation job`, {
     jobId: job.id,
@@ -144,15 +186,18 @@ export async function enqueueVideoGeneration(data: VideoGenerationJobData): Prom
 }
 
 export async function enqueueFileProcessing(data: ProcessFileJobData): Promise<string> {
-  const job = await fileProcessingQueue.add('process', data, {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 2000,
-    },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    fileProcessingQueue.add('process', data, {
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 2000,
+      },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'file-processing'
+  )
 
   logger.info(`[queue] Enqueued file processing job`, {
     jobId: job.id,
@@ -168,10 +213,13 @@ export async function enqueueFileProcessing(data: ProcessFileJobData): Promise<s
  * from the queue's perspective, matching the previous behavior.
  */
 export async function enqueueGenerateResponse(data: GenerateResponseJob): Promise<string> {
-  const job = await generateResponseQueue.add('generate-response', data, {
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    generateResponseQueue.add('generate-response', data, {
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'generate_response'
+  )
 
   logger.info(`[queue] Enqueued generation job`, {
     jobId: job.id,
@@ -192,15 +240,18 @@ export async function enqueueGenerateResponse(data: GenerateResponseJob): Promis
 export async function scheduleMemoryMaintenance(): Promise<void> {
   const intervalMs = parseInt(process.env.MEMORY_MAINTENANCE_INTERVAL_MS || String(24 * 60 * 60 * 1000))
 
-  await memoryMaintenanceQueue.add(
-    'sweep',
-    { triggeredBy: 'schedule' },
-    {
-      repeat: { every: intervalMs },
-      jobId: 'memory-maintenance-schedule',
-      removeOnComplete: true,
-      removeOnFail: false,
-    }
+  await addWithTimeout(
+    memoryMaintenanceQueue.add(
+      'sweep',
+      { triggeredBy: 'schedule' },
+      {
+        repeat: { every: intervalMs },
+        jobId: 'memory-maintenance-schedule',
+        removeOnComplete: true,
+        removeOnFail: false,
+      }
+    ),
+    'memory-maintenance'
   )
 
   logger.info('[queue] Memory maintenance scheduled', { intervalMs })
@@ -209,12 +260,15 @@ export async function scheduleMemoryMaintenance(): Promise<void> {
 export async function enqueueMemoryMaintenance(
   data: MemoryMaintenanceJobData = { triggeredBy: 'manual' }
 ): Promise<string> {
-  const job = await memoryMaintenanceQueue.add('sweep', data, {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: true,
-    removeOnFail: false,
-  })
+  const job = await addWithTimeout(
+    memoryMaintenanceQueue.add('sweep', data, {
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 5000 },
+      removeOnComplete: true,
+      removeOnFail: false,
+    }),
+    'memory-maintenance'
+  )
 
   logger.info('[queue] Enqueued memory maintenance job', { jobId: job.id, triggeredBy: data.triggeredBy })
 
