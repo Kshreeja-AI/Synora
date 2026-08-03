@@ -60,6 +60,7 @@ import usageRoutes from './routes/usage';
 import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
 import { eosRouter } from './eos/index';
+import { eosApiCollector } from './eos/api-collector.js';
 
 export interface CreateAppDeps {
   /**
@@ -94,6 +95,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   // 404s and rate-limited rejections — is measured and traced.
   app.use(metricsMiddleware);
   app.use(tracingMiddleware);
+  app.use(eosApiCollector);
   app.use(
     cors({
       origin: config.server.corsOrigins,
