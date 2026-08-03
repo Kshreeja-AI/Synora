@@ -8,6 +8,10 @@ import { realtimeService } from './services/realtime.service';
 import { initObservability, shutdownObservability } from './monitoring';
 import { markBootStart, emitBootComplete } from './eos/boot-collector.js';
 import { registerDependencyProbes } from './eos/dependency-probes.js';
+import { startErrorRateMonitor } from './eos/error-rate-monitor.js';
+import { startLatencyTracker } from './eos/latency-tracker.js';
+import { startMemoryCollector } from './eos/memory-collector.js';
+import { startProviderObservatory } from './eos/provider-observatory.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -37,6 +41,10 @@ async function bootstrap() {
   const { app, config } = await initializeApp();
   httpServer = await startServer(app, config);
   registerDependencyProbes();
+  startErrorRateMonitor();
+  startLatencyTracker();
+  startMemoryCollector();
+  startProviderObservatory();
   emitBootComplete();
 }
 

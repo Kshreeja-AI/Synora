@@ -1,5 +1,5 @@
 export { engineeringEventBus } from './event-bus.js';
-export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent } from './event-bus.js';
+export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent } from './event-bus.js';
 export { attachWorkerCollector } from './worker-collector.js';
 export { eosApiCollector } from './api-collector.js';
 export { registerHealthProbe, startHealthCollector, stopHealthCollector } from './health-collector.js';
@@ -9,4 +9,6 @@ export { sampleQueueDepths, startQueueDepthCollector, stopQueueDepthCollector } 
 export { startErrorRateMonitor, stopErrorRateMonitor, getErrorRateSnapshot } from './error-rate-monitor.js';
 export { sampleMemory, startMemoryCollector, stopMemoryCollector } from './memory-collector.js';
 export { recordLatency, getLatencySnapshot, startLatencyTracker, stopLatencyTracker } from './latency-tracker.js';
+export { recordProviderObservation, getProviderMatrix, startProviderObservatory, stopProviderObservatory } from './provider-observatory.js';
+export type { ProviderMatrixEntry } from './provider-observatory.js';
 export { eosRouter } from './routes.js';

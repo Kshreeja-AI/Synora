@@ -99,6 +99,20 @@ export interface ApiLatencySummaryEvent extends EngineeringEvent {
   };
 }
 
+export interface AiProviderObservationEvent extends EngineeringEvent {
+  type: 'ai.provider.observation';
+  payload: {
+    providerId: string;
+    modelId: string;
+    latencyMs: number;
+    inputTokens: number;
+    outputTokens: number;
+    costCents: number;
+    success: boolean;
+    errorCode?: string;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -109,6 +123,7 @@ export type KnownEvent =
   | AlertErrorRateEvent
   | ProcessMemoryEvent
   | ApiLatencySummaryEvent
+  | AiProviderObservationEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

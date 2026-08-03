@@ -6,6 +6,7 @@ import { sampleQueueDepths } from './queue-depth-collector.js';
 import { getErrorRateSnapshot } from './error-rate-monitor.js';
 import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
+import { getProviderMatrix } from './provider-observatory.js';
 
 const router: Router = Router();
 
@@ -51,6 +52,10 @@ router.post('/memory', (_req: Request, res: Response) => {
   sampleMemory();
   const events = engineeringEventBus.recentByType('process.memory', 20);
   res.json({ data: events });
+});
+
+router.get('/provider-matrix', (_req: Request, res: Response) => {
+  res.json({ data: getProviderMatrix() });
 });
 
 router.get('/latency', (_req: Request, res: Response) => {
