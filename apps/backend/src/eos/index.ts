@@ -68,6 +68,14 @@ export type {
   DatasetSummary,
 } from './evaluation-datasets.js';
 export { runEvaluation, compareRuns } from './evaluation-runner.js';
+export {
+  runRegressionSuite,
+  measureRegressionGate,
+  acceptAsBaseline,
+  getBaseline,
+  clearBaselines,
+} from './regression-suite.js';
+export type { RegressionRun, RegressionResult } from './regression-suite.js';
 export type {
   CaseExecutor,
   CaseResult,
