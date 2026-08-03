@@ -175,31 +175,84 @@ prisma validate` passes against the merged schema.
 
 ## Current UI
 
-16 routes: `/` (+ marketing pages), `/auth/{login,register,
-forgot-password,reset-password,verify-email}`, `/dashboard`,
-`/dashboard/settings/{profile,account,sessions,workspace}`, plus the
-dashboard `[...catchAll]` 404 trigger — all dark-first, token-styled,
-design-system components, Geist type, browser-verified in both themes
-and at mobile/desktop widths. The dashboard is now a real application
-shell (sidebar, topbar, workspace switcher, command palette,
-notifications, profile menu) rather than the M3 placeholder shell.
+37 page routes, all dark-first, token-styled, design-system components,
+Geist type, browser-verified in both themes and at mobile/desktop widths.
+The dashboard is a real application shell (sidebar, topbar, workspace
+switcher, command palette, notifications, profile menu).
+
+- **Marketing:** `/`, `/pricing`, `/features/[slug]`, `/changelog`
+- **Auth:** `/auth/{login,register,forgot-password,reset-password,verify-email}`
+- **Chat platform:** `/conversations`, `/conversations/[id]`
+- **Knowledge:** `/knowledge/{memories,prompts,templates}`, `/search`
+- **Creation:** `/studio`, `/dashboard/tools`, `/developer`
+- **Workspace:** `/dashboard`, `/dashboard/projects`,
+  `/dashboard/projects/[id]`, `/dashboard/usage`, `/dashboard/billing`
+- **Settings:** `/dashboard/settings/{profile,account,sessions,workspace,billing}`
+- **Admin:** `/admin`, `/admin/users`, `/admin/workspaces`, `/admin/audit-logs`
+- **Public entry points:** `/invite/[token]`, `/share/[token]`, `/welcome`,
+  plus the dashboard `[...catchAll]` 404 trigger
 
 ## Current backend
 
-Express 4 / TS strict / ESM. Routes: `/health`, `/ready`, `/api/auth/*`
-(11), `/api/users/*` (8), `/api/projects/*` (3), `/api/documents/*` (3),
-`/api/images/*` (3, generate = placeholder), `/api/ai/generate`,
-`/api/workspaces/*` (5: create, list, get, patch, members — M4),
-`/api/notifications/*` (4: list, unread-count, read, read-all — M4),
-**`/api/workspaces/:id/billing/*`** (15 routes: subscription, checkout,
-plan change, cancel, reactivate, payment methods, invoices, credits, usage —
-M6), **`/api/billing/webhook`** (Stripe webhook processing — M6),
-**`/api/billing/plans`** (public plan list — M6), **`/api/admin/plans`** (admin
-plan CRUD — M6), **`/api/admin/workspaces/:id/billing`** (admin support view —
-M6), **`/api/admin/*/credits`** (admin credit grant/adjust — M6).
-Middleware-adjacent subsystems: `src/mail/`, `src/storage/`, `src/billing/`
-(new in M6). Middleware chain and startup order documented in
+Express 4 / TS strict / ESM. 43 route modules mounted under these prefixes
+in `app.ts`: `/health`, `/ready`, `/api/auth/*` (incl. `/api/auth/mfa`),
+`/api/users/*`, `/api/projects/*`, `/api/documents/*`, `/api/images/*`,
+`/api/videos/*`, `/api/audio/*`, `/api/ai/*`, `/api/workspaces/*`,
+`/api/notifications/*`, `/api/invitations/*`, `/api/billing/*`,
+`/api/admin/*`, `/api/shared/*`, and `/api/eos/*`.
+
+The `/api/workspaces/:id/*` namespace carries the bulk of the Release 3
+surface: conversations, messages, branches, conversation folders and tags,
+prompt/conversation templates, memories, tools and tool secrets, search,
+streaming, realtime, sharing, export/import, dataset export, evaluation,
+feedback, files, assets, folders, API keys, capabilities, model registry,
+privacy consent, and usage.
+
+Media generation is real, not placeholder: image, video, and audio each
+run through a provider abstraction with a registry, persist generated
+bytes to storage, and return an honest `503` when no provider credential
+is configured rather than fabricating output.
+
+Middleware-adjacent subsystems: `src/mail/`, `src/storage/`, `src/billing/`,
+`src/embeddings/`, `src/vectordb/`, `src/queue/` (BullMQ), `src/workers/`,
+`src/secrets/`, `src/config/`, `src/monitoring/`, `src/crypto/`, `src/tools/`,
+and `src/eos/`. Middleware chain and startup order documented in
 `docs/architecture.md`.
+
+## Internal engineering platform (EOS / CIEP)
+
+An internal, founder-only engineering platform lives in
+`apps/backend/src/eos/`, mounted at `/api/eos` and gated by
+`requireAdminRole`. It is additive observability and engineering
+intelligence — no product code depends on it, and it never modifies
+protected branches, deploys, or touches production infrastructure.
+
+Architecture is event-driven: an in-process `EngineeringEventBus` with a
+bounded ring buffer, and independent collectors/monitors that publish to
+and subscribe from it. Each component is separately replaceable.
+
+**Components (12):**
+
+| Component | Role |
+|---|---|
+| `event-bus` | Typed event backbone + bounded history |
+| `worker-collector` | BullMQ job completion/failure events |
+| `api-collector` | Slow-request and 5xx error events (Express middleware) |
+| `health-collector` | Runs registered health probes on an interval |
+| `boot-collector` | Server boot timing, Node version, memory |
+| `dependency-probes` | Postgres + Redis reachability probes |
+| `queue-depth-collector` | Samples BullMQ queue depths |
+| `error-rate-monitor` | Sliding-window 5xx rate, emits threshold alerts |
+| `memory-collector` | Process RSS/heap/external/arrayBuffer sampling |
+| `latency-tracker` | API p50/p95/p99 percentiles + periodic summaries |
+| `provider-observatory` | CIEP: live Provider Capability Matrix (quality, latency, cost, tokens, failure codes) |
+| `prompt-intelligence` | CIEP: per-prompt/version success, latency, cost + regression alerts |
+
+**Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
+`POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
+`POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`.
+
+Verified by 52 tests across 11 test files in `src/eos/__tests__/`.
 
 ## Current AI engine
 
