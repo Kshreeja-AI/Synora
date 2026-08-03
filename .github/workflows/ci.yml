@@ -2,9 +2,9 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main, develop, claude/*]
+    branches: [main, develop, SYNORA, claude/*]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, SYNORA]
 
 jobs:
   test:
