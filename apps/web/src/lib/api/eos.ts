@@ -130,3 +130,14 @@ export function getCaptureStatus(): Promise<{
 export function getDatasets(): Promise<DatasetSummary[]> {
   return api.get('/api/eos/evaluation/datasets');
 }
+
+export interface AiPathCoverage {
+  promptId: string;
+  label: string;
+  instrumented: boolean;
+  observed: boolean;
+}
+
+export function getCoverage(): Promise<AiPathCoverage[]> {
+  return api.get('/api/eos/coverage');
+}

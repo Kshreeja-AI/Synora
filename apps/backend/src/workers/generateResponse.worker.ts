@@ -15,11 +15,14 @@ import {
   aiTokensTotal,
 } from '../monitoring/metrics';
 import { Redis } from 'ioredis';
-import { recordAiInteraction } from '../eos/instrumentation';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
 import { isCaptureActive } from '../eos/case-capture';
 import { privacyConsentService } from '../services/privacyConsent.service';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+declareAiPath('chat.generate');
+
 const PROMPT_HISTORY_WINDOW = 50;
 
 export interface GenerateResponseJob {

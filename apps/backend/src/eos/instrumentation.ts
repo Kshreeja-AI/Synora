@@ -14,6 +14,56 @@ import { engineeringEventBus } from './event-bus.js';
  * their event.
  */
 
+/**
+ * Every AI capability Synora can serve. Coverage is reported against this
+ * list, so a capability that exists but never instruments itself shows up
+ * as a gap rather than silently vanishing from the reckoning.
+ */
+export const KNOWN_AI_PATHS = [
+  { promptId: 'chat.generate', label: 'Chat generation' },
+  { promptId: 'image.generate', label: 'Image generation' },
+  { promptId: 'video.generate', label: 'Video generation' },
+  { promptId: 'audio.generate', label: 'Audio generation' },
+  { promptId: 'embeddings.embed', label: 'Embeddings' },
+] as const;
+
+const declaredPaths = new Set<string>();
+const observedPaths = new Set<string>();
+
+/**
+ * Declares that a code path is instrumented. Called at module scope by the
+ * site that instruments it, so the declaration lives next to the code it
+ * describes — forgetting to instrument and forgetting to declare become the
+ * same omission, rather than two that can drift apart.
+ */
+export function declareAiPath(promptId: string): void {
+  declaredPaths.add(promptId);
+}
+
+export interface AiPathCoverage {
+  promptId: string;
+  label: string;
+  /** The path registered itself, so it is wired to report. */
+  instrumented: boolean;
+  /** It has actually reported at least once in this process. */
+  observed: boolean;
+}
+
+export function getAiPathCoverage(): AiPathCoverage[] {
+  return KNOWN_AI_PATHS.map((path) => ({
+    promptId: path.promptId,
+    label: path.label,
+    instrumented: declaredPaths.has(path.promptId),
+    observed: observedPaths.has(path.promptId),
+  }));
+}
+
+/** Clears declarations and observations. Intended for tests. */
+export function resetAiPathCoverage(): void {
+  declaredPaths.clear();
+  observedPaths.clear();
+}
+
 export interface AiInteractionRecord {
   /** Stable identifier for the prompt under test, e.g. 'chat.generate'. */
   promptId: string;
@@ -57,6 +107,7 @@ function safeEmit(fn: () => void): void {
 
 export function recordAiInteraction(record: AiInteractionRecord): void {
   const timestamp = Date.now();
+  observedPaths.add(record.promptId);
 
   // Provider Capability Matrix: cost, latency, reliability per model.
   safeEmit(() =>

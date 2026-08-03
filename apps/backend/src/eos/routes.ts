@@ -13,6 +13,7 @@ import { listDatasets, summarizeDataset, getCases } from './evaluation-datasets.
 import { listGraders } from './evaluation-graders.js';
 import { getCaptureStats } from './case-capture.js';
 import { getProviderMatrix } from './provider-observatory.js';
+import { getAiPathCoverage } from './instrumentation.js';
 
 const router: Router = Router();
 
@@ -116,6 +117,10 @@ router.get('/evaluation/runs', (_req: Request, res: Response) => {
 router.get('/evaluation/capture', (_req: Request, res: Response) => {
   const events = engineeringEventBus.recentByType('evaluation.case.captured', 50);
   res.json(createApiResponse({ stats: getCaptureStats(), recentCaptures: events }));
+});
+
+router.get('/coverage', (_req: Request, res: Response) => {
+  res.json(createApiResponse(getAiPathCoverage()));
 });
 
 export { router as eosRouter };

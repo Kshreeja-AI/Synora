@@ -9,6 +9,7 @@ import {
   getLatency,
   getPromptReport,
   getProviderMatrix,
+  getCoverage,
   type ProviderMatrixEntry,
 } from '@/lib/api/eos';
 
@@ -22,15 +23,6 @@ import {
  */
 
 const REFRESH_MS = 30_000;
-
-/** AI paths and whether they currently report to the platform. */
-const INSTRUMENTED_PATHS = [
-  { name: 'Chat generation', instrumented: true },
-  { name: 'Image generation', instrumented: true },
-  { name: 'Video generation', instrumented: false },
-  { name: 'Audio generation', instrumented: false },
-  { name: 'Embeddings', instrumented: false },
-] as const;
 
 function Tile({
   label,
@@ -100,6 +92,7 @@ export default function EngineeringDashboardPage() {
   const prompts = useQuery({ queryKey: ['eos', 'prompts'], queryFn: getPromptReport, refetchInterval: REFRESH_MS });
   const events = useQuery({ queryKey: ['eos', 'events'], queryFn: getEventStats, refetchInterval: REFRESH_MS });
   const capture = useQuery({ queryKey: ['eos', 'capture'], queryFn: getCaptureStatus, refetchInterval: REFRESH_MS });
+  const coverage = useQuery({ queryKey: ['eos', 'coverage'], queryFn: getCoverage, refetchInterval: REFRESH_MS });
 
   const regressing = prompts.data?.report.filter((p) => p.regressing) ?? [];
   const errorsNow = errorRate.data?.current.errorsInWindow ?? 0;
@@ -148,22 +141,30 @@ export default function EngineeringDashboardPage() {
         title="Coverage"
         description="Which AI paths report to the platform. Unreported paths are invisible to every measurement on this page."
       >
-        <ul className="space-y-2">
-          {INSTRUMENTED_PATHS.map((path) => (
-            <li key={path.name} className="flex items-center justify-between text-sm">
-              <span>{path.name}</span>
-              <span
-                className={
-                  path.instrumented
-                    ? 'text-xs font-medium text-emerald-500'
-                    : 'text-xs font-medium text-muted-foreground'
-                }
-              >
-                {path.instrumented ? 'reporting' : 'not instrumented'}
-              </span>
-            </li>
-          ))}
-        </ul>
+        {coverage.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : (
+          <ul className="space-y-2">
+            {(coverage.data ?? []).map((path) => (
+              <li key={path.promptId} className="flex items-center justify-between text-sm">
+                <span>{path.label}</span>
+                <span
+                  className={
+                    path.instrumented
+                      ? 'text-xs font-medium text-emerald-500'
+                      : 'text-xs font-medium text-muted-foreground'
+                  }
+                >
+                  {path.instrumented
+                    ? path.observed
+                      ? 'reporting'
+                      : 'wired, no traffic yet'
+                    : 'not instrumented'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
       <Section

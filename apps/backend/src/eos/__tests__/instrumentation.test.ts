@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { engineeringEventBus } from '../event-bus';
-import { recordAiInteraction } from '../instrumentation';
+import {
+  recordAiInteraction,
+  declareAiPath,
+  getAiPathCoverage,
+  resetAiPathCoverage,
+  KNOWN_AI_PATHS,
+} from '../instrumentation';
 import { getProviderMatrix, startProviderObservatory, stopProviderObservatory } from '../provider-observatory';
 import { getPromptReport, startPromptIntelligence, stopPromptIntelligence } from '../prompt-intelligence';
 import { getCases, resetDatasets } from '../evaluation-datasets';
@@ -116,6 +122,50 @@ describe('instrumentation', () => {
     // Observability must never fail a customer-facing request.
     expect(() => recordAiInteraction(base)).not.toThrow();
     unsub();
+  });
+
+  describe('path coverage', () => {
+    it('reports every known path, defaulting to uninstrumented', () => {
+      resetAiPathCoverage();
+      const coverage = getAiPathCoverage();
+
+      expect(coverage).toHaveLength(KNOWN_AI_PATHS.length);
+      // A capability that exists but never instruments itself must appear as
+      // a gap, not vanish from the reckoning.
+      expect(coverage.every((c) => !c.instrumented)).toBe(true);
+      expect(coverage.map((c) => c.promptId)).toContain('video.generate');
+    });
+
+    it('marks a path instrumented once it declares itself', () => {
+      resetAiPathCoverage();
+      declareAiPath('chat.generate');
+
+      const chat = getAiPathCoverage().find((c) => c.promptId === 'chat.generate')!;
+      expect(chat.instrumented).toBe(true);
+      // Declared but not yet exercised — a distinction the dashboard shows.
+      expect(chat.observed).toBe(false);
+    });
+
+    it('marks a path observed once it actually reports', () => {
+      resetAiPathCoverage();
+      declareAiPath('chat.generate');
+      recordAiInteraction(base);
+
+      const chat = getAiPathCoverage().find((c) => c.promptId === 'chat.generate')!;
+      expect(chat.instrumented).toBe(true);
+      expect(chat.observed).toBe(true);
+    });
+
+    it('an undeclared path that reports still shows as uninstrumented', () => {
+      resetAiPathCoverage();
+      recordAiInteraction({ ...base, promptId: 'image.generate' });
+
+      // Observation without declaration means someone instrumented a path
+      // but forgot to declare it — surfaced rather than silently accepted.
+      const image = getAiPathCoverage().find((c) => c.promptId === 'image.generate')!;
+      expect(image.observed).toBe(true);
+      expect(image.instrumented).toBe(false);
+    });
   });
 
   it('one failing subscriber does not prevent the others receiving events', () => {

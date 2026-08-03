@@ -3,7 +3,9 @@ import type { GeneratedImage } from '@prisma/client';
 import { resolveImageProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
-import { recordAiInteraction } from '../eos/instrumentation';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+
+declareAiPath('image.generate');
 
 export interface GenerateImageInput {
   userId: string;
