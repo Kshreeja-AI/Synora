@@ -69,10 +69,10 @@ export function useMessages(
   return useQuery({
     queryKey: [MESSAGES_KEY, conversationId],
     queryFn: async () => {
-      const response = await api.get<{ items: ConversationMessage[] }>(
+      const response = await api.get<ConversationMessage[]>(
         `/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`
       );
-      return response.items || [];
+      return response ?? [];
     },
     enabled: !!conversationId && !!workspaceId && options?.enabled !== false,
   });
