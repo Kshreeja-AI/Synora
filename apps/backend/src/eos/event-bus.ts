@@ -292,6 +292,15 @@ export class EngineeringEventBus {
     return this.ringBuffer.filter((e) => e.type === type).slice(-limit);
   }
 
+  /**
+   * How many subscribers are attached to one event type. Observed evidence
+   * rather than a declaration: a count of zero means nothing is processing
+   * this event, whatever any startup code claims to have done.
+   */
+  listenerCountFor(eventType: string): number {
+    return this.emitter.listenerCount(eventType);
+  }
+
   stats(): { totalEmitted: number; bufferSize: number; listenerCount: number } {
     return {
       totalEmitted: this.ringBuffer.length,

@@ -80,6 +80,7 @@ describe('eos routes', () => {
       '/api/eos/cost-report',
       '/api/eos/provider-matrix',
       '/api/eos/coverage',
+      '/api/eos/runtime-check',
       '/api/eos/evaluation/datasets',
       '/api/eos/evaluation/graders',
       '/api/eos/evaluation/runs',

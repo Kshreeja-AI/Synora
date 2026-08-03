@@ -52,7 +52,23 @@ beforeEach(() => {
   vi.mocked(eosApi.getCoverage).mockResolvedValue([]);
   vi.mocked(eosApi.getProposals).mockResolvedValue([]);
   vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue(healthyRuntime);
 });
+
+const healthyRuntime = {
+  entries: [
+    {
+      component: 'prompt-intelligence',
+      eventType: 'ai.prompt.outcome',
+      listeners: 1,
+      running: true,
+      consequenceIfMissing: 'Prompt quality is never tracked, so no regression can ever be detected.',
+    },
+  ],
+  allRunning: true,
+  notRunning: [],
+  notCoveredByThisCheck: ['memory-collector', 'latency-tracker'],
+};
 
 const costEntry = {
   providerId: 'anthropic',
@@ -218,6 +234,47 @@ describe('EngineeringDashboardPage', () => {
     expect(screen.getByText('20%')).toBeInTheDocument();
   });
 
+  it('warns at the top of the page when a watcher is not running', async () => {
+    vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue({
+      entries: [
+        {
+          component: 'proposal-engine (cost anomalies)',
+          eventType: 'alert.cost_anomaly',
+          listeners: 0,
+          running: false,
+          consequenceIfMissing: 'Detected cost rises raise an alert that nothing turns into a proposal.',
+        },
+      ],
+      allRunning: false,
+      notRunning: ['proposal-engine (cost anomalies)'],
+      notCoveredByThisCheck: [],
+    });
+
+    renderPage();
+
+    // The exact failure that prompted this check: components existed, were
+    // tested, and were never started. The page must not look calm.
+    expect(await screen.findByText(/1 watcher\(s\) are not running/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing was watching/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/nothing turns into a proposal/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows no alarm banner when every watcher is running', async () => {
+    renderPage();
+
+    expect(await screen.findByText(/running \(1 listener/i)).toBeInTheDocument();
+    expect(screen.queryByText(/are not running/i)).not.toBeInTheDocument();
+  });
+
+  it('names what the watcher check cannot see', async () => {
+    renderPage();
+
+    // A green list must not be mistaken for full coverage.
+    expect(await screen.findByText(/Not covered by this check: memory-collector/i)).toBeInTheDocument();
+  });
+
   it('flags a cost rise with the multiple it actually measured', async () => {
     vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [costEntry], recentAlerts: [] });
 
@@ -299,6 +356,7 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getCoverage).mockRejectedValue(boom);
     vi.mocked(eosApi.getProposals).mockRejectedValue(boom);
     vi.mocked(eosApi.getCostReport).mockRejectedValue(boom);
+    vi.mocked(eosApi.getRuntimeCheck).mockRejectedValue(boom);
 
     renderPage();
 

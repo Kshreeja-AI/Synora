@@ -71,6 +71,8 @@ export {
 } from './case-capture.js';
 export { isCaptureActive } from './case-capture.js';
 export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
+export { getRuntimeCheck, EXPECTED_SUBSCRIPTIONS } from './runtime-check.js';
+export type { RuntimeCheckEntry, RuntimeCheckResult } from './runtime-check.js';
 export { recordAiInteraction } from './instrumentation.js';
 export type { AiInteractionRecord } from './instrumentation.js';
 export {

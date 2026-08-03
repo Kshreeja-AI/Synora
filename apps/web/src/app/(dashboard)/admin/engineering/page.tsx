@@ -10,6 +10,7 @@ import {
   getLatency,
   getPromptReport,
   getProposals,
+  getRuntimeCheck,
   getProviderMatrix,
   getCoverage,
   type ProviderMatrixEntry,
@@ -114,6 +115,11 @@ export default function EngineeringDashboardPage() {
   });
 
   const cost = useQuery({ queryKey: ['eos', 'cost'], queryFn: getCostReport, refetchInterval: REFRESH_MS });
+  const runtime = useQuery({
+    queryKey: ['eos', 'runtime'],
+    queryFn: getRuntimeCheck,
+    refetchInterval: REFRESH_MS,
+  });
 
   const regressing = prompts.data?.report.filter((p) => p.regressing) ?? [];
   const awaitingDecision = proposals.data?.filter((p) => p.status === 'pending').length ?? 0;
@@ -129,6 +135,33 @@ export default function EngineeringDashboardPage() {
           reset when the server restarts, so figures reflect the current process only.
         </p>
       </header>
+
+      {runtime.data && !runtime.data.allRunning ? (
+        // First thing on the page, deliberately. If a watcher is not
+        // running, every calm figure below it is calm for the wrong reason,
+        // and the reader needs to know that before reading any of them.
+        <div className="rounded-lg border border-red-500/60 bg-red-500/5 p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <h2 className="text-sm font-semibold text-red-500">
+              {runtime.data.notRunning.length} watcher(s) are not running
+            </h2>
+          </div>
+          <p className="mt-2 text-sm">
+            The measurements below are incomplete. A quiet number here may mean nothing happened, or
+            it may mean nothing was watching.
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-6 text-sm">
+            {runtime.data.entries
+              .filter((entry) => !entry.running)
+              .map((entry) => (
+                <li key={entry.eventType}>
+                  <span className="font-medium">{entry.component}</span> — {entry.consequenceIfMissing}
+                </li>
+              ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Tile
@@ -167,6 +200,40 @@ export default function EngineeringDashboardPage() {
       </div>
 
       <ProposalsPanel />
+
+      <Section
+        title="Watchers"
+        description="Whether each component is actually subscribed and processing events. Read from the event bus, not from what a component reports about itself."
+      >
+        {runtime.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !runtime.data ? (
+          <EmptyHint>Runtime check unavailable.</EmptyHint>
+        ) : (
+          <>
+            <ul className="space-y-2">
+              {runtime.data.entries.map((entry) => (
+                <li key={entry.eventType} className="flex items-center justify-between text-sm">
+                  <span>{entry.component}</span>
+                  <span
+                    className={
+                      entry.running
+                        ? 'text-xs font-medium text-emerald-500'
+                        : 'text-xs font-medium text-red-500'
+                    }
+                  >
+                    {entry.running ? `running (${entry.listeners} listener(s))` : 'not running'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Not covered by this check: {runtime.data.notCoveredByThisCheck.join(', ')}. These run on
+              a timer rather than by subscription, so a green result above does not vouch for them.
+            </p>
+          </>
+        )}
+      </Section>
 
       <Section
         title="Coverage"

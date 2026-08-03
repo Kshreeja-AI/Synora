@@ -144,6 +144,26 @@ export function getCoverage(): Promise<AiPathCoverage[]> {
   return api.get('/api/eos/coverage');
 }
 
+export interface RuntimeCheckEntry {
+  component: string;
+  eventType: string;
+  listeners: number;
+  running: boolean;
+  consequenceIfMissing: string;
+}
+
+export interface RuntimeCheckResult {
+  entries: RuntimeCheckEntry[];
+  allRunning: boolean;
+  notRunning: string[];
+  /** Components the check structurally cannot see. Shown, not hidden. */
+  notCoveredByThisCheck: string[];
+}
+
+export function getRuntimeCheck(): Promise<RuntimeCheckResult> {
+  return api.get('/api/eos/runtime-check');
+}
+
 export interface CostReportEntry {
   providerId: string;
   modelId: string;

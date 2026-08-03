@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (22):**
+**Components (23):**
 
 | Component | Role |
 |---|---|
@@ -255,6 +255,7 @@ and subscribe from it. Each component is separately replaceable.
 | `redaction` | Scrubs emails, API keys, bearer tokens, JWTs, cards, SSNs, IPs, and phone numbers from captured text |
 | `case-capture` | CIEP: turns real failures and low-rated interactions into redacted `real`-origin evaluation cases |
 | `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture; also tracks AI-path coverage |
+| `runtime-check` | Verifies each subscriber-based component is actually attached, by reading listener counts off the event bus rather than trusting a self-report. Names the timer-driven components it cannot see |
 | `cost-monitor` | CIEP: cost per request per provider/model against that model's own baseline; emits `alert.cost_anomaly`. Only token-priced observations are tracked, so unpriced capabilities can never produce a false anomaly |
 | `proposal-engine` | Turns a detected regression or cost anomaly into a reviewable proposal (problem, evidence, caveats, suggested action). Has no `apply()` — approval records a decision and executes nothing |
 
@@ -264,7 +265,8 @@ and subscribe from it. Each component is separately replaceable.
 `GET /history`, `POST /history/capture`, `GET /evaluation/datasets`,
 `GET /evaluation/datasets/:id`, `GET /evaluation/graders`, `GET /evaluation/runs`,
 `GET /evaluation/capture`, `GET /cost-report`, `GET /coverage`,
-`GET /proposals`, `GET /proposals/:id`, `POST /proposals/:id/decide`.
+`GET /runtime-check`, `GET /proposals`, `GET /proposals/:id`,
+`POST /proposals/:id/decide`.
 
 **Startup:** `server.ts` starts the dependency probes, error-rate monitor,
 latency tracker, memory collector, provider observatory, prompt
