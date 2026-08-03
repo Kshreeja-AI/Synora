@@ -227,6 +227,81 @@ export function buildCostAnomalyProposal(params: {
   };
 }
 
+/**
+ * Builds a proposal from a latency drift. Read-only, like its siblings.
+ *
+ * The honest difficulty here is that a slowdown is very often not ours:
+ * providers get slower, networks vary, and longer prompts legitimately take
+ * longer. The caveats say so, because a proposal that implies our code is
+ * at fault would send a reader looking in the wrong place first.
+ */
+export function buildLatencyDriftProposal(params: {
+  providerId: string;
+  modelId: string;
+  baselineP95Ms: number;
+  recentP95Ms: number;
+  ratio: number | null;
+  baselineSamples: number;
+  windowSize: number;
+}): Proposal {
+  const matrixEntry = getProviderMatrix().find(
+    (p) => p.providerId === params.providerId && p.modelId === params.modelId,
+  );
+
+  const caveats: string[] = [
+    'Correlation, not diagnosis: responses got slower, but this does not say why.',
+    'The cause is frequently outside our code — the provider itself, the network in between, or simply longer inputs producing longer outputs.',
+    'This measures the 95th percentile, so it describes the slowest one call in twenty rather than the typical experience.',
+  ];
+
+  if (params.ratio === null) {
+    caveats.push(
+      'The baseline was zero, so there is no multiple to report. This is a change from effectively instant to measurable, not a measured factor.',
+    );
+  }
+  if (matrixEntry && matrixEntry.successRate < 1) {
+    caveats.push(
+      `This model is also failing ${Math.round((1 - matrixEntry.successRate) * 100)}% of its requests; timeouts and retries inflate latency without anything else having changed.`,
+    );
+  }
+
+  const describedChange =
+    params.ratio === null
+      ? `rose from no measurable baseline to ${Math.round(params.recentP95Ms)} ms`
+      : `rose ${params.ratio.toFixed(1)}× — from ${Math.round(params.baselineP95Ms)} ms to ` +
+        `${Math.round(params.recentP95Ms)} ms`;
+
+  const id = `prop_${Date.now()}_${++counter}`;
+  return {
+    id,
+    createdAt: Date.now(),
+    trigger: 'latency-drift',
+    title: `${params.providerId} / ${params.modelId} is responding more slowly`,
+    problem:
+      `Over the last ${params.windowSize} requests, 95th-percentile latency ${describedChange}, ` +
+      `measured against a baseline of ${params.baselineSamples} earlier requests.`,
+    suggestedAction:
+      'Check the provider’s own status page first, then compare the recent requests’ input and ' +
+      'output sizes against the baseline period. Only if both are unchanged is this likely to be ' +
+      'something on our side. Confirm the cause before changing anything in production.',
+    caveats,
+    evidence: {
+      summary: `Latency drift detected on ${params.providerId} / ${params.modelId}.`,
+      metrics: {
+        baselineP95Ms: Math.round(params.baselineP95Ms),
+        recentP95Ms: Math.round(params.recentP95Ms),
+        ratio: params.ratio === null ? 'not computable (baseline was zero)' : `${params.ratio.toFixed(2)}×`,
+        baselineSamples: params.baselineSamples,
+        windowSize: params.windowSize,
+        totalRequests: matrixEntry?.requests ?? 0,
+      },
+      // Latency is measured per request, not per captured case.
+      affectedCaseIds: [],
+    },
+    status: 'pending',
+  };
+}
+
 function record(proposal: Proposal): void {
   proposals.set(proposal.id, proposal);
   if (proposals.size > maxProposals) {
@@ -281,6 +356,25 @@ export function startProposalEngine(opts: { captureDatasetId?: string; maxPropos
           windowSize: number;
         };
         record(buildCostAnomalyProposal(p));
+      } catch {
+        // One detector failing must never silence the others.
+      }
+    }),
+  );
+
+  unsubscribers.push(
+    engineeringEventBus.on('alert.latency_drift', (event) => {
+      try {
+        const p = event.payload as {
+          providerId: string;
+          modelId: string;
+          baselineP95Ms: number;
+          recentP95Ms: number;
+          ratio: number | null;
+          baselineSamples: number;
+          windowSize: number;
+        };
+        record(buildLatencyDriftProposal(p));
       } catch {
         // One detector failing must never silence the others.
       }

@@ -14,6 +14,13 @@ export type { ProviderMatrixEntry } from './provider-observatory.js';
 export { recordPromptOutcome, getPromptReport, startPromptIntelligence, stopPromptIntelligence } from './prompt-intelligence.js';
 export type { PromptReportEntry } from './prompt-intelligence.js';
 export { recordCostObservation, getCostReport, startCostMonitor, stopCostMonitor } from './cost-monitor.js';
+export {
+  recordLatencyObservation,
+  getLatencyDriftReport,
+  startLatencyDrift,
+  stopLatencyDrift,
+} from './latency-drift.js';
+export type { LatencyDriftEntry } from './latency-drift.js';
 export type { CostReportEntry } from './cost-monitor.js';
 export { InMemoryHistoryStore, FileHistoryStore } from './history-store.js';
 export type { EngineeringHistoryStore, EngineeringSnapshot, HistoryQuery } from './history-store.js';
@@ -101,6 +108,7 @@ export type { Drafter, DraftResult, DraftMeasurement } from './draft-generator.j
 export {
   attachDraft,
   buildCostAnomalyProposal,
+  buildLatencyDriftProposal,
   buildPromptRegressionProposal,
   startProposalEngine,
   stopProposalEngine,

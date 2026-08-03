@@ -172,6 +172,21 @@ export interface AlertCostAnomalyEvent extends EngineeringEvent {
   };
 }
 
+export interface AlertLatencyDriftEvent extends EngineeringEvent {
+  type: 'alert.latency_drift';
+  payload: {
+    providerId: string;
+    modelId: string;
+    /** 95th percentile before the recent window — the tail, not the mean. */
+    baselineP95Ms: number;
+    recentP95Ms: number;
+    /** Null when the baseline was zero, which makes a multiple undefined. */
+    ratio: number | null;
+    baselineSamples: number;
+    windowSize: number;
+  };
+}
+
 export interface EngineeringSnapshotEvent extends EngineeringEvent {
   type: 'engineering.snapshot';
   payload: {
@@ -276,6 +291,7 @@ export type KnownEvent =
   | PromptOutcomeEvent
   | AlertPromptRegressionEvent
   | AlertCostAnomalyEvent
+  | AlertLatencyDriftEvent
   | EngineeringSnapshotEvent
   | EvaluationRunCompletedEvent
   | AiInteractionCompletedEvent

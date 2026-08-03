@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (27):**
+**Components (28):**
 
 | Component | Role |
 |---|---|
@@ -260,6 +260,7 @@ and subscribe from it. Each component is separately replaceable.
 | `execution-layer` | The only component that changes anything, and the most tightly bounded. Acts only on a proposal the founder approved: creates a feature branch, applies the drafted change, runs tests, opens a pull request, and stops. Its git interface has no merge, deploy, or push operation — the capability is absent, not guarded. Branch names are generated from the proposal id, so no input can steer a write at a protected ref. Failing tests produce no pull request |
 | `ai-judge` | CIEP: scores output quality by asking an injected AI judge against stated criteria. Deliberately NOT a grader — graders are pure and synchronous so runs stay comparable, and a non-deterministic judge in that registry would destroy it. Every judgement is marked `judged`, never measured; an unconfigured judge yields null rather than zero, and an out-of-range score is discarded rather than clamped |
 | `media-pricing` | Published per-image/per-character/per-second prices, each dated with its source. The one permitted table of expectations, because media providers report no cost to observe. Ships empty; an unlisted model yields no price rather than a guessed one, and derived costs stay marked `stated` rather than `observed` |
+| `latency-drift` | CIEP: 95th-percentile response time per provider/model against that model's own history. Compares the tail rather than the mean, because a mean is dominated by the fast majority while the tail is what customers experience as "it hung". Only the transition is alerted — once slowness fills the baseline it is no longer drift |
 | `cost-monitor` | CIEP: cost per request per provider/model against that model's own baseline; emits `alert.cost_anomaly`. Only token-priced observations are tracked, so unpriced capabilities can never produce a false anomaly |
 | `proposal-engine` | Turns a detected regression or cost anomaly into a reviewable proposal (problem, evidence, caveats, suggested action). Has no `apply()` — approval records a decision and executes nothing |
 

@@ -62,6 +62,11 @@ export const EXPECTED_SUBSCRIPTIONS: readonly ExpectedSubscription[] = [
     eventType: 'alert.cost_anomaly',
     consequenceIfMissing: 'Detected cost rises raise an alert that nothing turns into a proposal.',
   },
+  {
+    component: 'proposal-engine (latency drift)',
+    eventType: 'alert.latency_drift',
+    consequenceIfMissing: 'Detected slowdowns raise an alert that nothing turns into a proposal.',
+  },
 ] as const;
 
 export interface RuntimeCheckEntry {

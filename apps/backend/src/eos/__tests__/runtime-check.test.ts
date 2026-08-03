@@ -73,6 +73,7 @@ describe('runtime-check', () => {
     expect(result.notRunning).toEqual([
       'proposal-engine (prompt regressions)',
       'proposal-engine (cost anomalies)',
+      'proposal-engine (latency drift)',
     ]);
   });
 
