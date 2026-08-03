@@ -21,6 +21,12 @@ model User {
   role          UserRole    @default(USER)
   status        UserStatus  @default(ACTIVE)
 
+  // Set the first time the user completes (or explicitly skips) the
+  // onboarding flow. Null means "never onboarded" — router uses this to
+  // redirect a fresh user into /welcome instead of dropping them onto an
+  // empty dashboard.
+  onboardedAt   DateTime?
+
   // OAuth accounts
   accounts      Account[]
 

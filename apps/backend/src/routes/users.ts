@@ -76,6 +76,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res, next) => {
         image: true,
         role: true,
         emailVerified: true,
+        onboardedAt: true,
         createdAt: true,
         profile: { select: { bio: true, website: true, location: true } },
         preferences: {
@@ -297,6 +298,37 @@ router.patch('/me/preferences', authMiddleware, async (req: AuthRequest, res, ne
  * mangling it — a deleted account must never block someone else (or the
  * same person) from registering that address again.
  */
+/**
+ * POST /api/users/me/onboarded — mark the caller as onboarded.
+ *
+ * Idempotent: called multiple times, the first-set timestamp is preserved so
+ * we know when the user actually finished the flow (not when they most
+ * recently reopened the app). Frontend calls this when they either complete
+ * the welcome wizard or explicitly skip it — either way, they've been given
+ * the opportunity, so the redirect gate should stop firing.
+ */
+router.post('/me/onboarded', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { onboardedAt: true },
+    });
+    if (!user) throw new NotFoundException('User');
+
+    const updated = await prisma.user.update({
+      where: { id: req.userId },
+      // First completion wins; a repeat call is a no-op on the timestamp so
+      // analytics on "days from signup to onboarded" stays honest.
+      data: user.onboardedAt ? {} : { onboardedAt: new Date() },
+      select: { onboardedAt: true },
+    });
+
+    res.json(createApiResponse({ onboardedAt: updated.onboardedAt }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete('/me', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { password } = deleteAccountSchema.parse(req.body);

@@ -3,6 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import DashboardPage from './page';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 
+const routerReplaceMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: routerReplaceMock, push: vi.fn() }),
+}));
+
 vi.mock('../../hooks/useCurrentUser', () => ({
   useCurrentUser: vi.fn(),
 }));
@@ -19,12 +24,22 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { resendVerificationEmail } from '../../lib/api/auth';
 
-const AUTHENTICATED_USER = { id: 'u1', email: 'ada@example.com', name: 'Ada', emailVerified: true };
+// onboardedAt set = the welcome redirect is inert, so we test the real
+// dashboard behaviour instead of the first-run flow. A separate test below
+// covers the redirect specifically.
+const AUTHENTICATED_USER = {
+  id: 'u1',
+  email: 'ada@example.com',
+  name: 'Ada',
+  emailVerified: true,
+  onboardedAt: '2026-08-01T00:00:00Z',
+};
 
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useCreateWorkspaceStore.setState({ isOpen: false });
+    routerReplaceMock.mockReset();
   });
 
   it('shows a skeleton while the user or workspace is loading', () => {
@@ -103,5 +118,38 @@ describe('DashboardPage', () => {
     expect(screen.getByText('3')).toBeDefined();
     expect(screen.getByText('OWNER')).toBeDefined();
     expect(screen.queryByText(/create your first workspace/i)).toBeNull();
+  });
+
+  it('redirects to /welcome when the user has never been onboarded', async () => {
+    // onboardedAt: null is the signal a brand-new user was never given the
+    // welcome tour — the dashboard should route them to it instead of
+    // dropping them onto an empty overview.
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: { ...AUTHENTICATED_USER, onboardedAt: null },
+      isLoading: false,
+    });
+    (useCurrentWorkspace as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      currentWorkspace: null,
+      isLoading: false,
+    });
+    render(<DashboardPage />);
+
+    await waitFor(() => expect(routerReplaceMock).toHaveBeenCalledWith('/welcome'));
+  });
+
+  it('does not redirect when the user is already onboarded', async () => {
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      data: AUTHENTICATED_USER, // AUTHENTICATED_USER has onboardedAt set
+      isLoading: false,
+    });
+    (useCurrentWorkspace as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      currentWorkspace: null,
+      isLoading: false,
+    });
+    render(<DashboardPage />);
+
+    // Give the effect a tick to run. It should NOT call replace.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(routerReplaceMock).not.toHaveBeenCalled();
   });
 });

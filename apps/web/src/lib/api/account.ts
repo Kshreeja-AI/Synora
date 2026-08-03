@@ -31,6 +31,11 @@ export function updatePreferences(updates: UpdatePreferencesRequest): Promise<Pr
   return api.patch<PreferencesResponse>('/api/users/me/preferences', updates);
 }
 
+/** Idempotent: first call records the timestamp; later calls are no-ops. */
+export function markOnboarded(): Promise<{ onboardedAt: string }> {
+  return api.post<{ onboardedAt: string }>('/api/users/me/onboarded', {});
+}
+
 export function deleteAccount(password: string): Promise<{ message: string }> {
   return api.delete('/api/users/me', { password });
 }

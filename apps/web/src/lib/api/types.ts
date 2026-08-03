@@ -46,6 +46,10 @@ export interface CurrentUser {
   image: string | null;
   role: string;
   emailVerified: boolean;
+  /** ISO timestamp set the first time the user completed or skipped the
+   *  welcome flow. Null means "never onboarded" — the dashboard uses this
+   *  to route brand-new users to /welcome. */
+  onboardedAt: string | null;
   createdAt: string;
   profile: ProfileFields | null;
   preferences: PreferencesResponse;
