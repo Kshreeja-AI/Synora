@@ -3,6 +3,7 @@ import type { GeneratedImage } from '@prisma/client';
 import { resolveImageProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
+import { recordAiInteraction } from '../eos/instrumentation';
 
 export interface GenerateImageInput {
   userId: string;
@@ -47,6 +48,8 @@ export class ImageGenerationService {
       },
     });
 
+    const startedAt = Date.now();
+
     try {
       const result = await provider.generateImages({
         prompt: input.prompt,
@@ -62,6 +65,16 @@ export class ImageGenerationService {
         contentType: image.mimeType,
       });
 
+      // Token and cost are omitted deliberately: image generation is not
+      // priced per token, so reporting zeroes would misread as "free".
+      recordAiInteraction({
+        promptId: 'image.generate',
+        providerId: result.provider,
+        modelId: result.model,
+        success: true,
+        latencyMs: Date.now() - startedAt,
+      });
+
       return await prisma.generatedImage.update({
         where: { id: pending.id },
         data: {
@@ -75,6 +88,16 @@ export class ImageGenerationService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('[ImageGeneration] Generation failed', { imageId: pending.id, error: message });
+
+      recordAiInteraction({
+        promptId: 'image.generate',
+        providerId: provider.id,
+        modelId: 'unknown',
+        success: false,
+        latencyMs: Date.now() - startedAt,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
+
       await prisma.generatedImage.update({
         where: { id: pending.id },
         data: { status: 'FAILED' },

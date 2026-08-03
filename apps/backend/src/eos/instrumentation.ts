@@ -22,9 +22,16 @@ export interface AiInteractionRecord {
   modelId: string;
   success: boolean;
   latencyMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  costCents: number;
+  /**
+   * Token and cost accounting. Optional because not every capability has
+   * them: image and embedding calls are not priced per token, so those
+   * paths omit these rather than reporting a zero that would read as
+   * "this was free". A matrix row with no token counts means the
+   * capability is not token-priced, not that it cost nothing.
+   */
+  inputTokens?: number;
+  outputTokens?: number;
+  costCents?: number;
   errorCode?: string;
   /**
    * Interaction text. Only supply when the user has consented to
@@ -61,9 +68,9 @@ export function recordAiInteraction(record: AiInteractionRecord): void {
         providerId: record.providerId,
         modelId: record.modelId,
         latencyMs: record.latencyMs,
-        inputTokens: record.inputTokens,
-        outputTokens: record.outputTokens,
-        costCents: record.costCents,
+        inputTokens: record.inputTokens ?? 0,
+        outputTokens: record.outputTokens ?? 0,
+        costCents: record.costCents ?? 0,
         success: record.success,
         errorCode: record.errorCode,
       },
@@ -81,9 +88,9 @@ export function recordAiInteraction(record: AiInteractionRecord): void {
         version: record.promptVersion,
         success: record.success,
         latencyMs: record.latencyMs,
-        inputTokens: record.inputTokens,
-        outputTokens: record.outputTokens,
-        costCents: record.costCents,
+        inputTokens: record.inputTokens ?? 0,
+        outputTokens: record.outputTokens ?? 0,
+        costCents: record.costCents ?? 0,
       },
     }),
   );
