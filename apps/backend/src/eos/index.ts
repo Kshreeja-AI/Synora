@@ -67,5 +67,8 @@ export {
   getCaptureStats,
   setSampler,
 } from './case-capture.js';
+export { isCaptureActive } from './case-capture.js';
 export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
+export { recordAiInteraction } from './instrumentation.js';
+export type { AiInteractionRecord } from './instrumentation.js';
 export { eosRouter } from './routes.js';

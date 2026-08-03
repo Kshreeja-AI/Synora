@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (19):**
+**Components (20):**
 
 | Component | Role |
 |---|---|
@@ -254,6 +254,7 @@ and subscribe from it. Each component is separately replaceable.
 | `evaluation-runner` | CIEP: runs a dataset against an injected executor, scores it, and compares two runs |
 | `redaction` | Scrubs emails, API keys, bearer tokens, JWTs, cards, SSNs, IPs, and phone numbers from captured text |
 | `case-capture` | CIEP: turns real failures and low-rated interactions into redacted `real`-origin evaluation cases |
+| `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture |
 
 **Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
 `POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
@@ -304,7 +305,17 @@ over-redaction: an over-scrubbed case is still useful for evaluation, a
 leaked secret is not recoverable once written down. Capture is bounded by
 `maxCases` and never throws, so it cannot fail a customer request.
 
-Verified by 135 tests across 17 test files in `src/eos/__tests__/`.
+**Live wiring.** `generateResponse.worker.ts` calls `recordAiInteraction`
+on both its success and failure paths, so the Provider Capability Matrix
+and prompt-regression detection receive real production traffic rather
+than remaining latent. Those two events are pure metrics and carry no
+text, so they are always safe to emit. Interaction *text* is attached
+only when `privacyConsentService.canUseConversationForEvaluation` returns
+true, and that consent lookup is skipped entirely when capture is
+inactive — the default — so instrumentation adds no database round-trip
+to the normal request path.
+
+Verified by 154 tests across 18 test files in `src/eos/__tests__/`.
 
 ## Current AI engine
 

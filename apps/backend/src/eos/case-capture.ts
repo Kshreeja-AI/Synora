@@ -177,6 +177,15 @@ export function stopCaseCapture(): void {
   sampler = Math.random;
 }
 
+/**
+ * Whether capture is running. Lets callers skip the consent lookup — and
+ * its database round-trip — entirely when capture is off, which is the
+ * default, so instrumentation costs nothing on the hot path.
+ */
+export function isCaptureActive(): boolean {
+  return active;
+}
+
 export function getCaptureStats(): {
   active: boolean;
   datasetId: string;

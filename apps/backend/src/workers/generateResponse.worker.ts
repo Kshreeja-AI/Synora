@@ -15,6 +15,9 @@ import {
   aiTokensTotal,
 } from '../monitoring/metrics';
 import { Redis } from 'ioredis';
+import { recordAiInteraction } from '../eos/instrumentation';
+import { isCaptureActive } from '../eos/case-capture';
+import { privacyConsentService } from '../services/privacyConsent.service';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
 const PROMPT_HISTORY_WINDOW = 50;
@@ -91,6 +94,7 @@ export function createGenerateResponseWorker() {
       async (attempt) => {
         const accumulator = new StreamingAccumulator();
         const accountant = new TokenAccountant(model, provider);
+        const startedAt = Date.now();
 
         try {
           // Fetch conversation with message history
@@ -314,9 +318,64 @@ export function createGenerateResponseWorker() {
             costCents: accounting.estimatedCostCents
           });
 
+          // Feed EOS/CIEP: provider matrix, prompt regression detection, and
+          // evaluation case capture. Interaction text is only attached when
+          // the user has consented to evaluation use; the consent lookup is
+          // skipped entirely when capture is inactive (the default), so this
+          // adds no database round-trip to the normal path.
+          let consentedContent:
+            | { input: string; output: string; consented: boolean }
+            | undefined;
+          if (isCaptureActive()) {
+            try {
+              const consented = await privacyConsentService.canUseConversationForEvaluation(
+                conversationId,
+                userId
+              );
+              if (consented) {
+                const lastUserTurn = [...messageHistory].reverse().find(m => m.role === 'user');
+                consentedContent = {
+                  input: lastUserTurn?.content ?? '',
+                  output: finalText,
+                  consented: true,
+                };
+              }
+            } catch {
+              // Consent unknown means no capture — the safe outcome.
+            }
+          }
+
+          recordAiInteraction({
+            promptId: 'chat.generate',
+            providerId: provider,
+            modelId: model,
+            success: true,
+            latencyMs: Date.now() - startedAt,
+            inputTokens: accounting.inputTokens,
+            outputTokens: accounting.outputTokens,
+            costCents: accounting.estimatedCostCents,
+            content: consentedContent,
+          });
+
           return { success: true, messageId };
         } catch (err: any) {
           aiProviderCallsTotal.inc({ provider, outcome: 'failed' });
+
+          // A failure is the most valuable signal the observatory and prompt
+          // intelligence receive, so it is recorded on this path too. No text
+          // is attached: a failed generation has no output worth capturing.
+          recordAiInteraction({
+            promptId: 'chat.generate',
+            providerId: provider,
+            modelId: model,
+            success: false,
+            latencyMs: Date.now() - startedAt,
+            inputTokens: 0,
+            outputTokens: 0,
+            costCents: 0,
+            errorCode: err?.code ?? err?.name ?? 'unknown',
+          });
+
           logger.error('[Worker] Generation failed', {
             jobId,
             attempt,
