@@ -1,5 +1,6 @@
 import { runEvaluation, compareRuns, type CaseExecutor, type EvaluationRunResult } from './evaluation-runner.js';
 import { recordGateMeasurement } from './launch-gates.js';
+import { getBaselineStore } from './baseline-store.js';
 
 /**
  * Measures the regression gate: has anything that used to work stopped
@@ -53,14 +54,18 @@ export interface RegressionResult {
   meanScoreDelta: number;
 }
 
-const baselines = new Map<string, RegressionRun>();
-
-export function getBaseline(datasetId: string): RegressionRun | null {
-  return baselines.get(datasetId) ?? null;
+/**
+ * Baselines live behind a store seam so they outlive the process. Held in
+ * memory they vanish on restart, and a regression suite whose reference
+ * point disappears on every restart can never compare across the span in
+ * which regressions happen.
+ */
+export function getBaseline(datasetId: string): Promise<RegressionRun | null> {
+  return getBaselineStore().load(datasetId);
 }
 
-export function clearBaselines(): void {
-  baselines.clear();
+export function clearBaselines(): Promise<void> {
+  return getBaselineStore().clear();
 }
 
 function toBaseline(run: EvaluationRunResult): RegressionRun {
@@ -89,9 +94,9 @@ export async function runRegressionSuite(
   const run = await runEvaluation(datasetId, executor, { label: `regression suite: ${datasetId}` });
   if (!run) return null;
 
-  const baseline = baselines.get(datasetId);
+  const baseline = await getBaselineStore().load(datasetId);
   if (!baseline) {
-    baselines.set(datasetId, toBaseline(run));
+    await getBaselineStore().save(toBaseline(run));
     return { run, result: null };
   }
 
@@ -134,8 +139,8 @@ export async function runRegressionSuite(
 }
 
 /** Replaces the baseline with the given run. A deliberate act, never automatic. */
-export function acceptAsBaseline(run: EvaluationRunResult): void {
-  baselines.set(run.datasetId, toBaseline(run));
+export function acceptAsBaseline(run: EvaluationRunResult): Promise<void> {
+  return getBaselineStore().save(toBaseline(run));
 }
 
 /**

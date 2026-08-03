@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (34):**
+**Components (35):**
 
 | Component | Role |
 |---|---|
@@ -256,6 +256,7 @@ and subscribe from it. Each component is separately replaceable.
 | `case-capture` | CIEP: turns real failures and low-rated interactions into redacted `real`-origin evaluation cases |
 | `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture; also tracks AI-path coverage |
 | `draft-generator` | Drafts a candidate prompt revision from captured failures and measures it against the prompt in use via the evaluation runner. Drafter and executors are injected; without them it produces nothing and names the missing capability rather than guessing. Writes and measures text only — no export could apply a draft |
+| `baseline-store` | Storage seam for regression baselines: in-memory (default) and a file-backed JSON document. Mirrors the history-store seam deliberately — one pattern for state that must outlive the process. A baseline is replaced rather than appended, because there is exactly one current reference per dataset, and a corrupt file raises rather than silently reading as empty (which would reset the regression gate to "no reference" unnoticed) |
 | `regression-suite` | Measures the regression gate by comparing a run against a stored baseline from an earlier run, never against a fresh copy of itself — running a deterministic dataset twice yields zero regressions and an unearned pass. A first run captures the baseline and records nothing. New cases are not regressions; vanished cases are reported rather than ignored; a run never silently becomes the new baseline |
 | `privacy-coverage` | Measures the privacy launch gate by pushing known sensitive values through real emission paths and checking what survives — probing rather than inspecting, because a tested redactor and a redacted system are different claims. Reports leaked categories, never the values. A 0-of-0 audit records nothing rather than 0%. Declared coverage only, and says so |
 | `launch-gates` | The ten launch criteria, measured rather than estimated. A gate with no evidence reports `unmeasured` — neither a pass nor a failure — and states what it is waiting for. There is deliberately no overall percentage: averaging measured and unmeasured gates would produce a number that sounds like knowledge. `readyToLaunch` is true only when every gate is measured AND passing. Today: 0 passed, 0 failed, 10 unmeasured |

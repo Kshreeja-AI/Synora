@@ -69,6 +69,13 @@ export type {
 } from './evaluation-datasets.js';
 export { runEvaluation, compareRuns } from './evaluation-runner.js';
 export {
+  InMemoryBaselineStore,
+  FileBaselineStore,
+  setBaselineStore,
+  getBaselineStore,
+} from './baseline-store.js';
+export type { BaselineStore } from './baseline-store.js';
+export {
   runRegressionSuite,
   measureRegressionGate,
   acceptAsBaseline,

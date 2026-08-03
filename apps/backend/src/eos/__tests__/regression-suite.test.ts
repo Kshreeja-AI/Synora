@@ -45,8 +45,8 @@ function seedDataset(id = 'regression') {
 const goodAnswers = { a: 'alpha', b: 'beta' };
 
 describe('regression-suite', () => {
-  beforeEach(() => {
-    clearBaselines();
+  beforeEach(async () => {
+    await clearBaselines();
     resetDatasets();
     clearGateMeasurements();
   });
@@ -59,7 +59,7 @@ describe('regression-suite', () => {
     // A first run has nothing to regress against. Reporting zero
     // regressions would be true, vacuous, and read as a pass.
     expect(outcome!.result).toBeNull();
-    expect(getBaseline('regression')).not.toBeNull();
+    expect(await getBaseline('regression')).not.toBeNull();
   });
 
   it('leaves the gate unmeasured after only a baseline run', async () => {
@@ -174,15 +174,15 @@ describe('regression-suite', () => {
   it('accepts a new baseline only when told to', async () => {
     seedDataset();
     const first = await runRegressionSuite('regression', executorFor(goodAnswers));
-    const before = getBaseline('regression')!.runId;
+    const before = (await getBaseline('regression'))!.runId;
 
     const second = await runRegressionSuite('regression', executorFor({ a: 'alpha', b: 'wrong' }));
     // A run does not silently become the new baseline, or a regression
     // would erase the evidence of itself.
-    expect(getBaseline('regression')!.runId).toBe(before);
+    expect((await getBaseline('regression'))!.runId).toBe(before);
 
-    acceptAsBaseline(second!.run);
-    expect(getBaseline('regression')!.runId).not.toBe(before);
+    await acceptAsBaseline(second!.run);
+    expect((await getBaseline('regression'))!.runId).not.toBe(before);
     expect(first!.run.runId).toBe(before);
   });
 
