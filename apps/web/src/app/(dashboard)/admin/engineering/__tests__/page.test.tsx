@@ -53,6 +53,8 @@ beforeEach(() => {
   vi.mocked(eosApi.getProposals).mockResolvedValue([]);
   vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [], recentAlerts: [] });
   vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue(healthyRuntime);
+  vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getDegradation).mockResolvedValue({ report: [], recentAlerts: [] });
 });
 
 const healthyRuntime = {
@@ -382,6 +384,85 @@ describe('EngineeringDashboardPage', () => {
     expect(await screen.findByText(/unmeasured rather than zero/i)).toBeInTheDocument();
   });
 
+  it('shows a latency drift with the multiple it measured', async () => {
+    vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 80,
+          baselineP95Ms: 100,
+          recentP95Ms: 400,
+          ratio: 4,
+          baselineSamples: 60,
+          sufficientData: true,
+          drifting: true,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('slower 4.0×')).toBeInTheDocument();
+    expect(screen.getByText('100 ms')).toBeInTheDocument();
+  });
+
+  it('shows a reliability drop in points, never as a ratio', async () => {
+    vi.mocked(eosApi.getDegradation).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 80,
+          baselineSuccessRate: 1,
+          recentSuccessRate: 0.85,
+          dropPercentagePoints: 15,
+          baselineSamples: 60,
+          sufficientData: true,
+          degraded: true,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    // Points, because 100% to 85% is a 0.85 ratio and that reads as nothing.
+    expect(await screen.findByText('down 15 points')).toBeInTheDocument();
+  });
+
+  it('distinguishes an unestablished drift baseline from a measured zero', async () => {
+    vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 4,
+          baselineP95Ms: null,
+          recentP95Ms: null,
+          ratio: null,
+          baselineSamples: 4,
+          sufficientData: false,
+          drifting: false,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/not enough history yet \(4 baseline samples\)/i)).toBeInTheDocument();
+    // Both the baseline and recent cells say so. A "0 ms" here would assert
+    // a measurement that was never taken — and the assertion is scoped to
+    // the drift row, since the API latency tiles legitimately read 0 ms
+    // when no requests have been sampled.
+    expect(screen.getAllByText('not established')).toHaveLength(2);
+  });
+
   it('reports capture as off rather than showing a misleading zero', async () => {
     renderPage();
     // "0 captured" would suggest capture is running and finding nothing.
@@ -412,6 +493,8 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getProposals).mockRejectedValue(boom);
     vi.mocked(eosApi.getCostReport).mockRejectedValue(boom);
     vi.mocked(eosApi.getRuntimeCheck).mockRejectedValue(boom);
+    vi.mocked(eosApi.getLatencyDrift).mockRejectedValue(boom);
+    vi.mocked(eosApi.getDegradation).mockRejectedValue(boom);
 
     renderPage();
 

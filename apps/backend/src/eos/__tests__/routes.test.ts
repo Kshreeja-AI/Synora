@@ -78,6 +78,8 @@ describe('eos routes', () => {
       '/api/eos/latency',
       '/api/eos/prompt-report',
       '/api/eos/cost-report',
+      '/api/eos/latency-drift',
+      '/api/eos/degradation',
       '/api/eos/provider-matrix',
       '/api/eos/coverage',
       '/api/eos/runtime-check',

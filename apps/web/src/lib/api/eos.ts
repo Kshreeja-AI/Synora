@@ -190,6 +190,47 @@ export function getCostReport(): Promise<{
   return api.get('/api/eos/cost-report');
 }
 
+export interface LatencyDriftEntry {
+  providerId: string;
+  modelId: string;
+  requests: number;
+  baselineP95Ms: number | null;
+  recentP95Ms: number | null;
+  ratio: number | null;
+  baselineSamples: number;
+  sufficientData: boolean;
+  drifting: boolean;
+  lastObservedAt: number;
+}
+
+export function getLatencyDrift(): Promise<{
+  report: LatencyDriftEntry[];
+  recentAlerts: EngineeringEvent[];
+}> {
+  return api.get('/api/eos/latency-drift');
+}
+
+export interface DegradationEntry {
+  providerId: string;
+  modelId: string;
+  requests: number;
+  baselineSuccessRate: number | null;
+  recentSuccessRate: number | null;
+  /** Points, not a ratio — 100% to 98% is a 2-point drop. */
+  dropPercentagePoints: number | null;
+  baselineSamples: number;
+  sufficientData: boolean;
+  degraded: boolean;
+  lastObservedAt: number;
+}
+
+export function getDegradation(): Promise<{
+  report: DegradationEntry[];
+  recentAlerts: EngineeringEvent[];
+}> {
+  return api.get('/api/eos/degradation');
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ProposalEvidence {

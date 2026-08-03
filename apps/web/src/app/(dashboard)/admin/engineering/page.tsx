@@ -8,6 +8,8 @@ import {
   getErrorRate,
   getEventStats,
   getLatency,
+  getDegradation,
+  getLatencyDrift,
   getPromptReport,
   getProposals,
   getRuntimeCheck,
@@ -107,6 +109,75 @@ function formatCostPerRequest(cents: number | null): string {
   return `${cents.toFixed(4)}¢`;
 }
 
+interface DriftRow {
+  key: string;
+  subject: string;
+  requests: number;
+  /** Null means never established — rendered as such, never as a zero. */
+  baseline: string | null;
+  recent: string | null;
+  baselineSamples: number;
+  sufficientData: boolean;
+  flagged: boolean;
+  flaggedLabel: string;
+}
+
+/**
+ * Shared rendering for the detectors that compare a measurement against its
+ * own history. The three states stay distinct here exactly as they do in the
+ * data: not enough history yet, steady, and departed — because "no claim has
+ * been made" and "a claim of normality" are different statements.
+ */
+function DriftTable({
+  loading,
+  empty,
+  rows,
+}: {
+  loading: boolean;
+  empty: string;
+  rows: DriftRow[];
+}) {
+  if (loading) return <EmptyHint>Loading…</EmptyHint>;
+  if (rows.length === 0) return <EmptyHint>{empty}</EmptyHint>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="pb-2 pr-4 font-medium">Provider / model</th>
+            <th className="pb-2 pr-4 font-medium">Requests</th>
+            <th className="pb-2 pr-4 font-medium">Baseline</th>
+            <th className="pb-2 pr-4 font-medium">Recent</th>
+            <th className="pb-2 font-medium">State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-b border-border/50">
+              <td className="py-2 pr-4">{row.subject}</td>
+              <td className="py-2 pr-4">{row.requests}</td>
+              <td className="py-2 pr-4">{row.baseline ?? 'not established'}</td>
+              <td className="py-2 pr-4">{row.recent ?? 'not established'}</td>
+              <td className="py-2">
+                {!row.sufficientData ? (
+                  <span className="text-xs text-muted-foreground">
+                    not enough history yet ({row.baselineSamples} baseline samples)
+                  </span>
+                ) : row.flagged ? (
+                  <span className="text-xs font-medium text-amber-500">{row.flaggedLabel}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">steady</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function EngineeringDashboardPage() {
   const latency = useQuery({ queryKey: ['eos', 'latency'], queryFn: getLatency, refetchInterval: REFRESH_MS });
   const errorRate = useQuery({ queryKey: ['eos', 'errorRate'], queryFn: getErrorRate, refetchInterval: REFRESH_MS });
@@ -124,6 +195,16 @@ export default function EngineeringDashboardPage() {
   });
 
   const cost = useQuery({ queryKey: ['eos', 'cost'], queryFn: getCostReport, refetchInterval: REFRESH_MS });
+  const latencyDrift = useQuery({
+    queryKey: ['eos', 'latencyDrift'],
+    queryFn: getLatencyDrift,
+    refetchInterval: REFRESH_MS,
+  });
+  const degradation = useQuery({
+    queryKey: ['eos', 'degradation'],
+    queryFn: getDegradation,
+    refetchInterval: REFRESH_MS,
+  });
   const runtime = useQuery({
     queryKey: ['eos', 'runtime'],
     queryFn: getRuntimeCheck,
@@ -418,6 +499,55 @@ export default function EngineeringDashboardPage() {
             </table>
           </div>
         )}
+      </Section>
+
+      <Section
+        title="Response time drift"
+        description="95th-percentile latency against each model's own history — the slowest one call in twenty, which is what a customer experiences as a pause."
+      >
+        <DriftTable
+          loading={latencyDrift.isLoading}
+          empty="No traffic recorded yet, so no model has a response-time history to depart from."
+          rows={(latencyDrift.data?.report ?? []).map((entry) => ({
+            key: `${entry.providerId}:${entry.modelId}`,
+            subject: `${entry.providerId} / ${entry.modelId}`,
+            requests: entry.requests,
+            baseline: entry.baselineP95Ms === null ? null : `${Math.round(entry.baselineP95Ms)} ms`,
+            recent: entry.recentP95Ms === null ? null : `${Math.round(entry.recentP95Ms)} ms`,
+            baselineSamples: entry.baselineSamples,
+            sufficientData: entry.sufficientData,
+            flagged: entry.drifting,
+            flaggedLabel:
+              entry.ratio !== null ? `slower ${entry.ratio.toFixed(1)}×` : 'slower than no baseline',
+          }))}
+        />
+      </Section>
+
+      <Section
+        title="Reliability drift"
+        description="Success rate against each model's own history, measured in percentage points — 100% falling to 98% is a real incident that a ratio would dismiss."
+      >
+        <DriftTable
+          loading={degradation.isLoading}
+          empty="No traffic recorded yet, so no model has a reliability history to depart from."
+          rows={(degradation.data?.report ?? []).map((entry) => ({
+            key: `${entry.providerId}:${entry.modelId}`,
+            subject: `${entry.providerId} / ${entry.modelId}`,
+            requests: entry.requests,
+            baseline:
+              entry.baselineSuccessRate === null
+                ? null
+                : `${Math.round(entry.baselineSuccessRate * 100)}%`,
+            recent:
+              entry.recentSuccessRate === null
+                ? null
+                : `${Math.round(entry.recentSuccessRate * 100)}%`,
+            baselineSamples: entry.baselineSamples,
+            sufficientData: entry.sufficientData,
+            flagged: entry.degraded,
+            flaggedLabel: `down ${entry.dropPercentagePoints ?? 0} points`,
+          }))}
+        />
       </Section>
 
       <div className="grid gap-4 md:grid-cols-2">

@@ -9,6 +9,8 @@ import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
 import { getPromptReport } from './prompt-intelligence.js';
 import { getCostReport } from './cost-monitor.js';
+import { getLatencyDriftReport } from './latency-drift.js';
+import { getDegradationReport } from './provider-degradation.js';
 import { captureSnapshot, queryHistory, getHistoryStore } from './history-recorder.js';
 import { listDatasets, summarizeDataset, getCases } from './evaluation-datasets.js';
 import { listGraders } from './evaluation-graders.js';
@@ -125,6 +127,16 @@ router.get('/evaluation/runs', (_req: Request, res: Response) => {
 router.get('/evaluation/capture', (_req: Request, res: Response) => {
   const events = engineeringEventBus.recentByType('evaluation.case.captured', 50);
   res.json(createApiResponse({ stats: getCaptureStats(), recentCaptures: events }));
+});
+
+router.get('/latency-drift', (_req: Request, res: Response) => {
+  const alerts = engineeringEventBus.recentByType('alert.latency_drift', 20);
+  res.json(createApiResponse({ report: getLatencyDriftReport(), recentAlerts: alerts }));
+});
+
+router.get('/degradation', (_req: Request, res: Response) => {
+  const alerts = engineeringEventBus.recentByType('alert.provider_degradation', 20);
+  res.json(createApiResponse({ report: getDegradationReport(), recentAlerts: alerts }));
 });
 
 router.get('/coverage', (_req: Request, res: Response) => {
