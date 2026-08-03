@@ -9,9 +9,14 @@ import {
   FolderKanban,
   Wrench,
   BarChart3,
+  Search,
+  CreditCard,
+  Code2,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 export interface SidebarProps {
   /** Shared with the mobile overlay: open = visible overlay on mobile, full-width column on desktop. */
@@ -25,11 +30,18 @@ export interface SidebarProps {
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/conversations', label: 'Conversations', icon: MessageSquare },
+  { href: '/search', label: 'Search', icon: Search },
   { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/tools', label: 'Tools', icon: Wrench },
   { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
+  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+  { href: '/developer', label: 'Developer', icon: Code2 },
 ];
+
+// Only rendered for ADMIN users — the pages behind it are separately
+// server-gated, so hiding the entry is display hygiene, not security.
+const ADMIN_NAV_ITEM = { href: '/admin', label: 'Admin', icon: Shield };
 
 /** Prefix used for the active-state check, where it differs from href. */
 const ACTIVE_PREFIX: Record<string, string> = {
@@ -38,6 +50,9 @@ const ACTIVE_PREFIX: Record<string, string> = {
 
 export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
+  const { data: user } = useCurrentUser();
+
+  const navItems = user?.role === 'ADMIN' ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <aside
@@ -60,7 +75,7 @@ export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const active =
             item.href === '/dashboard'

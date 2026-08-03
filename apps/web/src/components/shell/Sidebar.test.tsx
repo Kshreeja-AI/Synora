@@ -12,7 +12,14 @@ vi.mock('./WorkspaceSwitcher', () => ({
   ),
 }));
 
+// The sidebar reads the current user to decide whether to show the Admin
+// entry. Default to a non-admin so the base nav is what most tests see.
+vi.mock('../../hooks/useCurrentUser', () => ({
+  useCurrentUser: vi.fn(() => ({ data: { id: 'u1', role: 'USER' } })),
+}));
+
 import { Sidebar } from './Sidebar';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 describe('Sidebar', () => {
   it('marks the active nav link with aria-current', () => {
@@ -87,5 +94,30 @@ describe('Sidebar', () => {
       'page'
     );
     expect(screen.getByRole('link', { name: /^dashboard$/i })).not.toHaveAttribute('aria-current');
+  });
+  it('hides the Admin entry from non-admin users', () => {
+    pathname = '/dashboard';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    // Default mock is role USER — Admin must not be in the nav at all.
+    expect(screen.queryByRole('link', { name: /^admin$/i })).toBeNull();
+  });
+
+  it('shows the Admin entry for ADMIN users', () => {
+    pathname = '/dashboard';
+    vi.mocked(useCurrentUser).mockReturnValueOnce({
+      data: { id: 'u1', role: 'ADMIN' },
+    } as unknown as ReturnType<typeof useCurrentUser>);
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^admin$/i })).toBeDefined();
+  });
+
+  it('exposes the surfaces added since the app shell shipped', () => {
+    pathname = '/dashboard';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    // Search, Billing and Developer all had pages with no way to reach them
+    // from the primary nav until this was fixed.
+    expect(screen.getByRole('link', { name: /^search$/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: /^billing$/i })).toBeDefined();
+    expect(screen.getByRole('link', { name: /^developer$/i })).toBeDefined();
   });
 });

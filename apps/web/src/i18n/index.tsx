@@ -95,9 +95,10 @@ export function I18nProvider({ initialLocale, children }: I18nProviderProps): Re
     const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
     const nav = window.navigator?.language;
     const chosen = resolveLocale(stored ?? nav ?? initialLocale);
-    if (chosen !== locale) setLocaleState(chosen);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Functional update keeps this a true run-once mount effect without
+    // needing `locale` in the dependency array.
+    setLocaleState((current) => (chosen !== current ? chosen : current));
+  }, [initialLocale]);
 
   const setLocale = (next: string) => {
     const resolved = resolveLocale(next);
