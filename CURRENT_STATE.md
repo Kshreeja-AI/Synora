@@ -1,8 +1,9 @@
 # Synora — Current State
 
-**Snapshot date:** 2026-07-31 (Release 3 M1-M3 — chat platform backend +
-universal tool calling engine — merged onto the Release 2 M1-M6
-production-ready baseline)
+**Snapshot date:** 2026-08-03 (PR #46 reconciled with `SYNORA`/PR #38 —
+two independent Release 3 M1-M3 builds merged into one implementation per
+feature; see `RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md` for the
+authoritative post-merge audit)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
 verified against the repository, not assumed.
@@ -19,12 +20,16 @@ verified against the repository, not assumed.
   M4 milestone was redefined to mean the authenticated application shell (per founder 2026-07-25);
   `RELEASE_2_PLAN.md`'s milestone table was renumbered accordingly (old M4→M5, M5→M6, …, M9→M10).
 - **Current branch:** `claude/synora-ai-platform-h5q0k2`
-- **Current PR:** #38 (Release 3 M1-M3) → `SYNORA`, merged with `SYNORA` (which carries
-  PR #37's canonical billing/credits/permissions/webhooks/workspace system) to resolve
-  the independent reimplementation PR #38 had built from an older base — see
-  "Release 3: Chat platform + tool calling engine" below.
-- **Current CI status:** Release 2 production gates were all green pre-merge
-  (lint ✅, typecheck ✅, test ✅, docker ✅, security ✅); re-verify after this merge.
+- **Current PR:** #46 → `SYNORA`. PR #38 was already merged into `SYNORA`; PR #46
+  carried an independent, more-iterated build of the same Release 3 subsystems.
+  These have now been reconciled: `SYNORA` was merged into PR #46, keeping
+  #46 as the canonical implementation, deleting #38's duplicate orphan files, and
+  fixing a CSP defect the auto-merge introduced. See
+  `RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md`.
+- **Current CI status:** post-reconciliation local gates all green — backend
+  type-check ✅, web type-check ✅, lint ✅ (0 errors), backend tests
+  1580 ✅, web tests 373 ✅ (against live Postgres 16 + Redis 7). CI on the PR
+  head commit re-verifies these plus security + docker.
 
 ## Completed features (working end-to-end)
 
