@@ -50,6 +50,7 @@ beforeEach(() => {
   vi.mocked(eosApi.getEventStats).mockResolvedValue(emptyEvents);
   vi.mocked(eosApi.getCaptureStatus).mockResolvedValue(emptyCapture);
   vi.mocked(eosApi.getCoverage).mockResolvedValue([]);
+  vi.mocked(eosApi.getProposals).mockResolvedValue([]);
 });
 
 describe('EngineeringDashboardPage', () => {
@@ -230,6 +231,7 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getEventStats).mockRejectedValue(boom);
     vi.mocked(eosApi.getCaptureStatus).mockRejectedValue(boom);
     vi.mocked(eosApi.getCoverage).mockRejectedValue(boom);
+    vi.mocked(eosApi.getProposals).mockRejectedValue(boom);
 
     renderPage();
 

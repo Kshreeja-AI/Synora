@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (20):**
+**Components (21):**
 
 | Component | Role |
 |---|---|
@@ -254,14 +254,28 @@ and subscribe from it. Each component is separately replaceable.
 | `evaluation-runner` | CIEP: runs a dataset against an injected executor, scores it, and compares two runs |
 | `redaction` | Scrubs emails, API keys, bearer tokens, JWTs, cards, SSNs, IPs, and phone numbers from captured text |
 | `case-capture` | CIEP: turns real failures and low-rated interactions into redacted `real`-origin evaluation cases |
-| `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture |
+| `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture; also tracks AI-path coverage |
+| `proposal-engine` | Turns a detected regression into a reviewable proposal (problem, evidence, caveats, suggested action). Has no `apply()` — approval records a decision and executes nothing |
 
 **Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
 `POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
 `POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`,
 `GET /history`, `POST /history/capture`, `GET /evaluation/datasets`,
 `GET /evaluation/datasets/:id`, `GET /evaluation/graders`, `GET /evaluation/runs`,
-`GET /evaluation/capture`.
+`GET /evaluation/capture`, `GET /coverage`, `GET /proposals`,
+`GET /proposals/:id`, `POST /proposals/:id/decide`.
+
+Every endpoint returns the platform envelope (`{ success, data }`) and
+platform-shaped error bodies (`{ success: false, error: { code, message } }`),
+and `src/eos/__tests__/routes.test.ts` asserts that on every route — an
+earlier defect where the routes returned bare `{ data }` would have broken
+the dashboard on its first call and no test would have caught it.
+
+**Founder dashboard:** `/admin/engineering` (web) renders coverage, the
+provider matrix, prompt intelligence, capture status, event-bus stats, and
+the proposals review surface. Proposals render their caveats at the same
+visual weight as the finding, and offer only approve/reject — no control
+that implies the platform can apply anything itself.
 
 **Evaluation platform.** Turns "the new prompt feels better" into a
 defensible claim. A dataset is a versioned collection of cases; each case

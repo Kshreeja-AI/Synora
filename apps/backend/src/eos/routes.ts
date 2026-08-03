@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createApiResponse } from '@synora/shared';
+import { createApiResponse, createApiError } from '@synora/shared';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { engineeringEventBus } from './event-bus.js';
 import { runHealthProbes } from './health-collector.js';
@@ -88,7 +88,7 @@ router.get('/history', async (_req: Request, res: Response) => {
 router.post('/history/capture', async (_req: Request, res: Response) => {
   const snapshot = await captureSnapshot();
   if (!snapshot) {
-    res.status(503).json({ error: 'Snapshot capture failed' });
+    res.status(503).json(createApiError('SNAPSHOT_FAILED', 'Snapshot capture failed'));
     return;
   }
   res.json(createApiResponse(snapshot));
@@ -101,7 +101,7 @@ router.get('/evaluation/datasets', (_req: Request, res: Response) => {
 router.get('/evaluation/datasets/:datasetId', (req: Request, res: Response) => {
   const summary = summarizeDataset(req.params.datasetId);
   if (!summary) {
-    res.status(404).json({ error: 'Dataset not found' });
+    res.status(404).json(createApiError('NOT_FOUND', 'Dataset not found'));
     return;
   }
   res.json(createApiResponse({ ...summary, cases: getCases(req.params.datasetId) }));
@@ -132,7 +132,7 @@ router.get('/proposals', (req: Request, res: Response) => {
 router.get('/proposals/:id', (req: Request, res: Response) => {
   const proposal = getProposal(req.params.id);
   if (!proposal) {
-    res.status(404).json({ error: 'Proposal not found' });
+    res.status(404).json(createApiError('NOT_FOUND', 'Proposal not found'));
     return;
   }
   res.json(createApiResponse(proposal));
@@ -145,12 +145,14 @@ router.get('/proposals/:id', (req: Request, res: Response) => {
 router.post('/proposals/:id/decide', (req: Request, res: Response) => {
   const { decision, note } = req.body ?? {};
   if (decision !== 'approved' && decision !== 'rejected') {
-    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+    res
+      .status(400)
+      .json(createApiError('VALIDATION_ERROR', "decision must be 'approved' or 'rejected'"));
     return;
   }
   const proposal = decideProposal(req.params.id, decision, typeof note === 'string' ? note : undefined);
   if (!proposal) {
-    res.status(404).json({ error: 'Proposal not found' });
+    res.status(404).json(createApiError('NOT_FOUND', 'Proposal not found'));
     return;
   }
   res.json(createApiResponse(proposal));

@@ -143,3 +143,43 @@ export interface AiPathCoverage {
 export function getCoverage(): Promise<AiPathCoverage[]> {
   return api.get('/api/eos/coverage');
 }
+
+export type ProposalStatus = 'pending' | 'approved' | 'rejected';
+
+export interface ProposalEvidence {
+  summary: string;
+  metrics: Record<string, string | number>;
+  affectedCaseIds: string[];
+}
+
+export interface Proposal {
+  id: string;
+  createdAt: number;
+  trigger: string;
+  title: string;
+  problem: string;
+  suggestedAction: string;
+  /** The limits of the reasoning. Rendered as prominently as the finding. */
+  caveats: string[];
+  evidence: ProposalEvidence;
+  status: ProposalStatus;
+  decidedAt?: number;
+  decisionNote?: string;
+}
+
+export function getProposals(status?: ProposalStatus): Promise<Proposal[]> {
+  return api.get(`/api/eos/proposals${status ? `?status=${status}` : ''}`);
+}
+
+/**
+ * Records a founder decision. Approving does not execute the suggested
+ * action — the backend engine has no execution path at all. The wording in
+ * the UI must not imply otherwise.
+ */
+export function decideProposal(
+  id: string,
+  decision: 'approved' | 'rejected',
+  note?: string
+): Promise<Proposal> {
+  return api.post(`/api/eos/proposals/${id}/decide`, { decision, note });
+}

@@ -1,17 +1,19 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { Activity, AlertTriangle, Boxes, Cpu, Database, Gauge, ShieldCheck } from 'lucide-react';
+import { Activity, AlertTriangle, Boxes, Cpu, Database, Gauge, Inbox, ShieldCheck } from 'lucide-react';
 import {
   getCaptureStatus,
   getErrorRate,
   getEventStats,
   getLatency,
   getPromptReport,
+  getProposals,
   getProviderMatrix,
   getCoverage,
   type ProviderMatrixEntry,
 } from '@/lib/api/eos';
+import { ProposalsPanel } from './ProposalsPanel';
 
 /**
  * Founder-only view of the Engineering Operating System.
@@ -92,8 +94,16 @@ export default function EngineeringDashboardPage() {
   const events = useQuery({ queryKey: ['eos', 'events'], queryFn: getEventStats, refetchInterval: REFRESH_MS });
   const capture = useQuery({ queryKey: ['eos', 'capture'], queryFn: getCaptureStatus, refetchInterval: REFRESH_MS });
   const coverage = useQuery({ queryKey: ['eos', 'coverage'], queryFn: getCoverage, refetchInterval: REFRESH_MS });
+  // Same query key as the panel below, so the tile and the list share one
+  // fetch and can never disagree about how many are waiting.
+  const proposals = useQuery({
+    queryKey: ['eos', 'proposals'],
+    queryFn: () => getProposals(),
+    refetchInterval: REFRESH_MS,
+  });
 
   const regressing = prompts.data?.report.filter((p) => p.regressing) ?? [];
+  const awaitingDecision = proposals.data?.filter((p) => p.status === 'pending').length ?? 0;
   const errorsNow = errorRate.data?.current.errorsInWindow ?? 0;
   const errorThreshold = errorRate.data?.current.threshold ?? 0;
 
@@ -107,7 +117,7 @@ export default function EngineeringDashboardPage() {
         </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         <Tile
           label="API p95"
           value={latency.data ? `${latency.data.current.p95} ms` : '—'}
@@ -134,7 +144,16 @@ export default function EngineeringDashboardPage() {
           tone={regressing.length > 0 ? 'warn' : 'normal'}
           sub={prompts.data ? `${prompts.data.report.length} tracked` : 'none tracked yet'}
         />
+        <Tile
+          label="Awaiting your decision"
+          value={awaitingDecision}
+          icon={Inbox}
+          tone={awaitingDecision > 0 ? 'warn' : 'normal'}
+          sub={awaitingDecision > 0 ? 'proposals below' : 'nothing pending'}
+        />
       </div>
+
+      <ProposalsPanel />
 
       <Section
         title="Coverage"
