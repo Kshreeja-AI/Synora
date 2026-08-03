@@ -137,6 +137,16 @@ export interface AlertPromptRegressionEvent extends EngineeringEvent {
   };
 }
 
+export interface EngineeringSnapshotEvent extends EngineeringEvent {
+  type: 'engineering.snapshot';
+  payload: {
+    store: string;
+    providerCount: number;
+    promptCount: number;
+    regressingPrompts: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -150,6 +160,7 @@ export type KnownEvent =
   | AiProviderObservationEvent
   | PromptOutcomeEvent
   | AlertPromptRegressionEvent
+  | EngineeringSnapshotEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

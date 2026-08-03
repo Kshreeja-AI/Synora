@@ -7,6 +7,7 @@ import { getErrorRateSnapshot } from './error-rate-monitor.js';
 import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
 import { getPromptReport } from './prompt-intelligence.js';
+import { captureSnapshot, queryHistory, getHistoryStore } from './history-recorder.js';
 import { getProviderMatrix } from './provider-observatory.js';
 
 const router: Router = Router();
@@ -68,6 +69,23 @@ router.get('/latency', (_req: Request, res: Response) => {
 router.get('/prompt-report', (_req: Request, res: Response) => {
   const alerts = engineeringEventBus.recentByType('alert.prompt_regression', 20);
   res.json({ data: { report: getPromptReport(), recentAlerts: alerts } });
+});
+
+router.get('/history', async (_req: Request, res: Response) => {
+  const limit = Math.min(Number(_req.query.limit) || 100, 1000);
+  const since = _req.query.since ? Number(_req.query.since) : undefined;
+  const until = _req.query.until ? Number(_req.query.until) : undefined;
+  const snapshots = await queryHistory({ since, until, limit });
+  res.json({ data: { store: getHistoryStore().kind, count: snapshots.length, snapshots } });
+});
+
+router.post('/history/capture', async (_req: Request, res: Response) => {
+  const snapshot = await captureSnapshot();
+  if (!snapshot) {
+    res.status(503).json({ error: 'Snapshot capture failed' });
+    return;
+  }
+  res.json({ data: snapshot });
 });
 
 export { router as eosRouter };

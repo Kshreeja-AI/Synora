@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (12):**
+**Components (14):**
 
 | Component | Role |
 |---|---|
@@ -247,12 +247,28 @@ and subscribe from it. Each component is separately replaceable.
 | `latency-tracker` | API p50/p95/p99 percentiles + periodic summaries |
 | `provider-observatory` | CIEP: live Provider Capability Matrix (quality, latency, cost, tokens, failure codes) |
 | `prompt-intelligence` | CIEP: per-prompt/version success, latency, cost + regression alerts |
+| `history-store` | Storage seam for engineering history: in-memory (default) and append-only JSONL file implementations |
+| `history-recorder` | Periodic full-platform snapshots persisted through the store seam |
 
 **Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
 `POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
-`POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`.
+`POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`,
+`GET /history`, `POST /history/capture`.
 
-Verified by 52 tests across 11 test files in `src/eos/__tests__/`.
+**History persistence.** `EngineeringHistoryStore` is an interface, not a
+concrete datastore, so engineering history is portable across backends.
+`InMemoryHistoryStore` is the default and needs no infrastructure;
+`FileHistoryStore` writes append-only JSONL so history survives process
+restart without a database, and tolerates a torn trailing line from an
+unclean shutdown rather than failing the whole read. A Postgres-backed
+implementation can be added behind the same interface with no caller
+changes once a database is provisioned — deliberately deferred here
+because a schema model without a verified migration would reintroduce the
+schema drift this PR exists to fix. Every store operation is failure-
+isolated: a broken store returns empty/null rather than propagating an
+error, so observability can never break the product.
+
+Verified by 71 tests across 13 test files in `src/eos/__tests__/`.
 
 ## Current AI engine
 
