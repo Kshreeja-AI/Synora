@@ -681,4 +681,69 @@ describe('webhook.service', () => {
       expect(deleted).toBeNull();
     });
   });
+
+  describe('payload shape validation', () => {
+    function mockEvent(event: Record<string, unknown>) {
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn().mockResolvedValue(event),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+    }
+
+    it('skips a signed event whose payload is missing required fields', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_malformed' },
+      });
+
+      // A valid signature with a payload that has no `subscription` field —
+      // what provider API-version drift looks like from this side.
+      mockEvent({
+        id: 'test_evt_malformed',
+        type: 'invoice.paid',
+        data: { id: 'test_inv_malformed', amount_paid: 10000 },
+      });
+
+      // Must not throw: retrying cannot produce a different payload.
+      await expect(handleBillingWebhook(Buffer.from('test'), 'sig')).resolves.toBeUndefined();
+
+      // And must not have written a half-formed record.
+      const invoice = await prisma.invoice.findFirst({
+        where: { externalInvoiceId: 'test_inv_malformed' },
+      });
+      expect(invoice).toBeNull();
+    });
+
+    it('accepts subscription statuses beyond the happy path and withholds entitlement', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_unpaid', status: 'ACTIVE' },
+      });
+
+      const now = Math.floor(Date.now() / 1000);
+      mockEvent({
+        id: 'test_evt_sub_unpaid',
+        type: 'customer.subscription.updated',
+        data: {
+          id: 'test_sub_unpaid',
+          status: 'unpaid',
+          current_period_start: now,
+          current_period_end: now + 2592000,
+        },
+      });
+
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      // 'unpaid' must not be mapped to ACTIVE — that would hand paid
+      // entitlement to a subscription the provider is not collecting on.
+      const updated = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(updated?.status).toBe('PAST_DUE');
+    });
+  });
 });

@@ -3,6 +3,7 @@ import { resolveBillingProvider, BillingProviderError } from '../billing/index.j
 import { ServiceUnavailableException } from '@synora/shared';
 import { logger } from '../utils/logger.js';
 import { createNotification } from './notification.service.js';
+import { validateWebhookData } from './webhook-validation.js';
 
 async function notifyWorkspaceOwner(workspaceId: string, title: string, body: string) {
   const owner = await prisma.workspaceMember.findFirst({
@@ -50,6 +51,23 @@ export async function handleBillingWebhook(rawBody: Buffer, signatureHeader: str
     }
 
     const data = event.data as Record<string, unknown>;
+
+    // A valid signature proves the payload came from the provider, not that
+    // it has the shape this code expects — provider API-version drift can
+    // rename or drop fields. Handlers below cast fields without checking, so
+    // an unexpected shape would silently write nulls. Redelivery cannot
+    // change a payload, so a shape mismatch is a poison message: log it and
+    // stop rather than throwing into a retry loop that can never succeed.
+    try {
+      validateWebhookData(event.type, data);
+    } catch (validationError) {
+      logger.error('Webhook payload failed shape validation; skipping', {
+        eventId: event.id,
+        type: event.type,
+        error: validationError instanceof Error ? validationError.message : validationError,
+      });
+      return;
+    }
 
     switch (event.type) {
       case 'checkout.session.completed':
@@ -405,7 +423,21 @@ function mapSubscriptionStatus(stripeStatus: string): 'ACTIVE' | 'PAST_DUE' | 'C
       return 'CANCELED';
     case 'trialing':
       return 'TRIAL';
+    case 'incomplete_expired':
+      return 'CANCELED';
+    // `incomplete`, `unpaid` and `paused` all mean the provider is not
+    // collecting for this subscription. PAST_DUE is the local state that
+    // withholds entitlement without destroying the subscription record.
+    case 'incomplete':
+    case 'unpaid':
+    case 'paused':
+      return 'PAST_DUE';
     default:
-      return 'ACTIVE';
+      // Fail closed. Defaulting to ACTIVE would grant paid entitlement on
+      // any status this code has not been taught yet.
+      logger.warn('Unrecognized provider subscription status; withholding entitlement', {
+        stripeStatus,
+      });
+      return 'PAST_DUE';
   }
 }

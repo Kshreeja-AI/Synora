@@ -200,10 +200,12 @@ export class MemoryService {
       throw new ForbiddenException('Not a member of this workspace')
     }
 
-    const where: any = {
-      workspaceId,
-      status: archivedOnly ? MemoryStatus.ARCHIVED : status,
-    }
+    // Archiving is recorded on the `isArchived` flag — consolidation and the
+    // decay worker both write it, and nothing ever writes MemoryStatus.ARCHIVED.
+    // Filtering on status here matched no rows at all.
+    const where: any = archivedOnly
+      ? { workspaceId, isArchived: true }
+      : { workspaceId, status }
 
     if (conversationId) {
       where.conversationId = conversationId
@@ -506,6 +508,7 @@ export class MemoryService {
       select: {
         type: true,
         status: true,
+        isArchived: true,
         importance: true,
       },
     })
@@ -521,7 +524,7 @@ export class MemoryService {
     return {
       totalMemories: memories.length,
       activeMemories: memories.filter((m) => m.status === MemoryStatus.ACTIVE).length,
-      archivedMemories: memories.filter((m) => m.status === MemoryStatus.ARCHIVED).length,
+      archivedMemories: memories.filter((m) => m.isArchived).length,
       averageImportance: memories.length > 0 ? totalImportance / memories.length : 0,
       typeDistribution,
     }

@@ -199,17 +199,19 @@ router.patch('/:id/billing/payment-methods/:pmId', async (req: AuthRequest, res,
     const pmId = req.params.pmId;
     requirePermission((req as any).userRole, 'billing:manage');
 
-    const schema = z.object({ isDefault: z.boolean() });
-    const input = schema.parse(req.body);
+    // Promotion is the only supported mutation: a workspace always has
+    // exactly one default, so you demote a card by promoting another, never
+    // by clearing this flag. `literal(true)` rejects `false` as a 400
+    // instead of leaving the request hanging with no response.
+    const schema = z.object({ isDefault: z.literal(true) });
+    schema.parse(req.body);
 
-    if (input.isDefault) {
-      const updated = await paymentMethodService.setDefaultPaymentMethod(
-        req.userId!,
-        workspaceId,
-        pmId
-      );
-      res.json(updated);
-    }
+    const updated = await paymentMethodService.setDefaultPaymentMethod(
+      req.userId!,
+      workspaceId,
+      pmId
+    );
+    res.json(updated);
   } catch (error) {
     next(error);
   }

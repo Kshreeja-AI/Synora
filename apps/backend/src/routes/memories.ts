@@ -6,10 +6,21 @@ import { memoryService } from '../services/memory.service'
 import { memoryEmbeddingService } from '../services/memoryEmbedding.service'
 import { memoryCacheService } from '../services/memoryCache.service'
 import { memoryGdprService } from '../services/memoryGdpr.service'
+import { memoryAnalyticsService } from '../services/memoryAnalytics.service'
 import { ApiException, ValidationException } from '@synora/shared'
 import { logger } from '../utils/logger'
 
 const router: ExpressRouter = Router()
+
+/** Rejects unparseable dates instead of passing `Invalid Date` into a query. */
+function parseDateParam(raw: unknown, name: string): Date | undefined {
+  if (raw === undefined) return undefined
+  const parsed = new Date(String(raw))
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationException(`${name} must be a valid ISO date`)
+  }
+  return parsed
+}
 
 /**
  * POST /api/workspaces/:workspaceId/memories/search/semantic
@@ -207,6 +218,73 @@ router.get('/:workspaceId/memories/stats', authMiddleware, requireWorkspaceAcces
     res.json({ success: true, data: stats })
   } catch (error) {
     logger.error('Failed to get statistics', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics
+ * Full analytics report: creation/retrieval rates, importance distribution,
+ * category and permission breakdowns, embedding coverage, decay.
+ * `/memories/stats` returns only the five headline counters; this is the
+ * detailed view behind them.
+ * IMPORTANT: Must be defined BEFORE catch-all GET/:memoryId route
+ */
+router.get('/:workspaceId/memories/analytics', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const from = parseDateParam(req.query.from, 'from')
+    const to = parseDateParam(req.query.to, 'to')
+
+    const analytics = await memoryAnalyticsService.getWorkspaceAnalytics(workspaceId, from, to)
+    res.json({ success: true, data: analytics })
+  } catch (error) {
+    if (error instanceof ValidationException) {
+      return res.status(400).json({ error: error.message })
+    }
+    logger.error('Failed to get memory analytics', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics/trends?days=30
+ * Day-bucketed creation, access and importance trends.
+ */
+router.get('/:workspaceId/memories/analytics/trends', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const raw = req.query.days
+    let days = 30
+    if (raw !== undefined) {
+      days = Number(raw)
+      // Unbounded windows scan the whole memory table; cap at a year.
+      if (!Number.isInteger(days) || days < 1 || days > 365) {
+        return res.status(400).json({ error: 'days must be an integer between 1 and 365' })
+      }
+    }
+
+    const trends = await memoryAnalyticsService.getTrendAnalysis(workspaceId, days)
+    res.json({ success: true, data: trends })
+  } catch (error) {
+    logger.error('Failed to get memory trends', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics/me
+ * The caller's own slice of the workspace analytics. Scoped to req.userId
+ * rather than an arbitrary id so it needs no extra authorization beyond
+ * workspace membership.
+ */
+router.get('/:workspaceId/memories/analytics/me', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const analytics = await memoryAnalyticsService.getUserAnalytics(workspaceId, req.userId!)
+    res.json({ success: true, data: analytics })
+  } catch (error) {
+    logger.error('Failed to get user memory analytics', { error })
     res.status(500).json({ error: 'Internal server error' })
   }
 })
