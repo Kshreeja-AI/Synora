@@ -168,4 +168,107 @@ describe('AudioGenerationService', () => {
       status: 'FAILED',
     });
   });
+  describe('EOS instrumentation', () => {
+    it('reports a successful synthesis with no fabricated token or cost figures', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      await fakeCreate({});
+
+      vi.mocked(resolveTextToSpeechProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['text-to-speech'],
+        synthesize: vi.fn().mockResolvedValue(validSpeech),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example/a.mp3' }),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedAudio.update).mockResolvedValue({ id: 'aud-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.generate({ userId: 'u-1', text: 'hello' });
+
+        const matrix = getProviderMatrix();
+        expect(matrix).toHaveLength(1);
+        expect(matrix[0]).toMatchObject({ providerId: 'openai', modelId: 'tts-1', successRate: 1 });
+        // Speech is priced per character, so tokens and cost stay absent
+        // rather than becoming zeroes that would read as "free".
+        expect(matrix[0].totalInputTokens).toBe(0);
+        expect(matrix[0].totalCostCents).toBe(0);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('reports a failure with its error code and an unknown model', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      await fakeCreate({});
+
+      vi.mocked(resolveTextToSpeechProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['text-to-speech'],
+        synthesize: vi.fn().mockRejectedValue(new Error('quota exceeded')),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn(),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedAudio.update).mockResolvedValue({ id: 'aud-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await expect(service.generate({ userId: 'u-1', text: 'hello' })).rejects.toThrow();
+
+        const matrix = getProviderMatrix();
+        expect(matrix[0].failures).toBe(1);
+        // The provider never said which model it would have used, and
+        // guessing would put fabricated data in the matrix.
+        expect(matrix[0].modelId).toBe('unknown');
+        expect(matrix[0].errorCodes.Error).toBe(1);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('instrumentation failure never breaks audio generation', async () => {
+      const { prisma } = await import('@synora/database');
+      const { engineeringEventBus } = await import('../../eos/event-bus');
+      await fakeCreate({});
+
+      vi.mocked(resolveTextToSpeechProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['text-to-speech'],
+        synthesize: vi.fn().mockResolvedValue(validSpeech),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example/a.mp3' }),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedAudio.update).mockResolvedValue({
+        id: 'aud-1',
+        status: 'COMPLETED',
+      } as never);
+
+      const unsub = engineeringEventBus.on('ai.provider.observation', () => {
+        throw new Error('observability exploded');
+      });
+      try {
+        const result = await service.generate({ userId: 'u-1', text: 'hello' });
+        expect(result.status).toBe('COMPLETED');
+      } finally {
+        unsub();
+      }
+    });
+  });
 });
