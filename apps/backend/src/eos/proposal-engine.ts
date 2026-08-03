@@ -2,6 +2,7 @@ import { engineeringEventBus } from './event-bus.js';
 import { getPromptReport } from './prompt-intelligence.js';
 import { getProviderMatrix } from './provider-observatory.js';
 import { getCases } from './evaluation-datasets.js';
+import type { DraftResult } from './draft-generator.js';
 
 /**
  * Turns a detected problem into a reviewable proposal.
@@ -49,6 +50,20 @@ export interface Proposal {
   status: ProposalStatus;
   decidedAt?: number;
   decisionNote?: string;
+  /**
+   * A candidate revision and what measuring it showed. Attached after the
+   * proposal is created, because drafting requires provider calls that must
+   * not block the alert path. Absent means no draft exists — never that a
+   * draft was tried and found unnecessary.
+   */
+  draft?: {
+    text: string | null;
+    summary: string;
+    unavailable: string[];
+    verdict?: string;
+    meanScoreDelta?: number;
+    passRateDelta?: number;
+  };
 }
 
 const proposals = new Map<string, Proposal>();
@@ -278,6 +293,43 @@ export function stopProposalEngine(): void {
   unsubscribers = [];
   proposals.clear();
   counter = 0;
+}
+
+/**
+ * Attaches a draft to an existing proposal. Separate from creation because
+ * drafting calls a provider, and a slow or failing provider must never stop
+ * the problem itself from being reported.
+ *
+ * This records text and measurements. It does not change any prompt, and
+ * the proposal remains pending regardless of how well the draft scored — a
+ * good score is evidence for the founder, not a substitute for the founder.
+ */
+export function attachDraft(id: string, draft: DraftResult): Proposal | null {
+  const proposal = proposals.get(id);
+  if (!proposal) return null;
+
+  proposal.draft = {
+    text: draft.draft,
+    summary: draft.summary,
+    unavailable: draft.unavailable,
+    verdict: draft.measurement?.comparison.verdict,
+    meanScoreDelta: draft.measurement?.comparison.meanScoreDelta,
+    passRateDelta: draft.measurement?.comparison.passRateDelta,
+  };
+
+  engineeringEventBus.emit({
+    type: 'proposal.draft.attached',
+    timestamp: Date.now(),
+    source: 'proposal-engine',
+    payload: {
+      proposalId: id,
+      hasDraft: draft.draft !== null,
+      measured: draft.measurement !== null,
+      verdict: draft.measurement?.comparison.verdict ?? 'unmeasured',
+    },
+  });
+
+  return proposal;
 }
 
 export function listProposals(status?: ProposalStatus): Proposal[] {

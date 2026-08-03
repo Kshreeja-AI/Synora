@@ -227,6 +227,17 @@ export interface ProposalCreatedEvent extends EngineeringEvent {
   };
 }
 
+export interface ProposalDraftAttachedEvent extends EngineeringEvent {
+  type: 'proposal.draft.attached';
+  payload: {
+    proposalId: string;
+    hasDraft: boolean;
+    /** False when a draft was written but never run against the failures. */
+    measured: boolean;
+    verdict: string;
+  };
+}
+
 export interface ProposalDecidedEvent extends EngineeringEvent {
   type: 'proposal.decided';
   payload: { proposalId: string; decision: 'approved' | 'rejected'; hasNote: boolean };
@@ -251,6 +262,7 @@ export type KnownEvent =
   | AiInteractionCompletedEvent
   | EvaluationCaseCapturedEvent
   | ProposalCreatedEvent
+  | ProposalDraftAttachedEvent
   | ProposalDecidedEvent
   | EngineeringEvent;
 

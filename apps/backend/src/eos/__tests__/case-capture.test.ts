@@ -91,8 +91,21 @@ describe('case-capture', () => {
     const stored = getCases('ds')[0];
     expect(stored.input).toContain('[REDACTED_EMAIL]');
     expect(stored.input).not.toContain('keshav@synora.ai');
-    expect(stored.expected).toContain('[REDACTED_CARD]');
-    expect(stored.expected).not.toContain('4111111111111111');
+    expect(stored.actualOutput).toContain('[REDACTED_CARD]');
+    expect(stored.actualOutput).not.toContain('4111111111111111');
+  });
+
+  it('records the failing output as observed, never as the expected answer', () => {
+    startCaseCapture({ datasetId: 'ds' });
+    captureInteraction(interaction({ success: false, input: 'q', output: 'the wrong answer' }));
+
+    const stored = getCases('ds')[0];
+
+    expect(stored.actualOutput).toBe('the wrong answer');
+    // Graders treat `expected` as the correct answer. Storing a captured
+    // failure there would score reproducing the bug as a pass and a genuine
+    // fix as a regression — the evaluation would run exactly backwards.
+    expect(stored.expected).toBeUndefined();
   });
 
   it('samples successful interactions at the configured rate', () => {

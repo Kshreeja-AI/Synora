@@ -14,6 +14,14 @@ export interface EvaluationCase {
   input: string;
   /** Reference answer, where one exists. Some graders do not need it. */
   expected?: string;
+  /**
+   * What the system actually produced when this case was captured. For a
+   * captured failure this is the *bad* output, which is why it must never
+   * be stored in `expected` — graders treat `expected` as the correct
+   * answer, so a case recorded that way would score reproducing the failure
+   * as a pass and a genuine fix as a regression.
+   */
+  actualOutput?: string;
   graders: GraderSpec[];
   origin: CaseOrigin;
   tags: string[];
@@ -74,6 +82,8 @@ export function addCase(
     id: string;
     input: string;
     expected?: string;
+    /** What the system actually produced. Never a reference answer. */
+    actualOutput?: string;
     graders: GraderSpec[];
     origin: CaseOrigin;
     tags?: string[];
@@ -89,6 +99,7 @@ export function addCase(
     id: input.id,
     input: input.input,
     expected: input.expected,
+    actualOutput: input.actualOutput,
     graders: input.graders,
     origin: input.origin,
     tags: input.tags ?? [],

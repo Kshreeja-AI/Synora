@@ -76,6 +76,13 @@ export type { RuntimeCheckEntry, RuntimeCheckResult } from './runtime-check.js';
 export { recordAiInteraction } from './instrumentation.js';
 export type { AiInteractionRecord } from './instrumentation.js';
 export {
+  configureDraftGenerator,
+  generateDraft,
+  resetDraftGenerator,
+} from './draft-generator.js';
+export type { Drafter, DraftResult, DraftMeasurement } from './draft-generator.js';
+export {
+  attachDraft,
   buildCostAnomalyProposal,
   buildPromptRegressionProposal,
   startProposalEngine,

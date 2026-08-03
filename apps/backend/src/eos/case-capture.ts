@@ -120,7 +120,11 @@ export function captureInteraction(interaction: Interaction): { captured: boolea
     addCase(config.datasetId, {
       id: caseId,
       input: redactedInput.text,
-      expected: redactedOutput.text,
+      // The observed output, not a reference answer. A captured failure has
+      // no known-good answer — inventing one would be worse than having
+      // none — and storing the bad output as `expected` would invert every
+      // grader that compares against it.
+      actualOutput: redactedOutput.text,
       graders: config.defaultGraders,
       // Captured from genuine traffic, so this is unambiguously real.
       origin: 'real',

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { engineeringEventBus } from '../event-bus';
 import {
+  attachDraft,
   buildCostAnomalyProposal,
   buildPromptRegressionProposal,
   decideProposal,
@@ -324,6 +325,116 @@ describe('proposal-engine', () => {
 
       const triggers = listProposals().map((p) => p.trigger).sort();
       expect(triggers).toEqual(['cost-anomaly', 'prompt-regression']);
+    });
+  });
+
+  describe('drafts', () => {
+    function pendingProposal() {
+      startProposalEngine();
+      startPromptIntelligence({ windowSize: 4, dropThreshold: 0.3 });
+      for (let i = 0; i < 16; i++) recordPromptOutcome({ promptId: 'p', success: true, latencyMs: 10 });
+      for (let i = 0; i < 4; i++) recordPromptOutcome({ promptId: 'p', success: false, latencyMs: 10 });
+      return listProposals()[0];
+    }
+
+    it('attaches a measured draft with its verdict', () => {
+      const proposal = pendingProposal();
+
+      attachDraft(proposal.id, {
+        promptId: 'p',
+        datasetId: 'ds',
+        draft: 'a revised prompt',
+        measurement: {
+          baselineRun: { runId: 'a' } as never,
+          candidateRun: { runId: 'b' } as never,
+          comparison: {
+            verdict: 'improvement',
+            meanScoreDelta: 0.4,
+            passRateDelta: 0.5,
+          } as never,
+        },
+        unavailable: [],
+        summary: 'The draft scored better on the captured failures.',
+      });
+
+      const stored = getProposal(proposal.id)!;
+      expect(stored.draft!.text).toBe('a revised prompt');
+      expect(stored.draft!.verdict).toBe('improvement');
+      expect(stored.draft!.meanScoreDelta).toBe(0.4);
+    });
+
+    it('leaves the proposal pending even when the draft scored better', () => {
+      const proposal = pendingProposal();
+
+      attachDraft(proposal.id, {
+        promptId: 'p',
+        datasetId: 'ds',
+        draft: 'a much better prompt',
+        measurement: {
+          baselineRun: {} as never,
+          candidateRun: {} as never,
+          comparison: { verdict: 'improvement', meanScoreDelta: 1, passRateDelta: 1 } as never,
+        },
+        unavailable: [],
+        summary: 'better',
+      });
+
+      // A good score is evidence for the founder, never a substitute for
+      // the founder. Nothing about a draft may advance the decision.
+      expect(getProposal(proposal.id)!.status).toBe('pending');
+    });
+
+    it('carries the reason a draft is missing rather than showing nothing', () => {
+      const proposal = pendingProposal();
+
+      attachDraft(proposal.id, {
+        promptId: 'p',
+        datasetId: 'ds',
+        draft: null,
+        measurement: null,
+        unavailable: ['No drafter is configured, so no candidate prompt was written.'],
+        summary: 'No draft was produced. This is a missing capability, not a judgement.',
+      });
+
+      const stored = getProposal(proposal.id)!;
+      expect(stored.draft!.text).toBeNull();
+      expect(stored.draft!.unavailable[0]).toMatch(/No drafter is configured/);
+      expect(stored.draft!.verdict).toBeUndefined();
+    });
+
+    it('emits proposal.draft.attached, distinguishing written from measured', () => {
+      const proposal = pendingProposal();
+      const events: Array<{ payload: Record<string, unknown> }> = [];
+      const unsub = engineeringEventBus.on('proposal.draft.attached', (e) =>
+        events.push(e as { payload: Record<string, unknown> }),
+      );
+
+      attachDraft(proposal.id, {
+        promptId: 'p',
+        datasetId: 'ds',
+        draft: 'written but never run',
+        measurement: null,
+        unavailable: ['No candidate executor.'],
+        summary: 'unproven',
+      });
+
+      expect(events[0].payload.hasDraft).toBe(true);
+      expect(events[0].payload.measured).toBe(false);
+      expect(events[0].payload.verdict).toBe('unmeasured');
+      unsub();
+    });
+
+    it('returns null for an unknown proposal', () => {
+      expect(
+        attachDraft('nope', {
+          promptId: 'p',
+          datasetId: 'ds',
+          draft: null,
+          measurement: null,
+          unavailable: [],
+          summary: '',
+        }),
+      ).toBeNull();
     });
   });
 
