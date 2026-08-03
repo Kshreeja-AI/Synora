@@ -109,4 +109,11 @@ export {
   decideProposal,
 } from './proposal-engine.js';
 export type { Proposal, ProposalStatus, ProposalEvidence } from './proposal-engine.js';
+export {
+  configureExecution,
+  executeProposal,
+  resetExecution,
+  buildPullRequestBody,
+} from './execution-layer.js';
+export type { GitOperations, ExecutionRecord, ExecutionOutcome } from './execution-layer.js';
 export { eosRouter } from './routes.js';

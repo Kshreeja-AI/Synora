@@ -246,6 +246,17 @@ export interface ProposalDraftAttachedEvent extends EngineeringEvent {
   };
 }
 
+export interface ProposalExecutionCompletedEvent extends EngineeringEvent {
+  type: 'proposal.execution.completed';
+  payload: {
+    proposalId: string;
+    outcome: 'pull-request-opened' | 'tests-failed' | 'refused' | 'error';
+    branch?: string;
+    pullRequestUrl?: string;
+    reason?: string;
+  };
+}
+
 export interface ProposalDecidedEvent extends EngineeringEvent {
   type: 'proposal.decided';
   payload: { proposalId: string; decision: 'approved' | 'rejected'; hasNote: boolean };
@@ -271,6 +282,7 @@ export type KnownEvent =
   | EvaluationCaseCapturedEvent
   | ProposalCreatedEvent
   | ProposalDraftAttachedEvent
+  | ProposalExecutionCompletedEvent
   | ProposalDecidedEvent
   | EngineeringEvent;
 
