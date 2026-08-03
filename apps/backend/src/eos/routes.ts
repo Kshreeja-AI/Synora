@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { engineeringEventBus } from './event-bus.js';
+import { runHealthProbes } from './health-collector.js';
 
 const router: Router = Router();
 
@@ -17,6 +18,12 @@ router.get('/events/recent', (_req: Request, res: Response) => {
 
 router.get('/events/stats', (_req: Request, res: Response) => {
   res.json({ data: engineeringEventBus.stats() });
+});
+
+router.post('/health/check', async (_req: Request, res: Response) => {
+  await runHealthProbes();
+  const events = engineeringEventBus.recentByType('health.check', 20);
+  res.json({ data: events });
 });
 
 export { router as eosRouter };
