@@ -19,6 +19,9 @@ import {
   EmbeddingResult,
   EmbeddingStreamChunk,
 } from './types';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+
+declareAiPath('embeddings.embed');
 
 export interface EmbedOptions {
   workspaceId: string;
@@ -225,6 +228,19 @@ export class EmbeddingService {
         this.usage.recordUsage(workspaceId, provider.id, result.usage.tokens, cost);
       }
 
+      // Instrumented here, at the single real provider-call chokepoint, so
+      // cache hits are excluded structurally rather than by a conditional —
+      // counting a cache hit as a provider call would make providers look
+      // faster and cheaper than they are.
+      recordAiInteraction({
+        promptId: 'embeddings.embed',
+        providerId: provider.id,
+        modelId: model,
+        success: true,
+        latencyMs,
+        inputTokens: batch.results.reduce((sum, r) => sum + r.usage.tokens, 0),
+      });
+
       return [...batch.results];
     } catch (error) {
       const latencyMs = Date.now() - start;
@@ -235,6 +251,14 @@ export class EmbeddingService {
         tokens: 0,
         cacheHit: false,
         success: false,
+      });
+      recordAiInteraction({
+        promptId: 'embeddings.embed',
+        providerId: provider.id,
+        modelId: model,
+        success: false,
+        latencyMs,
+        errorCode: error instanceof Error ? error.name : 'unknown',
       });
       throw error instanceof EmbeddingProviderError
         ? error

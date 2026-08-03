@@ -3,6 +3,9 @@ import type { GeneratedAudio } from '@prisma/client';
 import { resolveTextToSpeechProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+
+declareAiPath('audio.generate');
 
 export interface GenerateAudioInput {
   userId: string;
@@ -46,6 +49,8 @@ export class AudioGenerationService {
       },
     });
 
+    const startedAt = Date.now();
+
     try {
       const result = await provider.synthesize({
         text: input.text,
@@ -58,6 +63,16 @@ export class AudioGenerationService {
         key: `generated-audio/${input.userId}/${pending.id}.${extension}`,
         buffer: result.audio,
         contentType: result.mimeType,
+      });
+
+      // Speech synthesis is priced per character, not per token, so no
+      // token or cost figures are reported rather than fabricated zeroes.
+      recordAiInteraction({
+        promptId: 'audio.generate',
+        providerId: result.provider,
+        modelId: result.model,
+        success: true,
+        latencyMs: Date.now() - startedAt,
       });
 
       return await prisma.generatedAudio.update({
@@ -77,6 +92,16 @@ export class AudioGenerationService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('[AudioGeneration] Generation failed', { audioId: pending.id, error: message });
+
+      recordAiInteraction({
+        promptId: 'audio.generate',
+        providerId: provider.id,
+        modelId: 'unknown',
+        success: false,
+        latencyMs: Date.now() - startedAt,
+        errorCode: error instanceof Error ? error.name : 'unknown',
+      });
+
       await prisma.generatedAudio.update({
         where: { id: pending.id },
         data: { status: 'FAILED' },

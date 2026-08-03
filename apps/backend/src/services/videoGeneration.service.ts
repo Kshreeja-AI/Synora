@@ -3,6 +3,9 @@ import type { GeneratedVideo } from '@prisma/client';
 import { resolveVideoProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+
+declareAiPath('video.generate');
 
 export interface GenerateVideoInput {
   userId: string;
@@ -111,6 +114,14 @@ export class VideoGenerationService {
           videoId,
           pollAttempts,
         });
+        recordAiInteraction({
+          promptId: 'video.generate',
+          providerId: providerName || provider.id,
+          modelId: modelName || 'unknown',
+          success: false,
+          latencyMs: Date.now() - video.createdAt.getTime(),
+          errorCode: 'poll_timeout',
+        });
         return await prisma.generatedVideo.update({
           where: { id: videoId },
           data: { status: 'FAILED' },
@@ -123,6 +134,18 @@ export class VideoGenerationService {
     }
 
     if (result.status === 'failed') {
+      // Video generation is asynchronous, so the latency worth recording is
+      // end-to-end — request to terminal state — not the duration of the
+      // single poll that happened to observe it.
+      recordAiInteraction({
+        promptId: 'video.generate',
+        providerId: providerName || provider.id,
+        modelId: modelName || 'unknown',
+        success: false,
+        latencyMs: Date.now() - video.createdAt.getTime(),
+        errorCode: 'provider_failed',
+      });
+
       return await prisma.generatedVideo.update({
         where: { id: videoId },
         data: { status: 'FAILED' },
@@ -138,6 +161,16 @@ export class VideoGenerationService {
         key: `generated-videos/${video.userId}/${videoId}.mp4`,
         buffer,
         contentType: 'video/mp4',
+      });
+
+      // Video is not token-priced, so token and cost figures are omitted
+      // rather than reported as zeroes that would read as "free".
+      recordAiInteraction({
+        promptId: 'video.generate',
+        providerId: providerName || provider.id,
+        modelId: modelName || 'unknown',
+        success: true,
+        latencyMs: Date.now() - video.createdAt.getTime(),
       });
 
       return await prisma.generatedVideo.update({
