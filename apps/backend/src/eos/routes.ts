@@ -4,6 +4,7 @@ import { engineeringEventBus } from './event-bus.js';
 import { runHealthProbes } from './health-collector.js';
 import { sampleQueueDepths } from './queue-depth-collector.js';
 import { getErrorRateSnapshot } from './error-rate-monitor.js';
+import { sampleMemory } from './memory-collector.js';
 
 const router: Router = Router();
 
@@ -43,6 +44,12 @@ router.get('/error-rate', (_req: Request, res: Response) => {
   const snapshot = getErrorRateSnapshot();
   const alerts = engineeringEventBus.recentByType('alert.error_rate', 20);
   res.json({ data: { current: snapshot, recentAlerts: alerts } });
+});
+
+router.post('/memory', (_req: Request, res: Response) => {
+  sampleMemory();
+  const events = engineeringEventBus.recentByType('process.memory', 20);
+  res.json({ data: events });
 });
 
 export { router as eosRouter };

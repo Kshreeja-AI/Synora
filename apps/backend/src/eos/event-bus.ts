@@ -77,6 +77,17 @@ export interface AlertErrorRateEvent extends EngineeringEvent {
   };
 }
 
+export interface ProcessMemoryEvent extends EngineeringEvent {
+  type: 'process.memory';
+  payload: {
+    rssMb: number;
+    heapUsedMb: number;
+    heapTotalMb: number;
+    externalMb: number;
+    arrayBuffersMb: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -85,6 +96,7 @@ export type KnownEvent =
   | BootEvent
   | QueueDepthEvent
   | AlertErrorRateEvent
+  | ProcessMemoryEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;
