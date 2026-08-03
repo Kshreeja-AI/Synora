@@ -2,17 +2,39 @@ import { api } from './client';
 import type { AuthResponse } from './types';
 import { setTokens, clearTokens } from '../auth/token-storage';
 
+/**
+ * An MFA-enrolled account answers a correct password with a challenge instead
+ * of a session; the login is completed by `verifyMfaChallenge` in lib/api/mfa.
+ */
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  mfaChallengeToken: string;
+  expiresAt: string;
+}
+
+export type LoginResult = AuthResponse | MfaChallengeResponse;
+
+export function isMfaChallenge(result: LoginResult): result is MfaChallengeResponse {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as MfaChallengeResponse).mfaRequired === true
+  );
+}
+
 export async function login(
   email: string,
   password: string,
   rememberMe?: boolean
-): Promise<AuthResponse> {
-  const data = await api.post<AuthResponse>(
+): Promise<LoginResult> {
+  const data = await api.post<LoginResult>(
     '/api/auth/login',
     { email, password, rememberMe },
     { anonymous: true }
   );
-  setTokens(data);
+  if (!isMfaChallenge(data)) {
+    setTokens(data);
+  }
   return data;
 }
 

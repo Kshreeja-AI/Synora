@@ -28,6 +28,7 @@ import {
   updatePreferences,
 } from '../../../../lib/api/account';
 import { clearTokens } from '../../../../lib/auth/token-storage';
+import { MfaSection } from '../../../../components/settings/MfaSection';
 import { ApiError } from '../../../../lib/api/client';
 
 function PasswordSection(): React.JSX.Element {
@@ -257,6 +258,7 @@ export default function AccountSettingsPage(): React.JSX.Element {
   return (
     <div className="space-y-6">
       <PasswordSection />
+      <MfaSection />
       <NotificationsSection />
       <DeleteAccountSection />
     </div>
