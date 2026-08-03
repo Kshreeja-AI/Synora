@@ -33,6 +33,7 @@ import billingRoutes from './routes/billing';
 import billingPlansRoutes from './routes/billingPlans';
 import billingWebhookRoutes from './routes/billingWebhook';
 import adminBillingRoutes from './routes/adminBilling';
+import adminRoutes from './routes/admin';
 import conversationRoutes from './routes/conversations';
 import messageRoutes from './routes/messages';
 import streamingRoutes from './routes/streaming';
@@ -273,6 +274,10 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
   app.use('/api/admin', adminBillingRoutes);
+  // adminRoutes lives at /api/admin/{stats,users,workspaces,audit-logs} —
+  // Express matches longest-prefix so it never collides with adminBilling's
+  // /plans, /billing/*, or /workspaces/:workspaceId/{credits,invoices}/* paths.
+  app.use('/api/admin', adminRoutes);
 
   // 404 Handler
   app.use((req, res) => {
