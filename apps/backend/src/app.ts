@@ -8,6 +8,8 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
+import { metricsMiddleware, renderMetrics } from './monitoring/metrics';
+import { tracingMiddleware } from './monitoring/tracing';
 import { requestLogger } from './middleware/requestLogger';
 import { csrfProtection } from './middleware/csrf';
 import { cspMiddleware } from './middleware/csp';
@@ -85,6 +87,10 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(cspMiddleware);
   app.use(requestTimeout);
   app.use(correlationIdMiddleware as any);
+  // Observability: registered before the routers so every request — including
+  // 404s and rate-limited rejections — is measured and traced.
+  app.use(metricsMiddleware);
+  app.use(tracingMiddleware);
   app.use(
     cors({
       origin: config.server.corsOrigins,
@@ -151,6 +157,24 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
       stage: config.stage,
       modes: config.modes,
     });
+  });
+
+  // Prometheus scrape endpoint. Optionally guarded: when METRICS_TOKEN is
+  // set, the scraper must send it as a bearer token — internals like route
+  // names and queue depths shouldn't be world-readable on a public host.
+  // Without the env var the endpoint stays open, which is the right default
+  // for cluster-internal scraping and local development.
+  app.get('/metrics', async (req, res) => {
+    const requiredToken = process.env.METRICS_TOKEN;
+    if (requiredToken && req.headers.authorization !== `Bearer ${requiredToken}`) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Invalid metrics token' },
+      });
+    }
+    const { contentType, body } = await renderMetrics();
+    res.setHeader('Content-Type', contentType);
+    return res.send(body);
   });
 
   // Readiness: process is up AND can actually serve traffic. Orchestrators

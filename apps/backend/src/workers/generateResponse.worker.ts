@@ -9,6 +9,11 @@ import { getStreamingResolver } from '../ai/streaming/resolver';
 import { StreamingAccumulator, TokenAccountant } from '../ai/streaming/accumulator';
 import { StreamingRetryEngine, StreamingJobStatus } from '../ai/streaming/statemachine';
 import { conversationContextService } from '../services/conversationContext.service';
+import {
+  aiProviderCallsTotal,
+  aiProviderCallDuration,
+  aiTokensTotal,
+} from '../monitoring/metrics';
 import { Redis } from 'ioredis';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -165,6 +170,7 @@ export function createGenerateResponseWorker() {
 
           const timeToFirstToken = Date.now();
           let firstTokenReceived = false;
+          const providerCallTimer = aiProviderCallDuration.startTimer({ provider });
 
           for await (const chunk of providerInstance.generateStream({
             messages: messageHistory,
@@ -222,6 +228,14 @@ export function createGenerateResponseWorker() {
           // Persist complete message
           const finalText = accumulator.getText();
           const accounting = accountant.getSummary();
+
+          // Spend metrics: one observation per completed provider call, plus
+          // token counters split by direction so cost dashboards can separate
+          // prompt growth from response growth.
+          providerCallTimer();
+          aiProviderCallsTotal.inc({ provider, outcome: 'completed' });
+          aiTokensTotal.inc({ provider, direction: 'input' }, accounting.inputTokens);
+          aiTokensTotal.inc({ provider, direction: 'output' }, accounting.outputTokens);
 
           logger.info('[Worker] Persisting message', {
             jobId,
@@ -302,6 +316,7 @@ export function createGenerateResponseWorker() {
 
           return { success: true, messageId };
         } catch (err: any) {
+          aiProviderCallsTotal.inc({ provider, outcome: 'failed' });
           logger.error('[Worker] Generation failed', {
             jobId,
             attempt,

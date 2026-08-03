@@ -7,6 +7,7 @@ import { processFileJob, type ProcessFileJobData } from './processFile.worker'
 import { processVideoGeneration, type VideoGenerationJobData } from './videoGeneration.worker'
 import { processMemoryMaintenance, type MemoryMaintenanceJobData } from './memoryMaintenance.worker'
 import type { GenerateResponseJob } from './generateResponse.worker'
+import { queueJobsTotal, queueJobDuration } from '../monitoring/metrics'
 
 // Queue configuration
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -387,14 +388,18 @@ export function setupWorkers(): Worker[] {
 
 function setupWorkerEventHandlers(worker: Worker, workerName: string): void {
   worker.on('completed', (job) => {
+    const durationMs = job.finishedOn! - job.processedOn!
+    queueJobsTotal.inc({ queue: workerName, outcome: 'completed' })
+    queueJobDuration.observe({ queue: workerName }, durationMs / 1000)
     logger.info(`[worker] Job completed`, {
       workerName,
       jobId: job.id,
-      duration: job.finishedOn! - job.processedOn!,
+      duration: durationMs,
     })
   })
 
   worker.on('failed', (job, error) => {
+    queueJobsTotal.inc({ queue: workerName, outcome: 'failed' })
     logger.error(`[worker] Job failed`, {
       workerName,
       jobId: job?.id,
