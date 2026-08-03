@@ -88,6 +88,17 @@ export interface ProcessMemoryEvent extends EngineeringEvent {
   };
 }
 
+export interface ApiLatencySummaryEvent extends EngineeringEvent {
+  type: 'api.latency.summary';
+  payload: {
+    count: number;
+    p50: number;
+    p95: number;
+    p99: number;
+    mean: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -97,6 +108,7 @@ export type KnownEvent =
   | QueueDepthEvent
   | AlertErrorRateEvent
   | ProcessMemoryEvent
+  | ApiLatencySummaryEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

@@ -5,6 +5,7 @@ import { runHealthProbes } from './health-collector.js';
 import { sampleQueueDepths } from './queue-depth-collector.js';
 import { getErrorRateSnapshot } from './error-rate-monitor.js';
 import { sampleMemory } from './memory-collector.js';
+import { getLatencySnapshot } from './latency-tracker.js';
 
 const router: Router = Router();
 
@@ -50,6 +51,12 @@ router.post('/memory', (_req: Request, res: Response) => {
   sampleMemory();
   const events = engineeringEventBus.recentByType('process.memory', 20);
   res.json({ data: events });
+});
+
+router.get('/latency', (_req: Request, res: Response) => {
+  const snapshot = getLatencySnapshot();
+  const summaries = engineeringEventBus.recentByType('api.latency.summary', 20);
+  res.json({ data: { current: snapshot, recentSummaries: summaries } });
 });
 
 export { router as eosRouter };
