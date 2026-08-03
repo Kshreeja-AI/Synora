@@ -7,6 +7,7 @@ import { AppConfig } from './config';
 import { realtimeService } from './services/realtime.service';
 import { initObservability, shutdownObservability } from './monitoring';
 import { markBootStart, emitBootComplete } from './eos/boot-collector.js';
+import { registerDependencyProbes } from './eos/dependency-probes.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -35,6 +36,7 @@ async function bootstrap() {
   initObservability();
   const { app, config } = await initializeApp();
   httpServer = await startServer(app, config);
+  registerDependencyProbes();
   emitBootComplete();
 }
 
