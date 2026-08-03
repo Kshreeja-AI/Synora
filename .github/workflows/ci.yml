@@ -155,6 +155,48 @@ jobs:
           files: ./apps/backend/coverage/coverage-final.json,./apps/web/coverage/coverage-final.json,./packages/design-system/coverage/coverage-final.json
           fail_ci_if_error: false
 
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @synora/web exec playwright install --with-deps chromium
+
+      - name: Build frontend
+        run: pnpm run build
+        env:
+          DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+
+      - name: Run E2E tests
+        run: pnpm --filter @synora/web test:e2e
+        env:
+          NODE_ENV: test
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/e2e/.results/
+          retention-days: 7
+
   docker:
     runs-on: ubuntu-latest
     # Verifies the production image actually assembles from the Dockerfile.

@@ -12,7 +12,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
     "test:watch": "vitest --watch",
-    "test:coverage": "vitest --coverage"
+    "test:coverage": "vitest --coverage",
+    "test:e2e": "playwright test --config playwright.config.ts"
   },
   "dependencies": {
     "@synora/design-system": "workspace:*",
@@ -32,6 +33,7 @@
     "zustand": "^4.4.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.1.5",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.5.2",

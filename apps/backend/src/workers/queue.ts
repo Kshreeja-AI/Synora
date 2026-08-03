@@ -8,6 +8,7 @@ import { processVideoGeneration, type VideoGenerationJobData } from './videoGene
 import { processMemoryMaintenance, type MemoryMaintenanceJobData } from './memoryMaintenance.worker'
 import type { GenerateResponseJob } from './generateResponse.worker'
 import { queueJobsTotal, queueJobDuration } from '../monitoring/metrics'
+import { attachWorkerCollector } from '../eos/worker-collector'
 
 // Queue configuration
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
@@ -380,6 +381,14 @@ export function setupWorkers(): Worker[] {
   setupWorkerEventHandlers(videoWorker, 'video-generation')
   setupWorkerEventHandlers(fileWorker, 'file-processing')
   setupWorkerEventHandlers(memoryMaintenanceWorker, 'memory-maintenance')
+
+  // EOS engineering event bus collectors (additive — no change to existing handlers)
+  attachWorkerCollector(exportWorker, 'export-dataset')
+  attachWorkerCollector(evaluationWorker, 'run-evaluation')
+  attachWorkerCollector(feedbackWorker, 'message-feedback')
+  attachWorkerCollector(videoWorker, 'video-generation')
+  attachWorkerCollector(fileWorker, 'file-processing')
+  attachWorkerCollector(memoryMaintenanceWorker, 'memory-maintenance')
 
   logger.info('[queue] Workers setup complete')
 

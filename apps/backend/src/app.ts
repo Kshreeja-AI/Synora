@@ -59,6 +59,7 @@ import datasetExportRoutes from './routes/datasetExport';
 import usageRoutes from './routes/usage';
 import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
+import { eosRouter } from './eos/index';
 
 export interface CreateAppDeps {
   /**
@@ -280,6 +281,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   // Express matches longest-prefix so it never collides with adminBilling's
   // /plans, /billing/*, or /workspaces/:workspaceId/{credits,invoices}/* paths.
   app.use('/api/admin', adminRoutes);
+  app.use('/api/eos', eosRouter);
 
   // 404 Handler
   app.use((req, res) => {

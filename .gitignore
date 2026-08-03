@@ -160,3 +160,8 @@ dump.rdb
 
 # Dataset export output files written by datasetExport.service.ts during local testing
 apps/backend/exports/
+
+# Playwright test artifacts
+apps/web/e2e/.results/
+apps/web/test-results/
+apps/web/playwright-report/
