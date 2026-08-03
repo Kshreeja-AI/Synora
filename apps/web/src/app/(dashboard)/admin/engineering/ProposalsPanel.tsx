@@ -50,6 +50,71 @@ function Metrics({ metrics }: { metrics: Proposal['evidence']['metrics'] }) {
   );
 }
 
+/**
+ * A drafted revision and how it measured.
+ *
+ * The verdict carries the same visual weight as the draft text, for the
+ * same reason the caveats do: a revision shown in a neat box with a small
+ * note underneath invites the reader to take the artefact and skip the
+ * assessment. An unmeasured draft is marked unproven rather than sitting
+ * beside measured ones looking equally credible.
+ */
+function DraftSection({ draft }: { draft: NonNullable<Proposal['draft']> }) {
+  const measured = draft.verdict !== undefined;
+  const tone =
+    !measured
+      ? 'border-border bg-muted/30'
+      : draft.verdict === 'improvement'
+        ? 'border-emerald-500/50 bg-emerald-500/5'
+        : draft.verdict === 'regression'
+          ? 'border-red-500/50 bg-red-500/5'
+          : 'border-amber-500/50 bg-amber-500/5';
+
+  return (
+    <div className={`mt-4 rounded-md border p-3 ${tone}`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold">Drafted revision</h4>
+        <span className="text-sm font-semibold">
+          {measured ? `measured: ${draft.verdict}` : 'not measured — unproven'}
+        </span>
+      </div>
+
+      <p className="mt-2 text-sm">{draft.summary}</p>
+
+      {measured ? (
+        <div className="mt-2 flex flex-wrap gap-4 text-sm">
+          {draft.meanScoreDelta !== undefined ? (
+            <span>
+              mean score {draft.meanScoreDelta >= 0 ? '+' : ''}
+              {draft.meanScoreDelta.toFixed(2)}
+            </span>
+          ) : null}
+          {draft.passRateDelta !== undefined ? (
+            <span>
+              pass rate {draft.passRateDelta >= 0 ? '+' : ''}
+              {Math.round(draft.passRateDelta * 100)}%
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {draft.unavailable.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-1 pl-6 text-sm">
+          {draft.unavailable.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {draft.text ? (
+        <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded border border-border bg-background p-2 text-xs">
+          {draft.text}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
 function ProposalCard({ proposal }: { proposal: Proposal }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
@@ -119,6 +184,8 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
         </h4>
         <p className="mt-1 text-sm">{proposal.suggestedAction}</p>
       </div>
+
+      {proposal.draft ? <DraftSection draft={proposal.draft} /> : null}
 
       {decided ? (
         <p className="mt-4 border-t border-border pt-3 text-sm text-muted-foreground">

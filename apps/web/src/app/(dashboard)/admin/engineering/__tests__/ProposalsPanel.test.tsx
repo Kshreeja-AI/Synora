@@ -168,6 +168,124 @@ describe('ProposalsPanel', () => {
     expect(await screen.findByText(/backend unreachable/i)).toBeInTheDocument();
   });
 
+  describe('drafted revisions', () => {
+    const measuredDraft = {
+      text: 'You are a summariser. Answer with a one-line summary.',
+      summary: 'The draft scored better on the captured failures (mean score +0.40; 2 case(s) better, 0 worse, 0 unchanged).',
+      unavailable: [],
+      verdict: 'improvement' as const,
+      meanScoreDelta: 0.4,
+      passRateDelta: 0.5,
+    };
+
+    it('shows the draft text with its measured verdict', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([{ ...proposal, draft: measuredDraft }]);
+      renderPanel();
+
+      expect(await screen.findByText(/You are a summariser/)).toBeInTheDocument();
+      expect(screen.getByText('measured: improvement')).toBeInTheDocument();
+      expect(screen.getByText('mean score +0.40')).toBeInTheDocument();
+      expect(screen.getByText('pass rate +50%')).toBeInTheDocument();
+    });
+
+    it('gives the verdict the same weight as the draft heading, not a footnote', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([{ ...proposal, draft: measuredDraft }]);
+      renderPanel();
+
+      const verdict = await screen.findByText('measured: improvement');
+      const heading = screen.getByText('Drafted revision');
+
+      // A revision shown prominently with a small assessment beside it
+      // invites the reader to take the text and skip the judgement.
+      expect(verdict.className).toContain('text-sm');
+      expect(verdict.className).toContain('font-semibold');
+      expect(heading.className).toContain('text-sm');
+    });
+
+    it('marks a draft that was never run as unproven', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([
+        {
+          ...proposal,
+          draft: {
+            text: 'a candidate prompt',
+            summary: 'A draft was written but never run, so there is no evidence it is better.',
+            unavailable: ['No candidate executor, so the draft could not be run.'],
+          },
+        },
+      ]);
+      renderPanel();
+
+      expect(await screen.findByText('not measured — unproven')).toBeInTheDocument();
+      expect(screen.getByText(/No candidate executor/)).toBeInTheDocument();
+      // It must not borrow the credibility of a measured result.
+      expect(screen.queryByText(/measured: /)).not.toBeInTheDocument();
+    });
+
+    it('shows a draft that scored worse rather than hiding it', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([
+        {
+          ...proposal,
+          draft: {
+            ...measuredDraft,
+            verdict: 'regression' as const,
+            meanScoreDelta: -0.3,
+            summary: 'The draft scored worse than the prompt in use.',
+          },
+        },
+      ]);
+      renderPanel();
+
+      expect(await screen.findByText('measured: regression')).toBeInTheDocument();
+      expect(screen.getByText('mean score -0.30')).toBeInTheDocument();
+    });
+
+    it('does not present a mixed result as a win', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([
+        {
+          ...proposal,
+          draft: { ...measuredDraft, verdict: 'mixed' as const, summary: 'This is not a clear win.' },
+        },
+      ]);
+      renderPanel();
+
+      expect(await screen.findByText('measured: mixed')).toBeInTheDocument();
+      expect(screen.getByText(/not a clear win/i)).toBeInTheDocument();
+    });
+
+    it('explains why a draft is absent instead of showing nothing', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([
+        {
+          ...proposal,
+          draft: {
+            text: null,
+            summary: 'No draft was produced. This is a missing capability, not a judgement.',
+            unavailable: ['No drafter is configured, so no candidate prompt was written.'],
+          },
+        },
+      ]);
+      renderPanel();
+
+      expect(await screen.findByText(/missing capability, not a judgement/i)).toBeInTheDocument();
+      expect(screen.getByText(/No drafter is configured/)).toBeInTheDocument();
+    });
+
+    it('shows no draft section at all when a proposal has none', async () => {
+      renderPanel();
+
+      await screen.findByText(proposal.title);
+      expect(screen.queryByText('Drafted revision')).not.toBeInTheDocument();
+    });
+
+    it('still requires a decision when the draft improved', async () => {
+      vi.mocked(eosApi.getProposals).mockResolvedValue([{ ...proposal, draft: measuredDraft }]);
+      renderPanel();
+
+      // A good score is evidence, not approval. The buttons stay.
+      expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+      expect(screen.getByText(/Nothing is applied automatically/i)).toBeInTheDocument();
+    });
+  });
+
   it('renders without crashing when the endpoint fails', async () => {
     vi.mocked(eosApi.getProposals).mockRejectedValue(new Error('down'));
     renderPanel();

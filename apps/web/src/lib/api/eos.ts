@@ -207,6 +207,23 @@ export interface Proposal {
   status: ProposalStatus;
   decidedAt?: number;
   decisionNote?: string;
+  /**
+   * A candidate revision and what measuring it showed. Absent means no
+   * draft exists — never that one was tried and found unnecessary.
+   */
+  draft?: ProposalDraft;
+}
+
+export interface ProposalDraft {
+  /** Null when no drafter was configured. */
+  text: string | null;
+  summary: string;
+  /** Why a draft or its measurement is missing. */
+  unavailable: string[];
+  /** Absent when the draft was written but never run. */
+  verdict?: 'improvement' | 'regression' | 'mixed' | 'no-change' | 'incomparable';
+  meanScoreDelta?: number;
+  passRateDelta?: number;
 }
 
 export function getProposals(status?: ProposalStatus): Promise<Proposal[]> {
