@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (30):**
+**Components (31):**
 
 | Component | Role |
 |---|---|
@@ -263,6 +263,7 @@ and subscribe from it. Each component is separately replaceable.
 | `media-pricing` | Published per-image/per-character/per-second prices, each dated with its source. The one permitted table of expectations, because media providers report no cost to observe. Ships empty; an unlisted model yields no price rather than a guessed one, and derived costs stay marked `stated` rather than `observed` |
 | `provider-degradation` | CIEP: success rate per provider/model against that model's own history, measured in percentage points rather than as a ratio — 100% to 98% is a 2-point drop but a 0.98 ratio, and only one of those readings is meaningful. Carries the distinct error codes so a rate limit is distinguishable from a timeout |
 | `latency-drift` | CIEP: 95th-percentile response time per provider/model against that model's own history. Compares the tail rather than the mean, because a mean is dominated by the fast majority while the tail is what customers experience as "it hung". Only the transition is alerted — once slowness fills the baseline it is no longer drift |
+| `detector-window` | The bookkeeping every detector shares — per-subject sample windows, baseline/recent split, sufficiency, and one-alert-per-episode gating. Deliberately does NOT absorb the comparison: cost compares ratios, latency ratios of p95, reliability percentage points, and each of those was a decision. Making the comparison a parameter would turn decisions into defaults |
 | `cost-monitor` | CIEP: cost per request per provider/model against that model's own baseline; emits `alert.cost_anomaly`. Only token-priced observations are tracked, so unpriced capabilities can never produce a false anomaly |
 | `proposal-engine` | Turns a detected regression or cost anomaly into a reviewable proposal (problem, evidence, caveats, suggested action). Has no `apply()` — approval records a decision and executes nothing |
 

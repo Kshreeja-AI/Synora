@@ -13,6 +13,8 @@ export { recordProviderObservation, getProviderMatrix, startProviderObservatory,
 export type { ProviderMatrixEntry } from './provider-observatory.js';
 export { recordPromptOutcome, getPromptReport, startPromptIntelligence, stopPromptIntelligence } from './prompt-intelligence.js';
 export type { PromptReportEntry } from './prompt-intelligence.js';
+export { DetectorWindow } from './detector-window.js';
+export type { WindowConfig, WindowSlices } from './detector-window.js';
 export { recordCostObservation, getCostReport, startCostMonitor, stopCostMonitor } from './cost-monitor.js';
 export {
   recordLatencyObservation,

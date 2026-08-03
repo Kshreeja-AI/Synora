@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import { DetectorWindow, type WindowSlices } from './detector-window.js';
 
 /**
  * Watches how often each provider and model actually succeeds, and raises
@@ -18,18 +19,11 @@ import { engineeringEventBus } from './event-bus.js';
  * and improvement is never an alert.
  */
 
-const MAX_SAMPLES = 500;
-
-interface ReliabilityStats {
+interface ReliabilitySubject {
   providerId: string;
   modelId: string;
-  /** Outcomes in arrival order — recency defines the window. */
-  outcomes: boolean[];
-  /** Error codes seen in the recent window, for the proposal's evidence. */
+  /** Error codes seen recently, for the proposal's evidence. */
   recentErrorCodes: string[];
-  requests: number;
-  alerted: boolean;
-  lastObservedAt: number;
 }
 
 export interface DegradationEntry {
@@ -47,10 +41,11 @@ export interface DegradationEntry {
   lastObservedAt: number;
 }
 
-const stats = new Map<string, ReliabilityStats>();
+/** Windows and episode gating are shared; the comparison below is not. */
+let window = new DetectorWindow<boolean>({ windowSize: 20, minBaselineSamples: 50 });
+const subjects = new Map<string, ReliabilitySubject>();
 let unsubscribe: (() => void) | null = null;
 let windowSize = 20;
-let minBaselineSamples = 50;
 let dropPointsThreshold = 10;
 
 function rate(outcomes: boolean[]): number {
@@ -67,34 +62,33 @@ interface Comparison {
   degraded: boolean;
 }
 
-function compare(entry: ReliabilityStats): Comparison {
-  const baselineOutcomes = entry.outcomes.slice(0, Math.max(0, entry.outcomes.length - windowSize));
-  const recentOutcomes = entry.outcomes.slice(-windowSize);
-
-  const sufficientData =
-    baselineOutcomes.length >= minBaselineSamples && recentOutcomes.length >= windowSize;
-
-  if (!sufficientData) {
+/**
+ * THE COMPARISON, stated here rather than shared, and deliberately unlike
+ * its siblings'. A success rate is bounded, so points are meaningful where
+ * a ratio is not: 100% to 98% is a 0.98 ratio and a real incident.
+ */
+function compare(slices: WindowSlices<boolean>): Comparison {
+  if (!slices.sufficientData) {
     return {
       baseline: null,
       recent: null,
       dropPoints: null,
-      baselineSamples: baselineOutcomes.length,
+      baselineSamples: slices.baselineSamples,
       sufficientData: false,
       degraded: false,
     };
   }
 
-  const baseline = rate(baselineOutcomes);
-  const recent = rate(recentOutcomes);
+  const baseline = rate(slices.baseline);
+  const recent = rate(slices.recent);
   const dropPoints = (baseline - recent) * 100;
 
   return {
     baseline,
     recent,
     dropPoints,
-    baselineSamples: baselineOutcomes.length,
-    sufficientData,
+    baselineSamples: slices.baselineSamples,
+    sufficientData: true,
     degraded: dropPoints >= dropPointsThreshold,
   };
 }
@@ -106,75 +100,57 @@ export function recordReliabilityObservation(obs: {
   errorCode?: string;
 }): void {
   const key = `${obs.providerId}:${obs.modelId}`;
-  let entry = stats.get(key);
-  if (!entry) {
-    entry = {
-      providerId: obs.providerId,
-      modelId: obs.modelId,
-      outcomes: [],
-      recentErrorCodes: [],
-      requests: 0,
-      alerted: false,
-      lastObservedAt: 0,
-    };
-    stats.set(key, entry);
+  let subject = subjects.get(key);
+  if (!subject) {
+    subject = { providerId: obs.providerId, modelId: obs.modelId, recentErrorCodes: [] };
+    subjects.set(key, subject);
   }
 
-  entry.requests += 1;
-  entry.outcomes.push(obs.success);
-  if (entry.outcomes.length > MAX_SAMPLES) {
-    entry.outcomes.splice(0, entry.outcomes.length - MAX_SAMPLES);
-  }
   if (!obs.success && obs.errorCode) {
-    entry.recentErrorCodes.push(obs.errorCode);
-    if (entry.recentErrorCodes.length > windowSize) {
-      entry.recentErrorCodes.splice(0, entry.recentErrorCodes.length - windowSize);
+    subject.recentErrorCodes.push(obs.errorCode);
+    if (subject.recentErrorCodes.length > windowSize) {
+      subject.recentErrorCodes.splice(0, subject.recentErrorCodes.length - windowSize);
     }
   }
-  entry.lastObservedAt = Date.now();
 
-  const result = compare(entry);
-  if (result.degraded) {
-    if (!entry.alerted) {
-      entry.alerted = true;
-      engineeringEventBus.emit({
-        type: 'alert.provider_degradation',
-        timestamp: Date.now(),
-        source: 'provider-degradation',
-        payload: {
-          providerId: entry.providerId,
-          modelId: entry.modelId,
-          baselineSuccessRate: result.baseline ?? 0,
-          recentSuccessRate: result.recent ?? 0,
-          dropPercentagePoints: Math.round(result.dropPoints ?? 0),
-          baselineSamples: result.baselineSamples,
-          windowSize,
-          // The codes themselves, so a reader can tell a rate limit from a
-          // timeout from a malformed request without leaving the proposal.
-          errorCodes: [...new Set(entry.recentErrorCodes)],
-        },
-      });
-    }
-  } else {
-    entry.alerted = false;
+  const result = compare(window.push(key, obs.success));
+
+  if (window.shouldAlert(key, result.degraded)) {
+    engineeringEventBus.emit({
+      type: 'alert.provider_degradation',
+      timestamp: Date.now(),
+      source: 'provider-degradation',
+      payload: {
+        providerId: obs.providerId,
+        modelId: obs.modelId,
+        baselineSuccessRate: result.baseline ?? 0,
+        recentSuccessRate: result.recent ?? 0,
+        dropPercentagePoints: Math.round(result.dropPoints ?? 0),
+        baselineSamples: result.baselineSamples,
+        windowSize,
+        // The codes themselves, so a reader can tell a rate limit from a
+        // timeout from a malformed request without leaving the proposal.
+        errorCodes: [...new Set(subject.recentErrorCodes)],
+      },
+    });
   }
 }
 
 export function getDegradationReport(): DegradationEntry[] {
   const report: DegradationEntry[] = [];
-  for (const entry of stats.values()) {
-    const result = compare(entry);
+  for (const [key, subject] of subjects) {
+    const result = compare(window.slices(key));
     report.push({
-      providerId: entry.providerId,
-      modelId: entry.modelId,
-      requests: entry.requests,
+      providerId: subject.providerId,
+      modelId: subject.modelId,
+      requests: window.requestCount(key),
       baselineSuccessRate: result.baseline,
       recentSuccessRate: result.recent,
       dropPercentagePoints: result.dropPoints === null ? null : Math.round(result.dropPoints),
       baselineSamples: result.baselineSamples,
       sufficientData: result.sufficientData,
       degraded: result.degraded,
-      lastObservedAt: entry.lastObservedAt,
+      lastObservedAt: window.lastObservedAt(key),
     });
   }
   return report.sort((a, b) => b.requests - a.requests);
@@ -185,8 +161,11 @@ export function startProviderDegradation(
 ): void {
   if (unsubscribe) return;
   windowSize = opts.windowSize ?? 20;
-  minBaselineSamples = opts.minBaselineSamples ?? 50;
   dropPointsThreshold = opts.dropPointsThreshold ?? 10;
+  window = new DetectorWindow<boolean>({
+    windowSize,
+    minBaselineSamples: opts.minBaselineSamples ?? 50,
+  });
 
   unsubscribe = engineeringEventBus.on('ai.provider.observation', (event) => {
     const p = event.payload as {
@@ -204,5 +183,6 @@ export function stopProviderDegradation(): void {
     unsubscribe();
     unsubscribe = null;
   }
-  stats.clear();
+  window.clear();
+  subjects.clear();
 }

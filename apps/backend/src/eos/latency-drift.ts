@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import { DetectorWindow, type WindowSlices } from './detector-window.js';
 
 /**
  * Watches response times per provider and model, and raises an alert when
@@ -19,16 +20,9 @@ import { engineeringEventBus } from './event-bus.js';
  * ignore all of them.
  */
 
-const MAX_SAMPLES = 500;
-
-interface LatencyStats {
+interface LatencySubject {
   providerId: string;
   modelId: string;
-  /** Latencies in arrival order. Order matters: recency defines the window. */
-  samples: number[];
-  requests: number;
-  alerted: boolean;
-  lastObservedAt: number;
 }
 
 export interface LatencyDriftEntry {
@@ -48,10 +42,11 @@ export interface LatencyDriftEntry {
   lastObservedAt: number;
 }
 
-const stats = new Map<string, LatencyStats>();
+/** Windows and episode gating are shared; the comparison below is not. */
+let window = new DetectorWindow<number>({ windowSize: 20, minBaselineSamples: 50 });
+const subjects = new Map<string, LatencySubject>();
 let unsubscribe: (() => void) | null = null;
 let windowSize = 20;
-let minBaselineSamples = 50;
 let slowdownMultiplier = 1.5;
 
 function percentile(values: number[], p: number): number {
@@ -70,26 +65,25 @@ interface Comparison {
   drifting: boolean;
 }
 
-function compare(entry: LatencyStats): Comparison {
-  const baselineValues = entry.samples.slice(0, Math.max(0, entry.samples.length - windowSize));
-  const recentValues = entry.samples.slice(-windowSize);
-
-  const sufficientData =
-    baselineValues.length >= minBaselineSamples && recentValues.length >= windowSize;
-
-  if (!sufficientData) {
+/**
+ * THE COMPARISON, stated here rather than shared. It is a ratio like the
+ * cost monitor's, but of 95th percentiles rather than means — the tail is
+ * what customers experience, and a mean would hide a doubling of it.
+ */
+function compare(slices: WindowSlices<number>): Comparison {
+  if (!slices.sufficientData) {
     return {
       baseline: null,
       recent: null,
       ratio: null,
-      baselineSamples: baselineValues.length,
+      baselineSamples: slices.baselineSamples,
       sufficientData: false,
       drifting: false,
     };
   }
 
-  const baseline = percentile(baselineValues, 95);
-  const recent = percentile(recentValues, 95);
+  const baseline = percentile(slices.baseline, 95);
+  const recent = percentile(slices.recent, 95);
 
   // A zero baseline gives no meaningful multiple. Instantaneous responses
   // becoming slow is still worth raising, but it is not a multiple of
@@ -101,8 +95,8 @@ function compare(entry: LatencyStats): Comparison {
     baseline,
     recent,
     ratio,
-    baselineSamples: baselineValues.length,
-    sufficientData,
+    baselineSamples: slices.baselineSamples,
+    sufficientData: true,
     drifting,
   };
 }
@@ -115,65 +109,43 @@ export function recordLatencyObservation(obs: {
   if (!Number.isFinite(obs.latencyMs) || obs.latencyMs < 0) return;
 
   const key = `${obs.providerId}:${obs.modelId}`;
-  let entry = stats.get(key);
-  if (!entry) {
-    entry = {
-      providerId: obs.providerId,
-      modelId: obs.modelId,
-      samples: [],
-      requests: 0,
-      alerted: false,
-      lastObservedAt: 0,
-    };
-    stats.set(key, entry);
-  }
+  subjects.set(key, { providerId: obs.providerId, modelId: obs.modelId });
 
-  entry.requests += 1;
-  entry.samples.push(obs.latencyMs);
-  if (entry.samples.length > MAX_SAMPLES) {
-    entry.samples.splice(0, entry.samples.length - MAX_SAMPLES);
-  }
-  entry.lastObservedAt = Date.now();
+  const result = compare(window.push(key, obs.latencyMs));
 
-  const result = compare(entry);
-  if (result.drifting) {
-    if (!entry.alerted) {
-      entry.alerted = true;
-      engineeringEventBus.emit({
-        type: 'alert.latency_drift',
-        timestamp: Date.now(),
-        source: 'latency-drift',
-        payload: {
-          providerId: entry.providerId,
-          modelId: entry.modelId,
-          baselineP95Ms: result.baseline ?? 0,
-          recentP95Ms: result.recent ?? 0,
-          ratio: result.ratio,
-          baselineSamples: result.baselineSamples,
-          windowSize,
-        },
-      });
-    }
-  } else {
-    entry.alerted = false;
+  if (window.shouldAlert(key, result.drifting)) {
+    engineeringEventBus.emit({
+      type: 'alert.latency_drift',
+      timestamp: Date.now(),
+      source: 'latency-drift',
+      payload: {
+        providerId: obs.providerId,
+        modelId: obs.modelId,
+        baselineP95Ms: result.baseline ?? 0,
+        recentP95Ms: result.recent ?? 0,
+        ratio: result.ratio,
+        baselineSamples: result.baselineSamples,
+        windowSize,
+      },
+    });
   }
 }
 
 export function getLatencyDriftReport(): LatencyDriftEntry[] {
   const report: LatencyDriftEntry[] = [];
-  for (const entry of stats.values()) {
-    const result = compare(entry);
+  for (const [key, subject] of subjects) {
+    const result = compare(window.slices(key));
     report.push({
-      providerId: entry.providerId,
-      modelId: entry.modelId,
-      requests: entry.requests,
+      providerId: subject.providerId,
+      modelId: subject.modelId,
+      requests: window.requestCount(key),
       baselineP95Ms: result.baseline,
       recentP95Ms: result.recent,
       ratio: result.ratio,
       baselineSamples: result.baselineSamples,
       sufficientData: result.sufficientData,
       drifting: result.drifting,
-      lastObservedAt: entry.lastObservedAt,
+      lastObservedAt: window.lastObservedAt(key),
     });
   }
   return report.sort((a, b) => b.requests - a.requests);
@@ -184,8 +156,11 @@ export function startLatencyDrift(
 ): void {
   if (unsubscribe) return;
   windowSize = opts.windowSize ?? 20;
-  minBaselineSamples = opts.minBaselineSamples ?? 50;
   slowdownMultiplier = opts.slowdownMultiplier ?? 1.5;
+  window = new DetectorWindow<number>({
+    windowSize,
+    minBaselineSamples: opts.minBaselineSamples ?? 50,
+  });
 
   unsubscribe = engineeringEventBus.on('ai.provider.observation', (event) => {
     const p = event.payload as { providerId: string; modelId: string; latencyMs: number };
@@ -198,5 +173,6 @@ export function stopLatencyDrift(): void {
     unsubscribe();
     unsubscribe = null;
   }
-  stats.clear();
+  window.clear();
+  subjects.clear();
 }

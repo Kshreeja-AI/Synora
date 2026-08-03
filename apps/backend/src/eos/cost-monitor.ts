@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import { DetectorWindow, type WindowSlices } from './detector-window.js';
 import type { PricingBasis } from './media-pricing.js';
 
 /**
@@ -24,16 +25,9 @@ import type { PricingBasis } from './media-pricing.js';
  *    omitted, so a gap in coverage stays visible.
  */
 
-const MAX_SAMPLES = 500;
-
-interface CostStats {
+interface CostSubject {
   providerId: string;
   modelId: string;
-  /** Cost per request, oldest first. Only token-priced observations land here. */
-  samples: number[];
-  requests: number;
-  alerted: boolean;
-  lastObservedAt: number;
 }
 
 export interface CostReportEntry {
@@ -57,10 +51,11 @@ export interface CostReportEntry {
   lastObservedAt: number;
 }
 
-const stats = new Map<string, CostStats>();
+/** Windows and episode gating are shared; the comparison below is not. */
+let window = new DetectorWindow<number>({ windowSize: 10, minBaselineSamples: 20 });
+const subjects = new Map<string, CostSubject>();
 let unsubscribe: (() => void) | null = null;
 let windowSize = 10;
-let minBaselineSamples = 20;
 let riseMultiplier = 1.5;
 
 function mean(values: number[]): number {
@@ -77,26 +72,24 @@ interface Comparison {
   anomalous: boolean;
 }
 
-function compare(entry: CostStats): Comparison {
-  const baselineValues = entry.samples.slice(0, Math.max(0, entry.samples.length - windowSize));
-  const recentValues = entry.samples.slice(-windowSize);
-
-  const sufficientData =
-    baselineValues.length >= minBaselineSamples && recentValues.length >= windowSize;
-
-  if (!sufficientData) {
+/**
+ * THE COMPARISON, stated here rather than shared. Cost is unbounded, so a
+ * ratio is the meaningful measure — unlike a success rate, where it is not.
+ */
+function compare(slices: WindowSlices<number>): Comparison {
+  if (!slices.sufficientData) {
     return {
       baseline: null,
       recent: null,
       ratio: null,
-      baselineSamples: baselineValues.length,
+      baselineSamples: slices.baselineSamples,
       sufficientData: false,
       anomalous: false,
     };
   }
 
-  const baseline = mean(baselineValues);
-  const recent = mean(recentValues);
+  const baseline = mean(slices.baseline);
+  const recent = mean(slices.recent);
 
   // A zero baseline has no meaningful multiple. Cost appearing where there
   // was none is still worth raising — a free tier ending looks exactly like
@@ -104,7 +97,14 @@ function compare(entry: CostStats): Comparison {
   const ratio = baseline > 0 ? recent / baseline : null;
   const anomalous = baseline > 0 ? recent >= baseline * riseMultiplier : recent > 0;
 
-  return { baseline, recent, ratio, baselineSamples: baselineValues.length, sufficientData, anomalous };
+  return {
+    baseline,
+    recent,
+    ratio,
+    baselineSamples: slices.baselineSamples,
+    sufficientData: true,
+    anomalous,
+  };
 }
 
 export function recordCostObservation(obs: {
@@ -121,67 +121,45 @@ export function recordCostObservation(obs: {
   if (!obs.tokenPriced && !obs.pricingBasis) return;
 
   const key = `${obs.providerId}:${obs.modelId}`;
-  let entry = stats.get(key);
-  if (!entry) {
-    entry = {
-      providerId: obs.providerId,
-      modelId: obs.modelId,
-      samples: [],
-      requests: 0,
-      alerted: false,
-      lastObservedAt: 0,
-    };
-    stats.set(key, entry);
-  }
+  subjects.set(key, { providerId: obs.providerId, modelId: obs.modelId });
 
-  entry.requests += 1;
-  entry.samples.push(obs.costCents);
-  if (entry.samples.length > MAX_SAMPLES) {
-    entry.samples.splice(0, entry.samples.length - MAX_SAMPLES);
-  }
-  entry.lastObservedAt = Date.now();
+  const result = compare(window.push(key, obs.costCents));
 
-  const result = compare(entry);
-  if (result.anomalous) {
-    // Alert once per episode. Re-arming only after cost returns to normal
-    // keeps a sustained rise from producing an alert per request.
-    if (!entry.alerted) {
-      entry.alerted = true;
-      engineeringEventBus.emit({
-        type: 'alert.cost_anomaly',
-        timestamp: Date.now(),
-        source: 'cost-monitor',
-        payload: {
-          providerId: entry.providerId,
-          modelId: entry.modelId,
-          baselineCostCents: result.baseline ?? 0,
-          recentCostCents: result.recent ?? 0,
-          ratio: result.ratio,
-          baselineSamples: result.baselineSamples,
-          windowSize,
-        },
-      });
-    }
-  } else {
-    entry.alerted = false;
+  // Alert once per episode — the shared gate re-arms only after cost
+  // returns to normal, so a sustained rise does not alert per request.
+  if (window.shouldAlert(key, result.anomalous)) {
+    engineeringEventBus.emit({
+      type: 'alert.cost_anomaly',
+      timestamp: Date.now(),
+      source: 'cost-monitor',
+      payload: {
+        providerId: obs.providerId,
+        modelId: obs.modelId,
+        baselineCostCents: result.baseline ?? 0,
+        recentCostCents: result.recent ?? 0,
+        ratio: result.ratio,
+        baselineSamples: result.baselineSamples,
+        windowSize,
+      },
+    });
   }
 }
 
 export function getCostReport(): CostReportEntry[] {
   const report: CostReportEntry[] = [];
-  for (const entry of stats.values()) {
-    const result = compare(entry);
+  for (const [key, subject] of subjects) {
+    const result = compare(window.slices(key));
     report.push({
-      providerId: entry.providerId,
-      modelId: entry.modelId,
-      requests: entry.requests,
+      providerId: subject.providerId,
+      modelId: subject.modelId,
+      requests: window.requestCount(key),
       baselineCostCents: result.baseline,
       recentCostCents: result.recent,
       ratio: result.ratio,
       baselineSamples: result.baselineSamples,
       sufficientData: result.sufficientData,
       anomalous: result.anomalous,
-      lastObservedAt: entry.lastObservedAt,
+      lastObservedAt: window.lastObservedAt(key),
     });
   }
   return report.sort((a, b) => b.requests - a.requests);
@@ -192,8 +170,11 @@ export function startCostMonitor(
 ): void {
   if (unsubscribe) return;
   windowSize = opts.windowSize ?? 10;
-  minBaselineSamples = opts.minBaselineSamples ?? 20;
   riseMultiplier = opts.riseMultiplier ?? 1.5;
+  window = new DetectorWindow<number>({
+    windowSize,
+    minBaselineSamples: opts.minBaselineSamples ?? 20,
+  });
 
   unsubscribe = engineeringEventBus.on('ai.provider.observation', (event) => {
     const p = event.payload as {
@@ -212,5 +193,6 @@ export function stopCostMonitor(): void {
     unsubscribe();
     unsubscribe = null;
   }
-  stats.clear();
+  window.clear();
+  subjects.clear();
 }
