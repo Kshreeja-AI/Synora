@@ -1,10 +1,26 @@
 name: CI Pipeline
 
+# One full pipeline per change, not two. `claude/*` was previously in the
+# push list while pull_request covered the same commits, so every push to a
+# PR branch ran the entire 4-job pipeline twice — measured on 2026-08-03 as
+# paired duplicate runs on identical head SHAs. With ~288 commits pushed in
+# the week prior, the duplication roughly doubled Actions spend and drained
+# the organization's minutes. Feature branches get CI through their PR
+# (opened immediately in this workflow's development model); long-lived
+# branches keep push CI.
 on:
   push:
-    branches: [main, develop, SYNORA, claude/*]
+    branches: [main, develop, SYNORA]
   pull_request:
     branches: [main, develop, SYNORA]
+
+# Rapid consecutive pushes to a PR supersede each other: cancel the stale
+# run and spend the minutes on the newest commit, which is the only one a
+# merge decision will ever be made on. Push builds on long-lived branches
+# are never cancelled — each one is a state someone may deploy from.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
