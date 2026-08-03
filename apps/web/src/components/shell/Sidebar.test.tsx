@@ -120,4 +120,20 @@ describe('Sidebar', () => {
     expect(screen.getByRole('link', { name: /^billing$/i })).toBeDefined();
     expect(screen.getByRole('link', { name: /^developer$/i })).toBeDefined();
   });
+
+  it('links to the media studio', () => {
+    pathname = '/dashboard';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^studio$/i })).toHaveAttribute('href', '/studio');
+  });
+
+  it('keeps Studio active across its tab query strings', () => {
+    // The tab lives in the query string, so the pathname stays /studio.
+    pathname = '/studio';
+    render(<Sidebar open onNavigate={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /^studio$/i })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
 });

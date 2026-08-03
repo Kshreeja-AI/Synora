@@ -13,6 +13,7 @@ import {
   CreditCard,
   Code2,
   Shield,
+  Wand2,
 } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/conversations', label: 'Conversations', icon: MessageSquare },
   { href: '/search', label: 'Search', icon: Search },
+  { href: '/studio', label: 'Studio', icon: Wand2 },
   { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/tools', label: 'Tools', icon: Wrench },
