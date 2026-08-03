@@ -331,4 +331,106 @@ describe('VideoGenerationService', () => {
       });
     });
   });
+  describe('EOS instrumentation', () => {
+    it('records end-to-end latency, not the duration of the poll that observed completion', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+
+      // The request was made five minutes ago. The poll that finds it done
+      // takes milliseconds — recording that would report a five-minute
+      // generation as near-instant, making video look like the fastest
+      // capability in the platform.
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-1',
+        status: 'PROCESSING',
+        pollAttempts: 1,
+        duration: 6,
+        createdAt: fiveMinutesAgo,
+      } as never);
+
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({
+          status: 'succeeded',
+          videoUrl: 'https://provider.example/v.mp4',
+          width: 1280,
+          height: 720,
+          durationSeconds: 6,
+        }),
+        downloadVideo: vi.fn().mockResolvedValue(Buffer.from('bytes')),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example/v.mp4' }),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({ id: 'vid-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.pollAndFinalize('vid-1');
+
+        const matrix = getProviderMatrix();
+        expect(matrix).toHaveLength(1);
+        expect(matrix[0]).toMatchObject({
+          providerId: 'replicate',
+          modelId: 'minimax/video-01',
+          successRate: 1,
+        });
+        // Roughly five minutes, not milliseconds.
+        expect(matrix[0].p50LatencyMs).toBeGreaterThan(4 * 60 * 1000);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('records a provider failure with a distinct error code', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+
+      vi.mocked(prisma.generatedVideo.findUnique).mockResolvedValue({
+        id: 'vid-1',
+        userId: 'u-1',
+        model: 'replicate:minimax/video-01',
+        providerJobId: 'job-1',
+        status: 'PROCESSING',
+        pollAttempts: 1,
+        createdAt: new Date(Date.now() - 60_000),
+      } as never);
+
+      vi.mocked(resolveVideoProvider).mockResolvedValue({
+        id: 'replicate',
+        capabilities: ['video-generation'],
+        startGeneration: vi.fn(),
+        pollJob: vi.fn().mockResolvedValue({ status: 'failed' }),
+        downloadVideo: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedVideo.update).mockResolvedValue({ id: 'vid-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.pollAndFinalize('vid-1');
+
+        const matrix = getProviderMatrix();
+        expect(matrix[0].failures).toBe(1);
+        // A provider that reports failure and one that never responds are
+        // different problems, so they carry different codes.
+        expect(matrix[0].errorCodes.provider_failed).toBe(1);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+  });
 });

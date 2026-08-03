@@ -7,6 +7,22 @@ import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
 
 declareAiPath('video.generate');
 
+/**
+ * End-to-end duration for an asynchronous generation: request to terminal
+ * state. Timing the poll that happens to observe completion would report a
+ * multi-minute job as taking milliseconds.
+ *
+ * Returns 0 rather than throwing when the timestamp is missing. This runs
+ * inside pollAndFinalize, outside recordAiInteraction's own guard, so an
+ * unguarded throw here would fail video generation itself — observability
+ * must never be able to break the product.
+ */
+function elapsedSinceCreated(createdAt: Date | null | undefined): number {
+  if (!createdAt) return 0;
+  const started = createdAt.getTime();
+  return Number.isFinite(started) ? Date.now() - started : 0;
+}
+
 export interface GenerateVideoInput {
   userId: string;
   prompt: string;
@@ -119,7 +135,7 @@ export class VideoGenerationService {
           providerId: providerName || provider.id,
           modelId: modelName || 'unknown',
           success: false,
-          latencyMs: Date.now() - video.createdAt.getTime(),
+          latencyMs: elapsedSinceCreated(video.createdAt),
           errorCode: 'poll_timeout',
         });
         return await prisma.generatedVideo.update({
@@ -142,7 +158,7 @@ export class VideoGenerationService {
         providerId: providerName || provider.id,
         modelId: modelName || 'unknown',
         success: false,
-        latencyMs: Date.now() - video.createdAt.getTime(),
+        latencyMs: elapsedSinceCreated(video.createdAt),
         errorCode: 'provider_failed',
       });
 
@@ -170,7 +186,7 @@ export class VideoGenerationService {
         providerId: providerName || provider.id,
         modelId: modelName || 'unknown',
         success: true,
-        latencyMs: Date.now() - video.createdAt.getTime(),
+        latencyMs: elapsedSinceCreated(video.createdAt),
       });
 
       return await prisma.generatedVideo.update({
