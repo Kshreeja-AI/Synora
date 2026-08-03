@@ -9,6 +9,23 @@
  *
  * Every pattern is linear-time and anchored to bounded character classes
  * to avoid catastrophic backtracking on adversarial input.
+ *
+ * KNOWN LIMITS — read before relying on this as the only control.
+ *
+ * This recognises identifiers that have a *shape*. It cannot recognise
+ * sensitive information expressed as ordinary prose, and no amount of
+ * pattern-tuning will change that. It will not catch:
+ *
+ *   - postal addresses written naturally ("42 Green Lane, third floor")
+ *   - names, employers, job titles, or relationships
+ *   - dates of birth (deliberately omitted: a pattern broad enough to
+ *     catch them redacts every date, which destroys the usefulness of
+ *     captured text for almost no privacy gain)
+ *   - health, financial, or legal details described in words
+ *   - identifiers from schemes not listed above
+ *
+ * Treat it as one layer. Consent, access control, and retention limits
+ * are the other layers, and this does not replace them.
  */
 
 export interface RedactionRule {
@@ -50,6 +67,39 @@ export const defaultRedactionRules: RedactionRule[] = [
     name: 'ssn',
     pattern: /\b\d{3}-\d{2}-\d{4}\b/g,
     placeholder: '[REDACTED_SSN]',
+  },
+  {
+    // Indian PAN: five letters, four digits, one letter. Highly specific,
+    // so false positives are essentially impossible.
+    name: 'panIndia',
+    pattern: /\b[A-Z]{5}\d{4}[A-Z]\b/g,
+    placeholder: '[REDACTED_PAN]',
+  },
+  {
+    // Indian Aadhaar: 12 digits, conventionally grouped 4-4-4. Runs after
+    // the card rule, which requires 13+ digits, so the two cannot collide.
+    // A bare 12-digit number that is not an Aadhaar will also be redacted;
+    // that over-redaction is the intended trade.
+    name: 'aadhaarIndia',
+    pattern: /\b\d{4}[ -]?\d{4}[ -]?\d{4}\b/g,
+    placeholder: '[REDACTED_AADHAAR]',
+  },
+  {
+    // Indian passport: one letter followed by seven digits.
+    name: 'passportIndia',
+    pattern: /\b[A-PR-WY]\d{7}\b/g,
+    placeholder: '[REDACTED_PASSPORT]',
+  },
+  {
+    name: 'iban',
+    pattern: /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/g,
+    placeholder: '[REDACTED_IBAN]',
+  },
+  {
+    // UK National Insurance number.
+    name: 'ninUk',
+    pattern: /\b[A-CEGHJ-PR-TW-Z]{2}\d{6}[A-D]\b/g,
+    placeholder: '[REDACTED_NIN]',
   },
   {
     name: 'ipv4',

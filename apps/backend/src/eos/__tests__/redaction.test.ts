@@ -122,6 +122,39 @@ describe('redaction', () => {
     expect(result.text).not.toContain(mustNotRemain);
   });
 
+  it('redacts Indian PAN and Aadhaar', () => {
+    expect(redact('PAN ABCDE1234F').text).toContain('[REDACTED_PAN]');
+
+    for (const aadhaar of ['1234 5678 9012', '1234-5678-9012', '123456789012']) {
+      const result = redact(`aadhaar ${aadhaar}`);
+      expect(result.text, `failed on ${aadhaar}`).toContain('[REDACTED_AADHAAR]');
+      expect(result.text).not.toContain('5678');
+    }
+  });
+
+  it('redacts Indian passport, IBAN, and UK NIN', () => {
+    expect(redact('passport K1234567').text).toContain('[REDACTED_PASSPORT]');
+    expect(redact('iban GB33BUKB20201555555555').text).toContain('[REDACTED_IBAN]');
+    expect(redact('nin AB123456C').text).toContain('[REDACTED_NIN]');
+    // Q is not a permitted NIN prefix letter, so this correctly does not match.
+    expect(redact('nin QQ123456C').text).not.toContain('[REDACTED_NIN]');
+  });
+
+  it('does not let Aadhaar swallow longer card numbers', () => {
+    // The card rule requires 13+ digits and runs first, so a 16-digit card
+    // must still be labelled as a card rather than an Aadhaar.
+    const result = redact('card 4111111111111111');
+    expect(result.text).toContain('[REDACTED_CARD]');
+    expect(result.text).not.toContain('[REDACTED_AADHAAR]');
+  });
+
+  it('documented limits: prose PII is not caught', () => {
+    // Asserting the limitation rather than leaving it implied, so nobody
+    // mistakes this module for complete protection.
+    const prose = 'I live at 42 Green Lane, third floor, and work for Acme';
+    expect(redact(prose).redacted).toBe(false);
+  });
+
   it('handles long adversarial input without hanging', () => {
     const nasty = `${'1'.repeat(5000)} ${'a'.repeat(5000)}@`;
     const began = Date.now();
