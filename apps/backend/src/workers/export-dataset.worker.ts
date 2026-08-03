@@ -191,7 +191,13 @@ export async function processExportDataset(data: ExportDatasetJobData): Promise<
  * Two divergent redaction implementations is itself the hazard: whichever
  * is weaker silently defines the real protection, and nobody knows which.
  */
-function sanitizePII(text: string): string {
+/**
+ * Exported so the privacy audit can probe this path with real sensitive
+ * data rather than trusting that it calls the shared redactor. This path is
+ * exactly why the audit exists: it once carried its own weaker copy of the
+ * patterns, and seven of eight sensitive types leaked from it.
+ */
+export function sanitizePII(text: string): string {
   return redact(text).text
 }
 

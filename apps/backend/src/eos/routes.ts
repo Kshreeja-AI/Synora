@@ -19,6 +19,7 @@ import { getProviderMatrix } from './provider-observatory.js';
 import { getAiPathCoverage } from './instrumentation.js';
 import { getRuntimeCheck } from './runtime-check.js';
 import { getLaunchReadiness } from './launch-gates.js';
+import { auditPrivacyCoverage, measurePrivacyGate } from './privacy-coverage.js';
 import { listProposals, getProposal, decideProposal, type ProposalStatus } from './proposal-engine.js';
 
 const router: Router = Router();
@@ -150,6 +151,22 @@ router.get('/runtime-check', (_req: Request, res: Response) => {
 
 router.get('/launch-readiness', (_req: Request, res: Response) => {
   res.json(createApiResponse(getLaunchReadiness()));
+});
+
+router.get('/privacy-coverage', async (_req: Request, res: Response) => {
+  res.json(createApiResponse(await auditPrivacyCoverage()));
+});
+
+/** Runs the audit and records the result against the privacy launch gate. */
+router.post('/privacy-coverage/measure', async (_req: Request, res: Response) => {
+  const result = await measurePrivacyGate();
+  if (!result) {
+    res
+      .status(503)
+      .json(createApiError('NO_PATHS_DECLARED', 'No egress paths are declared, so there is nothing to measure.'));
+    return;
+  }
+  res.json(createApiResponse(result));
 });
 
 router.get('/proposals', (req: Request, res: Response) => {

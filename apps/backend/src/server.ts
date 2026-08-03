@@ -17,6 +17,7 @@ import { startCostMonitor } from './eos/cost-monitor.js';
 import { startLatencyDrift } from './eos/latency-drift.js';
 import { startProviderDegradation } from './eos/provider-degradation.js';
 import { startProposalEngine } from './eos/proposal-engine.js';
+import { registerEgressPaths } from './eos/egress-registry.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -46,6 +47,7 @@ async function bootstrap() {
   const { app, config } = await initializeApp();
   httpServer = await startServer(app, config);
   registerDependencyProbes();
+  registerEgressPaths();
   startErrorRateMonitor();
   startLatencyTracker();
   startMemoryCollector();

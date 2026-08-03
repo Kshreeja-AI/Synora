@@ -104,6 +104,16 @@ export {
 } from './case-capture.js';
 export { isCaptureActive } from './case-capture.js';
 export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
+export {
+  declareEgressPath,
+  auditPrivacyCoverage,
+  measurePrivacyGate,
+  listEgressPaths,
+  resetEgressPaths,
+  SENSITIVE_PROBE_INPUT,
+} from './privacy-coverage.js';
+export type { EgressPath, PathResult, PrivacyCoverageResult } from './privacy-coverage.js';
+export { registerEgressPaths } from './egress-registry.js';
 export { getRuntimeCheck, EXPECTED_SUBSCRIPTIONS } from './runtime-check.js';
 export {
   LAUNCH_GATES,

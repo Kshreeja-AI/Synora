@@ -84,6 +84,7 @@ describe('eos routes', () => {
       '/api/eos/coverage',
       '/api/eos/runtime-check',
       '/api/eos/launch-readiness',
+      '/api/eos/privacy-coverage',
       '/api/eos/evaluation/datasets',
       '/api/eos/evaluation/graders',
       '/api/eos/evaluation/runs',
