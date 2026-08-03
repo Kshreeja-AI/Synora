@@ -302,6 +302,70 @@ export function buildLatencyDriftProposal(params: {
   };
 }
 
+/**
+ * Builds a proposal from a provider degradation. Read-only, like its
+ * siblings.
+ *
+ * The caveat that matters most here is that a failure is not necessarily
+ * the provider's fault — a malformed request we sent counts as a failure
+ * exactly the same way an outage does. The error codes travel with the
+ * proposal precisely so a reader can tell those apart.
+ */
+export function buildProviderDegradationProposal(params: {
+  providerId: string;
+  modelId: string;
+  baselineSuccessRate: number;
+  recentSuccessRate: number;
+  dropPercentagePoints: number;
+  baselineSamples: number;
+  windowSize: number;
+  errorCodes?: string[];
+}): Proposal {
+  const codes = params.errorCodes ?? [];
+
+  const caveats: string[] = [
+    'Correlation, not diagnosis: requests started failing, but this does not say whose fault it is.',
+    'A failure here counts the same whether the provider broke or we sent it something it could not accept — a malformed request looks identical to an outage in this measurement.',
+    'Retries may already be hiding this from customers, so a drop here does not necessarily mean anyone noticed.',
+  ];
+
+  if (codes.length === 0) {
+    caveats.push('No error codes were recorded with these failures, so the kind of failure is unknown.');
+  }
+
+  const id = `prop_${Date.now()}_${++counter}`;
+  return {
+    id,
+    createdAt: Date.now(),
+    trigger: 'provider-degradation',
+    title: `${params.providerId} / ${params.modelId} is failing more often`,
+    problem:
+      `Over the last ${params.windowSize} requests, the success rate fell to ` +
+      `${Math.round(params.recentSuccessRate * 100)}% against a historical ` +
+      `${Math.round(params.baselineSuccessRate * 100)}% — a drop of ` +
+      `${Math.round(params.dropPercentagePoints)} percentage points, measured against ` +
+      `${params.baselineSamples} earlier requests.`,
+    suggestedAction:
+      codes.length > 0
+        ? `Read the error codes first (${codes.join(', ')}): a rate limit, a timeout, and a rejected request each point somewhere different. Check the provider's status page, then whether anything changed in what we send. Confirm the cause before changing anything in production.`
+        : 'Check the provider’s status page, then whether anything changed in what we send. Confirm the cause before changing anything in production.',
+    caveats,
+    evidence: {
+      summary: `Reliability drop detected on ${params.providerId} / ${params.modelId}.`,
+      metrics: {
+        baselineSuccessRate: `${Math.round(params.baselineSuccessRate * 100)}%`,
+        recentSuccessRate: `${Math.round(params.recentSuccessRate * 100)}%`,
+        dropPercentagePoints: Math.round(params.dropPercentagePoints),
+        baselineSamples: params.baselineSamples,
+        windowSize: params.windowSize,
+        errorCodes: codes.length > 0 ? codes.join(', ') : 'none recorded',
+      },
+      affectedCaseIds: [],
+    },
+    status: 'pending',
+  };
+}
+
 function record(proposal: Proposal): void {
   proposals.set(proposal.id, proposal);
   if (proposals.size > maxProposals) {
@@ -375,6 +439,26 @@ export function startProposalEngine(opts: { captureDatasetId?: string; maxPropos
           windowSize: number;
         };
         record(buildLatencyDriftProposal(p));
+      } catch {
+        // One detector failing must never silence the others.
+      }
+    }),
+  );
+
+  unsubscribers.push(
+    engineeringEventBus.on('alert.provider_degradation', (event) => {
+      try {
+        const p = event.payload as {
+          providerId: string;
+          modelId: string;
+          baselineSuccessRate: number;
+          recentSuccessRate: number;
+          dropPercentagePoints: number;
+          baselineSamples: number;
+          windowSize: number;
+          errorCodes?: string[];
+        };
+        record(buildProviderDegradationProposal(p));
       } catch {
         // One detector failing must never silence the others.
       }

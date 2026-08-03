@@ -67,6 +67,11 @@ export const EXPECTED_SUBSCRIPTIONS: readonly ExpectedSubscription[] = [
     eventType: 'alert.latency_drift',
     consequenceIfMissing: 'Detected slowdowns raise an alert that nothing turns into a proposal.',
   },
+  {
+    component: 'proposal-engine (provider degradation)',
+    eventType: 'alert.provider_degradation',
+    consequenceIfMissing: 'Detected reliability drops raise an alert that nothing turns into a proposal.',
+  },
 ] as const;
 
 export interface RuntimeCheckEntry {

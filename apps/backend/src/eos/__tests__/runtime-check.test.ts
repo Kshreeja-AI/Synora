@@ -74,6 +74,7 @@ describe('runtime-check', () => {
       'proposal-engine (prompt regressions)',
       'proposal-engine (cost anomalies)',
       'proposal-engine (latency drift)',
+      'proposal-engine (provider degradation)',
     ]);
   });
 

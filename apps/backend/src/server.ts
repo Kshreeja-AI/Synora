@@ -15,6 +15,7 @@ import { startProviderObservatory } from './eos/provider-observatory.js';
 import { startPromptIntelligence } from './eos/prompt-intelligence.js';
 import { startCostMonitor } from './eos/cost-monitor.js';
 import { startLatencyDrift } from './eos/latency-drift.js';
+import { startProviderDegradation } from './eos/provider-degradation.js';
 import { startProposalEngine } from './eos/proposal-engine.js';
 
 /**
@@ -52,6 +53,7 @@ async function bootstrap() {
   startPromptIntelligence();
   startCostMonitor();
   startLatencyDrift();
+  startProviderDegradation();
   // Started last: the proposal engine listens for the alerts the detectors
   // above raise. Without it running, alerts fire into nothing and the
   // founder's proposals list stays permanently empty.

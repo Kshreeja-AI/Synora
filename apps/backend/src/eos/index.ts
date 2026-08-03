@@ -21,6 +21,13 @@ export {
   stopLatencyDrift,
 } from './latency-drift.js';
 export type { LatencyDriftEntry } from './latency-drift.js';
+export {
+  recordReliabilityObservation,
+  getDegradationReport,
+  startProviderDegradation,
+  stopProviderDegradation,
+} from './provider-degradation.js';
+export type { DegradationEntry } from './provider-degradation.js';
 export type { CostReportEntry } from './cost-monitor.js';
 export { InMemoryHistoryStore, FileHistoryStore } from './history-store.js';
 export type { EngineeringHistoryStore, EngineeringSnapshot, HistoryQuery } from './history-store.js';
@@ -109,6 +116,7 @@ export {
   attachDraft,
   buildCostAnomalyProposal,
   buildLatencyDriftProposal,
+  buildProviderDegradationProposal,
   buildPromptRegressionProposal,
   startProposalEngine,
   stopProposalEngine,

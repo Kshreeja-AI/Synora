@@ -187,6 +187,22 @@ export interface AlertLatencyDriftEvent extends EngineeringEvent {
   };
 }
 
+export interface AlertProviderDegradationEvent extends EngineeringEvent {
+  type: 'alert.provider_degradation';
+  payload: {
+    providerId: string;
+    modelId: string;
+    baselineSuccessRate: number;
+    recentSuccessRate: number;
+    /** Points, not a ratio — 100% to 98% is a 2-point drop, not 0.98x. */
+    dropPercentagePoints: number;
+    baselineSamples: number;
+    windowSize: number;
+    /** Distinct codes seen when the alert fired. */
+    errorCodes: string[];
+  };
+}
+
 export interface EngineeringSnapshotEvent extends EngineeringEvent {
   type: 'engineering.snapshot';
   payload: {
@@ -292,6 +308,7 @@ export type KnownEvent =
   | AlertPromptRegressionEvent
   | AlertCostAnomalyEvent
   | AlertLatencyDriftEvent
+  | AlertProviderDegradationEvent
   | EngineeringSnapshotEvent
   | EvaluationRunCompletedEvent
   | AiInteractionCompletedEvent
