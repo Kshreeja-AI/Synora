@@ -1,5 +1,6 @@
 'use client';
 
+import { Zap } from 'lucide-react';
 import { Card } from '@synora/design-system';
 import { useCreditBalance, useUsageSummary, useCreditLedger } from '../../../hooks/useBilling';
 import { EmptyState } from '@synora/design-system';
@@ -35,7 +36,7 @@ export default function UsagePage() {
       <EmptyState
         title="No usage data"
         description="You haven't used any credits yet"
-        icon="Zap"
+        icon={<Zap />}
       />
     );
   }

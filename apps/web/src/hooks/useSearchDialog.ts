@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 export function useSearchDialog() {
   const [isOpen, setIsOpen] = useState(false);
@@ -13,18 +13,10 @@ export function useSearchDialog() {
     setIsOpen(false);
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Cmd+K or Ctrl+K
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsOpen((prev) => !prev);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  // No ⌘K binding here on purpose: CommandPalette owns that shortcut
+  // globally. Binding it in both places opened the palette and this dialog
+  // on top of each other. The search dialog is opened from the Topbar
+  // search control (and any caller of `openDialog`).
 
   return {
     isOpen,

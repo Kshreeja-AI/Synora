@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
+import { Package } from 'lucide-react';
 import { Card, Badge } from '@synora/design-system';
 import { usePlans, useSubscription, useChangePlan } from '../../../hooks/useBilling';
 import { EmptyState } from '@synora/design-system';
@@ -30,7 +31,7 @@ export default function BillingPlansPage() {
       <EmptyState
         title="No plans available"
         description="Plans are not yet configured"
-        icon="Package"
+        icon={<Package />}
       />
     );
   }
