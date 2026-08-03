@@ -154,4 +154,116 @@ describe('ImageGenerationService', () => {
       status: 'FAILED',
     });
   });
+
+  describe('EOS instrumentation', () => {
+    it('reports a successful generation to the provider observatory', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      await fakeCreate({});
+
+      vi.mocked(resolveImageProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['image-generation'],
+        generateImages: vi.fn().mockResolvedValue(validImage),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/img-1.png' }),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedImage.update).mockResolvedValue({ id: 'img-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.generate({ userId: 'u-1', prompt: 'a corgi' });
+
+        const matrix = getProviderMatrix();
+        expect(matrix).toHaveLength(1);
+        expect(matrix[0]).toMatchObject({
+          providerId: 'openai',
+          modelId: 'gpt-image-1',
+          requests: 1,
+          successRate: 1,
+        });
+        // Image generation is not token-priced, so no fabricated cost is
+        // recorded — absence must not become a misleading zero.
+        expect(matrix[0].totalCostCents).toBe(0);
+        expect(matrix[0].totalInputTokens).toBe(0);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('reports a provider failure with its error code', async () => {
+      const { prisma } = await import('@synora/database');
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      await fakeCreate({});
+
+      vi.mocked(resolveImageProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['image-generation'],
+        generateImages: vi.fn().mockRejectedValue(new Error('rate limited')),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn(),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedImage.update).mockResolvedValue({ id: 'img-1' } as never);
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await expect(service.generate({ userId: 'u-1', prompt: 'x' })).rejects.toThrow();
+
+        const matrix = getProviderMatrix();
+        expect(matrix).toHaveLength(1);
+        expect(matrix[0].failures).toBe(1);
+        expect(matrix[0].successRate).toBe(0);
+        // The model is unknown on this path — the provider never reported
+        // which one it would have used, and guessing would fabricate data.
+        expect(matrix[0].modelId).toBe('unknown');
+        expect(matrix[0].errorCodes.Error).toBe(1);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('instrumentation failure never breaks image generation', async () => {
+      const { prisma } = await import('@synora/database');
+      const { engineeringEventBus } = await import('../../eos/event-bus');
+      await fakeCreate({});
+
+      vi.mocked(resolveImageProvider).mockResolvedValue({
+        id: 'openai',
+        capabilities: ['image-generation'],
+        generateImages: vi.fn().mockResolvedValue(validImage),
+      } as never);
+      vi.mocked(resolveStorageProvider).mockResolvedValue({
+        id: 'local',
+        upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/img-1.png' }),
+        delete: vi.fn(),
+      } as never);
+      vi.mocked(prisma.generatedImage.update).mockResolvedValue({
+        id: 'img-1',
+        status: 'COMPLETED',
+      } as never);
+
+      const unsub = engineeringEventBus.on('ai.provider.observation', () => {
+        throw new Error('observability exploded');
+      });
+      try {
+        // Observability must never be able to fail a customer request.
+        const result = await service.generate({ userId: 'u-1', prompt: 'a corgi' });
+        expect(result.status).toBe('COMPLETED');
+      } finally {
+        unsub();
+      }
+    });
+  });
 });
