@@ -6,6 +6,7 @@ import { sampleQueueDepths } from './queue-depth-collector.js';
 import { getErrorRateSnapshot } from './error-rate-monitor.js';
 import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
+import { getPromptReport } from './prompt-intelligence.js';
 import { getProviderMatrix } from './provider-observatory.js';
 
 const router: Router = Router();
@@ -62,6 +63,11 @@ router.get('/latency', (_req: Request, res: Response) => {
   const snapshot = getLatencySnapshot();
   const summaries = engineeringEventBus.recentByType('api.latency.summary', 20);
   res.json({ data: { current: snapshot, recentSummaries: summaries } });
+});
+
+router.get('/prompt-report', (_req: Request, res: Response) => {
+  const alerts = engineeringEventBus.recentByType('alert.prompt_regression', 20);
+  res.json({ data: { report: getPromptReport(), recentAlerts: alerts } });
 });
 
 export { router as eosRouter };

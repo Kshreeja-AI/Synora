@@ -113,6 +113,30 @@ export interface AiProviderObservationEvent extends EngineeringEvent {
   };
 }
 
+export interface PromptOutcomeEvent extends EngineeringEvent {
+  type: 'ai.prompt.outcome';
+  payload: {
+    promptId: string;
+    version?: number;
+    success: boolean;
+    latencyMs: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    costCents?: number;
+  };
+}
+
+export interface AlertPromptRegressionEvent extends EngineeringEvent {
+  type: 'alert.prompt_regression';
+  payload: {
+    promptId: string;
+    version: number;
+    overallSuccessRate: number;
+    recentSuccessRate: number;
+    windowSize: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -124,6 +148,8 @@ export type KnownEvent =
   | ProcessMemoryEvent
   | ApiLatencySummaryEvent
   | AiProviderObservationEvent
+  | PromptOutcomeEvent
+  | AlertPromptRegressionEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;
