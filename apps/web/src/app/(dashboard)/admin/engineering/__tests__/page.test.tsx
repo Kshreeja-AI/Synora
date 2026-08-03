@@ -51,7 +51,21 @@ beforeEach(() => {
   vi.mocked(eosApi.getCaptureStatus).mockResolvedValue(emptyCapture);
   vi.mocked(eosApi.getCoverage).mockResolvedValue([]);
   vi.mocked(eosApi.getProposals).mockResolvedValue([]);
+  vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [], recentAlerts: [] });
 });
+
+const costEntry = {
+  providerId: 'anthropic',
+  modelId: 'claude-x',
+  requests: 40,
+  baselineCostCents: 2,
+  recentCostCents: 6,
+  ratio: 3,
+  baselineSamples: 30,
+  sufficientData: true,
+  anomalous: true,
+  lastObservedAt: Date.now(),
+};
 
 describe('EngineeringDashboardPage', () => {
   it('states that measurements reset on restart', async () => {
@@ -204,6 +218,58 @@ describe('EngineeringDashboardPage', () => {
     expect(screen.getByText('20%')).toBeInTheDocument();
   });
 
+  it('flags a cost rise with the multiple it actually measured', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [costEntry], recentAlerts: [] });
+
+    renderPage();
+
+    expect(await screen.findByText(/risen 3.0×/i)).toBeInTheDocument();
+    expect(screen.getByText('2.0000¢')).toBeInTheDocument();
+    expect(screen.getByText('6.0000¢')).toBeInTheDocument();
+  });
+
+  it('distinguishes "not enough history" from "steady"', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({
+      report: [
+        {
+          ...costEntry,
+          baselineCostCents: null,
+          recentCostCents: null,
+          ratio: null,
+          baselineSamples: 4,
+          sufficientData: false,
+          anomalous: false,
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    // "steady" would be a claim of normality the platform has not earned.
+    expect(await screen.findByText(/not enough history yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('steady')).not.toBeInTheDocument();
+    // And an unestablished baseline must not render as a measured zero.
+    expect(screen.getAllByText('not established')).toHaveLength(2);
+    expect(screen.queryByText('0.0000¢')).not.toBeInTheDocument();
+  });
+
+  it('describes a rise from no recorded cost without inventing a multiple', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({
+      report: [{ ...costEntry, baselineCostCents: 0, ratio: null }],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/risen from no recorded cost/i)).toBeInTheDocument();
+  });
+
+  it('explains why image and audio never appear in the cost table', async () => {
+    renderPage();
+    expect(await screen.findByText(/unmeasured rather than zero/i)).toBeInTheDocument();
+  });
+
   it('reports capture as off rather than showing a misleading zero', async () => {
     renderPage();
     // "0 captured" would suggest capture is running and finding nothing.
@@ -232,6 +298,7 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getCaptureStatus).mockRejectedValue(boom);
     vi.mocked(eosApi.getCoverage).mockRejectedValue(boom);
     vi.mocked(eosApi.getProposals).mockRejectedValue(boom);
+    vi.mocked(eosApi.getCostReport).mockRejectedValue(boom);
 
     renderPage();
 

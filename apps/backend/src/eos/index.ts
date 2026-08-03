@@ -1,5 +1,5 @@
 export { engineeringEventBus } from './event-bus.js';
-export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, EngineeringSnapshotEvent, EvaluationRunCompletedEvent, AiInteractionCompletedEvent, EvaluationCaseCapturedEvent } from './event-bus.js';
+export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, AlertCostAnomalyEvent, EngineeringSnapshotEvent, EvaluationRunCompletedEvent, AiInteractionCompletedEvent, EvaluationCaseCapturedEvent } from './event-bus.js';
 export { attachWorkerCollector } from './worker-collector.js';
 export { eosApiCollector } from './api-collector.js';
 export { registerHealthProbe, startHealthCollector, stopHealthCollector } from './health-collector.js';
@@ -13,6 +13,8 @@ export { recordProviderObservation, getProviderMatrix, startProviderObservatory,
 export type { ProviderMatrixEntry } from './provider-observatory.js';
 export { recordPromptOutcome, getPromptReport, startPromptIntelligence, stopPromptIntelligence } from './prompt-intelligence.js';
 export type { PromptReportEntry } from './prompt-intelligence.js';
+export { recordCostObservation, getCostReport, startCostMonitor, stopCostMonitor } from './cost-monitor.js';
+export type { CostReportEntry } from './cost-monitor.js';
 export { InMemoryHistoryStore, FileHistoryStore } from './history-store.js';
 export type { EngineeringHistoryStore, EngineeringSnapshot, HistoryQuery } from './history-store.js';
 export {
@@ -72,6 +74,7 @@ export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture
 export { recordAiInteraction } from './instrumentation.js';
 export type { AiInteractionRecord } from './instrumentation.js';
 export {
+  buildCostAnomalyProposal,
   buildPromptRegressionProposal,
   startProposalEngine,
   stopProposalEngine,

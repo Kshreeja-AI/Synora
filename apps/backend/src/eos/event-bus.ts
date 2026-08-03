@@ -144,6 +144,26 @@ export interface AlertPromptRegressionEvent extends EngineeringEvent {
   };
 }
 
+export interface AlertCostAnomalyEvent extends EngineeringEvent {
+  type: 'alert.cost_anomaly';
+  payload: {
+    providerId: string;
+    modelId: string;
+    /** Mean cost per request over the established baseline period. */
+    baselineCostCents: number;
+    /** Mean cost per request over the recent window. */
+    recentCostCents: number;
+    /**
+     * recent ÷ baseline. Null when the baseline is zero — cost appearing
+     * where there was none is a real signal, but it is not a multiple of
+     * anything, and reporting it as a number would invent precision.
+     */
+    ratio: number | null;
+    baselineSamples: number;
+    windowSize: number;
+  };
+}
+
 export interface EngineeringSnapshotEvent extends EngineeringEvent {
   type: 'engineering.snapshot';
   payload: {
@@ -225,6 +245,7 @@ export type KnownEvent =
   | AiProviderObservationEvent
   | PromptOutcomeEvent
   | AlertPromptRegressionEvent
+  | AlertCostAnomalyEvent
   | EngineeringSnapshotEvent
   | EvaluationRunCompletedEvent
   | AiInteractionCompletedEvent

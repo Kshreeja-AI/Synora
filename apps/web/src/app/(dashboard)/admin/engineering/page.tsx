@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, Boxes, Cpu, Database, Gauge, Inbox, ShieldCheck } from 'lucide-react';
 import {
   getCaptureStatus,
+  getCostReport,
   getErrorRate,
   getEventStats,
   getLatency,
@@ -86,6 +87,16 @@ function formatCost(entry: ProviderMatrixEntry): string {
   return `$${(entry.totalCostCents / 100).toFixed(4)}`;
 }
 
+/**
+ * Null means the figure was never established, which is a different
+ * statement from a measured cost of zero. Rendering it as "0.0000¢" would
+ * assert a measurement that was never taken.
+ */
+function formatCostPerRequest(cents: number | null): string {
+  if (cents === null) return 'not established';
+  return `${cents.toFixed(4)}¢`;
+}
+
 export default function EngineeringDashboardPage() {
   const latency = useQuery({ queryKey: ['eos', 'latency'], queryFn: getLatency, refetchInterval: REFRESH_MS });
   const errorRate = useQuery({ queryKey: ['eos', 'errorRate'], queryFn: getErrorRate, refetchInterval: REFRESH_MS });
@@ -101,6 +112,8 @@ export default function EngineeringDashboardPage() {
     queryFn: () => getProposals(),
     refetchInterval: REFRESH_MS,
   });
+
+  const cost = useQuery({ queryKey: ['eos', 'cost'], queryFn: getCostReport, refetchInterval: REFRESH_MS });
 
   const regressing = prompts.data?.report.filter((p) => p.regressing) ?? [];
   const awaitingDecision = proposals.data?.filter((p) => p.status === 'pending').length ?? 0;
@@ -264,6 +277,63 @@ export default function EngineeringDashboardPage() {
                         <span className="text-xs font-medium text-amber-500">regressing</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">stable</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Cost per request"
+        description="Each model is compared only against its own history. There is no table of expected prices anywhere in the platform."
+      >
+        {cost.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !cost.data?.report.length ? (
+          <EmptyHint>
+            No token-priced traffic recorded yet. Image and audio generation report no cost data at
+            all, so they never appear here — their spend is unmeasured rather than zero.
+          </EmptyHint>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-2 pr-4 font-medium">Provider / model</th>
+                  <th className="pb-2 pr-4 font-medium">Requests</th>
+                  <th className="pb-2 pr-4 font-medium">Baseline</th>
+                  <th className="pb-2 pr-4 font-medium">Recent</th>
+                  <th className="pb-2 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cost.data.report.map((entry) => (
+                  <tr key={`${entry.providerId}:${entry.modelId}`} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <span className="font-medium">{entry.providerId}</span>
+                      <span className="text-muted-foreground"> / {entry.modelId}</span>
+                    </td>
+                    <td className="py-2 pr-4">{entry.requests}</td>
+                    <td className="py-2 pr-4">{formatCostPerRequest(entry.baselineCostCents)}</td>
+                    <td className="py-2 pr-4">{formatCostPerRequest(entry.recentCostCents)}</td>
+                    <td className="py-2">
+                      {!entry.sufficientData ? (
+                        // Deliberately distinct from "steady": no claim has
+                        // been made yet, which is not the same as a claim of
+                        // normality.
+                        <span className="text-xs text-muted-foreground">
+                          not enough history yet ({entry.baselineSamples} baseline samples)
+                        </span>
+                      ) : entry.anomalous ? (
+                        <span className="text-xs font-medium text-amber-500">
+                          risen{entry.ratio !== null ? ` ${entry.ratio.toFixed(1)}×` : ' from no recorded cost'}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">steady</span>
                       )}
                     </td>
                   </tr>

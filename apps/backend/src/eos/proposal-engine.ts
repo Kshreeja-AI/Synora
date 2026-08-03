@@ -52,7 +52,8 @@ export interface Proposal {
 }
 
 const proposals = new Map<string, Proposal>();
-let unsubscribe: (() => void) | null = null;
+/** One unsubscribe per detector the engine listens to. */
+let unsubscribers: Array<() => void> = [];
 let maxProposals = 200;
 let counter = 0;
 
@@ -130,6 +131,87 @@ export function buildPromptRegressionProposal(params: {
   };
 }
 
+/**
+ * Builds a proposal from a cost anomaly. Read-only, like its sibling above.
+ *
+ * The hardest thing to state honestly here is that a rise in cost per
+ * request is frequently correct behaviour — longer conversations cost more.
+ * The caveats say so, because a proposal that treats every rise as a defect
+ * would train the reader to dismiss all of them.
+ */
+export function buildCostAnomalyProposal(params: {
+  providerId: string;
+  modelId: string;
+  baselineCostCents: number;
+  recentCostCents: number;
+  ratio: number | null;
+  baselineSamples: number;
+  windowSize: number;
+}): Proposal {
+  const matrixEntry = getProviderMatrix().find(
+    (p) => p.providerId === params.providerId && p.modelId === params.modelId,
+  );
+
+  const caveats: string[] = [
+    'Correlation, not diagnosis: cost per request rose, but this does not say why.',
+    'A rise can be entirely legitimate — longer inputs, longer outputs, or a deliberate switch to a more capable model all raise cost per request without anything being wrong.',
+  ];
+
+  if (params.ratio === null) {
+    caveats.push(
+      'There was no recorded cost before this window, so there is no baseline to multiply. This is a change from nothing to something, not a measured multiple.',
+    );
+  }
+  if (matrixEntry && matrixEntry.successRate < 1) {
+    caveats.push(
+      `This model is also failing ${Math.round((1 - matrixEntry.successRate) * 100)}% of its requests; retries after failures inflate cost per request without any pricing change.`,
+    );
+  }
+  caveats.push(
+    'Only token-priced capabilities are covered. Image and audio generation report no cost data at all, so their spend is not measured here and would not appear as an anomaly.',
+  );
+
+  const describedChange =
+    params.ratio === null
+      ? `rose from no recorded cost to ${params.recentCostCents.toFixed(4)} cents per request`
+      : `rose ${params.ratio.toFixed(1)}× — from ${params.baselineCostCents.toFixed(4)} to ` +
+        `${params.recentCostCents.toFixed(4)} cents per request`;
+
+  const id = `prop_${Date.now()}_${++counter}`;
+  return {
+    id,
+    createdAt: Date.now(),
+    trigger: 'cost-anomaly',
+    title: `Cost per request on ${params.providerId} / ${params.modelId} has risen`,
+    problem:
+      `Over the last ${params.windowSize} requests, cost per request ${describedChange}, ` +
+      `measured against a baseline of ${params.baselineSamples} earlier requests.`,
+    suggestedAction:
+      'Compare the recent requests’ input and output token counts against the baseline period. ' +
+      'If the sizes are unchanged, the price or the model selection changed underneath you — check ' +
+      'the provider’s pricing and which model the router actually chose. Confirm the cause before ' +
+      'changing anything in production.',
+    caveats,
+    evidence: {
+      summary: `Cost anomaly detected on ${params.providerId} / ${params.modelId}.`,
+      metrics: {
+        baselineCostCentsPerRequest: params.baselineCostCents.toFixed(4),
+        recentCostCentsPerRequest: params.recentCostCents.toFixed(4),
+        // A ratio of null means "not computable", and must not display as 0.
+        ratio: params.ratio === null ? 'not computable (baseline was zero)' : `${params.ratio.toFixed(2)}×`,
+        baselineSamples: params.baselineSamples,
+        windowSize: params.windowSize,
+        totalRequests: matrixEntry?.requests ?? 0,
+        totalSpendCents: matrixEntry?.totalCostCents ?? 0,
+      },
+      // Cost is measured per request, not per captured case. Claiming case
+      // evidence here would be inventing a link that was never recorded.
+      affectedCaseIds: [],
+    },
+    status: 'pending',
+  };
+}
+
 function record(proposal: Proposal): void {
   proposals.set(proposal.id, proposal);
   if (proposals.size > maxProposals) {
@@ -151,30 +233,49 @@ function record(proposal: Proposal): void {
 }
 
 export function startProposalEngine(opts: { captureDatasetId?: string; maxProposals?: number } = {}): void {
-  if (unsubscribe) return;
+  if (unsubscribers.length > 0) return;
   maxProposals = opts.maxProposals ?? 200;
 
-  unsubscribe = engineeringEventBus.on('alert.prompt_regression', (event) => {
-    try {
-      const p = event.payload as {
-        promptId: string;
-        version: number;
-        overallSuccessRate: number;
-        recentSuccessRate: number;
-        windowSize: number;
-      };
-      record(buildPromptRegressionProposal({ ...p, captureDatasetId: opts.captureDatasetId }));
-    } catch {
-      // Proposal generation must never destabilise the event bus.
-    }
-  });
+  unsubscribers.push(
+    engineeringEventBus.on('alert.prompt_regression', (event) => {
+      try {
+        const p = event.payload as {
+          promptId: string;
+          version: number;
+          overallSuccessRate: number;
+          recentSuccessRate: number;
+          windowSize: number;
+        };
+        record(buildPromptRegressionProposal({ ...p, captureDatasetId: opts.captureDatasetId }));
+      } catch {
+        // Proposal generation must never destabilise the event bus.
+      }
+    }),
+  );
+
+  unsubscribers.push(
+    engineeringEventBus.on('alert.cost_anomaly', (event) => {
+      try {
+        const p = event.payload as {
+          providerId: string;
+          modelId: string;
+          baselineCostCents: number;
+          recentCostCents: number;
+          ratio: number | null;
+          baselineSamples: number;
+          windowSize: number;
+        };
+        record(buildCostAnomalyProposal(p));
+      } catch {
+        // One detector failing must never silence the others.
+      }
+    }),
+  );
 }
 
 export function stopProposalEngine(): void {
-  if (unsubscribe) {
-    unsubscribe();
-    unsubscribe = null;
-  }
+  for (const unsubscribe of unsubscribers) unsubscribe();
+  unsubscribers = [];
   proposals.clear();
   counter = 0;
 }

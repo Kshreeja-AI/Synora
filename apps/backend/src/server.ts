@@ -12,6 +12,9 @@ import { startErrorRateMonitor } from './eos/error-rate-monitor.js';
 import { startLatencyTracker } from './eos/latency-tracker.js';
 import { startMemoryCollector } from './eos/memory-collector.js';
 import { startProviderObservatory } from './eos/provider-observatory.js';
+import { startPromptIntelligence } from './eos/prompt-intelligence.js';
+import { startCostMonitor } from './eos/cost-monitor.js';
+import { startProposalEngine } from './eos/proposal-engine.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -45,6 +48,12 @@ async function bootstrap() {
   startLatencyTracker();
   startMemoryCollector();
   startProviderObservatory();
+  startPromptIntelligence();
+  startCostMonitor();
+  // Started last: the proposal engine listens for the alerts the detectors
+  // above raise. Without it running, alerts fire into nothing and the
+  // founder's proposals list stays permanently empty.
+  startProposalEngine();
   emitBootComplete();
 }
 

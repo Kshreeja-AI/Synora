@@ -8,6 +8,7 @@ import { getErrorRateSnapshot } from './error-rate-monitor.js';
 import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
 import { getPromptReport } from './prompt-intelligence.js';
+import { getCostReport } from './cost-monitor.js';
 import { captureSnapshot, queryHistory, getHistoryStore } from './history-recorder.js';
 import { listDatasets, summarizeDataset, getCases } from './evaluation-datasets.js';
 import { listGraders } from './evaluation-graders.js';
@@ -75,6 +76,11 @@ router.get('/latency', (_req: Request, res: Response) => {
 router.get('/prompt-report', (_req: Request, res: Response) => {
   const alerts = engineeringEventBus.recentByType('alert.prompt_regression', 20);
   res.json(createApiResponse({ report: getPromptReport(), recentAlerts: alerts }));
+});
+
+router.get('/cost-report', (_req: Request, res: Response) => {
+  const alerts = engineeringEventBus.recentByType('alert.cost_anomaly', 20);
+  res.json(createApiResponse({ report: getCostReport(), recentAlerts: alerts }));
 });
 
 router.get('/history', async (_req: Request, res: Response) => {

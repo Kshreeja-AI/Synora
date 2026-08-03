@@ -144,6 +144,28 @@ export function getCoverage(): Promise<AiPathCoverage[]> {
   return api.get('/api/eos/coverage');
 }
 
+export interface CostReportEntry {
+  providerId: string;
+  modelId: string;
+  requests: number;
+  /** Null means no baseline was ever established — not a baseline of zero. */
+  baselineCostCents: number | null;
+  recentCostCents: number | null;
+  /** Null when the baseline was zero, which makes a multiple undefined. */
+  ratio: number | null;
+  baselineSamples: number;
+  sufficientData: boolean;
+  anomalous: boolean;
+  lastObservedAt: number;
+}
+
+export function getCostReport(): Promise<{
+  report: CostReportEntry[];
+  recentAlerts: EngineeringEvent[];
+}> {
+  return api.get('/api/eos/cost-report');
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ProposalEvidence {
