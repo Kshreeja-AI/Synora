@@ -196,6 +196,22 @@ export interface EvaluationCaseCapturedEvent extends EngineeringEvent {
   };
 }
 
+export interface ProposalCreatedEvent extends EngineeringEvent {
+  type: 'proposal.created';
+  payload: {
+    proposalId: string;
+    trigger: string;
+    title: string;
+    affectedCases: number;
+    caveats: number;
+  };
+}
+
+export interface ProposalDecidedEvent extends EngineeringEvent {
+  type: 'proposal.decided';
+  payload: { proposalId: string; decision: 'approved' | 'rejected'; hasNote: boolean };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -213,6 +229,8 @@ export type KnownEvent =
   | EvaluationRunCompletedEvent
   | AiInteractionCompletedEvent
   | EvaluationCaseCapturedEvent
+  | ProposalCreatedEvent
+  | ProposalDecidedEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

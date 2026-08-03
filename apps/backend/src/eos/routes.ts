@@ -14,6 +14,7 @@ import { listGraders } from './evaluation-graders.js';
 import { getCaptureStats } from './case-capture.js';
 import { getProviderMatrix } from './provider-observatory.js';
 import { getAiPathCoverage } from './instrumentation.js';
+import { listProposals, getProposal, decideProposal, type ProposalStatus } from './proposal-engine.js';
 
 const router: Router = Router();
 
@@ -121,6 +122,38 @@ router.get('/evaluation/capture', (_req: Request, res: Response) => {
 
 router.get('/coverage', (_req: Request, res: Response) => {
   res.json(createApiResponse(getAiPathCoverage()));
+});
+
+router.get('/proposals', (req: Request, res: Response) => {
+  const status = req.query.status as ProposalStatus | undefined;
+  res.json(createApiResponse(listProposals(status)));
+});
+
+router.get('/proposals/:id', (req: Request, res: Response) => {
+  const proposal = getProposal(req.params.id);
+  if (!proposal) {
+    res.status(404).json({ error: 'Proposal not found' });
+    return;
+  }
+  res.json(createApiResponse(proposal));
+});
+
+/**
+ * Records a founder decision. Approving does not execute the suggested
+ * action — there is no execution path in the proposal engine at all.
+ */
+router.post('/proposals/:id/decide', (req: Request, res: Response) => {
+  const { decision, note } = req.body ?? {};
+  if (decision !== 'approved' && decision !== 'rejected') {
+    res.status(400).json({ error: "decision must be 'approved' or 'rejected'" });
+    return;
+  }
+  const proposal = decideProposal(req.params.id, decision, typeof note === 'string' ? note : undefined);
+  if (!proposal) {
+    res.status(404).json({ error: 'Proposal not found' });
+    return;
+  }
+  res.json(createApiResponse(proposal));
 });
 
 export { router as eosRouter };

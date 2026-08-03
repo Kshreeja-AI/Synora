@@ -71,4 +71,13 @@ export { isCaptureActive } from './case-capture.js';
 export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
 export { recordAiInteraction } from './instrumentation.js';
 export type { AiInteractionRecord } from './instrumentation.js';
+export {
+  buildPromptRegressionProposal,
+  startProposalEngine,
+  stopProposalEngine,
+  listProposals,
+  getProposal,
+  decideProposal,
+} from './proposal-engine.js';
+export type { Proposal, ProposalStatus, ProposalEvidence } from './proposal-engine.js';
 export { eosRouter } from './routes.js';
