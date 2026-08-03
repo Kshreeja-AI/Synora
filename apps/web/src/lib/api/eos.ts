@@ -37,6 +37,10 @@ export interface ProviderMatrixEntry {
   errorCodes: Record<string, number>;
   /** Recorded by the backend, not inferred from a zero cost. */
   tokenPriced: boolean;
+  /** How this model is billed. Absent means the caller never said. */
+  pricingBasis?: 'token' | 'per-image' | 'per-character' | 'per-second';
+  /** 'stated' means the figure came from a published price table, not the provider. */
+  costProvenance?: 'observed' | 'stated';
   lastObservedAt: number;
 }
 

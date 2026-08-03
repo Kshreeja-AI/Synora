@@ -199,6 +199,61 @@ describe('EngineeringDashboardPage', () => {
     expect(screen.queryByText('not token-priced')).not.toBeInTheDocument();
   });
 
+  it('labels a media cost with its basis and marks it as stated', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'openai',
+        modelId: 'gpt-image-1',
+        requests: 4,
+        successes: 4,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 900,
+        p95LatencyMs: 1500,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 16,
+        errorCodes: {},
+        tokenPriced: false,
+        pricingBasis: 'per-image',
+        costProvenance: 'stated',
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    // The figure is real, but it came from a published rate card rather
+    // than from the provider's response, and must not read as measured.
+    expect(await screen.findByText('$0.1600 (per-image, stated)')).toBeInTheDocument();
+    expect(screen.queryByText('not token-priced')).not.toBeInTheDocument();
+  });
+
+  it('still shows "not token-priced" for media with no published price', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'openai',
+        modelId: 'gpt-image-1',
+        requests: 4,
+        successes: 4,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 900,
+        p95LatencyMs: 1500,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 0,
+        errorCodes: {},
+        tokenPriced: false,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('not token-priced')).toBeInTheDocument();
+  });
+
   it('explains that the matrix is empty rather than rendering a bare table', async () => {
     renderPage();
     expect(await screen.findByText(/No provider traffic recorded yet/i)).toBeInTheDocument();

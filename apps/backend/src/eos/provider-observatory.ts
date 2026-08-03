@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import type { PricingBasis } from './media-pricing.js';
 
 const MAX_LATENCY_SAMPLES = 1000;
 
@@ -14,6 +15,8 @@ interface ProviderStats {
   totalCostCents: number;
   errorCodes: Record<string, number>;
   tokenPriced: boolean;
+  pricingBasis?: PricingBasis;
+  costProvenance?: 'observed' | 'stated';
   lastObservedAt: number;
 }
 
@@ -37,6 +40,17 @@ export interface ProviderMatrixEntry {
    * is not token-priced at all.
    */
   tokenPriced: boolean;
+  /**
+   * How this model is billed. Absent means the caller never said, which is
+   * distinct from knowing it is token-priced.
+   */
+  pricingBasis?: PricingBasis;
+  /**
+   * 'stated' means the cost came from a published price table rather than
+   * from the provider's response. Kept separate so a table-derived figure
+   * is never mistaken for a measured one.
+   */
+  costProvenance?: 'observed' | 'stated';
   lastObservedAt: number;
 }
 
@@ -59,6 +73,8 @@ export function recordProviderObservation(obs: {
   success: boolean;
   errorCode?: string;
   tokenPriced?: boolean;
+  pricingBasis?: PricingBasis;
+  costProvenance?: 'observed' | 'stated';
 }): void {
   const key = `${obs.providerId}:${obs.modelId}`;
   let entry = stats.get(key);
@@ -97,6 +113,8 @@ export function recordProviderObservation(obs: {
   entry.totalOutputTokens += obs.outputTokens;
   entry.totalCostCents += obs.costCents;
   if (obs.tokenPriced) entry.tokenPriced = true;
+  if (obs.pricingBasis) entry.pricingBasis = obs.pricingBasis;
+  if (obs.costProvenance) entry.costProvenance = obs.costProvenance;
   entry.lastObservedAt = Date.now();
 }
 
@@ -118,6 +136,8 @@ export function getProviderMatrix(): ProviderMatrixEntry[] {
       totalCostCents: entry.totalCostCents,
       errorCodes: { ...entry.errorCodes },
       tokenPriced: entry.tokenPriced,
+      pricingBasis: entry.pricingBasis,
+      costProvenance: entry.costProvenance,
       lastObservedAt: entry.lastObservedAt,
     });
   }
@@ -137,6 +157,8 @@ export function startProviderObservatory(): void {
       success: boolean;
       errorCode?: string;
       tokenPriced?: boolean;
+      pricingBasis?: PricingBasis;
+      costProvenance?: 'observed' | 'stated';
     };
     recordProviderObservation(p);
   });

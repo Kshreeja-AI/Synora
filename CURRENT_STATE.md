@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (24):**
+**Components (25):**
 
 | Component | Role |
 |---|---|
@@ -257,6 +257,7 @@ and subscribe from it. Each component is separately replaceable.
 | `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture; also tracks AI-path coverage |
 | `draft-generator` | Drafts a candidate prompt revision from captured failures and measures it against the prompt in use via the evaluation runner. Drafter and executors are injected; without them it produces nothing and names the missing capability rather than guessing. Writes and measures text only — no export could apply a draft |
 | `runtime-check` | Verifies each subscriber-based component is actually attached, by reading listener counts off the event bus rather than trusting a self-report. Names the timer-driven components it cannot see |
+| `media-pricing` | Published per-image/per-character/per-second prices, each dated with its source. The one permitted table of expectations, because media providers report no cost to observe. Ships empty; an unlisted model yields no price rather than a guessed one, and derived costs stay marked `stated` rather than `observed` |
 | `cost-monitor` | CIEP: cost per request per provider/model against that model's own baseline; emits `alert.cost_anomaly`. Only token-priced observations are tracked, so unpriced capabilities can never produce a false anomaly |
 | `proposal-engine` | Turns a detected regression or cost anomaly into a reviewable proposal (problem, evidence, caveats, suggested action). Has no `apply()` — approval records a decision and executes nothing |
 

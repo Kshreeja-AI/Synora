@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import type { PricingBasis } from './media-pricing.js';
 
 /**
  * The single integration point between product code and EOS/CIEP.
@@ -82,6 +83,19 @@ export interface AiInteractionRecord {
   inputTokens?: number;
   outputTokens?: number;
   costCents?: number;
+  /**
+   * How this call is billed. Supply it whenever the cost is not per token —
+   * otherwise a per-image cost would be inferred as token pricing, and the
+   * matrix would report a false basis with a perfectly real number.
+   */
+  pricingBasis?: PricingBasis;
+  /**
+   * Where `costCents` came from: 'observed' means the provider reported it,
+   * 'stated' means it was derived from a published price table. A stated
+   * figure is a claim about a published rate, not a measurement, and the
+   * two must not become indistinguishable downstream.
+   */
+  costProvenance?: 'observed' | 'stated';
   errorCode?: string;
   /**
    * Interaction text. Only supply when the user has consented to
@@ -124,10 +138,16 @@ export function recordAiInteraction(record: AiInteractionRecord): void {
         costCents: record.costCents ?? 0,
         success: record.success,
         errorCode: record.errorCode,
-        tokenPriced:
-          record.inputTokens !== undefined ||
-          record.outputTokens !== undefined ||
-          record.costCents !== undefined,
+        // An explicit basis always wins. Without this, an image call that
+        // now supplies a per-image cost would be inferred as token-priced —
+        // a false basis attached to a perfectly real number.
+        tokenPriced: record.pricingBasis
+          ? record.pricingBasis === 'token'
+          : record.inputTokens !== undefined ||
+            record.outputTokens !== undefined ||
+            record.costCents !== undefined,
+        pricingBasis: record.pricingBasis,
+        costProvenance: record.costProvenance,
       },
     }),
   );

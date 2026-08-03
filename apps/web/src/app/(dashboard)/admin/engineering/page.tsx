@@ -84,6 +84,15 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
  * nothing would have been labelled "not token-priced".
  */
 function formatCost(entry: ProviderMatrixEntry): string {
+  // Media capabilities are priced from a published table rather than by the
+  // provider's response, so the figure is labelled "stated" — a claim about
+  // a rate card, not a measurement.
+  if (entry.pricingBasis && entry.pricingBasis !== 'token') {
+    const amount = `$${(entry.totalCostCents / 100).toFixed(4)}`;
+    return entry.costProvenance === 'stated'
+      ? `${amount} (${entry.pricingBasis}, stated)`
+      : `${amount} (${entry.pricingBasis})`;
+  }
   if (!entry.tokenPriced) return 'not token-priced';
   return `$${(entry.totalCostCents / 100).toFixed(4)}`;
 }

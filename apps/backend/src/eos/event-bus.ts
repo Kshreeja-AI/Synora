@@ -117,6 +117,14 @@ export interface AiProviderObservationEvent extends EngineeringEvent {
      * distinguishable from a capability that is not token-priced.
      */
     tokenPriced: boolean;
+    /** How the call is billed. Absent means the caller did not say. */
+    pricingBasis?: 'token' | 'per-image' | 'per-character' | 'per-second';
+    /**
+     * Whether `costCents` was reported by the provider ('observed') or
+     * derived from a published price table ('stated'). A stated figure is a
+     * claim about a published rate, not a measurement.
+     */
+    costProvenance?: 'observed' | 'stated';
   };
 }
 

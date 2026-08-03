@@ -1,4 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
+import type { PricingBasis } from './media-pricing.js';
 
 /**
  * Watches cost per request per provider and model, and raises an alert when
@@ -12,10 +13,11 @@ import { engineeringEventBus } from './event-bus.js';
  *    is wrong the moment a provider changes its pricing and silently
  *    misleading until someone notices.
  *
- * 2. Only token-priced observations are tracked at all. A capability that
- *    reports no cost fields is excluded structurally rather than treated as
- *    costing zero — otherwise image generation would establish a baseline
- *    of nothing and every real price would look like an anomaly.
+ * 2. Only observations with a known pricing basis are tracked at all. A
+ *    capability that reports no cost fields is excluded structurally rather
+ *    than treated as costing zero — otherwise image generation would
+ *    establish a baseline of nothing and every real price would look like
+ *    an anomaly. Media work joins once a published price exists for it.
  *
  * 3. Nothing is claimed without enough data. Below the sample minimums the
  *    model appears in the report marked as insufficient, rather than being
@@ -110,10 +112,13 @@ export function recordCostObservation(obs: {
   modelId: string;
   costCents: number;
   tokenPriced?: boolean;
+  pricingBasis?: PricingBasis;
 }): void {
-  // Structural exclusion: a capability that never reports cost never gets a
-  // baseline, so it can never produce a cost anomaly.
-  if (!obs.tokenPriced) return;
+  // Structural exclusion: a capability with no known pricing basis never
+  // gets a baseline, so it can never produce a cost anomaly. Image and
+  // audio work now qualifies once a published price is on record — before
+  // that, it is still excluded rather than treated as free.
+  if (!obs.tokenPriced && !obs.pricingBasis) return;
 
   const key = `${obs.providerId}:${obs.modelId}`;
   let entry = stats.get(key);
@@ -196,6 +201,7 @@ export function startCostMonitor(
       modelId: string;
       costCents: number;
       tokenPriced?: boolean;
+      pricingBasis?: PricingBasis;
     };
     recordCostObservation(p);
   });
