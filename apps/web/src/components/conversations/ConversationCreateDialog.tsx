@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Zap, Sparkles } from 'lucide-react';
 import { PromptSelector } from './PromptSelector';
+import { ModelPicker, type ModelPickerValue } from '@/components/chat/ModelPicker';
 import { Button } from '@synora/design-system';
 import { toast } from 'sonner';
 
@@ -10,8 +11,12 @@ interface ConversationCreateDialogProps {
   isOpen: boolean;
   workspaceId: string;
   isLoading?: boolean;
+  /** Starting provider/model for the picker on the blank tab. The picker
+   *  writes back through onCreateBasic so the caller stays authoritative
+   *  about what to persist. */
+  defaultModel?: ModelPickerValue;
   onClose: () => void;
-  onCreateBasic: (title: string) => Promise<void>;
+  onCreateBasic: (title: string, model: ModelPickerValue) => Promise<void>;
   onCreateWithTemplate?: (template: { title: string; systemPrompt: string }) => Promise<void>;
   onCreateWithPrompt?: (prompt: { name: string; content: string }) => Promise<void>;
 }
@@ -20,6 +25,7 @@ export function ConversationCreateDialog({
   isOpen,
   workspaceId,
   isLoading = false,
+  defaultModel = { provider: 'anthropic', model: 'claude-sonnet-5' },
   onClose,
   onCreateBasic,
   onCreateWithTemplate,
@@ -27,6 +33,7 @@ export function ConversationCreateDialog({
 }: ConversationCreateDialogProps) {
   const [tab, setTab] = useState<'blank' | 'template' | 'prompt'>('blank');
   const [title, setTitle] = useState('');
+  const [model, setModel] = useState<ModelPickerValue>(defaultModel);
 
   if (!isOpen) return null;
 
@@ -36,7 +43,7 @@ export function ConversationCreateDialog({
       return;
     }
     try {
-      await onCreateBasic(title);
+      await onCreateBasic(title, model);
       setTitle('');
       onClose();
     } catch {
@@ -138,8 +145,14 @@ export function ConversationCreateDialog({
                   disabled={isLoading}
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
+                  Model
+                </label>
+                <ModelPicker value={model} onChange={setModel} disabled={isLoading} />
+              </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Start a new conversation with a custom title
+                Start a new conversation. You can change the model any time later.
               </p>
             </div>
           )}

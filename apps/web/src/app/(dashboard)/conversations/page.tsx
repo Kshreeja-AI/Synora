@@ -40,11 +40,16 @@ export default function ConversationsPage() {
   const refreshList = () =>
     queryClient.invalidateQueries({ queryKey: ['conversations', workspaceId] });
 
-  const handleCreateConversation = async (title: string) => {
+  const handleCreateConversation = async (
+    title: string,
+    model: { provider: string; model: string }
+  ) => {
+    // The picker is now the source of truth for provider/model — the
+    // DEFAULT_* constants stay only as the picker's initial value.
     const conversation = await createMutation.mutateAsync({
       title,
-      provider: DEFAULT_PROVIDER,
-      model: DEFAULT_MODEL,
+      provider: model.provider,
+      model: model.model,
     });
 
     if (conversation?.id) {
