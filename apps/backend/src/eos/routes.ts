@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { engineeringEventBus } from './event-bus.js';
 import { runHealthProbes } from './health-collector.js';
+import { sampleQueueDepths } from './queue-depth-collector.js';
 
 const router: Router = Router();
 
@@ -28,6 +29,12 @@ router.post('/health/check', async (_req: Request, res: Response) => {
 
 router.get('/boot', (_req: Request, res: Response) => {
   const events = engineeringEventBus.recentByType('server.boot', 10);
+  res.json({ data: events });
+});
+
+router.post('/queue-depth', async (_req: Request, res: Response) => {
+  await sampleQueueDepths();
+  const events = engineeringEventBus.recentByType('queue.depth', 50);
   res.json({ data: events });
 });
 

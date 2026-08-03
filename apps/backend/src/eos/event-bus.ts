@@ -57,12 +57,24 @@ export interface BootEvent extends EngineeringEvent {
   };
 }
 
+export interface QueueDepthEvent extends EngineeringEvent {
+  type: 'queue.depth';
+  payload: {
+    queue: string;
+    waiting: number;
+    active: number;
+    delayed: number;
+    depth: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
   | ApiRequestEvent
   | HealthCheckEvent
   | BootEvent
+  | QueueDepthEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;
