@@ -4,6 +4,7 @@ import { resolveTextToSpeechProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+import { priceMediaUsage } from '../eos/media-pricing';
 
 declareAiPath('audio.generate');
 
@@ -65,14 +66,25 @@ export class AudioGenerationService {
         contentType: result.mimeType,
       });
 
-      // Speech synthesis is priced per character, not per token, so no
-      // token or cost figures are reported rather than fabricated zeroes.
+      // Speech synthesis is billed per character of input text — the one
+      // unit available here, since the response reports neither cost nor
+      // duration. With no published rate on record, nothing is reported
+      // rather than a zero that would misread as "free".
+      const priced = priceMediaUsage({
+        providerId: result.provider,
+        modelId: result.model,
+        units: input.text.length,
+      });
+
       recordAiInteraction({
         promptId: 'audio.generate',
         providerId: result.provider,
         modelId: result.model,
         success: true,
         latencyMs: Date.now() - startedAt,
+        costCents: priced?.costCents,
+        pricingBasis: priced?.basis,
+        costProvenance: priced?.provenance,
       });
 
       return await prisma.generatedAudio.update({

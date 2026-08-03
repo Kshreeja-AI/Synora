@@ -267,3 +267,113 @@ describe('ImageGenerationService', () => {
     });
   });
 });
+
+/**
+ * Cost reporting for a capability the provider never prices.
+ *
+ * An image comes back as an image — no cost figure attached. So the only
+ * honest options are a published per-image rate or nothing at all. These
+ * assert both, and that the resulting figure is never mistaken for token
+ * pricing, which is what the old inference would have done the moment a
+ * cost appeared here.
+ */
+describe('ImageGenerationService cost reporting', () => {
+  let service: ImageGenerationService;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { resetMediaPrices } = await import('../../eos/media-pricing');
+    const { stopProviderObservatory } = await import('../../eos/provider-observatory');
+    resetMediaPrices();
+    stopProviderObservatory();
+    service = new ImageGenerationService();
+  });
+
+  async function runGeneration() {
+    const { prisma } = await import('@synora/database');
+    await fakeCreate({});
+    vi.mocked(resolveImageProvider).mockResolvedValue({
+      id: 'openai',
+      capabilities: ['image-generation'],
+      generateImages: vi.fn().mockResolvedValue(validImage),
+    } as never);
+    vi.mocked(resolveStorageProvider).mockResolvedValue({
+      id: 'local',
+      upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/i.png' }),
+      delete: vi.fn(),
+    } as never);
+    vi.mocked(prisma.generatedImage.update).mockResolvedValue({ id: 'img-1' } as never);
+    await service.generate({ userId: 'u-1', prompt: 'a cat' });
+  }
+
+  it('reports no cost at all when no published rate is on record', async () => {
+    const { startProviderObservatory, getProviderMatrix } = await import('../../eos/provider-observatory');
+    startProviderObservatory();
+
+    await runGeneration();
+
+    const entry = getProviderMatrix()[0];
+    expect(entry.totalCostCents).toBe(0);
+    // Absent basis, not a cost of zero — the distinction the whole cost
+    // layer is built around.
+    expect(entry.pricingBasis).toBeUndefined();
+    expect(entry.tokenPriced).toBe(false);
+  });
+
+  it('prices per image once a rate exists, and never as token pricing', async () => {
+    const { startProviderObservatory, getProviderMatrix } = await import('../../eos/provider-observatory');
+    const { registerMediaPrice } = await import('../../eos/media-pricing');
+    startProviderObservatory();
+    registerMediaPrice({
+      providerId: 'openai',
+      modelId: 'gpt-image-1',
+      basis: 'per-image',
+      centsPerUnit: 4,
+      statedOn: '2026-08-01',
+      source: 'test rate card',
+    });
+
+    await runGeneration();
+
+    const entry = getProviderMatrix()[0];
+    expect(entry.totalCostCents).toBe(4);
+    expect(entry.pricingBasis).toBe('per-image');
+    expect(entry.costProvenance).toBe('stated');
+    expect(entry.tokenPriced).toBe(false);
+  });
+
+  it('reports no cost on a failed generation', async () => {
+    const { prisma } = await import('@synora/database');
+    const { startProviderObservatory, getProviderMatrix } = await import('../../eos/provider-observatory');
+    const { registerMediaPrice } = await import('../../eos/media-pricing');
+    startProviderObservatory();
+    registerMediaPrice({
+      providerId: 'openai',
+      modelId: 'gpt-image-1',
+      basis: 'per-image',
+      centsPerUnit: 4,
+      statedOn: '2026-08-01',
+      source: 'test rate card',
+    });
+
+    await fakeCreate({});
+    vi.mocked(resolveImageProvider).mockResolvedValue({
+      id: 'openai',
+      capabilities: ['image-generation'],
+      generateImages: vi.fn().mockRejectedValue(new Error('quota exceeded')),
+    } as never);
+    vi.mocked(resolveStorageProvider).mockResolvedValue({
+      id: 'local',
+      upload: vi.fn(),
+      delete: vi.fn(),
+    } as never);
+    vi.mocked(prisma.generatedImage.update).mockResolvedValue({ id: 'img-1' } as never);
+
+    await expect(service.generate({ userId: 'u-1', prompt: 'a cat' })).rejects.toThrow();
+
+    // No image was produced, so no per-image charge is claimed — even
+    // though a rate exists and the model is known.
+    const entry = getProviderMatrix()[0];
+    expect(entry.totalCostCents).toBe(0);
+  });
+});

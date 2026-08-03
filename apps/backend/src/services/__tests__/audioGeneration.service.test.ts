@@ -272,3 +272,77 @@ describe('AudioGenerationService', () => {
     });
   });
 });
+
+/**
+ * Cost reporting for a capability the provider never prices.
+ *
+ * Speech synthesis is billed per character and the response carries no cost
+ * figure, so the only honest options are a published rate or nothing at
+ * all. These assert the platform takes exactly those two options and never
+ * the third — a zero, which would read as "free".
+ */
+describe('AudioGenerationService cost reporting', () => {
+  let service: AudioGenerationService;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { resetMediaPrices } = await import('../../eos/media-pricing');
+    const { stopProviderObservatory } = await import('../../eos/provider-observatory');
+    resetMediaPrices();
+    stopProviderObservatory();
+    service = new AudioGenerationService();
+  });
+
+  async function runSynthesis(text: string) {
+    const { prisma } = await import('@synora/database');
+    await fakeCreate({});
+    vi.mocked(resolveTextToSpeechProvider).mockResolvedValue({
+      id: 'openai',
+      capabilities: ['text-to-speech'],
+      synthesize: vi.fn().mockResolvedValue(validSpeech),
+    } as never);
+    vi.mocked(resolveStorageProvider).mockResolvedValue({
+      id: 'local',
+      upload: vi.fn().mockResolvedValue({ key: 'k', url: 'https://cdn.example.com/a.mp3' }),
+      delete: vi.fn(),
+    } as never);
+    vi.mocked(prisma.generatedAudio.update).mockResolvedValue({ id: 'aud-1' } as never);
+    await service.generate({ userId: 'u-1', text });
+  }
+
+  it('reports no cost at all when no published rate is on record', async () => {
+    const { startProviderObservatory, getProviderMatrix } = await import('../../eos/provider-observatory');
+    startProviderObservatory();
+
+    await runSynthesis('Hello world');
+
+    const entry = getProviderMatrix()[0];
+    expect(entry.tokenPriced).toBe(false);
+    // Absent, not zero: nobody has told us what a character costs.
+    expect(entry.pricingBasis).toBeUndefined();
+    expect(entry.costProvenance).toBeUndefined();
+  });
+
+  it('prices per character of input once a rate exists, marked as stated', async () => {
+    const { startProviderObservatory, getProviderMatrix } = await import('../../eos/provider-observatory');
+    const { registerMediaPrice } = await import('../../eos/media-pricing');
+    startProviderObservatory();
+    registerMediaPrice({
+      providerId: 'openai',
+      modelId: 'tts-1',
+      basis: 'per-character',
+      centsPerUnit: 0.01,
+      statedOn: '2026-08-01',
+      source: 'test rate card',
+    });
+
+    await runSynthesis('Hello world'); // 11 characters
+
+    const entry = getProviderMatrix()[0];
+    expect(entry.totalCostCents).toBeCloseTo(0.11, 5);
+    expect(entry.pricingBasis).toBe('per-character');
+    // The figure is real but came from a rate card, not the provider.
+    expect(entry.costProvenance).toBe('stated');
+    expect(entry.tokenPriced).toBe(false);
+  });
+});

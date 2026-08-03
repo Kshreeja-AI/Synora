@@ -4,6 +4,7 @@ import { resolveImageProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+import { priceMediaUsage } from '../eos/media-pricing';
 
 declareAiPath('image.generate');
 
@@ -67,14 +68,25 @@ export class ImageGenerationService {
         contentType: image.mimeType,
       });
 
-      // Token and cost are omitted deliberately: image generation is not
-      // priced per token, so reporting zeroes would misread as "free".
+      // Image generation is billed per image, not per token. The provider
+      // reports no cost, so the figure comes from a published price if one
+      // is on record. `priced` being null means no rate is recorded, and in
+      // that case nothing is reported — a zero would misread as "free".
+      const priced = priceMediaUsage({
+        providerId: result.provider,
+        modelId: result.model,
+        units: result.images.length,
+      });
+
       recordAiInteraction({
         promptId: 'image.generate',
         providerId: result.provider,
         modelId: result.model,
         success: true,
         latencyMs: Date.now() - startedAt,
+        costCents: priced?.costCents,
+        pricingBasis: priced?.basis,
+        costProvenance: priced?.provenance,
       });
 
       return await prisma.generatedImage.update({
