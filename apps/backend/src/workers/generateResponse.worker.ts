@@ -8,6 +8,7 @@ import { logger } from '../utils/logger';
 import { getStreamingResolver } from '../ai/streaming/resolver';
 import { StreamingAccumulator, TokenAccountant } from '../ai/streaming/accumulator';
 import { StreamingRetryEngine, StreamingJobStatus } from '../ai/streaming/statemachine';
+import { conversationContextService } from '../services/conversationContext.service';
 import { Redis } from 'ioredis';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
@@ -22,13 +23,60 @@ export interface GenerateResponseJob {
   model: string;
 }
 
+/**
+ * Retrieval-augmented generation: fetch the memories relevant to this
+ * conversation and return them as the system instruction for the provider
+ * call, or `undefined` when there is nothing relevant to add.
+ *
+ * The result must be passed as `systemPrompt`, never as a 'system' entry in
+ * `messages` — see ai/shared.ts, where system-role turns are dropped because
+ * each provider's wire format allows exactly one system instruction. Injecting
+ * retrieved context into the message history would silently no-op.
+ *
+ * Fail-open by design: memory is an enhancement, so a retrieval outage (the
+ * embedding provider being unreachable, the vector store being down) degrades
+ * to an unaugmented reply rather than costing the user their message.
+ */
+export async function buildAugmentedSystemPrompt(params: {
+  jobId: string;
+  conversationId: string;
+  userId: string;
+  workspaceId: string;
+}): Promise<string | undefined> {
+  const { jobId, conversationId, userId, workspaceId } = params;
+  try {
+    const context = await conversationContextService.buildContext({
+      conversationId,
+      userId,
+      workspaceId,
+    });
+
+    logger.debug('[Worker] Context built', {
+      jobId,
+      memoriesInContext: context.metadata.memoriesInContext,
+      contextTokens: context.metadata.tokensUsed,
+    });
+
+    // With no relevant memories the prompt carries no retrieved knowledge, so
+    // sending it would only spend tokens restating the conversation title.
+    return context.relevantMemories.length > 0 ? context.systemPrompt : undefined;
+  } catch (err: unknown) {
+    logger.warn('[Worker] Memory retrieval failed; generating without it', {
+      jobId,
+      conversationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
 export function createGenerateResponseWorker() {
   const retryEngine = new StreamingRetryEngine();
   const resolver = getStreamingResolver();
 
   const worker = new Worker<GenerateResponseJob>('generate_response', async (bullJob) => {
     const jobData: GenerateResponseJob = bullJob.data;
-    const { jobId, conversationId, messageId, userId: _userId, provider, model } = jobData;
+    const { jobId, conversationId, messageId, userId, provider, model } = jobData;
 
     logger.info('[Worker] Processing job', { jobId, conversationId, messageId });
 
@@ -63,6 +111,25 @@ export function createGenerateResponseWorker() {
               role: m.role as 'user' | 'assistant' | 'system',
               content: m.content
             }));
+
+          // Retrieval-augmented context: pull the memories relevant to this
+          // conversation and pass them as the system instruction.
+          //
+          // This must go through `systemPrompt`, not a 'system' entry in
+          // `messages` — see ai/shared.ts, where system-role turns are dropped
+          // because each provider's wire format allows exactly one system
+          // instruction. Injecting it into the history would silently no-op.
+          //
+          // Fail-open by design: memory is an enhancement, so a retrieval
+          // outage (embedding provider down, vector store unreachable) must
+          // degrade to an unaugmented reply rather than cost the user their
+          // message.
+          const systemPrompt = await buildAugmentedSystemPrompt({
+            jobId,
+            conversationId,
+            userId,
+            workspaceId: conversation.workspaceId,
+          });
 
           // Get provider
           const providerInstance = await resolver.resolve(provider);
@@ -102,6 +169,7 @@ export function createGenerateResponseWorker() {
           for await (const chunk of providerInstance.generateStream({
             messages: messageHistory,
             model,
+            systemPrompt,
             maxTokens: 2048,
             abortSignal: abortController.signal
           })) {
