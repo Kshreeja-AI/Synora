@@ -6,6 +6,7 @@ import { initializeApp } from './index';
 import { AppConfig } from './config';
 import { realtimeService } from './services/realtime.service';
 import { initObservability, shutdownObservability } from './monitoring';
+import { markBootStart, emitBootComplete } from './eos/boot-collector.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -27,12 +28,14 @@ async function startServer(app: Express, config: AppConfig): Promise<Server> {
 let httpServer: Server | undefined;
 
 async function bootstrap() {
+  markBootStart();
   // Before the app: Sentry must exist before the first request can error,
   // and the tracer provider must be registered before spans are created.
   // Both are credential-gated no-ops when unconfigured.
   initObservability();
   const { app, config } = await initializeApp();
   httpServer = await startServer(app, config);
+  emitBootComplete();
 }
 
 async function shutdown(signal: string): Promise<void> {

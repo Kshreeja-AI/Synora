@@ -26,4 +26,9 @@ router.post('/health/check', async (_req: Request, res: Response) => {
   res.json({ data: events });
 });
 
+router.get('/boot', (_req: Request, res: Response) => {
+  const events = engineeringEventBus.recentByType('server.boot', 10);
+  res.json({ data: events });
+});
+
 export { router as eosRouter };

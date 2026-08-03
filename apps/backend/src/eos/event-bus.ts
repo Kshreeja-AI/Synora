@@ -47,11 +47,22 @@ export interface HealthCheckEvent extends EngineeringEvent {
   };
 }
 
+export interface BootEvent extends EngineeringEvent {
+  type: 'server.boot';
+  payload: {
+    durationMs: number;
+    nodeVersion: string;
+    pid: number;
+    memoryMb: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
   | ApiRequestEvent
   | HealthCheckEvent
+  | BootEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;
