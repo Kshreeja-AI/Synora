@@ -1,6 +1,6 @@
 import { engineeringEventBus } from './event-bus.js';
 import { addCase, createDataset, getDataset } from './evaluation-datasets.js';
-import { redact, type RedactionRule } from './redaction.js';
+import { redact, type RedactionRule, type RedactionResult } from './redaction.js';
 import type { GraderSpec } from './evaluation-graders.js';
 
 /**
@@ -92,6 +92,71 @@ export function shouldCapture(interaction: Interaction, cfg: CaptureConfig = con
   return { capture: false, reason: 'not-of-interest' };
 }
 
+export interface CapturedCase {
+  input: string;
+  actualOutput: string;
+  tags: string[];
+  note?: string;
+  redactions: {
+    input: RedactionResult;
+    output: RedactionResult;
+    note: RedactionResult | null;
+  };
+}
+
+/**
+ * The exact transformation applied to an interaction before anything is
+ * stored — pure, so the privacy audit can probe the real capture path
+ * without starting capture or writing into a dataset.
+ *
+ * EVERY FIELD IS REDACTED, NOT JUST INPUT AND OUTPUT. An earlier version
+ * redacted input and output and stored `note` and caller-supplied tags
+ * verbatim — "user keshav@synora.ai complained" in a note would have been
+ * written down raw. The fields that feel like metadata are still free text
+ * from a caller, and free text is where sensitive values live.
+ */
+export function buildCapturedCase(
+  interaction: Interaction,
+  reason: string,
+  cfg: CaptureConfig = config,
+): CapturedCase {
+  const redactedInput = redact(interaction.input, cfg.redactionRules);
+  const redactedOutput = redact(interaction.output, cfg.redactionRules);
+  const redactedNote =
+    interaction.note !== undefined ? redact(interaction.note, cfg.redactionRules) : null;
+
+  return {
+    input: redactedInput.text,
+    // The observed output, not a reference answer. A captured failure has
+    // no known-good answer — inventing one would be worse than having
+    // none — and storing the bad output as `expected` would invert every
+    // grader that compares against it.
+    actualOutput: redactedOutput.text,
+    // Caller tags first, then the derived ones. `reason` is one of our own
+    // enum strings and `promptId` is a system-assigned identifier, so only
+    // the caller-supplied portion carries redaction risk.
+    tags: [
+      ...(interaction.tags ?? []).map((tag) => redact(tag, cfg.redactionRules).text),
+      `reason:${reason}`,
+      `prompt:${interaction.promptId}`,
+    ],
+    note: redactedNote?.text,
+    redactions: { input: redactedInput, output: redactedOutput, note: redactedNote },
+  };
+}
+
+/** Rule name → total substitutions across all redacted fields, summed rather than overwritten. */
+function mergeRedactionCounts(results: (RedactionResult | null)[]): Record<string, number> {
+  const merged: Record<string, number> = {};
+  for (const result of results) {
+    if (!result) continue;
+    for (const [rule, count] of Object.entries(result.counts)) {
+      merged[rule] = (merged[rule] ?? 0) + count;
+    }
+  }
+  return merged;
+}
+
 /**
  * Applies the policy and, if the interaction qualifies, redacts it and
  * stores it as a `real`-origin case. Never throws: capture failing must
@@ -113,23 +178,18 @@ export function captureInteraction(interaction: Interaction): { captured: boolea
       return { captured: false, reason: 'dataset-full' };
     }
 
-    const redactedInput = redact(interaction.input, config.redactionRules);
-    const redactedOutput = redact(interaction.output, config.redactionRules);
+    const built = buildCapturedCase(interaction, decision.reason);
 
     const caseId = `cap_${interaction.promptId}_${Date.now()}_${captured}`;
     addCase(config.datasetId, {
       id: caseId,
-      input: redactedInput.text,
-      // The observed output, not a reference answer. A captured failure has
-      // no known-good answer — inventing one would be worse than having
-      // none — and storing the bad output as `expected` would invert every
-      // grader that compares against it.
-      actualOutput: redactedOutput.text,
+      input: built.input,
+      actualOutput: built.actualOutput,
       graders: config.defaultGraders,
       // Captured from genuine traffic, so this is unambiguously real.
       origin: 'real',
-      tags: [...(interaction.tags ?? []), `reason:${decision.reason}`, `prompt:${interaction.promptId}`],
-      note: interaction.note,
+      tags: built.tags,
+      note: built.note,
     });
 
     captured += 1;
@@ -142,9 +202,13 @@ export function captureInteraction(interaction: Interaction): { captured: boolea
         datasetId: config.datasetId,
         promptId: interaction.promptId,
         reason: decision.reason,
-        redactedInput: redactedInput.redacted,
-        redactedOutput: redactedOutput.redacted,
-        redactionCounts: { ...redactedInput.counts, ...redactedOutput.counts },
+        redactedInput: built.redactions.input.redacted,
+        redactedOutput: built.redactions.output.redacted,
+        redactionCounts: mergeRedactionCounts([
+          built.redactions.input,
+          built.redactions.output,
+          built.redactions.note,
+        ]),
       },
     });
 

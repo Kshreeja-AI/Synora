@@ -117,8 +117,8 @@ export {
   getCaptureStats,
   setSampler,
 } from './case-capture.js';
-export { isCaptureActive } from './case-capture.js';
-export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
+export { isCaptureActive, buildCapturedCase } from './case-capture.js';
+export type { CaptureConfig, Interaction, CaptureDecision, CapturedCase } from './case-capture.js';
 export {
   declareEgressPath,
   auditPrivacyCoverage,

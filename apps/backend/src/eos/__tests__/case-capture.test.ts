@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { engineeringEventBus } from '../event-bus';
 import {
+  buildCapturedCase,
   captureInteraction,
   getCaptureStats,
   setSampler,
@@ -9,7 +10,7 @@ import {
   stopCaseCapture,
   type Interaction,
 } from '../case-capture';
-import { getCases, getDataset, resetDatasets } from '../evaluation-datasets';
+import { getCases, getDataset, listDatasets, resetDatasets } from '../evaluation-datasets';
 
 function interaction(overrides: Partial<Interaction> = {}): Interaction {
   return {
@@ -95,6 +96,52 @@ describe('case-capture', () => {
     expect(stored.actualOutput).not.toContain('4111111111111111');
   });
 
+  it('redacts the note before storing it', () => {
+    // The note field leaked before the privacy probe existed: input and
+    // output were redacted while "metadata" was stored verbatim. A note is
+    // caller-supplied free text and free text is where sensitive values live.
+    startCaseCapture({ datasetId: 'ds' });
+    captureInteraction(
+      interaction({ success: false, note: 'user keshav@synora.ai complained about this' }),
+    );
+
+    const stored = getCases('ds')[0];
+    expect(stored.note).toContain('[REDACTED_EMAIL]');
+    expect(stored.note).not.toContain('keshav@synora.ai');
+  });
+
+  it('redacts caller-supplied tags while keeping the derived ones intact', () => {
+    startCaseCapture({ datasetId: 'ds' });
+    captureInteraction(
+      interaction({ success: false, tags: ['reported-by:a@b.com', 'billing'] }),
+    );
+
+    const stored = getCases('ds')[0];
+    expect(stored.tags).toContain('reported-by:[REDACTED_EMAIL]');
+    expect(stored.tags).toContain('billing');
+    expect(stored.tags).toContain('reason:failure');
+    expect(stored.tags).toContain('prompt:summarize');
+    expect(stored.tags.join(' ')).not.toContain('a@b.com');
+  });
+
+  it('buildCapturedCase transforms without storing anything', () => {
+    // Purity is what makes the capture path probeable by the privacy audit:
+    // the audit can run the real transformation mid-flight without starting
+    // capture or writing a probe case into a live dataset.
+    const before = listDatasets().length;
+
+    const built = buildCapturedCase(
+      interaction({ input: 'mail a@b.com', output: 'card 4111111111111111', note: 'ip 10.0.0.1' }),
+      'probe',
+    );
+
+    expect(built.input).toContain('[REDACTED_EMAIL]');
+    expect(built.actualOutput).toContain('[REDACTED_CARD]');
+    expect(built.note).toContain('[REDACTED_IP]');
+    expect(listDatasets().length).toBe(before);
+    expect(getCaptureStats().captured).toBe(0);
+  });
+
   it('records the failing output as observed, never as the expected answer', () => {
     startCaseCapture({ datasetId: 'ds' });
     captureInteraction(interaction({ success: false, input: 'q', output: 'the wrong answer' }));
@@ -141,6 +188,22 @@ describe('case-capture', () => {
     expect(payload.reason).toBe('failure');
     expect(payload.redactedInput).toBe(true);
     expect((payload.redactionCounts as Record<string, number>).email).toBe(1);
+    unsub();
+  });
+
+  it('sums redaction counts across fields instead of overwriting them', () => {
+    startCaseCapture({ datasetId: 'ds' });
+    const events: unknown[] = [];
+    const unsub = engineeringEventBus.on('evaluation.case.captured', (e) => events.push(e));
+
+    captureInteraction(
+      interaction({ success: false, input: 'mail a@b.com', output: 'and c@d.com', note: 'plus e@f.com' }),
+    );
+
+    const payload = (events[0] as { payload: Record<string, unknown> }).payload;
+    // A spread-merge would report 1 here — the last field's count wins and
+    // two of the three redactions vanish from the audit record.
+    expect((payload.redactionCounts as Record<string, number>).email).toBe(3);
     unsub();
   });
 
