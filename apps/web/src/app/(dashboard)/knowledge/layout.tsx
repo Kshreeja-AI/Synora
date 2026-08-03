@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Sparkles, BookOpen } from 'lucide-react';
+import { Sparkles, BookOpen, Brain } from 'lucide-react';
 
 const TABS = [
   { label: 'Prompts', href: '/knowledge/prompts', icon: Sparkles },
   { label: 'Templates', href: '/knowledge/templates', icon: BookOpen },
+  { label: 'Memories', href: '/knowledge/memories', icon: Brain },
 ];
 
 /**
