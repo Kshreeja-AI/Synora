@@ -59,6 +59,23 @@ export type {
   RunComparison,
   RunOptions,
 } from './evaluation-runner.js';
+export {
+  configureJudge,
+  isJudgeConfigured,
+  judgeOutput,
+  resetJudge,
+  summariseJudgements,
+} from './ai-judge.js';
+export type { Judge, Judgement, JudgedSummary } from './ai-judge.js';
+export {
+  registerMediaPrice,
+  getMediaPrice,
+  listMediaPrices,
+  priceMediaUsage,
+  priceAgeDays,
+  resetMediaPrices,
+} from './media-pricing.js';
+export type { MediaPrice, PricingBasis, PricingResult } from './media-pricing.js';
 export { redact, containsSensitive, defaultRedactionRules } from './redaction.js';
 export type { RedactionRule, RedactionResult } from './redaction.js';
 export {
