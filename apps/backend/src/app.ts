@@ -15,6 +15,7 @@ import { correlationIdMiddleware } from './middleware/correlation-id';
 import { requestTimeout } from './middleware/requestTimeout';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
+import mfaRoutes from './routes/mfa';
 import userRoutes from './routes/users';
 import projectRoutes from './routes/projects';
 import documentRoutes from './routes/documents';
@@ -209,6 +210,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // API Routes
   app.use('/api/auth', authRoutes);
+  app.use('/api/auth/mfa', mfaRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/projects', projectRoutes);
   app.use('/api/documents', documentRoutes);

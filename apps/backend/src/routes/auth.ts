@@ -1,4 +1,4 @@
-import { Router, type Response } from 'express';
+import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
 import {
@@ -22,6 +22,13 @@ import {
   consumeEmailVerificationToken,
 } from '../services/emailVerification.service';
 import { listSessions, revokeSession, revokeAllSessions } from '../services/session.service';
+import { MFAService } from '../services/mfa/mfa.service';
+import {
+  toAuthedUser,
+  setAuthCookies,
+  authPayload,
+  deviceMetadata,
+} from '../utils/authSession';
 import { createNotification } from '../services/notification.service';
 import {
   sendVerificationEmail,
@@ -65,51 +72,6 @@ const verifyEmailSchema = z.object({
   token: z.string().min(1),
 });
 
-interface AuthedUser {
-  id: string;
-  email: string;
-  name: string | null;
-  emailVerified: boolean;
-}
-
-function toAuthedUser(user: { id: string; email: string; name: string | null; emailVerified: Date | null }): AuthedUser {
-  return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified !== null };
-}
-
-function setAuthCookies(
-  res: Response,
-  tokens: { accessToken: string; refreshToken: string }
-): void {
-  const isProduction = process.env.NODE_ENV === 'production';
-  res.cookie('accessToken', tokens.accessToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: 'strict',
-    maxAge: 15 * 60 * 1000, // 15 minutes
-    path: '/',
-  });
-  res.cookie('refreshToken', tokens.refreshToken, {
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    path: '/',
-  });
-}
-
-function authPayload(
-  _tokens: { accessToken: string; refreshToken: string },
-  user?: AuthedUser
-): Record<string, unknown> {
-  return {
-    ...(user ? { user } : {}),
-  };
-}
-
-/** Best-effort request metadata for the session/device list — never required for a request to succeed. */
-function deviceMetadata(req: { headers: { 'user-agent'?: string }; ip?: string }) {
-  return { userAgent: req.headers['user-agent'], ipAddress: req.ip };
-}
 
 /**
  * Mail delivery is best-effort from the caller's point of view: a mailer
@@ -213,6 +175,31 @@ router.post('/login', authInputValidator, loginLimiter, async (req, res, next) =
         ...(needsRehash(user.password) ? { password: await hashPassword(password) } : {}),
       },
     });
+
+    // Second factor gate. The password is correct, but for an MFA-enrolled
+    // account that is only half the proof — so no tokens and no cookies are
+    // issued here. The caller gets a short-lived, single-use challenge token
+    // to redeem at POST /auth/mfa/verify, which is where the session is
+    // actually established. Accounts without MFA are unaffected and still
+    // receive tokens in this same response, so existing clients keep working.
+    if (await MFAService.isEnabled(user.id)) {
+      const challenge = await MFAService.generateChallenge(
+        user.id,
+        'login',
+        req.ip ?? 'unknown',
+        req.headers['user-agent'] ?? 'unknown',
+        rememberMe ?? false
+      );
+
+      res.json(
+        createApiResponse({
+          mfaRequired: true,
+          mfaChallengeToken: challenge.mfaChallengeToken,
+          expiresAt: challenge.expiresAt,
+        })
+      );
+      return;
+    }
 
     const tokens = await issueTokens(
       { userId: user.id, email: user.email, role: user.role },

@@ -114,10 +114,27 @@ normal 7d. It is recorded on the session for display in the session list
 (see below) but never affects verification — a "remembered" and a normal
 session are checked identically.
 
-**Response** — same shape as Register above.
+**Response** — same shape as Register above, *unless the account has MFA
+enabled*. For an MFA-enrolled account a correct password does **not** issue
+tokens or cookies; the response is instead:
+
+```json
+{
+  "success": true,
+  "data": {
+    "mfaRequired": true,
+    "mfaChallengeToken": "<single-use token, 5 min expiry>",
+    "expiresAt": "2026-08-03T12:05:00.000Z"
+  }
+}
+```
+
+The client must then complete the login at `POST /api/auth/mfa/verify`
+(see MFA below). The challenge token carries the `rememberMe` choice, so
+the eventual session honours it.
 
 **Status Codes**
-- `200`: Authentication successful
+- `200`: Authentication successful (or MFA challenge issued — see above)
 - `400`: Invalid credentials
 - `423`: `ACCOUNT_LOCKED` — too many recent failed attempts for this
   account (default: 5 failures locks the account for 15 minutes; both
@@ -328,6 +345,71 @@ Authorization: Bearer <token>
 ```
 Revokes every active session for the account, **including the caller's
 own** — a literal "log out everywhere."
+
+---
+
+### Multi-Factor Authentication (TOTP)
+
+All endpoints live under `/api/auth/mfa`. Enrollment and management require
+authentication; `verify` deliberately does not (the caller is mid-login and
+holds only the challenge token).
+
+**Status**
+```http
+GET /api/auth/mfa/status
+Authorization: Bearer <token>
+```
+```json
+{ "success": true, "data": { "enabled": true, "type": "TOTP", "status": "ACTIVE",
+  "enabledAt": "...", "lastUsedAt": "...",
+  "recoveryCodesRemaining": 9, "recoveryCodesTotal": 10 } }
+```
+
+**Enrollment** — three steps:
+1. `POST /api/auth/mfa/setup/initiate` → `{ setupToken, secret, qrCode, expiresAt }`.
+   `qrCode` is the `otpauth://` URI to render for the authenticator app;
+   the setup token lives 10 minutes.
+2. `POST /api/auth/mfa/setup/verify` with `{ setupToken, code }` (the 6-digit
+   code from the app) → `{ recoveryCodes, codeHashes, setupToken }`. This is
+   the **only** time the plaintext recovery codes are returned — they are
+   stored hashed.
+3. `POST /api/auth/mfa/setup/confirm` with `{ setupToken, recoveryCodes: codeHashes }`
+   → activates TOTP for the account.
+
+**Complete a login**
+```http
+POST /api/auth/mfa/verify
+Content-Type: application/json
+
+{ "mfaChallengeToken": "<from login>", "code": "123456" }
+```
+or, with a recovery code instead of a TOTP code:
+```json
+{ "mfaChallengeToken": "<from login>", "recoveryCode": "XXXX-XXXX" }
+```
+Exactly one of `code` / `recoveryCode` must be present. On success the
+response matches a normal login (user payload + HttpOnly cookies). The
+challenge token is single-use: replays and concurrent redemptions get `401`.
+Using a recovery code flips the method into `RECOVERY_MODE` and includes a
+`warning` in the response. Attempts are rate-limited per user and audited.
+
+**Disable**
+```http
+POST /api/auth/mfa/disable
+Authorization: Bearer <token>
+
+{ "password": "<account password>" }
+```
+Password confirmation is mandatory so a hijacked session cannot silently
+strip the second factor.
+
+**Recovery codes**
+```http
+GET /api/auth/mfa/recovery-codes
+Authorization: Bearer <token>
+```
+Returns remaining/used counts only — plaintext codes are never retrievable
+after enrollment.
 
 ---
 

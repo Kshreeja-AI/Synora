@@ -95,15 +95,37 @@ for "email already exists" as for "wrong password" — an attacker cannot
 distinguish the two to enumerate which emails have accounts. Full detail:
 `docs/production/R1-a_EMAIL_ENUMERATION.md`.
 
-### MFA — Not yet implemented
+### MFA — TOTP, wired into login (2026-08-03)
 
-A complete TOTP-based MFA implementation exists on the `recover/mfa`
-branch (challenge/setup/recovery-code services, `routes/mfa.ts`, frontend
-components, RFC 4226/6238 test vectors) but is not merged or wired into
-the running app. Four MFA-*adjacent* services (audit, rate-limiter,
-monitoring, alerting logging) already sit unwired in mainline at
-`apps/backend/src/services/mfa/`. Landing both halves is Release 2, R2-a
-— see `RELEASE_2_PLAN.md`.
+TOTP-based MFA is live end to end. The core (RFC 6238 TOTP with timing-safe
+comparison and no external dependencies, hashed recovery codes, single-use
+setup/challenge tokens) was ported from the `recover/mfa` branch and
+integrated with the operational services already in mainline (audit,
+rate-limiter, monitoring, alerting) under `apps/backend/src/services/mfa/`.
+
+Flow: `POST /api/auth/login` returns `{ mfaRequired, mfaChallengeToken }`
+instead of tokens for an enrolled account (the challenge carries the
+`rememberMe` choice); `POST /api/auth/mfa/verify` redeems the single-use,
+5-minute challenge with a TOTP code or recovery code and is the point where
+cookies/tokens are actually issued. Enrollment is
+`setup/initiate → setup/verify → setup/confirm`; `disable` is
+password-confirmed; every step writes to `MFAAuditLog` best-effort.
+
+Hardening applied during integration (all covered by
+`routes/__tests__/mfa.test.ts`, 12 e2e cases against real Postgres):
+
+- `ChallengeTokenService.verifyToken` honours the *return value* of
+  `crypto.timingSafeEqual` — the ported code only relied on its throw, which
+  accepts every equal-length mismatch (all cuids are equal length), i.e. any
+  user's token would have validated against any account.
+- `consumeToken` is a conditional `updateMany({ usedAt: null })`, so two
+  requests racing the same challenge mint exactly one session; both verify
+  paths treat losing that race as failure.
+- Services use the shared `@synora/database` Prisma singleton rather than
+  private `new PrismaClient()` pools.
+- Session establishment goes through `utils/authSession.ts`, the single
+  implementation shared with the password login path — cookies and payload
+  shape cannot drift between the two flows.
 
 ### OAuth2 — Not yet implemented
 
@@ -362,8 +384,10 @@ assuming it's covered.
 - [x] Account deletion is password-confirmed and revokes every session (Release 2 M3)
 - [x] Avatar uploads are content-type-allowlisted and size-capped (Release 2 M3)
 
+- [x] MFA — TOTP with recovery codes, challenge-gated login, audit + rate
+      limiting (2026-08-03; see "MFA" section above)
+
 ### Not yet implemented (tracked, not accidental)
-- [ ] MFA (`recover/mfa` branch exists, needs rebase — R2-a)
 - [ ] CSRF protection (`recover/csrf` branch exists, coupled to cookie-auth migration — R2-b)
 - [ ] OAuth2 provider login
 - [ ] Password complexity requirements beyond minimum length

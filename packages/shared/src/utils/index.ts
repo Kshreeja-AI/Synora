@@ -155,6 +155,19 @@ export class ForbiddenException extends ApiException {
   }
 }
 
+/**
+ * 409 — the request is well-formed but conflicts with current server state,
+ * so retrying it unchanged will keep failing (e.g. enrolling a second MFA
+ * factor when one is already active). Distinct from ValidationException (400),
+ * which means the request itself was malformed.
+ */
+export class ConflictException extends ApiException {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super('CONFLICT', message, 409, details);
+    this.name = 'ConflictException';
+  }
+}
+
 export class LockedException extends ApiException {
   constructor(message = 'Account temporarily locked', details?: Record<string, unknown>) {
     super('ACCOUNT_LOCKED', message, 423, details);
