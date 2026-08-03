@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database'
 import { ExportFormat, ExportStatus } from '@prisma/client'
 import { logger } from '../utils/logger'
+import { redact } from '../eos/redaction'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as crypto from 'node:crypto'
@@ -13,20 +14,6 @@ export interface ExportDatasetJobData {
   format: ExportFormat
   includePII: boolean
   maxSamples?: number
-}
-
-interface PII_PATTERNS {
-  email: RegExp
-  phone: RegExp
-  ssn: RegExp
-  creditCard: RegExp
-}
-
-const PII_PATTERNS: PII_PATTERNS = {
-  email: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-  phone: /\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b/g,
-  ssn: /\b\d{3}-\d{2}-\d{4}\b/g,
-  creditCard: /\b(?:\d{4}[-\s]?){3}\d{4}\b/g,
 }
 
 export async function processExportDataset(data: ExportDatasetJobData): Promise<void> {
@@ -189,13 +176,23 @@ export async function processExportDataset(data: ExportDatasetJobData): Promise<
   }
 }
 
+/**
+ * Delegates to the shared, tested redaction module rather than keeping a
+ * second set of patterns here.
+ *
+ * The previous local patterns were materially weaker and leaked in ways
+ * that were easy to miss: the phone rule only matched US 3-3-4 grouping
+ * (so Indian numbers passed through in plain text), the card rule only
+ * matched 16-digit 4-4-4-4 (so 15-digit Amex passed through), and there
+ * were no rules at all for API keys, bearer tokens, JWTs, or IP
+ * addresses — meaning a credential a user had pasted into a conversation
+ * would be written into a customer-downloadable export verbatim.
+ *
+ * Two divergent redaction implementations is itself the hazard: whichever
+ * is weaker silently defines the real protection, and nobody knows which.
+ */
 function sanitizePII(text: string): string {
-  let sanitized = text
-  sanitized = sanitized.replace(PII_PATTERNS.email, '[EMAIL_REDACTED]')
-  sanitized = sanitized.replace(PII_PATTERNS.phone, '[PHONE_REDACTED]')
-  sanitized = sanitized.replace(PII_PATTERNS.ssn, '[SSN_REDACTED]')
-  sanitized = sanitized.replace(PII_PATTERNS.creditCard, '[CC_REDACTED]')
-  return sanitized
+  return redact(text).text
 }
 
 function deduplicateSamples(samples: any[]): any[] {

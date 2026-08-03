@@ -105,6 +105,23 @@ describe('redaction', () => {
     }
   });
 
+  // Regression guard for the customer-facing dataset export path, which
+  // previously carried its own weaker patterns in export-dataset.worker.ts
+  // and leaked every one of these. It now delegates here; these cases keep
+  // that consolidation honest.
+  it.each([
+    ['Indian mobile', 'call me on +91 98765 43210', '98765'],
+    ['Amex card, 15 digits', 'card 3782 822463 10005', '822463'],
+    ['OpenAI-style API key', 'key sk-abcdefghijklmnop1234567890', 'abcdefghijklmnop'],
+    ['GitHub token', 'token ghp_abcdefghijklmnopqrstuvwxyz01', 'abcdefghijklmnop'],
+    ['Bearer token', 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456', 'abcdefghijklmnop'],
+    ['IP address', 'from 192.168.1.100', '192.168.1.100'],
+  ])('export path no longer leaks: %s', (_label, input, mustNotRemain) => {
+    const result = redact(input);
+    expect(result.redacted).toBe(true);
+    expect(result.text).not.toContain(mustNotRemain);
+  });
+
   it('handles long adversarial input without hanging', () => {
     const nasty = `${'1'.repeat(5000)} ${'a'.repeat(5000)}@`;
     const began = Date.now();
