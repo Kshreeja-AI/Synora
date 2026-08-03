@@ -1,6 +1,5 @@
 import { engineeringEventBus } from './event-bus.js';
 import { getMetricsCollector } from '../queue/metrics.js';
-import type { JobType } from '../queue/types.js';
 
 let intervalHandle: ReturnType<typeof setInterval> | null = null;
 

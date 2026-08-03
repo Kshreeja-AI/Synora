@@ -68,6 +68,15 @@ export interface QueueDepthEvent extends EngineeringEvent {
   };
 }
 
+export interface AlertErrorRateEvent extends EngineeringEvent {
+  type: 'alert.error_rate';
+  payload: {
+    errorsInWindow: number;
+    windowMs: number;
+    threshold: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -75,6 +84,7 @@ export type KnownEvent =
   | HealthCheckEvent
   | BootEvent
   | QueueDepthEvent
+  | AlertErrorRateEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

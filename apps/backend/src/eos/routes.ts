@@ -3,6 +3,7 @@ import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { engineeringEventBus } from './event-bus.js';
 import { runHealthProbes } from './health-collector.js';
 import { sampleQueueDepths } from './queue-depth-collector.js';
+import { getErrorRateSnapshot } from './error-rate-monitor.js';
 
 const router: Router = Router();
 
@@ -36,6 +37,12 @@ router.post('/queue-depth', async (_req: Request, res: Response) => {
   await sampleQueueDepths();
   const events = engineeringEventBus.recentByType('queue.depth', 50);
   res.json({ data: events });
+});
+
+router.get('/error-rate', (_req: Request, res: Response) => {
+  const snapshot = getErrorRateSnapshot();
+  const alerts = engineeringEventBus.recentByType('alert.error_rate', 20);
+  res.json({ data: { current: snapshot, recentAlerts: alerts } });
 });
 
 export { router as eosRouter };

@@ -18,4 +18,17 @@ export function registerDependencyProbes(): void {
       }
     },
   });
+
+  registerHealthProbe({
+    name: 'redis',
+    check: async () => {
+      try {
+        const { getRedis } = await import('../queue/redis.js');
+        const ok = await getRedis().ping();
+        return ok ? 'healthy' : 'down';
+      } catch {
+        return 'down';
+      }
+    },
+  });
 }
