@@ -110,6 +110,13 @@ export interface AiProviderObservationEvent extends EngineeringEvent {
     costCents: number;
     success: boolean;
     errorCode?: string;
+    /**
+     * Whether this capability is priced per token at all. Derived from
+     * whether the caller supplied token/cost fields, not from whether they
+     * happen to be zero — a token-priced call really costing zero must stay
+     * distinguishable from a capability that is not token-priced.
+     */
+    tokenPriced: boolean;
   };
 }
 

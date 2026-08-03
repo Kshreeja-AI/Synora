@@ -13,6 +13,7 @@ interface ProviderStats {
   totalOutputTokens: number;
   totalCostCents: number;
   errorCodes: Record<string, number>;
+  tokenPriced: boolean;
   lastObservedAt: number;
 }
 
@@ -29,6 +30,13 @@ export interface ProviderMatrixEntry {
   totalOutputTokens: number;
   totalCostCents: number;
   errorCodes: Record<string, number>;
+  /**
+   * Whether this capability is priced per token. Recorded from what the
+   * caller supplied rather than inferred from a zero, so a token-priced
+   * call that genuinely cost nothing stays distinct from a capability that
+   * is not token-priced at all.
+   */
+  tokenPriced: boolean;
   lastObservedAt: number;
 }
 
@@ -50,6 +58,7 @@ export function recordProviderObservation(obs: {
   costCents: number;
   success: boolean;
   errorCode?: string;
+  tokenPriced?: boolean;
 }): void {
   const key = `${obs.providerId}:${obs.modelId}`;
   let entry = stats.get(key);
@@ -65,6 +74,7 @@ export function recordProviderObservation(obs: {
       totalOutputTokens: 0,
       totalCostCents: 0,
       errorCodes: {},
+      tokenPriced: false,
       lastObservedAt: 0,
     };
     stats.set(key, entry);
@@ -86,6 +96,7 @@ export function recordProviderObservation(obs: {
   entry.totalInputTokens += obs.inputTokens;
   entry.totalOutputTokens += obs.outputTokens;
   entry.totalCostCents += obs.costCents;
+  if (obs.tokenPriced) entry.tokenPriced = true;
   entry.lastObservedAt = Date.now();
 }
 
@@ -106,6 +117,7 @@ export function getProviderMatrix(): ProviderMatrixEntry[] {
       totalOutputTokens: entry.totalOutputTokens,
       totalCostCents: entry.totalCostCents,
       errorCodes: { ...entry.errorCodes },
+      tokenPriced: entry.tokenPriced,
       lastObservedAt: entry.lastObservedAt,
     });
   }
@@ -124,6 +136,7 @@ export function startProviderObservatory(): void {
       costCents: number;
       success: boolean;
       errorCode?: string;
+      tokenPriced?: boolean;
     };
     recordProviderObservation(p);
   });

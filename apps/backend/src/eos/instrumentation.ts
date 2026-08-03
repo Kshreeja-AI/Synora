@@ -124,6 +124,10 @@ export function recordAiInteraction(record: AiInteractionRecord): void {
         costCents: record.costCents ?? 0,
         success: record.success,
         errorCode: record.errorCode,
+        tokenPriced:
+          record.inputTokens !== undefined ||
+          record.outputTokens !== undefined ||
+          record.costCents !== undefined,
       },
     }),
   );

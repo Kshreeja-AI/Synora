@@ -67,6 +67,30 @@ describe('instrumentation', () => {
     expect(report[0].successRate).toBe(0.5);
   });
 
+  it('marks a record token-priced only when token or cost fields are supplied', () => {
+    startProviderObservatory();
+    recordAiInteraction(base);
+    recordAiInteraction({ ...base, providerId: 'openai', modelId: 'gpt-image-1', inputTokens: undefined, outputTokens: undefined, costCents: undefined });
+
+    const matrix = getProviderMatrix();
+    const chat = matrix.find((m) => m.modelId === 'claude-x')!;
+    const image = matrix.find((m) => m.modelId === 'gpt-image-1')!;
+
+    expect(chat.tokenPriced).toBe(true);
+    // Image supplied no token or cost fields at all, so it is not
+    // token-priced — as distinct from costing zero.
+    expect(image.tokenPriced).toBe(false);
+  });
+
+  it('a token-priced call costing zero stays token-priced', () => {
+    startProviderObservatory();
+    recordAiInteraction({ ...base, inputTokens: 0, outputTokens: 0, costCents: 0 });
+
+    // The previous display heuristic inferred pricing from a non-zero cost
+    // and would have mislabelled this row.
+    expect(getProviderMatrix()[0].tokenPriced).toBe(true);
+  });
+
   it('does not emit interaction text when content is omitted', () => {
     const events: unknown[] = [];
     const unsub = engineeringEventBus.on('ai.interaction.completed', (e) => events.push(e));

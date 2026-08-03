@@ -102,6 +102,7 @@ describe('EngineeringDashboardPage', () => {
         totalOutputTokens: 0,
         totalCostCents: 0,
         errorCodes: {},
+        tokenPriced: false,
         lastObservedAt: Date.now(),
       },
     ]);
@@ -128,6 +129,7 @@ describe('EngineeringDashboardPage', () => {
         totalOutputTokens: 2000,
         totalCostCents: 250,
         errorCodes: { timeout: 1 },
+        tokenPriced: true,
         lastObservedAt: Date.now(),
       },
     ]);
@@ -136,6 +138,34 @@ describe('EngineeringDashboardPage', () => {
 
     expect(await screen.findByText('$2.5000')).toBeInTheDocument();
     expect(screen.getByText('90%')).toBeInTheDocument();
+  });
+
+  it('shows $0.0000 for a token-priced provider that genuinely cost nothing', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-x',
+        requests: 1,
+        successes: 1,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 100,
+        p95LatencyMs: 100,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 0,
+        errorCodes: {},
+        tokenPriced: true,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    // The old heuristic inferred "not token-priced" from zero tokens, so it
+    // mislabelled this case. tokenPriced is now recorded, not inferred.
+    expect(await screen.findByText('$0.0000')).toBeInTheDocument();
+    expect(screen.queryByText('not token-priced')).not.toBeInTheDocument();
   });
 
   it('explains that the matrix is empty rather than rendering a bare table', async () => {

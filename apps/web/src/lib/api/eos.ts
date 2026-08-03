@@ -35,6 +35,8 @@ export interface ProviderMatrixEntry {
   totalOutputTokens: number;
   totalCostCents: number;
   errorCodes: Record<string, number>;
+  /** Recorded by the backend, not inferred from a zero cost. */
+  tokenPriced: boolean;
   lastObservedAt: number;
 }
 

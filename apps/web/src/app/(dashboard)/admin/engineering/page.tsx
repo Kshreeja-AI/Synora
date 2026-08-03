@@ -74,14 +74,13 @@ function EmptyHint({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * A provider row with no tokens across any request is not token-priced
- * (image generation, for example), so showing a cost of 0 would read as
- * "free". Distinguish the two rather than letting an unmeasured value
- * masquerade as a measured zero.
+ * Whether a capability is token-priced is now recorded by the backend
+ * rather than inferred here from a zero cost. The inference was reasonable
+ * but wrong in one real case: a token-priced call that genuinely cost
+ * nothing would have been labelled "not token-priced".
  */
 function formatCost(entry: ProviderMatrixEntry): string {
-  const tokenPriced = entry.totalInputTokens > 0 || entry.totalOutputTokens > 0;
-  if (!tokenPriced) return 'not token-priced';
+  if (!entry.tokenPriced) return 'not token-priced';
   return `$${(entry.totalCostCents / 100).toFixed(4)}`;
 }
 
