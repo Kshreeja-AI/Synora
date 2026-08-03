@@ -132,4 +132,11 @@ export {
   buildPullRequestBody,
 } from './execution-layer.js';
 export type { GitOperations, ExecutionRecord, ExecutionOutcome } from './execution-layer.js';
+export { rankCandidates, recommendRoute, DEFAULT_WEIGHTS } from './evidence-router.js';
+export type {
+  RoutingWeights,
+  RoutingCandidate,
+  RankedCandidate,
+  RoutingDecision,
+} from './evidence-router.js';
 export { eosRouter } from './routes.js';

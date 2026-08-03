@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (29):**
+**Components (30):**
 
 | Component | Role |
 |---|---|
@@ -257,6 +257,7 @@ and subscribe from it. Each component is separately replaceable.
 | `instrumentation` | The single integration point product code calls; fans one AI interaction out to the observatory, prompt intelligence, and capture; also tracks AI-path coverage |
 | `draft-generator` | Drafts a candidate prompt revision from captured failures and measures it against the prompt in use via the evaluation runner. Drafter and executors are injected; without them it produces nothing and names the missing capability rather than guessing. Writes and measures text only — no export could apply a draft |
 | `runtime-check` | Verifies each subscriber-based component is actually attached, by reading listener counts off the event bus rather than trusting a self-report. Names the timer-driven components it cannot see |
+| `evidence-router` | Ranks candidate providers on recorded reliability, latency, and cost rather than configuration. Recommends only — it has no way to intercept a request path, so adopting a recommendation is a deliberate change at a call site. With too little traffic it keeps the configured order and reports `basis: 'configuration'`, never inventing a preference. Weights are a stated judgement, not a measurement, and travel with every decision; near-ties are flagged because relative scores make a 2ms gap look decisive |
 | `execution-layer` | The only component that changes anything, and the most tightly bounded. Acts only on a proposal the founder approved: creates a feature branch, applies the drafted change, runs tests, opens a pull request, and stops. Its git interface has no merge, deploy, or push operation — the capability is absent, not guarded. Branch names are generated from the proposal id, so no input can steer a write at a protected ref. Failing tests produce no pull request |
 | `ai-judge` | CIEP: scores output quality by asking an injected AI judge against stated criteria. Deliberately NOT a grader — graders are pure and synchronous so runs stay comparable, and a non-deterministic judge in that registry would destroy it. Every judgement is marked `judged`, never measured; an unconfigured judge yields null rather than zero, and an out-of-range score is discarded rather than clamped |
 | `media-pricing` | Published per-image/per-character/per-second prices, each dated with its source. The one permitted table of expectations, because media providers report no cost to observe. Ships empty; an unlisted model yields no price rather than a guessed one, and derived costs stay marked `stated` rather than `observed` |
