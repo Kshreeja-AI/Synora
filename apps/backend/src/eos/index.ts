@@ -129,6 +129,21 @@ export {
 } from './privacy-coverage.js';
 export type { EgressPath, PathResult, PrivacyCoverageResult } from './privacy-coverage.js';
 export { registerEgressPaths } from './egress-registry.js';
+export {
+  importBenchmark,
+  parseBenchmarkRecords,
+  listImportedBenchmarks,
+  measureBenchmarkGate,
+  resetBenchmarks,
+  hashRecords,
+} from './benchmark-importer.js';
+export type {
+  BenchmarkManifest,
+  BenchmarkRecord,
+  ImportedBenchmark,
+  ImportResult,
+  BenchmarkGateResult,
+} from './benchmark-importer.js';
 export { getRuntimeCheck, EXPECTED_SUBSCRIPTIONS } from './runtime-check.js';
 export {
   InMemoryGateStore,

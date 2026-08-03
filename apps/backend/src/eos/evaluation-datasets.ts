@@ -5,8 +5,13 @@ import type { GraderSpec } from './evaluation-graders.js';
  * default: synthetic cases must never be silently mistaken for observed
  * behaviour, because a benchmark built on invented data that looks real is
  * worse than no benchmark at all.
+ *
+ * `benchmark` is its own origin, not a flavour of the other two: a case
+ * imported from a public benchmark is neither observed customer behaviour
+ * nor something we invented, and folding it into either would misstate
+ * what a score on it means.
  */
-export type CaseOrigin = 'real' | 'synthetic';
+export type CaseOrigin = 'real' | 'synthetic' | 'benchmark';
 
 export interface EvaluationCase {
   id: string;
@@ -48,6 +53,7 @@ export interface DatasetSummary {
   caseCount: number;
   realCases: number;
   syntheticCases: number;
+  benchmarkCases: number;
   tags: string[];
   updatedAt: number;
 }
@@ -155,10 +161,14 @@ export function summarizeDataset(datasetId: string): DatasetSummary | null {
   const tags = new Set<string>();
   let realCases = 0;
   let syntheticCases = 0;
+  let benchmarkCases = 0;
   for (const c of dataset.cases) {
     for (const t of c.tags) tags.add(t);
+    // Counted explicitly per origin — an else-bucket here once meant a new
+    // origin would silently inflate whichever count it fell into.
     if (c.origin === 'real') realCases += 1;
-    else syntheticCases += 1;
+    else if (c.origin === 'synthetic') syntheticCases += 1;
+    else benchmarkCases += 1;
   }
 
   return {
@@ -168,6 +178,7 @@ export function summarizeDataset(datasetId: string): DatasetSummary | null {
     caseCount: dataset.cases.length,
     realCases,
     syntheticCases,
+    benchmarkCases,
     tags: [...tags].sort(),
     updatedAt: dataset.updatedAt,
   };
