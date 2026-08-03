@@ -50,7 +50,7 @@ deliberate Release 2+ scope. Full detail: `docs/architecture.md`.
 | **R1-e** AI provider abstraction | Provider-agnostic text/code generation across 10 providers, auto-selected by configured API key | `docs/production/R1-e_AI_PROVIDER_ABSTRACTION.md` |
 | **R1-f** Production Dockerfile | Multi-stage, non-root, reproducible production image | `docs/production/R1-f_DOCKERFILE.md` |
 | **R1-g** Supply-chain security | Blocking CI gates: `pnpm audit --prod --audit-level=high`, gitleaks secret scanning | `docs/production/R1-g_SUPPLY_CHAIN_SECURITY.md` |
-| **R1-h** Launch readiness | Env vars, keys, deploy commands, launch checklist | `RELEASE_1_LAUNCH_READINESS.md` |
+| **R1-h** Launch readiness | Env vars, keys, deploy commands, launch checklist | `docs/archive/RELEASE_1_LAUNCH_READINESS.md` |
 
 Plus two pre-Release-1 fixes carried forward: a shared Prisma client
 singleton (`docs/production/P0-10_PRISMA_SINGLETON.md`) and Argon2id
@@ -59,7 +59,7 @@ password hashing with transparent bcrypt migration
 
 Also fixed during Release 1's CI stabilization and final audits (not new
 features, but real bugs caught and closed — see
-`RELEASE_1_VERIFICATION_REPORT.md` and `PRODUCTION_READINESS_AUDIT.md`
+`docs/archive/RELEASE_1_VERIFICATION_REPORT.md` and `docs/archive/PRODUCTION_READINESS_AUDIT.md`
 for the full list): 7 CI pipeline bugs (a workspace-breaking `pnpm
 prune`, a broken gitleaks install, a container logging-permission crash,
 a Docker port-binding issue, a missing-OpenSSL Prisma failure, and
@@ -146,7 +146,7 @@ No CD pipeline exists — every deploy is this manual sequence today
 
 ## 6. Environment Variables
 
-Authoritative list: `RELEASE_1_LAUNCH_READINESS.md` §2, `.env.example`.
+Authoritative list: `docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2, `.env.example`.
 
 **Required to boot:** `DATABASE_URL`, `JWT_SECRET`, `NEXTAUTH_SECRET`.
 **Everything else has a working default.** At least one AI provider key
@@ -167,7 +167,7 @@ boots and serves auth/CRUD routes without one.
 
 This is CI, not CD — nothing here deploys anywhere. Full stabilization
 history (7 real bugs found and fixed, each with root cause and CI
-evidence): `RELEASE_1_VERIFICATION_REPORT.md`.
+evidence): `docs/archive/RELEASE_1_VERIFICATION_REPORT.md`.
 
 ---
 
@@ -179,7 +179,7 @@ Both stages install OpenSSL explicitly (bookworm-slim ships none by
 default, and Prisma's engine needs it to load correctly). The runtime
 stage ships the full, unpruned `node_modules` the builder produced
 (`pnpm prune --prod` was tried and rejected — it corrupts this
-workspace's symlink layout, see `RELEASE_1_VERIFICATION_REPORT.md` Issue
+workspace's symlink layout, see `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` Issue
 2) and runs as the base image's non-root `node` user. A baked-in
 `HEALTHCHECK` hits `/health`.
 
@@ -224,8 +224,8 @@ data-export/anonymization tooling.
 
 None open. Every issue found during Release 1's development, CI
 stabilization, and final audits was fixed and verified before this
-document was written — see `RELEASE_1_VERIFICATION_REPORT.md` and
-`PRODUCTION_READINESS_AUDIT.md` for the complete, itemized history (root
+document was written — see `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` and
+`docs/archive/PRODUCTION_READINESS_AUDIT.md` for the complete, itemized history (root
 cause, fix, verification, commit, and CI evidence for each).
 
 ---

@@ -2,7 +2,7 @@
 
 **Snapshot date:** 2026-08-03 (PR #46 reconciled with `SYNORA`/PR #38 —
 two independent Release 3 M1-M3 builds merged into one implementation per
-feature; see `RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md` for the
+feature; see `docs/archive/RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md` for the
 authoritative post-merge audit)
 **Maintenance rule:** update this file at the end of every milestone
 (same commit as the milestone's closing work). Everything below is
@@ -25,7 +25,7 @@ verified against the repository, not assumed.
   These have now been reconciled: `SYNORA` was merged into PR #46, keeping
   #46 as the canonical implementation, deleting #38's duplicate orphan files, and
   fixing a CSP defect the auto-merge introduced. See
-  `RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md`.
+  `docs/archive/RECONCILIATION_AND_PRODUCTION_AUDIT_2026-08-03.md`.
 - **Current CI status:** post-reconciliation local gates all green — backend
   type-check ✅, web type-check ✅, lint ✅ (0 errors), backend tests
   1580 ✅, web tests 373 ✅ (against live Postgres 16 + Redis 7). CI on the PR

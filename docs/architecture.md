@@ -437,7 +437,7 @@ created on a successful generation; there is no `PENDING` placeholder
 message and no `Message.status` field — `StreamingJob` is the sole
 "generation in flight" state, so there's exactly one place that can say
 whether a reply is done, not two that could disagree.
-`M2_IMPLEMENTATION_PLAN.md` §6, §7, and §12 have the full design
+`docs/archive/M2_IMPLEMENTATION_PLAN.md` §6, §7, and §12 have the full design
 rationale, including the future path to an async/queued/streamed version
 that changes *who calls* this service, not its internal retry/state-machine
 logic.

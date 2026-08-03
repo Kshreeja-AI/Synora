@@ -54,8 +54,11 @@ synora/
 ├── docs/                     # See docs/README.md for the full hierarchy
 │   ├── architecture.md, api.md, database.md, deployment.md, security.md
 │   ├── operations/, security/, production/  # living reference docs
-│   └── archive/              # historical, point-in-time reports
-├── .github/workflows/ci.yml  # test, security, docker jobs
+│   └── archive/              # historical, point-in-time reports — every
+│                             # frozen release/audit report lives here, not
+│                             # at the repo root
+├── .github/workflows/ci.yml  # test, security, docker jobs; test also
+│                             # asserts migrations reproduce schema.prisma
 ├── turbo.json                # Turbo configuration
 ├── package.json               # Root workspace config, packageManager pin
 ├── .env.example               # Environment variables template
@@ -63,6 +66,12 @@ synora/
 ├── RELEASE_1_FINAL.md         # Authoritative Release 1 snapshot
 └── README.md                  # Project overview
 ```
+
+The repository root holds only living documents — the entry points above,
+the roadmap and per-release plans, `PRODUCT_SPEC.md`, `CURRENT_STATE.md`,
+`NEXT_TASK.md`, `SYNORA_BRAIN.md`, and the Supabase setup guides. A
+finished report is not a living document: archive it under `docs/archive/`
+rather than adding it here.
 
 ## Environment Setup
 

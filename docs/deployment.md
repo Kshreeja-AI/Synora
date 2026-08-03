@@ -2,7 +2,7 @@
 
 This document covers what Release 1 actually supports today. For the
 complete, copy-pasteable command sequence, see `PROJECT_HANDOVER.md` §6
-and `RELEASE_1_LAUNCH_READINESS.md` — this document explains the *why*
+and `docs/archive/RELEASE_1_LAUNCH_READINESS.md` — this document explains the *why*
 behind those commands and the platform choices around them.
 
 ## What Release 1 deploys
@@ -19,7 +19,7 @@ choice provides.
 
 Copy `.env.example` — don't hand-write this list, it drifts. The
 authoritative, currently-accurate reference for what's required vs.
-optional (with defaults) is `RELEASE_1_LAUNCH_READINESS.md` §2. Minimum
+optional (with defaults) is `docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2. Minimum
 required to boot in production: `DATABASE_URL`, `JWT_SECRET`,
 `NEXTAUTH_SECRET`. At least one AI provider key (e.g.
 `ANTHROPIC_API_KEY`) is needed for real AI generation, though the app
@@ -49,7 +49,7 @@ The real `Dockerfile` (repo root) is multi-stage, `node:22-bookworm-slim`
 based (not Alpine — the `argon2` native addon and Prisma's query engine
 are both smoother on glibc), installs OpenSSL explicitly in both stages
 (bookworm-slim ships none by default, and Prisma's query engine needs it
-to load — see `RELEASE_1_VERIFICATION_REPORT.md` Issue 7 for the full
+to load — see `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` Issue 7 for the full
 story of why this is required), and runs as the base image's non-root
 `node` user.
 
@@ -136,7 +136,7 @@ latency and error, if any, which is usually more informative than a raw
 
 ### Container won't become healthy
 Check `docker logs <container>` first. Two real, non-obvious causes this
-project has hit before (see `RELEASE_1_VERIFICATION_REPORT.md` for the
+project has hit before (see `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` for the
 full history): the app failing to bind reachably inside the container,
 and Prisma's query engine failing to load due to a missing system
 library. Both are fixed in the current `Dockerfile`/`index.ts` — if you

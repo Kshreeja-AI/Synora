@@ -19,6 +19,9 @@ UPDATE "ApiKey" SET "prefix" = 'sk_legacy_' || substr("id", 1, 12) WHERE "prefix
 ALTER TABLE "ApiKey" ALTER COLUMN "prefix" SET NOT NULL;
 CREATE UNIQUE INDEX "ApiKey_prefix_key" ON "ApiKey"("prefix");
 
+-- ON UPDATE CASCADE is what Prisma derives for this relation; omitting it
+-- leaves Postgres at its NO ACTION default and makes the migration history
+-- stop reproducing schema.prisma, which `migrate diff` then reports as drift.
 ALTER TABLE "ApiKey"
   ADD CONSTRAINT "ApiKey_createdById_fkey"
-  FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL;
+  FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;

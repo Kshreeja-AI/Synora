@@ -17,8 +17,8 @@ verified. All CI gates (`test`, `security`, `docker`) are green on commit
 login, refresh, logout, the AI endpoint, and account lockout) also passed.
 
 See:
-- `RELEASE_1_LAUNCH_READINESS.md` — env vars, keys, deploy/migration commands, R1 checklist
-- `RELEASE_1_VERIFICATION_REPORT.md` — every CI issue found while stabilizing the pipeline, root cause, fix, and evidence
+- `docs/archive/RELEASE_1_LAUNCH_READINESS.md` — env vars, keys, deploy/migration commands, R1 checklist
+- `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` — every CI issue found while stabilizing the pipeline, root cause, fix, and evidence
 - `RELEASE_2_PLAN.md` — next release's objectives and priorities
 
 Release 2 work has not started as of this update.
@@ -61,12 +61,12 @@ Effort: **S** ≤0.5d · **M** 0.5–2d · **L** 2–5d · **XL** >5d. Risk refl
 | **R1-e** | **P0-7 Real AI provider integration (text/code first)** | ✅ Done | The product's value is AI generation; today it returns placeholder data. Adding an API key must activate real generation — the integration code must exist first | **YES** | XL | Med | config/secrets (done), provider abstraction | Tests: provider abstraction + Anthropic adapter with the HTTP boundary stubbed; config selects provider; missing key fails clean. Live call activates on real key (documented) | Config selects a safe default; provider swappable |
 | **R1-f** | **P0-8 Dockerfile + reproducible artifact** | ✅ Done | There is no way to deploy the app at all today | **YES** | M | Low | none | `docker build` produces a running non-root image; container `/ready` returns 200 against a DB | Dockerfile is additive; no runtime code change |
 | **R1-g** | **P0-12 + P1-10 Secret hygiene + blocking CI secret/vuln scan** | ✅ Done | Untracked `.env.staging` with real-looking secrets present; Snyk is non-blocking so a critical CVE passes green | **YES** | S | Low | none | CI fails on a planted secret and on a high-severity advisory; `git ls-files` shows no secret material | Scans are CI-only; no runtime impact |
-| **R1-h** | **RELEASE_1_LAUNCH_READINESS.md** | ✅ Done | The founder's deliverable: exact env vars, keys, deploy + migration commands, checklist | **YES (final)** | S | Low | all above | Doc lists only env/keys/commands; no code step remains | n/a |
+| **R1-h** | **docs/archive/RELEASE_1_LAUNCH_READINESS.md** | ✅ Done | The founder's deliverable: exact env vars, keys, deploy + migration commands, checklist | **YES (final)** | S | Low | all above | Doc lists only env/keys/commands; no code step remains | n/a |
 
 Beyond the original 8 blockers, stabilizing CI (`test`/`security`/`docker`
 all green) required fixing 7 additional real bugs found only by actually
 running CI rather than trusting green-status claims — see
-`RELEASE_1_VERIFICATION_REPORT.md` for the full list (latent AI test bugs,
+`docs/archive/RELEASE_1_VERIFICATION_REPORT.md` for the full list (latent AI test bugs,
 a workspace-breaking `pnpm prune`, a broken gitleaks install script, 11
 verified-false-positive secret-scan findings, a container logging
 permission crash, a Docker port-binding issue, and a missing-OpenSSL
@@ -128,6 +128,6 @@ P3-1 domain structure, P3-2 ADRs, P3-3 diagrams, P3-4 accessibility, P3-5 cross-
 5. **R1-c — Refresh token + logout invalidation** (needs Prisma singleton ✓ + `Session` model ✓)
 6. **R1-d — Account lockout on login** (builds on login-attempt recording introduced with R1-c)
 7. **R1-e — Real AI provider integration** (needs config/secrets ✓; largest; provider abstraction)
-8. **R1-h — RELEASE_1_LAUNCH_READINESS.md** (last; depends on all above)
+8. **R1-h — docs/archive/RELEASE_1_LAUNCH_READINESS.md** (last; depends on all above)
 
 Each executed with the full ceremony already established this engagement: implementation → tests (real infra) → docs → security/architecture/performance review → verification → commit → push. Executing now, in this order, continuing automatically.

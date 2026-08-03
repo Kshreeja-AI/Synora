@@ -674,7 +674,7 @@ curl -f http://<host>:3001/ready
 `ENTERPRISE_MODE`, `GOVERNMENT_MODE`, `SELF_HOSTED_MODE`
 
 Full list: `.env.example` (root + per-app) and
-`RELEASE_1_LAUNCH_READINESS.md` §2.
+`docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2.
 
 ---
 
@@ -1235,7 +1235,7 @@ by lint/typecheck/tests):**
 - **Release 2 M5 (Workspace operations)**: Projects/folders/assets CRUD with multipart upload, workspace invitations (email-based token flow), audit logging for all mutations, role-based permission system (VIEWER/MEMBER/EDITOR/ADMIN/OWNER), frontend pages for all new operations, 47 new backend tests + 19 frontend tests (632 total)
 - **Release 2 M6 (Billing system)**: Provider-agnostic billing abstraction (`src/billing/`) with Stripe adapter, Plan/Subscription/Invoice/PaymentMethod/WorkspaceCredits/CreditLedger schema, 6 billing services (plan/subscription/paymentMethod/invoice/credit/webhook), 15 workspace-scoped billing routes + admin routes, webhook processing with idempotency, frontend billing settings tab (4 tabs: plan/payment-methods/invoices/usage), admin plan management UI, Progress component, 45 billing route tests
 - **Release 2 production stabilization**: Fixed critical architectural issues (multi-workspace violation in billing routes, API response format inconsistency, TypeScript compilation errors, test route pattern mismatch, Docker entrypoint mismatch, frontend API method mismatch), all production gates green
-- **Production readiness documentation**: RELEASE_2_CLOSEOUT.md with comprehensive status, all gates passing, 632+ tests, zero critical vulnerabilities
+- **Production readiness documentation**: docs/archive/RELEASE_2_CLOSEOUT.md with comprehensive status, all gates passing, 632+ tests, zero critical vulnerabilities
 
 **Key architectural decisions executed:**
 

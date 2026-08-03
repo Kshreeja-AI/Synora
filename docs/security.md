@@ -295,7 +295,7 @@ pnpm audit --prod --audit-level=high
 ```
 This gate is not theoretical — it has already caught and blocked a real
 set of freshly-disclosed CVEs once in this repository's history (see
-`PRODUCTION_READINESS_AUDIT.md`). Package manager is pnpm; `npm audit`
+`docs/archive/PRODUCTION_READINESS_AUDIT.md`). Package manager is pnpm; `npm audit`
 commands from generic guides don't apply here.
 
 ### Secret scanning (real, CI-enforced)

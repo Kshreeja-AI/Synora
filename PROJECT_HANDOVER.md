@@ -149,10 +149,10 @@ synora/
 with rotating refresh tokens + lockout, user/project/document CRUD, AI
 text/code generation behind the 10-provider abstraction, config/secrets
 systems, security hardening, full CI stabilization (see
-`RELEASE_1_VERIFICATION_REPORT.md` for every bug found/fixed), Docker
+`docs/archive/RELEASE_1_VERIFICATION_REPORT.md` for every bug found/fixed), Docker
 production image, docs consolidation.
 
-**Release 2 — M1–M6: COMPLETE (see `RELEASE_2_CLOSEOUT.md`):**
+**Release 2 — M1–M6: COMPLETE (see `docs/archive/RELEASE_2_CLOSEOUT.md`):**
 
 - **M1: Foundation** — design tokens, 21-component library, typed API client, TanStack Query + Zustand
 - **M2: Marketing site** — landing, pricing, features, changelog with glass navbar
@@ -389,12 +389,12 @@ Managed Postgres (RDS/Neon/Supabase/Railway) supplies backups/PITR. No
 CD until M10 (R2-e). Dockerfile subtleties that must not be "cleaned up":
 no `pnpm prune --prod` (corrupts workspace symlinks), explicit OpenSSL
 install (Prisma on bookworm-slim), non-root user, `0.0.0.0` bind — all
-documented in `RELEASE_1_VERIFICATION_REPORT.md`.
+documented in `docs/archive/RELEASE_1_VERIFICATION_REPORT.md`.
 
 ## 13. Environment variables
 
 Authoritative list: `.env.example` (root + per-app) and
-`RELEASE_1_LAUNCH_READINESS.md` §2. Summary:
+`docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2. Summary:
 - **Required to boot (staging/prod, fail-closed)**: `DATABASE_URL`,
   `JWT_SECRET`, `NEXTAUTH_SECRET`
 - **Defaults exist for**: `NODE_ENV`, `APP_STAGE`, `PORT`, URLs, lockout
@@ -485,7 +485,7 @@ roadmap + release docs.
 ## 18. Production readiness
 
 Backend is production-ready **for a single-instance, text/code-only
-launch** (that was Release 1's bar — see `PRODUCTION_READINESS_AUDIT.md`),
+launch** (that was Release 1's bar — see `docs/archive/PRODUCTION_READINESS_AUDIT.md`),
 and the customer-facing auth/account surface (real auth screens, email
 verification, password reset, session management, profile/account
 settings, avatar upload) reached that same bar in M3, followed by the

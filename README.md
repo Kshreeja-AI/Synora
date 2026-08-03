@@ -85,7 +85,7 @@ pnpm install
 ```bash
 cp .env.example .env.local
 ```
-See `RELEASE_1_LAUNCH_READINESS.md` §2 for the full, currently-accurate
+See `docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2 for the full, currently-accurate
 list of required vs. optional variables.
 
 4. **Start PostgreSQL** (using Docker Compose)

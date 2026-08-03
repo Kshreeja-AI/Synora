@@ -76,18 +76,9 @@ export {
   CommandSeparator,
   CommandShortcut,
 } from './components/Command';
-export { FeatureCard, type FeatureCardProps } from './components/FeatureCard';
-export { StatCard, type StatCardProps } from './components/StatCard';
-export { PricingCard, type PricingCardProps } from './components/PricingCard';
-export { TestimonialCard, type TestimonialCardProps } from './components/TestimonialCard';
-export { FAQItem, type FAQItemProps } from './components/FAQItem';
-export { StepCard, type StepCardProps } from './components/StepCard';
 export { Heading, type HeadingProps } from './components/Heading';
 export { Container, type ContainerProps } from './components/Container';
 export { Grid, type GridProps } from './components/Grid';
 export { CTA, type CTAProps } from './components/CTA';
-export { FeedbackRating, type FeedbackRatingProps } from './components/FeedbackRating';
 export { FeedbackCorrection, type FeedbackCorrectionProps } from './components/FeedbackCorrection';
 export { FeedbackHallucination, type FeedbackHallucinationProps } from './components/FeedbackHallucination';
-export { FeedbackPreference, type FeedbackPreferenceProps } from './components/FeedbackPreference';
-export { MessageFeedbackBar, type MessageFeedbackBarProps } from './components/MessageFeedbackBar';

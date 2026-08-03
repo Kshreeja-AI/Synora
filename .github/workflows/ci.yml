@@ -88,6 +88,33 @@ jobs:
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
 
+      # A production deploy applies migrations, not `db push`, so the
+      # migration history — not schema.prisma — is what actually defines the
+      # production database. When the two diverge, production silently gets a
+      # different schema than every developer runs against. This asserts they
+      # still agree; an empty diff is the only passing result.
+      - name: Check migrations reproduce schema.prisma
+        run: |
+          set -e
+          psql "postgresql://synora:synora@localhost:5432/postgres" \
+            -c "DROP DATABASE IF EXISTS synora_drift_check;" \
+            -c "CREATE DATABASE synora_drift_check;"
+          DIFF=$(pnpm --filter @synora/database exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "postgresql://synora:synora@localhost:5432/synora_drift_check" \
+            --script)
+          if ! echo "$DIFF" | grep -q "This is an empty migration"; then
+            echo "::error::Migration drift: applying migrations does not reproduce schema.prisma."
+            echo "Add a migration for the difference below (do not edit an already-released migration):"
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "No drift: migrations reproduce schema.prisma exactly."
+        env:
+          PGPASSWORD: synora
+          DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+
       - name: Lint
         run: pnpm run lint
 
