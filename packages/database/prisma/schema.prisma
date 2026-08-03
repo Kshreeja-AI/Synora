@@ -37,6 +37,10 @@ model User {
   // Workspace membership
   workspaces    WorkspaceMember[]
 
+  // API keys the user created (workspace-scoped, but attributed to creator
+  // so audits can show who provisioned a machine credential).
+  apiKeysCreated ApiKey[]
+
   // Content & projects
   projects      Project[]
   documents     Document[]
@@ -337,12 +341,22 @@ model WorkspaceInvitation {
 model ApiKey {
   id            String    @id @default(cuid())
   workspaceId   String
+  createdById   String?
   name          String
+  /// SHA-256 hash of the full secret. Deterministic so lookup by presented
+  /// key stays a single indexed WHERE — the raw key has enough entropy that
+  /// hashing it with SHA-256 (instead of bcrypt) offers no meaningful
+  /// advantage to an attacker who leaks the DB row.
   key           String    @unique
+  /// Non-secret display prefix (e.g. "sk_syn_abc12345") — shown in the UI so
+  /// users can distinguish keys without ever seeing the secret again.
+  prefix        String    @unique
   lastUsedAt    DateTime?
   expiresAt     DateTime?
+  revokedAt     DateTime?
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy     User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
