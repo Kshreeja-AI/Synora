@@ -131,10 +131,19 @@ export type { EgressPath, PathResult, PrivacyCoverageResult } from './privacy-co
 export { registerEgressPaths } from './egress-registry.js';
 export { getRuntimeCheck, EXPECTED_SUBSCRIPTIONS } from './runtime-check.js';
 export {
+  InMemoryGateStore,
+  FileGateStore,
+  setGateStore,
+  getGateStore,
+} from './gate-store.js';
+export type { GateStore } from './gate-store.js';
+export {
   LAUNCH_GATES,
   getLaunchReadiness,
   recordGateMeasurement,
   clearGateMeasurements,
+  hydrateGateMeasurements,
+  persistGateMeasurement,
 } from './launch-gates.js';
 export type {
   GateStatus,

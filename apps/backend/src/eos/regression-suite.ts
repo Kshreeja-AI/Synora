@@ -1,5 +1,5 @@
 import { runEvaluation, compareRuns, type CaseExecutor, type EvaluationRunResult } from './evaluation-runner.js';
-import { recordGateMeasurement } from './launch-gates.js';
+import { recordGateMeasurement, persistGateMeasurement } from './launch-gates.js';
 import { getBaselineStore } from './baseline-store.js';
 
 /**
@@ -163,6 +163,7 @@ export async function measureRegressionGate(
     measuredAt: Date.now(),
     sampleSize: outcome.run.totalCases,
   });
+  await persistGateMeasurement('regression-failures');
 
   return outcome.result;
 }

@@ -26,6 +26,8 @@
  * `readyToLaunch` is true only when every gate is measured and passed.
  */
 
+import { getGateStore } from './gate-store.js';
+
 export type GateStatus = 'passed' | 'failed' | 'unmeasured';
 
 export type GateCategory =
@@ -203,6 +205,34 @@ export function recordGateMeasurement(measurement: GateMeasurement): boolean {
 
 export function clearGateMeasurements(): void {
   measurements.clear();
+}
+
+/**
+ * Loads previously recorded measurements from the store. Called at startup,
+ * because a readiness board that forgets everything on restart is not a
+ * readiness board.
+ *
+ * Measurements are kept in memory as the working set so reading readiness
+ * stays synchronous; the store is the durable copy, not the hot path.
+ */
+export async function hydrateGateMeasurements(): Promise<number> {
+  const stored = await getGateStore().loadAll();
+  let loaded = 0;
+  for (const measurement of stored) {
+    // Re-validated on the way in. A stored measurement for a gate that no
+    // longer exists, or one that fails today's checks, is discarded rather
+    // than trusted because it was written by an earlier version.
+    if (recordGateMeasurement(measurement)) loaded += 1;
+  }
+  return loaded;
+}
+
+/** Writes a recorded measurement through to the durable store. */
+export async function persistGateMeasurement(gateId: string): Promise<boolean> {
+  const measurement = measurements.get(gateId);
+  if (!measurement) return false;
+  await getGateStore().save(measurement);
+  return true;
 }
 
 function evaluate(gate: GateDefinition): GateResult {

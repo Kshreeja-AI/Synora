@@ -1,5 +1,5 @@
 import { defaultRedactionRules } from './redaction.js';
-import { recordGateMeasurement } from './launch-gates.js';
+import { recordGateMeasurement, persistGateMeasurement } from './launch-gates.js';
 
 /**
  * Measures whether personal data is actually redacted on every path that
@@ -164,6 +164,7 @@ export async function measurePrivacyGate(): Promise<PrivacyCoverageResult | null
     measuredAt: Date.now(),
     sampleSize: result.declaredPaths,
   });
+  await persistGateMeasurement('privacy-tests');
 
   return result;
 }
