@@ -18,6 +18,7 @@ import { getCaptureStats } from './case-capture.js';
 import { getProviderMatrix } from './provider-observatory.js';
 import { getAiPathCoverage } from './instrumentation.js';
 import { getRuntimeCheck } from './runtime-check.js';
+import { getLaunchReadiness } from './launch-gates.js';
 import { listProposals, getProposal, decideProposal, type ProposalStatus } from './proposal-engine.js';
 
 const router: Router = Router();
@@ -145,6 +146,10 @@ router.get('/coverage', (_req: Request, res: Response) => {
 
 router.get('/runtime-check', (_req: Request, res: Response) => {
   res.json(createApiResponse(getRuntimeCheck()));
+});
+
+router.get('/launch-readiness', (_req: Request, res: Response) => {
+  res.json(createApiResponse(getLaunchReadiness()));
 });
 
 router.get('/proposals', (req: Request, res: Response) => {

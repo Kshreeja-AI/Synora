@@ -105,6 +105,20 @@ export {
 export { isCaptureActive } from './case-capture.js';
 export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
 export { getRuntimeCheck, EXPECTED_SUBSCRIPTIONS } from './runtime-check.js';
+export {
+  LAUNCH_GATES,
+  getLaunchReadiness,
+  recordGateMeasurement,
+  clearGateMeasurements,
+} from './launch-gates.js';
+export type {
+  GateStatus,
+  GateCategory,
+  GateDefinition,
+  GateMeasurement,
+  GateResult,
+  LaunchReadiness,
+} from './launch-gates.js';
 export type { RuntimeCheckEntry, RuntimeCheckResult } from './runtime-check.js';
 export { recordAiInteraction } from './instrumentation.js';
 export type { AiInteractionRecord } from './instrumentation.js';

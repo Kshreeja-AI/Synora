@@ -10,6 +10,7 @@ import {
   getLatency,
   getDegradation,
   getLatencyDrift,
+  getLaunchReadiness,
   getPromptReport,
   getProposals,
   getRuntimeCheck,
@@ -205,6 +206,11 @@ export default function EngineeringDashboardPage() {
     queryFn: getDegradation,
     refetchInterval: REFRESH_MS,
   });
+  const readiness = useQuery({
+    queryKey: ['eos', 'readiness'],
+    queryFn: getLaunchReadiness,
+    refetchInterval: REFRESH_MS,
+  });
   const runtime = useQuery({
     queryKey: ['eos', 'runtime'],
     queryFn: getRuntimeCheck,
@@ -225,6 +231,57 @@ export default function EngineeringDashboardPage() {
           reset when the server restarts, so figures reflect the current process only.
         </p>
       </header>
+
+      <Section
+        title="Launch gates"
+        description="What must be true before launch, measured rather than estimated. A gate with no evidence is shown as unmeasured — which is neither a pass nor a failure."
+      >
+        {readiness.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !readiness.data ? (
+          <EmptyHint>Launch readiness unavailable.</EmptyHint>
+        ) : (
+          <>
+            <p className="text-sm">{readiness.data.summary}</p>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm">
+              <span className="text-emerald-600">{readiness.data.passed} passing</span>
+              <span className="text-red-500">{readiness.data.failed} failing</span>
+              <span className="text-muted-foreground">{readiness.data.unmeasured} unmeasured</span>
+            </div>
+            <ul className="mt-4 space-y-3">
+              {readiness.data.gates.map((gate) => (
+                <li key={gate.id} className="border-b border-border/50 pb-3 last:border-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="text-sm">{gate.question}</span>
+                    <span
+                      className={
+                        gate.status === 'passed'
+                          ? 'text-sm font-semibold text-emerald-600'
+                          : gate.status === 'failed'
+                            ? 'text-sm font-semibold text-red-500'
+                            : 'text-sm font-semibold text-muted-foreground'
+                      }
+                    >
+                      {gate.status === 'unmeasured'
+                        ? 'not measured'
+                        : `${gate.value}${gate.unit === '%' ? '%' : ''} (needs ${
+                            gate.direction === 'at-least' ? '≥' : '≤'
+                          }${gate.threshold}${gate.unit === '%' ? '%' : ''})`}
+                    </span>
+                  </div>
+                  {gate.status === 'unmeasured' ? (
+                    <p className="mt-1 text-sm text-muted-foreground">Waiting on: {gate.blockedBy}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {gate.source} · {gate.sampleSize} observations
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Section>
 
       {runtime.data && !runtime.data.allRunning ? (
         // First thing on the page, deliberately. If a watcher is not

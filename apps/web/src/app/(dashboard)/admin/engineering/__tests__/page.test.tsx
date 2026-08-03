@@ -55,7 +55,29 @@ beforeEach(() => {
   vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue(healthyRuntime);
   vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({ report: [], recentAlerts: [] });
   vi.mocked(eosApi.getDegradation).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getLaunchReadiness).mockResolvedValue(unmeasuredReadiness);
 });
+
+const unmeasuredReadiness = {
+  gates: [
+    {
+      id: 'ai-quality',
+      category: 'ai-quality',
+      question: 'Are the AI answers good, judged against stated criteria?',
+      threshold: 95,
+      unit: '%' as const,
+      direction: 'at-least' as const,
+      status: 'unmeasured' as const,
+      value: null,
+      blockedBy: 'An evaluation run with a configured AI judge. No judge is configured yet.',
+    },
+  ],
+  passed: 0,
+  failed: 0,
+  unmeasured: 1,
+  readyToLaunch: false,
+  summary: 'No launch gate has been measured yet. 1 gates are defined and all of them are waiting on evidence — this is the honest starting point, not a failure.',
+};
 
 const healthyRuntime = {
   entries: [
@@ -384,6 +406,40 @@ describe('EngineeringDashboardPage', () => {
     expect(await screen.findByText(/unmeasured rather than zero/i)).toBeInTheDocument();
   });
 
+  it('shows an unmeasured launch gate as unmeasured, never as passing', async () => {
+    renderPage();
+
+    expect(await screen.findByText('not measured')).toBeInTheDocument();
+    expect(screen.getByText(/No judge is configured yet/)).toBeInTheDocument();
+    expect(screen.getByText('1 unmeasured')).toBeInTheDocument();
+    expect(screen.getByText(/this is the honest starting point, not a failure/i)).toBeInTheDocument();
+  });
+
+  it('shows a measured gate with the evidence behind it', async () => {
+    vi.mocked(eosApi.getLaunchReadiness).mockResolvedValue({
+      ...unmeasuredReadiness,
+      gates: [
+        {
+          ...unmeasuredReadiness.gates[0],
+          status: 'passed' as const,
+          value: 96,
+          source: 'evaluation run r_1',
+          sampleSize: 200,
+          blockedBy: undefined,
+        },
+      ],
+      passed: 1,
+      unmeasured: 0,
+      summary: 'All 1 gates are measured and passing.',
+    });
+
+    renderPage();
+
+    // The number is shown with what it rests on, so it can be rechecked.
+    expect(await screen.findByText('96% (needs ≥95%)')).toBeInTheDocument();
+    expect(screen.getByText(/evaluation run r_1 · 200 observations/)).toBeInTheDocument();
+  });
+
   it('shows a latency drift with the multiple it measured', async () => {
     vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({
       report: [
@@ -495,6 +551,7 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getRuntimeCheck).mockRejectedValue(boom);
     vi.mocked(eosApi.getLatencyDrift).mockRejectedValue(boom);
     vi.mocked(eosApi.getDegradation).mockRejectedValue(boom);
+    vi.mocked(eosApi.getLaunchReadiness).mockRejectedValue(boom);
 
     renderPage();
 

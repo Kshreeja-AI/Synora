@@ -231,6 +231,39 @@ export function getDegradation(): Promise<{
   return api.get('/api/eos/degradation');
 }
 
+export type GateStatus = 'passed' | 'failed' | 'unmeasured';
+
+export interface GateResult {
+  id: string;
+  category: string;
+  question: string;
+  threshold: number;
+  unit: '%' | 'count';
+  direction: 'at-least' | 'at-most';
+  status: GateStatus;
+  /** Null when unmeasured. Never zero as a stand-in. */
+  value: number | null;
+  source?: string;
+  measuredAt?: number;
+  sampleSize?: number;
+  /** What the gate is waiting for. Present only when unmeasured. */
+  blockedBy?: string;
+}
+
+export interface LaunchReadiness {
+  gates: GateResult[];
+  passed: number;
+  failed: number;
+  unmeasured: number;
+  readyToLaunch: boolean;
+  /** Deliberately not a percentage — see the backend module. */
+  summary: string;
+}
+
+export function getLaunchReadiness(): Promise<LaunchReadiness> {
+  return api.get('/api/eos/launch-readiness');
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ProposalEvidence {
