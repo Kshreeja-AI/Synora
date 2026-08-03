@@ -6,6 +6,7 @@ import { createApiResponse } from '@synora/shared';
 import { exportService } from '../services/export.service';
 import { importService } from '../services/import.service';
 import { prisma } from '@synora/database';
+import { exportLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -32,7 +33,7 @@ const EXPORT_MIME: Record<'json' | 'markdown', string> = {
  * The filename is derived from the conversation title, RFC 5987
  * encoded so user-supplied titles can't break out of the header.
  */
-router.get('/:workspaceId/conversations/:conversationId/export', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/conversations/:conversationId/export', authMiddleware, exportLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, conversationId } = req.params;
     const { format } = exportQuerySchema.parse(req.query);
@@ -62,7 +63,7 @@ router.get('/:workspaceId/conversations/:conversationId/export', authMiddleware,
 });
 
 // Import conversation
-router.post('/:workspaceId/import', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/import', authMiddleware, exportLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { format, content } = importSchema.partial().parse(req.body);

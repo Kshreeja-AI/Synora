@@ -5,6 +5,7 @@ import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse } from '@synora/shared';
 import { searchService } from '../services/search.service';
 import { prisma } from '@synora/database';
+import { searchLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router({ mergeParams: true });
 
@@ -15,7 +16,7 @@ const searchQuerySchema = z.object({
   type: z.enum(['full-text', 'semantic']).default('full-text').optional(),
 });
 
-router.get('/:workspaceId/search', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/search', authMiddleware, searchLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { q, skip, take } = searchQuerySchema.parse(req.query);
@@ -43,7 +44,7 @@ router.get('/:workspaceId/search', authMiddleware, requireWorkspaceAccess(), asy
   }
 });
 
-router.get('/:workspaceId/search/messages', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/search/messages', authMiddleware, searchLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { q, skip, take } = searchQuerySchema.parse(req.query);
@@ -71,7 +72,7 @@ router.get('/:workspaceId/search/messages', authMiddleware, requireWorkspaceAcce
   }
 });
 
-router.post('/:workspaceId/search/index/:conversationId', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/search/index/:conversationId', authMiddleware, searchLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, conversationId } = req.params;
 

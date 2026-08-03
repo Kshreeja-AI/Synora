@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { generateText } from '../ai';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import { aiGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
 
@@ -15,7 +16,7 @@ const generateTextRequestSchema = z.object({
   systemPrompt: z.string().optional(),
 });
 
-router.post('/generate', authMiddleware, async (req: AuthRequest, res: Response, next: NextFunction) => {
+router.post('/generate', authMiddleware, aiGenerationLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = generateTextRequestSchema.parse(req.body);
 

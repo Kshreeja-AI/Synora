@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
+import { exportLimiter } from '../middleware/resourceRateLimit'
 import { datasetExportService } from '../services/datasetExport.service'
 import { createApiResponse } from '@synora/shared'
 import { ExportFormat } from '@prisma/client'
@@ -15,7 +16,7 @@ const ExportDatasetSchema = z.object({
 const router: Router = Router({ mergeParams: true })
 
 // Export dataset
-router.post('/:workspaceId/datasets/:datasetId/exports', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/datasets/:datasetId/exports', authMiddleware, exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, datasetId } = req.params
     const input = ExportDatasetSchema.parse(req.body)
@@ -57,7 +58,7 @@ router.get('/:workspaceId/datasets/:datasetId/exports/:exportId', authMiddleware
 })
 
 // Download export
-router.get('/:workspaceId/datasets/:datasetId/exports/:exportId/download', authMiddleware, async (req: AuthRequest, res, next) => {
+router.get('/:workspaceId/datasets/:datasetId/exports/:exportId/download', authMiddleware, exportLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, exportId } = req.params
 

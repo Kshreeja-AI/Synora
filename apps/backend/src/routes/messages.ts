@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { authMiddleware, AuthRequest } from '../middleware/auth'
+import { aiGenerationLimiter } from '../middleware/resourceRateLimit'
 import { createApiResponse } from '@synora/shared'
 import { messageService } from '../services/message.service'
 import { MessageRole } from '@prisma/client'
@@ -23,7 +24,7 @@ const updateMessageSchema = z.object({
   content: z.string().min(1),
 })
 
-router.post('/:workspaceId/conversations/:conversationId/messages', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/conversations/:conversationId/messages', authMiddleware, aiGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { conversationId } = req.params
     const input = createMessageSchema.parse(req.body)
@@ -107,7 +108,7 @@ router.delete('/:workspaceId/conversations/:conversationId/messages/:messageId',
   }
 })
 
-router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/regenerate', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/conversations/:conversationId/messages/:messageId/regenerate', authMiddleware, aiGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { messageId } = req.params
     const message = await messageService.regenerate(req.userId!, messageId)

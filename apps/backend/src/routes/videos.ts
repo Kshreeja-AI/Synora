@@ -5,6 +5,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException, ServiceUnavailableException } from '@synora/shared';
 import { NoProviderConfiguredError } from '../ai';
 import { videoGenerationService } from '../services/videoGeneration.service';
+import { mediaGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
 
@@ -31,7 +32,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.post('/generate', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { prompt, duration, size, projectId } = generateVideoSchema.parse(req.body);
 

@@ -1551,15 +1551,43 @@ database is unreachable.
 
 ## Rate Limiting
 
-- One global limiter on all of `/api/*`: 100 requests per 15 minutes per
-  IP by default (`RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX_REQUESTS`,
-  config-driven). There is currently no separate, stricter limiter
-  specifically on auth endpoints — brute-force protection for login is
-  the per-account lockout described above (`ACCOUNT_LOCKED`), not a
-  tighter IP rate limit. A Redis-backed limiter shared across instances
-  is planned for Release 2 (see `RELEASE_2_PLAN.md`, R2-c); today's
-  limiter is correctly in-process/single-instance for Release 1's
-  single-instance deployment target.
+Three layers apply, in this order. All of them return
+`429` with `error.code = "RATE_LIMIT_EXCEEDED"` and set standard
+`RateLimit-*` headers (legacy `X-RateLimit-*` headers are disabled).
+
+**1. Global ceiling** — all of `/api/*`: 100 requests per 15 minutes per IP by
+default (`RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS`, config-driven).
+
+**2. Credential endpoints** (`middleware/authRateLimit.ts`), per IP — these
+protect against brute force and complement the per-account lockout described
+above (`ACCOUNT_LOCKED`):
+
+| Endpoint | Limit |
+|---|---|
+| `POST /api/auth/login` | 5 per 15 min |
+| `POST /api/auth/register` | 3 per hour |
+| `POST /api/auth/forgot-password` | 3 per 15 min |
+| `POST /api/auth/refresh` | 30 per min |
+
+**3. Expensive resources** (`middleware/resourceRateLimit.ts`), **per
+authenticated user** (falling back to IP when unauthenticated) — these bound
+spend and compute rather than guessing attempts. Per-user is the correct unit
+here: the global limiter is per-IP, which both punishes everyone sharing a
+corporate NAT and fails to cap one account spread across many addresses.
+
+| Class | Endpoints | Limit |
+|---|---|---|
+| AI generation | `POST /api/ai/generate`, `POST …/messages`, `POST …/messages/:id/regenerate` | 30 per min |
+| Media generation | `POST /api/images/generate`, `/api/videos/generate`, `/api/audio/generate` | 10 per min |
+| Search | `GET …/search`, `GET …/search/messages`, `POST …/search/index/:conversationId` | 60 per min |
+| Export | dataset exports + download, conversation export/import | 10 per 5 min |
+| Evaluation | `POST …/evaluations/:runId/run`, `POST …/evaluations/compare` | 5 per 10 min |
+
+All limiters are skipped when `NODE_ENV=test` so suites are not throttled.
+
+Limiter state is in-process. That is correct for a single-instance deployment
+but means limits are per-instance once the API is horizontally scaled — a
+shared Redis store is required at that point (see `RELEASE_2_PLAN.md`, R2-c).
 
 ---
 

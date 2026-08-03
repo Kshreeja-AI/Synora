@@ -5,6 +5,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException, ServiceUnavailableException } from '@synora/shared';
 import { NoProviderConfiguredError } from '../ai';
 import { audioGenerationService } from '../services/audioGeneration.service';
+import { mediaGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
 
@@ -28,7 +29,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.post('/generate', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { text, voice, format, projectId } = generateAudioSchema.parse(req.body);
 

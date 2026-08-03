@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { authMiddleware, type AuthRequest } from '../middleware/auth'
+import { evaluationLimiter } from '../middleware/resourceRateLimit'
 import { evaluationService } from '../services/evaluation.service'
 import { createApiResponse } from '@synora/shared'
 import { z } from 'zod'
@@ -63,7 +64,7 @@ router.get('/:workspaceId/evaluations/:runId', authMiddleware, async (req: AuthR
 })
 
 // Run evaluation (trigger execution)
-router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, evaluationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, runId } = req.params
 
@@ -76,7 +77,7 @@ router.post('/:workspaceId/evaluations/:runId/run', authMiddleware, async (req: 
 })
 
 // Compare models
-router.post('/:workspaceId/evaluations/compare', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/evaluations/compare', authMiddleware, evaluationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params
     const { datasetId, modelIds } = CompareModelsSchema.parse(req.body)
