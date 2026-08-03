@@ -8,6 +8,8 @@ import { sampleMemory } from './memory-collector.js';
 import { getLatencySnapshot } from './latency-tracker.js';
 import { getPromptReport } from './prompt-intelligence.js';
 import { captureSnapshot, queryHistory, getHistoryStore } from './history-recorder.js';
+import { listDatasets, summarizeDataset, getCases } from './evaluation-datasets.js';
+import { listGraders } from './evaluation-graders.js';
 import { getProviderMatrix } from './provider-observatory.js';
 
 const router: Router = Router();
@@ -86,6 +88,27 @@ router.post('/history/capture', async (_req: Request, res: Response) => {
     return;
   }
   res.json({ data: snapshot });
+});
+
+router.get('/evaluation/datasets', (_req: Request, res: Response) => {
+  res.json({ data: listDatasets() });
+});
+
+router.get('/evaluation/datasets/:datasetId', (req: Request, res: Response) => {
+  const summary = summarizeDataset(req.params.datasetId);
+  if (!summary) {
+    res.status(404).json({ error: 'Dataset not found' });
+    return;
+  }
+  res.json({ data: { ...summary, cases: getCases(req.params.datasetId) } });
+});
+
+router.get('/evaluation/graders', (_req: Request, res: Response) => {
+  res.json({ data: listGraders() });
+});
+
+router.get('/evaluation/runs', (_req: Request, res: Response) => {
+  res.json({ data: engineeringEventBus.recentByType('evaluation.run.completed', 50) });
 });
 
 export { router as eosRouter };

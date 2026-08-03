@@ -1,5 +1,5 @@
 export { engineeringEventBus } from './event-bus.js';
-export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, EngineeringSnapshotEvent } from './event-bus.js';
+export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, EngineeringSnapshotEvent, EvaluationRunCompletedEvent } from './event-bus.js';
 export { attachWorkerCollector } from './worker-collector.js';
 export { eosApiCollector } from './api-collector.js';
 export { registerHealthProbe, startHealthCollector, stopHealthCollector } from './health-collector.js';
@@ -24,4 +24,37 @@ export {
   startHistoryRecorder,
   stopHistoryRecorder,
 } from './history-recorder.js';
+export {
+  applyGraders,
+  registerGrader,
+  getGrader,
+  listGraders,
+  resetGraders,
+} from './evaluation-graders.js';
+export type { Grader, GraderSpec, GradeResult } from './evaluation-graders.js';
+export {
+  createDataset,
+  addCase,
+  removeCase,
+  getDataset,
+  getCases,
+  summarizeDataset,
+  listDatasets,
+  deleteDataset,
+  resetDatasets,
+} from './evaluation-datasets.js';
+export type {
+  CaseOrigin,
+  EvaluationCase,
+  EvaluationDataset,
+  DatasetSummary,
+} from './evaluation-datasets.js';
+export { runEvaluation, compareRuns } from './evaluation-runner.js';
+export type {
+  CaseExecutor,
+  CaseResult,
+  EvaluationRunResult,
+  RunComparison,
+  RunOptions,
+} from './evaluation-runner.js';
 export { eosRouter } from './routes.js';

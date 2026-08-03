@@ -147,6 +147,21 @@ export interface EngineeringSnapshotEvent extends EngineeringEvent {
   };
 }
 
+export interface EvaluationRunCompletedEvent extends EngineeringEvent {
+  type: 'evaluation.run.completed';
+  payload: {
+    runId: string;
+    datasetId: string;
+    datasetVersion: number;
+    label: string;
+    totalCases: number;
+    passRate: number;
+    meanScore: number;
+    erroredCases: number;
+    durationMs: number;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -161,6 +176,7 @@ export type KnownEvent =
   | PromptOutcomeEvent
   | AlertPromptRegressionEvent
   | EngineeringSnapshotEvent
+  | EvaluationRunCompletedEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

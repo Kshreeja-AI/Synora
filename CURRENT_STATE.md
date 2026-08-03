@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (14):**
+**Components (17):**
 
 | Component | Role |
 |---|---|
@@ -249,11 +249,29 @@ and subscribe from it. Each component is separately replaceable.
 | `prompt-intelligence` | CIEP: per-prompt/version success, latency, cost + regression alerts |
 | `history-store` | Storage seam for engineering history: in-memory (default) and append-only JSONL file implementations |
 | `history-recorder` | Periodic full-platform snapshots persisted through the store seam |
+| `evaluation-graders` | CIEP: pluggable scoring functions (exact, contains, regex, jsonValid, nonEmpty, lengthWithin, keywordCoverage) + custom registry |
+| `evaluation-datasets` | CIEP: versioned case library; every case carries a required `real`/`synthetic` origin |
+| `evaluation-runner` | CIEP: runs a dataset against an injected executor, scores it, and compares two runs |
 
 **Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
 `POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
 `POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`,
-`GET /history`, `POST /history/capture`.
+`GET /history`, `POST /history/capture`, `GET /evaluation/datasets`,
+`GET /evaluation/datasets/:id`, `GET /evaluation/graders`, `GET /evaluation/runs`.
+
+**Evaluation platform.** Turns "the new prompt feels better" into a
+defensible claim. A dataset is a versioned collection of cases; each case
+carries an input, optional expected answer, one or more graders, and a
+**required** `origin` of `real` or `synthetic` — synthetic data must never
+be silently mistaken for observed behaviour. `runEvaluation` takes an
+injected `CaseExecutor`, so the runner never knows which provider, model,
+or prompt is under test and can evaluate any of them. `compareRuns` diffs
+two runs case by case and returns an improvement/regression/mixed verdict
+plus cost and latency deltas, refusing to compare runs from different
+datasets. Two deliberate fail-closed choices: an unknown grader scores
+zero rather than being skipped (skipping would inflate results and make an
+evaluation actively misleading), and an executor that throws marks only
+that case as errored rather than aborting the run.
 
 **History persistence.** `EngineeringHistoryStore` is an interface, not a
 concrete datastore, so engineering history is portable across backends.
@@ -268,7 +286,7 @@ schema drift this PR exists to fix. Every store operation is failure-
 isolated: a broken store returns empty/null rather than propagating an
 error, so observability can never break the product.
 
-Verified by 71 tests across 13 test files in `src/eos/__tests__/`.
+Verified by 103 tests across 15 test files in `src/eos/__tests__/`.
 
 ## Current AI engine
 
