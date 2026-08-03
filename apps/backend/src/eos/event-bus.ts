@@ -162,6 +162,33 @@ export interface EvaluationRunCompletedEvent extends EngineeringEvent {
   };
 }
 
+export interface AiInteractionCompletedEvent extends EngineeringEvent {
+  type: 'ai.interaction.completed';
+  payload: {
+    promptId: string;
+    input: string;
+    output: string;
+    success: boolean;
+    rating?: number;
+    consented?: boolean;
+    tags?: string[];
+    note?: string;
+  };
+}
+
+export interface EvaluationCaseCapturedEvent extends EngineeringEvent {
+  type: 'evaluation.case.captured';
+  payload: {
+    caseId: string;
+    datasetId: string;
+    promptId: string;
+    reason: string;
+    redactedInput: boolean;
+    redactedOutput: boolean;
+    redactionCounts: Record<string, number>;
+  };
+}
+
 export type KnownEvent =
   | WorkerJobEvent
   | DeploymentEvent
@@ -177,6 +204,8 @@ export type KnownEvent =
   | AlertPromptRegressionEvent
   | EngineeringSnapshotEvent
   | EvaluationRunCompletedEvent
+  | AiInteractionCompletedEvent
+  | EvaluationCaseCapturedEvent
   | EngineeringEvent;
 
 type EventHandler = (event: KnownEvent) => void;

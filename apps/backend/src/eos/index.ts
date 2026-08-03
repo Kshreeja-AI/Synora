@@ -1,5 +1,5 @@
 export { engineeringEventBus } from './event-bus.js';
-export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, EngineeringSnapshotEvent, EvaluationRunCompletedEvent } from './event-bus.js';
+export type { EngineeringEvent, KnownEvent, WorkerJobEvent, BootEvent, QueueDepthEvent, AlertErrorRateEvent, ProcessMemoryEvent, ApiLatencySummaryEvent, AiProviderObservationEvent, PromptOutcomeEvent, AlertPromptRegressionEvent, EngineeringSnapshotEvent, EvaluationRunCompletedEvent, AiInteractionCompletedEvent, EvaluationCaseCapturedEvent } from './event-bus.js';
 export { attachWorkerCollector } from './worker-collector.js';
 export { eosApiCollector } from './api-collector.js';
 export { registerHealthProbe, startHealthCollector, stopHealthCollector } from './health-collector.js';
@@ -57,4 +57,15 @@ export type {
   RunComparison,
   RunOptions,
 } from './evaluation-runner.js';
+export { redact, containsSensitive, defaultRedactionRules } from './redaction.js';
+export type { RedactionRule, RedactionResult } from './redaction.js';
+export {
+  captureInteraction,
+  shouldCapture,
+  startCaseCapture,
+  stopCaseCapture,
+  getCaptureStats,
+  setSampler,
+} from './case-capture.js';
+export type { CaptureConfig, Interaction, CaptureDecision } from './case-capture.js';
 export { eosRouter } from './routes.js';

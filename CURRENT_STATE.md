@@ -231,7 +231,7 @@ Architecture is event-driven: an in-process `EngineeringEventBus` with a
 bounded ring buffer, and independent collectors/monitors that publish to
 and subscribe from it. Each component is separately replaceable.
 
-**Components (17):**
+**Components (19):**
 
 | Component | Role |
 |---|---|
@@ -252,12 +252,15 @@ and subscribe from it. Each component is separately replaceable.
 | `evaluation-graders` | CIEP: pluggable scoring functions (exact, contains, regex, jsonValid, nonEmpty, lengthWithin, keywordCoverage) + custom registry |
 | `evaluation-datasets` | CIEP: versioned case library; every case carries a required `real`/`synthetic` origin |
 | `evaluation-runner` | CIEP: runs a dataset against an injected executor, scores it, and compares two runs |
+| `redaction` | Scrubs emails, API keys, bearer tokens, JWTs, cards, SSNs, IPs, and phone numbers from captured text |
+| `case-capture` | CIEP: turns real failures and low-rated interactions into redacted `real`-origin evaluation cases |
 
 **Admin endpoints:** `GET /events/recent`, `GET /events/stats`,
 `POST /health/check`, `GET /boot`, `POST /queue-depth`, `GET /error-rate`,
 `POST /memory`, `GET /latency`, `GET /provider-matrix`, `GET /prompt-report`,
 `GET /history`, `POST /history/capture`, `GET /evaluation/datasets`,
-`GET /evaluation/datasets/:id`, `GET /evaluation/graders`, `GET /evaluation/runs`.
+`GET /evaluation/datasets/:id`, `GET /evaluation/graders`, `GET /evaluation/runs`,
+`GET /evaluation/capture`.
 
 **Evaluation platform.** Turns "the new prompt feels better" into a
 defensible claim. A dataset is a versioned collection of cases; each case
@@ -286,7 +289,22 @@ schema drift this PR exists to fix. Every store operation is failure-
 isolated: a broken store returns empty/null rather than propagating an
 error, so observability can never break the product.
 
-Verified by 103 tests across 15 test files in `src/eos/__tests__/`.
+**Automatic case capture.** `case-capture` turns real traffic into
+evaluation cases, keeping the interactions worth keeping: failures and
+low-rated responses. A captured failure becomes a permanent regression
+test, which is how an AI product regains the "fixed stays fixed" ratchet
+ordinary software gets for free.
+
+Privacy is enforced, not advisory. Capture is **off until explicitly
+started** — deriving cases from customer data must never begin as a side
+effect of importing a module. It **requires consent by default**
+(`requireConsent`), and every captured input and output is passed through
+`redaction` before storage. Redaction deliberately errs toward
+over-redaction: an over-scrubbed case is still useful for evaluation, a
+leaked secret is not recoverable once written down. Capture is bounded by
+`maxCases` and never throws, so it cannot fail a customer request.
+
+Verified by 135 tests across 17 test files in `src/eos/__tests__/`.
 
 ## Current AI engine
 

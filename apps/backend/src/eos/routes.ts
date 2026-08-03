@@ -10,6 +10,7 @@ import { getPromptReport } from './prompt-intelligence.js';
 import { captureSnapshot, queryHistory, getHistoryStore } from './history-recorder.js';
 import { listDatasets, summarizeDataset, getCases } from './evaluation-datasets.js';
 import { listGraders } from './evaluation-graders.js';
+import { getCaptureStats } from './case-capture.js';
 import { getProviderMatrix } from './provider-observatory.js';
 
 const router: Router = Router();
@@ -109,6 +110,11 @@ router.get('/evaluation/graders', (_req: Request, res: Response) => {
 
 router.get('/evaluation/runs', (_req: Request, res: Response) => {
   res.json({ data: engineeringEventBus.recentByType('evaluation.run.completed', 50) });
+});
+
+router.get('/evaluation/capture', (_req: Request, res: Response) => {
+  const events = engineeringEventBus.recentByType('evaluation.case.captured', 50);
+  res.json({ data: { stats: getCaptureStats(), recentCaptures: events } });
 });
 
 export { router as eosRouter };
