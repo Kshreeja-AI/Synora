@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/workflows';
 import { StepBuilder } from '@/components/workflows/StepBuilder';
 import { RunDetail } from '@/components/agents/RunDetail';
+import { SchedulePanel } from '@/components/workflows/SchedulePanel';
 
 /**
  * The workflow workspace: author a sequence, run it, inspect what happened.
@@ -285,6 +286,8 @@ export default function WorkflowsPage() {
                     </div>
                   )}
                 </section>
+
+                <SchedulePanel workspaceId={workspaceId} workflowId={selected.id} />
 
                 <section className="space-y-3">
                   <h3 className="font-semibold">

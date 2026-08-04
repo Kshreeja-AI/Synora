@@ -427,9 +427,19 @@ a convenience. Schedules are also advanced before anything is started, so a
 workflow that throws every time cannot wedge the scheduler into retrying
 one occurrence forever.
 
+The scheduling surface lives on `/workflows`: add, pause and remove
+schedules, with missed occurrences rendered as a warning rather than a
+tooltip — a schedule that silently did not run looks identical to one
+running fine, and the difference is exactly what the owner needs. The
+panel also states the two things a user would otherwise have to guess:
+that the clock is checked every 30 seconds (so a time is "at or shortly
+after"), and that a scheduled run uses their own permissions.
+
 **Missing, named:** event triggers (only a clock can start a workflow —
-nothing reacts to a file arriving or a webhook firing); a scheduling UI;
-editing an existing workflow from the screen; and per-run cost metering.
+nothing reacts to a file arriving or a webhook firing); timezone support
+(UTC only); editing an existing workflow from the screen; and per-run cost
+metering. The scheduler is also tested only against an injected clock — it
+has never been observed running over real elapsed time.
 
 ---
 
@@ -536,7 +546,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI and clock-based scheduling: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and a scheduling UI: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and timezones: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |

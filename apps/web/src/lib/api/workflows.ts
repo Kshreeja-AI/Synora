@@ -65,7 +65,37 @@ export interface CreateWorkflowInput {
 
 export type UpdateWorkflowInput = Partial<CreateWorkflowInput>;
 
+export type ScheduleKind = 'interval' | 'daily';
+
+export interface WorkflowSchedule {
+  id: string;
+  workspaceId: string;
+  workflowId: string;
+  kind: ScheduleKind;
+  intervalMs?: number;
+  atMinuteUtc?: number;
+  enabled: boolean;
+  createdBy: string;
+  createdAt: number;
+  nextFireAt: number;
+  lastFiredAt?: number;
+  /**
+   * Occurrences that came due while nothing was running. Never replayed,
+   * always counted — surfaced in the UI because "it did not run" is
+   * information the owner needs, and absence is not something to absorb.
+   */
+  missedOccurrences: number;
+  lastMissedAt?: number;
+}
+
+export interface CreateScheduleInput {
+  kind: ScheduleKind;
+  intervalMs?: number;
+  atMinuteUtc?: number;
+}
+
 const WORKFLOWS_KEY = 'workflows';
+const SCHEDULES_KEY = 'workflow-schedules';
 const RUNS_KEY = 'agent-runs';
 
 export function useWorkflows(
@@ -141,6 +171,65 @@ export function useArchiveWorkflow(
       api.delete<WorkflowDefinition>(`/api/workspaces/${workspaceId}/workflows/${workflowId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [WORKFLOWS_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useWorkflowSchedules(
+  workspaceId: string,
+  workflowId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<WorkflowSchedule[]> {
+  return useQuery({
+    queryKey: [SCHEDULES_KEY, workspaceId, workflowId],
+    queryFn: () =>
+      api.get<WorkflowSchedule[]>(
+        `/api/workspaces/${workspaceId}/workflows/${workflowId}/schedules`,
+      ),
+    enabled: !!workspaceId && !!workflowId && options?.enabled !== false,
+  });
+}
+
+export function useCreateSchedule(
+  workspaceId: string,
+): UseMutationResult<WorkflowSchedule, Error, { workflowId: string; input: CreateScheduleInput }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workflowId, input }) =>
+      api.post<WorkflowSchedule>(
+        `/api/workspaces/${workspaceId}/workflows/${workflowId}/schedules`,
+        input,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useSetScheduleEnabled(
+  workspaceId: string,
+): UseMutationResult<WorkflowSchedule, Error, { scheduleId: string; enabled: boolean }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ scheduleId, enabled }) =>
+      api.patch<WorkflowSchedule>(`/api/workspaces/${workspaceId}/schedules/${scheduleId}`, {
+        enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useDeleteSchedule(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (scheduleId) =>
+      api.delete<{ deleted: boolean }>(`/api/workspaces/${workspaceId}/schedules/${scheduleId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY, workspaceId] });
     },
   });
 }
