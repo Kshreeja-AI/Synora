@@ -64,3 +64,24 @@ export function useCreateDocument(): UseMutationResult<Document, Error, CreateDo
     },
   });
 }
+
+export interface UpdateDocumentInput {
+  title?: string;
+  content?: string;
+  /** Explicit null takes the document out of its project; omitted leaves filing alone. */
+  projectId?: string | null;
+}
+
+export function useUpdateDocument(
+  id: string,
+): UseMutationResult<Document, Error, UpdateDocumentInput> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateDocumentInput) =>
+      api.patch<Document>(`/api/documents/${id}`, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData([DOCUMENTS_KEY, id], updated);
+      queryClient.invalidateQueries({ queryKey: [DOCUMENTS_KEY] });
+    },
+  });
+}

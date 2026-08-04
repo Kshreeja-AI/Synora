@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `5d81dd1` + the save-as-document increment
-**Evidence basis**: 2,531 backend tests across 235 files and 630 frontend tests
+**Verified at commit**: `e466b94` + the document-editing increment
+**Evidence basis**: 2,535 backend tests across 235 files and 633 frontend tests
 across 94 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
@@ -183,7 +183,7 @@ behaviour is covered by component and page tests instead.
 | Video generation | **E** | Async job abstraction, provider registry, polling API. **ACTIVATION BLOCKED**: no credential. |
 | Audio / text-to-speech | **E** | `audio.ts`, `audioGeneration.service.ts`. **ACTIVATION BLOCKED**: no credential. |
 | Media Studio UI | **A** | `/studio` page with image, video and audio tabs; tab state lives in the URL so a studio is linkable. The UI correctly surfaces the 503 rather than pretending. |
-| Document editing | **B** | `documents.ts` now has route tests (it previously had none) and a real UI: `/documents` lists yours, `/documents/[id]` renders one, and "Save as doc" on any assistant reply creates one. **Limit**: documents are create-and-read only — there is no update route and no editing surface, so changing a saved document today means saving a new one. |
+| Document editing | **A** | `PATCH /api/documents/:id` (16 route tests) + an edit surface on `/documents/[id]`: title and content prefill from what is stored *at the moment Edit is pressed*, not a stale first render, so what is in the textarea is always exactly what will be overwritten. Filing (`projectId`) can change on every edit, not only at creation, and is **re-verified every time** — the same 404-on-inaccessible-project rule as create, so a document can't be walked into a project across an edit that create would have refused. Explicit `null` unfiles; an omitted field leaves filing alone. Cancel discards; nothing is sent until Save. |
 
 ## Family H — Personal AI Automation
 

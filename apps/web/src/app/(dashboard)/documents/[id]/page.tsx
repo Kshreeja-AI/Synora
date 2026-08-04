@@ -1,20 +1,29 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { Markdown } from '@/components/chat/Markdown';
-import { useDocument } from '@/lib/api/documents';
+import { useDocument, useUpdateDocument } from '@/lib/api/documents';
 
 /**
- * One document, whole. The content is rendered exactly as stored — this
- * page adds navigation and nothing else.
+ * One document, whole — readable by default, editable on request.
+ *
+ * Editing is plain text over the stored markdown: what is in the
+ * textarea is exactly what will be stored, no richer claim than the
+ * platform can keep. Cancel discards; nothing is saved until Save.
  */
 export default function DocumentDetailPage() {
   const params = useParams();
   const documentId = params.id as string;
   const { data: doc, isLoading, error } = useDocument(documentId);
+  const update = useUpdateDocument(documentId);
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
 
   if (isLoading) {
     return (
@@ -38,6 +47,20 @@ export default function DocumentDetailPage() {
     );
   }
 
+  const startEditing = () => {
+    // Prefill from what is stored NOW, not from a stale first render.
+    setTitle(doc.title);
+    setContent(doc.content);
+    setIsEditing(true);
+  };
+
+  const save = () => {
+    update.mutate(
+      { title: title.trim(), content },
+      { onSuccess: () => setIsEditing(false) },
+    );
+  };
+
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <div>
@@ -48,13 +71,67 @@ export default function DocumentDetailPage() {
           <ArrowLeft className="h-3 w-3" aria-hidden />
           Documents
         </Link>
-        <h1 className="mt-2 text-2xl font-semibold">{doc.title}</h1>
+
+        {isEditing ? (
+          <input
+            aria-label="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-2 text-2xl font-semibold"
+          />
+        ) : (
+          <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
+            <h1 className="text-2xl font-semibold">{doc.title}</h1>
+            <button
+              type="button"
+              onClick={startEditing}
+              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+            >
+              <Pencil className="h-3 w-3" aria-hidden />
+              Edit
+            </button>
+          </div>
+        )}
+
         <p className="mt-1 text-xs text-muted-foreground">
           Updated {new Date(doc.updatedAt).toLocaleString()}
         </p>
       </div>
 
-      {doc.format === 'MARKDOWN' ? (
+      {isEditing ? (
+        <div className="space-y-3">
+          <textarea
+            aria-label="Content"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            rows={16}
+            className="w-full rounded-md border border-input bg-background p-3 font-mono text-sm"
+          />
+          {update.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              {update.error instanceof Error ? update.error.message : 'Failed to save'}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={update.isPending || !title.trim()}
+              className="flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {update.isPending && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsEditing(false)}
+              className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : doc.format === 'MARKDOWN' ? (
         <Markdown className="text-sm">{doc.content}</Markdown>
       ) : (
         <pre className="whitespace-pre-wrap text-sm">{doc.content}</pre>

@@ -186,6 +186,92 @@ describe('Document Routes', () => {
       .send({ title: 'Orphan', content: 'body', projectId: 'proj_does_not_exist' })
       .expect(404)
   })
+
+  describe('PATCH /api/documents/:id', () => {
+    async function createDoc(extra: Record<string, unknown> = {}) {
+      const res = await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Draft', content: 'v1', ...extra })
+        .expect(201)
+      return res.body.data as { id: string }
+    }
+
+    it('updates title and content; an omitted field is left alone', async () => {
+      const doc = await createDoc()
+
+      const first = await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ content: 'v2' })
+        .expect(200)
+      expect(first.body.data.content).toBe('v2')
+      expect(first.body.data.title).toBe('Draft')
+
+      const second = await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Final' })
+        .expect(200)
+      expect(second.body.data.title).toBe('Final')
+      expect(second.body.data.content).toBe('v2')
+    })
+
+    it("404s edits to another user's document, changing nothing", async () => {
+      const doc = await createDoc()
+
+      await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ content: 'defaced' })
+        .expect(404)
+
+      const unchanged = await prisma.document.findUnique({ where: { id: doc.id } })
+      expect(unchanged?.content).toBe('v1')
+    })
+
+    it('re-verifies the project claim when filing changes — not only on create', async () => {
+      const doc = await createDoc()
+      const foreign = await prisma.project.create({
+        data: { userId: otherUserId, name: 'Not your project' },
+      })
+
+      await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ projectId: foreign.id })
+        .expect(404)
+
+      const unchanged = await prisma.document.findUnique({ where: { id: doc.id } })
+      expect(unchanged?.projectId).toBeNull()
+    })
+
+    it('files and unfiles: explicit null takes it out of the project', async () => {
+      const project = await prisma.project.create({ data: { userId, name: 'Mine' } })
+      const doc = await createDoc({ projectId: project.id })
+
+      const unfiled = await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ projectId: null })
+        .expect(200)
+      expect(unfiled.body.data.projectId).toBeNull()
+
+      // An update that says nothing about projectId leaves filing alone.
+      const refiled = await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ projectId: project.id })
+        .expect(200)
+      const untouched = await request(app)
+        .patch(`/api/documents/${doc.id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Renamed' })
+        .expect(200)
+      expect(refiled.body.data.projectId).toBe(project.id)
+      expect(untouched.body.data.projectId).toBe(project.id)
+    })
+  })
 })
 
 /**
