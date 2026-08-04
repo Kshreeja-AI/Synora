@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { Markdown } from '@/components/chat/Markdown';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDocument, useUpdateDocument } from '@/lib/api/documents';
 
 /**
@@ -14,10 +15,16 @@ import { useDocument, useUpdateDocument } from '@/lib/api/documents';
  * Editing is plain text over the stored markdown: what is in the
  * textarea is exactly what will be stored, no richer claim than the
  * platform can keep. Cancel discards; nothing is saved until Save.
+ *
+ * A document filed into a shared project is readable by that project's
+ * people, but editing stays owner-only (the server enforces this; the
+ * Edit button is hidden here too, rather than letting a non-owner reach
+ * a Save that would just 404).
  */
 export default function DocumentDetailPage() {
   const params = useParams();
   const documentId = params.id as string;
+  const { data: currentUser } = useCurrentUser();
   const { data: doc, isLoading, error } = useDocument(documentId);
   const update = useUpdateDocument(documentId);
 
@@ -46,6 +53,8 @@ export default function DocumentDetailPage() {
       </div>
     );
   }
+
+  const canEdit = !!currentUser && currentUser.id === doc.userId;
 
   const startEditing = () => {
     // Prefill from what is stored NOW, not from a stale first render.
@@ -82,14 +91,16 @@ export default function DocumentDetailPage() {
         ) : (
           <div className="mt-2 flex flex-wrap items-start justify-between gap-3">
             <h1 className="text-2xl font-semibold">{doc.title}</h1>
-            <button
-              type="button"
-              onClick={startEditing}
-              className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
-            >
-              <Pencil className="h-3 w-3" aria-hidden />
-              Edit
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={startEditing}
+                className="flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
+              >
+                <Pencil className="h-3 w-3" aria-hidden />
+                Edit
+              </button>
+            )}
           </div>
         )}
 

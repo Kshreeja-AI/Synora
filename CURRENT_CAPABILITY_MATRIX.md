@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `e466b94` + the document-editing increment
-**Evidence basis**: 2,535 backend tests across 235 files and 633 frontend tests
+**Verified at commit**: `bd6e08a` + the document-sharing-fix increment
+**Evidence basis**: 2,540 backend tests across 235 files and 634 frontend tests
 across 94 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
@@ -183,7 +183,8 @@ behaviour is covered by component and page tests instead.
 | Video generation | **E** | Async job abstraction, provider registry, polling API. **ACTIVATION BLOCKED**: no credential. |
 | Audio / text-to-speech | **E** | `audio.ts`, `audioGeneration.service.ts`. **ACTIVATION BLOCKED**: no credential. |
 | Media Studio UI | **A** | `/studio` page with image, video and audio tabs; tab state lives in the URL so a studio is linkable. The UI correctly surfaces the 503 rather than pretending. |
-| Document editing | **A** | `PATCH /api/documents/:id` (16 route tests) + an edit surface on `/documents/[id]`: title and content prefill from what is stored *at the moment Edit is pressed*, not a stale first render, so what is in the textarea is always exactly what will be overwritten. Filing (`projectId`) can change on every edit, not only at creation, and is **re-verified every time** — the same 404-on-inaccessible-project rule as create, so a document can't be walked into a project across an edit that create would have refused. Explicit `null` unfiles; an omitted field leaves filing alone. Cancel discards; nothing is sent until Save. |
+| Document editing | **A** | `PATCH /api/documents/:id` (16 route tests) + an edit surface on `/documents/[id]`: title and content prefill from what is stored *at the moment Edit is pressed*, not a stale first render, so what is in the textarea is always exactly what will be overwritten. Filing (`projectId`) can change on every edit, not only at creation, and is **re-verified every time** — the same 404-on-inaccessible-project rule as create, so a document can't be walked into a project across an edit that create would have refused. Explicit `null` unfiles; an omitted field leaves filing alone. Cancel discards; nothing is sent until Save. The Edit button itself is gated on viewer identity — a non-owner never reaches a Save the server would refuse. |
+| Reading a document filed into a shared project | **A** | **A gap closed, not a new decision.** `projectWorkspace.service.ts` was already listing every document filed into a workspace project — title and timestamp — to any workspace member, and the project panel already linked straight to `/documents/:id`; that link 404'd for everyone but the creator, which was a broken surface rather than an intended boundary. `GET /api/documents/:id` now grants read access to anyone who can see the project it's filed into (5 new route tests), using the exact same `getProjectForUser` check as filing itself — so a document filed into someone's *personal* project stays exactly as invisible to others as before (personal-project access requires ownership, and filing already required the filer to hold it). **Deliberately unchanged**: the plain `GET /api/documents` list stays authored-by-you only — seeing a shared document happens by following the project that shares it, not by widening "my documents" into "everything I can see" — and editing stays owner-only regardless of project membership. |
 
 ## Family H — Personal AI Automation
 

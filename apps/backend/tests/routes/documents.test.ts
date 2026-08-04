@@ -187,6 +187,115 @@ describe('Document Routes', () => {
       .expect(404)
   })
 
+  describe('reading through a shared project', () => {
+    // projectWorkspace.service.ts already lists every document filed
+    // into a workspace project — title and timestamp — to any member of
+    // that workspace, and the project panel links straight to this
+    // document. Without read access here, that link 404s for everyone
+    // but the creator: a broken surface, not a boundary anyone chose.
+
+    it('lets a fellow workspace member read a document someone else filed into a shared project', async () => {
+      const project = await prisma.project.create({
+        data: { userId, name: 'Team project', workspaceId },
+      })
+      const doc = await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Team notes', content: 'shared body', projectId: project.id })
+        .expect(201)
+
+      await prisma.workspaceMember.create({
+        data: { userId: otherUserId, workspaceId, role: 'MEMBER' },
+      })
+
+      const fetched = await request(app)
+        .get(`/api/documents/${doc.body.data.id}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200)
+      expect(fetched.body.data.content).toBe('shared body')
+    })
+
+    it("still 404s for someone who is not a member of that document's project workspace", async () => {
+      const project = await prisma.project.create({
+        data: { userId, name: 'Team project', workspaceId },
+      })
+      const doc = await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Team notes', content: 'shared body', projectId: project.id })
+        .expect(201)
+
+      // otherUser deliberately not added as a member here.
+      await request(app)
+        .get(`/api/documents/${doc.body.data.id}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(404)
+    })
+
+    it('never extends read access through a personal (non-workspace) project', async () => {
+      const project = await prisma.project.create({ data: { userId, name: 'My own project' } })
+      const doc = await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Private notes', content: 'body', projectId: project.id })
+        .expect(201)
+
+      await prisma.workspaceMember.create({
+        data: { userId: otherUserId, workspaceId, role: 'MEMBER' },
+      })
+
+      await request(app)
+        .get(`/api/documents/${doc.body.data.id}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(404)
+    })
+
+    it('does not extend to editing — a project member can read but never write', async () => {
+      const project = await prisma.project.create({
+        data: { userId, name: 'Team project', workspaceId },
+      })
+      const doc = await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Team notes', content: 'original', projectId: project.id })
+        .expect(201)
+
+      await prisma.workspaceMember.create({
+        data: { userId: otherUserId, workspaceId, role: 'MEMBER' },
+      })
+
+      await request(app)
+        .patch(`/api/documents/${doc.body.data.id}`)
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ content: 'defaced' })
+        .expect(404)
+
+      const unchanged = await prisma.document.findUnique({ where: { id: doc.body.data.id } })
+      expect(unchanged?.content).toBe('original')
+    })
+
+    it("does not widen the caller's own document list to documents others filed into a shared project", async () => {
+      const project = await prisma.project.create({
+        data: { userId, name: 'Team project', workspaceId },
+      })
+      await request(app)
+        .post('/api/documents')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Team notes', content: 'body', projectId: project.id })
+        .expect(201)
+
+      await prisma.workspaceMember.create({
+        data: { userId: otherUserId, workspaceId, role: 'MEMBER' },
+      })
+
+      const list = await request(app)
+        .get('/api/documents')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .expect(200)
+      expect(list.body.data).toHaveLength(0)
+    })
+  })
+
   describe('PATCH /api/documents/:id', () => {
     async function createDoc(extra: Record<string, unknown> = {}) {
       const res = await request(app)

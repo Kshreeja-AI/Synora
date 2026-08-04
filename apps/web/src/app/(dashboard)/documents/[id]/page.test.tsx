@@ -2,15 +2,24 @@
  * Document detail — content rendered exactly as stored, editable on
  * request (what is in the textarea is exactly what will be stored), and
  * a missing document says so plainly with a way back.
+ *
+ * A document filed into a shared project is readable by that project's
+ * people but stays owner-only to edit; the Edit button is gated on
+ * viewer identity so a non-owner never reaches a Save that would 404.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import DocumentDetailPage from './page';
 import * as documentsApi from '@/lib/api/documents';
+import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ id: 'doc_1' }),
+}));
+
+vi.mock('@/hooks/useCurrentUser', () => ({
+  useCurrentUser: vi.fn(() => ({ data: { id: 'u1', role: 'USER' } })),
 }));
 
 vi.mock('@/lib/api/documents', async () => {
@@ -31,6 +40,9 @@ function mockUpdate(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(useCurrentUser).mockReturnValue({
+    data: { id: 'u1', role: 'USER' },
+  } as unknown as ReturnType<typeof useCurrentUser>);
   mockUpdate();
   vi.mocked(documentsApi.useDocument).mockReturnValue({
     data: {
@@ -96,6 +108,19 @@ describe('DocumentDetailPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
     expect(screen.getByRole('alert')).toHaveTextContent('Content too large');
+  });
+
+  it('hides Edit for a viewer who is not the document\'s author', () => {
+    vi.mocked(useCurrentUser).mockReturnValue({
+      data: { id: 'someone-else', role: 'USER' },
+    } as unknown as ReturnType<typeof useCurrentUser>);
+
+    render(<DocumentDetailPage />);
+
+    // Reachable here only because the caller can see the shared project
+    // this document is filed into — read access, never a write claim.
+    expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
+    expect(screen.getByText('Body paragraph.')).toBeInTheDocument();
   });
 
   it('says plainly when the document cannot be found, with a way back', () => {
