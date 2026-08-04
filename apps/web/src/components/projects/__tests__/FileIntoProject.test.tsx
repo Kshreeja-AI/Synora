@@ -16,6 +16,9 @@ import { FileIntoProject } from '../FileIntoProject';
 import * as projectsApi from '@/lib/api/projects';
 import * as conversationsApi from '@/lib/api/conversations';
 
+const push = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+
 vi.mock('@/lib/api/projects', async () => {
   const actual = await vi.importActual<typeof projectsApi>('@/lib/api/projects');
   return { ...actual, listProjects: vi.fn() };
@@ -88,14 +91,30 @@ describe('FileIntoProject', () => {
     expect(update).toHaveBeenCalledWith({ projectId: null }, expect.anything());
   });
 
-  it('offers nothing at all when there are no projects yet', async () => {
+  it('offers to make a project FROM the conversation when none exist yet', async () => {
     vi.mocked(projectsApi.listProjects).mockResolvedValue([] as never);
 
-    const { container } = renderControl(null);
-    // An empty dropdown invites a click that leads nowhere, and sending
-    // someone off to create a project mid-conversation is an errand.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container.querySelector('select')).toBeNull();
+    renderControl(null);
+    // An empty dropdown invites a click that leads nowhere. The useful
+    // offer at this moment is the one that needs no existing project —
+    // and it is also when someone is most likely to want it, being
+    // already deep in the work.
+    expect(await screen.findByRole('button', { name: /make this a project/i })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('offers "new from this" beside the list, until the conversation is filed', async () => {
+    renderControl(null);
+    // An existing project is usually the right home, but sometimes the
+    // thing in front of you is its own project and a list cannot say so.
+    expect(await screen.findByRole('button', { name: /new from this/i })).toBeInTheDocument();
+  });
+
+  it('stops offering to promote once the conversation already belongs somewhere', async () => {
+    renderControl('p1');
+    await screen.findByLabelText(/file this conversation into a project/i);
+    // Promoting a filed conversation would strand its current project.
+    expect(screen.queryByRole('button', { name: /new from this/i })).not.toBeInTheDocument();
   });
 
   it('surfaces a refusal rather than silently failing', async () => {

@@ -5,6 +5,7 @@ import { createApiResponse } from '@synora/shared'
 import { conversationService } from '../services/conversation.service'
 import { conversationUsageService } from '../services/conversationUsage.service'
 import { exportService } from '../services/export.service'
+import { promoteConversationToProject } from '../services/projectWorkspace.service'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -91,6 +92,32 @@ router.patch('/:workspaceId/conversations/:conversationId', authMiddleware, asyn
     next(error)
   }
 })
+
+/**
+ * Turn this conversation into a project.
+ *
+ * Work rarely starts as a project — it starts as a question, and somewhere
+ * in the middle a person realises the thing is bigger than the thread.
+ * This records that realisation in one action instead of six.
+ */
+router.post(
+  '/:workspaceId/conversations/:conversationId/project',
+  authMiddleware,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { name } = z.object({ name: z.string().trim().max(200).optional() }).parse(req.body ?? {})
+      const result = await promoteConversationToProject(
+        req.userId!,
+        req.params.workspaceId,
+        req.params.conversationId,
+        name,
+      )
+      res.status(201).json(createApiResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+)
 
 router.delete('/:workspaceId/conversations/:conversationId', authMiddleware, async (req: AuthRequest, res, next) => {
   try {

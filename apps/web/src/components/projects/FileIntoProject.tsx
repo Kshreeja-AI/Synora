@@ -1,8 +1,11 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { FolderPlus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FolderPlus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@synora/design-system';
+import { api } from '@/lib/api/client';
 import { listProjects } from '@/lib/api/projects';
 import { useUpdateConversation } from '@/lib/api/conversations';
 
@@ -42,8 +45,50 @@ export function FileIntoProject({
   });
 
   const update = useUpdateConversation(workspaceId, conversationId);
+  const router = useRouter();
+  const queryClient = useQueryClient();
 
-  if (projects.length === 0) return null;
+  const promote = useMutation({
+    mutationFn: () =>
+      api.post<{ projectId: string; name: string }>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/project`,
+        {},
+      ),
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] });
+      queryClient.invalidateQueries({ queryKey: ['conversations', conversationId] });
+      toast.success(`Created the project "${project.name}" from this conversation`);
+      // Taken there, because the realisation that prompted this was about
+      // the project — leaving them in the conversation would make them go
+      // and find the thing they just created.
+      router.push(`/dashboard/projects/${project.projectId}`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  /**
+   * With no projects yet, the only useful offer is to make one FROM this
+   * conversation — which is also the moment it is most likely to be what
+   * someone wants, since they are already deep in the work.
+   */
+  if (projects.length === 0) {
+    if (projectId) return null;
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => promote.mutate()}
+        disabled={promote.isPending}
+      >
+        {promote.isPending ? (
+          <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+        ) : (
+          <FolderPlus className="mr-1 h-3 w-3" aria-hidden />
+        )}
+        Make this a project
+      </Button>
+    );
+  }
 
   return (
     <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -79,6 +124,26 @@ export function FileIntoProject({
           </option>
         ))}
       </select>
+
+      {/* Offered beside the list, not instead of it: an existing project
+          is usually the right home, but sometimes the thing in front of
+          you is its own project and picking from a list cannot say that. */}
+      {!projectId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => promote.mutate()}
+          disabled={promote.isPending}
+          className="h-7 px-2 text-xs"
+        >
+          {promote.isPending ? (
+            <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+          ) : (
+            <FolderPlus className="mr-1 h-3 w-3" aria-hidden />
+          )}
+          New from this
+        </Button>
+      )}
     </label>
   );
 }

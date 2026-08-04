@@ -1,6 +1,8 @@
 import { prisma } from '@synora/database';
-import { NotFoundException } from '@synora/shared';
+import { NotFoundException, ValidationException } from '@synora/shared';
 import { requireMembership } from './workspace.service';
+import { requirePermission } from './permissions';
+import { recordAuditEvent } from './audit.service';
 
 /**
  * A project, seen as the work inside it rather than as a row.
@@ -205,7 +207,75 @@ export async function getProjectWorkspace(
 }
 
 /**
- * FILING A CONVERSATION INTO A PROJECT DELIBERATELY LIVES ELSEWHERE —
+ * Turning a conversation into a project.
+ *
+ * WHY THIS EXISTS AS ONE ACTION. Work does not start as a project. It
+ * starts as a question, and somewhere in the middle a person realises the
+ * thing they are doing is bigger than the thread they are doing it in.
+ * Making them stop, leave, go to another page, create a project, come
+ * back, and file the conversation is six steps to record one realisation
+ * — and the cost is paid exactly when their attention is most valuable.
+ *
+ * WHY IT IS ONE TRANSACTION. Creating the project and filing the
+ * conversation are halves of a single intention. If the second failed on
+ * its own, the person would be left with an empty project they did not ask
+ * for and a conversation still sitting outside it, which is worse than
+ * having failed cleanly.
+ *
+ * THE NAME DEFAULTS TO THE CONVERSATION'S TITLE rather than asking. The
+ * conversation already has a name the person chose or accepted, it is
+ * almost always the right one, and renaming a project later is trivial —
+ * so a dialog here would be a question whose answer is already known.
+ */
+export async function promoteConversationToProject(
+  userId: string,
+  workspaceId: string,
+  conversationId: string,
+  name?: string,
+): Promise<{ projectId: string; name: string }> {
+  const membership = await requireMembership(userId, workspaceId);
+  // The same permission a directly-created project needs. Promoting must
+  // not be a way around a control that creating respects.
+  requirePermission(membership.role, 'project:create');
+
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: conversationId, workspaceId },
+    select: { id: true, title: true, projectId: true },
+  });
+  if (!conversation) throw new NotFoundException('Conversation');
+  if (conversation.projectId) {
+    throw new ValidationException('this conversation is already in a project');
+  }
+
+  const projectName = (name ?? conversation.title).trim().slice(0, 200) || 'Untitled project';
+
+  // An INTERACTIVE transaction, because the second statement needs the id
+  // the first one generates. A batch array cannot express that dependency,
+  // and doing the update outside the transaction would leave the failure
+  // this whole function exists to prevent: an empty project nobody asked
+  // for, beside a conversation still outside it.
+  const project = await prisma.$transaction(async (tx) => {
+    const created = await tx.project.create({
+      data: { userId, workspaceId, name: projectName },
+    });
+    await tx.conversation.update({
+      where: { id: conversationId },
+      data: { projectId: created.id },
+    });
+    return created;
+  });
+
+  await recordAuditEvent(workspaceId, userId, 'project.created', 'project', project.id, {
+    name: project.name,
+    promotedFromConversation: conversationId,
+  });
+
+  return { projectId: project.id, name: project.name };
+}
+
+/**
+ * FILING AN EXISTING CONVERSATION INTO AN EXISTING PROJECT DELIBERATELY
+ * LIVES ELSEWHERE —
  * `conversation.service.update`, alongside renaming and re-tagging it.
  * Filing is an edit to the conversation, not an operation on the project,
  * and giving it a second home here would have meant two places enforcing

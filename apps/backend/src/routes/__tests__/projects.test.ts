@@ -324,6 +324,73 @@ describe('projects routes (M5)', () => {
       ).toBe(404);
     });
 
+    it('turns a conversation into a project in one action', async () => {
+      const user = await register('proj-promote');
+      const ws = await createWorkspace(user.accessToken, 'Promote Co');
+      const conversation = await makeConversation(
+        user.accessToken,
+        ws.id,
+        'Should we enter Germany?',
+      );
+
+      const promoted = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+
+      expect(promoted.status).toBe(201);
+      // The name comes from the conversation, because it already has one
+      // the person chose — a dialog would ask a question whose answer is
+      // known.
+      expect(promoted.body.data.name).toBe('Should we enter Germany?');
+
+      const view = await request(app)
+        .get(`/api/projects/${promoted.body.data.projectId}/workspace`)
+        .set('Cookie', user.accessToken);
+      // Created AND filed: the two halves of one intention.
+      expect(view.body.data.counts.conversation).toBe(1);
+      expect(view.body.data.resumeConversationId).toBe(conversation.id);
+    });
+
+    it('refuses to promote a conversation that is already in a project', async () => {
+      const user = await register('proj-promote-twice');
+      const ws = await createWorkspace(user.accessToken, 'Twice Co');
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Already filed');
+
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+      const again = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+
+      // Otherwise a second press would silently strand the first project,
+      // empty, with the conversation moved out of it.
+      expect(again.status).toBe(400);
+      expect(JSON.stringify(again.body)).toMatch(/already in a project/);
+    });
+
+    it('will not let promoting be a way around the create-project permission', async () => {
+      const owner = await register('proj-promote-owner');
+      const viewer = await register('proj-promote-viewer');
+      const ws = await createWorkspace(owner.accessToken, 'Perm Co');
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: viewer.userId, role: 'VIEWER' },
+      });
+      const conversation = await makeConversation(owner.accessToken, ws.id, 'Theirs');
+
+      const promoted = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', viewer.accessToken)
+        .send({});
+
+      // A VIEWER cannot create a project directly; promoting must respect
+      // the same control rather than route around it.
+      expect([403, 404]).toContain(promoted.status);
+    });
+
     it('reports an empty project honestly rather than failing', async () => {
       const user = await register('proj-empty');
       const ws = await createWorkspace(user.accessToken, 'Empty Co');
