@@ -161,4 +161,94 @@ describe('redaction', () => {
     redact(nasty);
     expect(Date.now() - began).toBeLessThan(2000);
   });
+  describe('percent-encoded values', () => {
+    // The class of bug found in the request logger. Every rule matches
+    // readable text, and a URL does not arrive readable — so redaction
+    // that only sees the encoded form does nothing while appearing to
+    // work. Fixed in the redactor so every caller inherits the fix.
+
+    it('redacts an email that arrived percent-encoded', () => {
+      const encoded = `/api/search?q=${encodeURIComponent('keshav@synora.ai')}`;
+      expect(encoded).toContain('%40');
+
+      const result = redact(encoded);
+
+      expect(result.text).toContain('[REDACTED_EMAIL]');
+      expect(result.text).not.toContain('%40');
+      expect(result.counts.email).toBe(1);
+    });
+
+    it('catches encoded values in chat text, not only in URLs', () => {
+      // Case capture and dataset export run the same redactor over user
+      // text. A pasted link carries the same leak into an evaluation
+      // dataset an engineer will read.
+      const pasted = 'see https://x.example/u?mail=someone%40example.com for context';
+
+      const result = redact(pasted);
+
+      expect(result.text).toContain('[REDACTED_EMAIL]');
+      expect(result.text).not.toContain('someone%40example.com');
+    });
+
+    it('preserves surrounding structure rather than blanking the run', () => {
+      // Over-redaction is the intended trade, but a readable result is
+      // still more useful than an opaque blob.
+      const result = redact('/api/x?q=a%40b.com&limit=50');
+
+      expect(result.text).toContain('[REDACTED_EMAIL]');
+      expect(result.text).toContain('limit=50');
+    });
+
+    it('leaves ordinary text with escapes untouched', () => {
+      const harmless = '/api/search?q=hello%20world&sort=name';
+      expect(redact(harmless).redacted).toBe(false);
+      expect(redact(harmless).text).toBe(harmless);
+    });
+
+    it('never throws on a malformed escape, and still redacts the rest', () => {
+      // Any caller can supply a lone '%'. Degraded coverage is acceptable;
+      // an exception thrown from a redaction path is not.
+      expect(() => redact('/api/x?q=100%')).not.toThrow();
+      expect(redact('/api/x?q=100%').text).toBe('/api/x?q=100%');
+
+      const mixed = redact('/api/x?bad=%&mail=k%40s.ai');
+      expect(mixed.text).toContain('[REDACTED_EMAIL]');
+    });
+
+    it('a stray % cannot be used to smuggle an encoded value past redaction', () => {
+      // Found by the test above. decodeURIComponent rejects a whole string
+      // on one bad escape, so decoding per-run meant an attacker could
+      // prepend a lone '%' and protect everything after it. Decoding falls
+      // back to per-escape precisely so that evasion does not work.
+      const evasions = [
+        '%&mail=victim%40example.com',
+        'x=%zz&card=4111%2D1111%2D1111%2D1111',
+        '%%%mail=a%40b.com',
+      ];
+
+      for (const attempt of evasions) {
+        expect(redact(attempt).redacted).toBe(true);
+      }
+    });
+
+    it('counts an encoded hit once, not twice', () => {
+      const result = redact(`mail=${encodeURIComponent('a@b.com')}`);
+      expect(result.counts.email).toBe(1);
+    });
+
+    it('containsSensitive agrees with redact on encoded input', () => {
+      const encoded = `?mail=${encodeURIComponent('a@b.com')}`;
+      // These must never disagree: a caller checking containsSensitive
+      // before storing would otherwise be told the text was clean.
+      expect(containsSensitive(encoded)).toBe(true);
+      expect(redact(encoded).redacted).toBe(true);
+    });
+
+    it('handles a long encoded run without hanging', () => {
+      const nasty = `?q=${'%41'.repeat(4000)}`;
+      const began = Date.now();
+      redact(nasty);
+      expect(Date.now() - began).toBeLessThan(2000);
+    });
+  });
 });

@@ -126,10 +126,19 @@ export interface RedactionResult {
   redacted: boolean;
 }
 
-export function redact(input: string, rules: RedactionRule[] = defaultRedactionRules): RedactionResult {
-  let text = input;
-  const counts: Record<string, number> = {};
+/**
+ * A run of URL-ish characters containing at least one percent-escape.
+ * Bounded character class, linear time — same discipline as the rules.
+ */
+const PERCENT_ENCODED_RUN =
+  /[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*%[0-9A-Fa-f]{2}[A-Za-z0-9._~:/?#[\]@!$&'()*+,;=%-]*/g;
 
+function applyRules(
+  input: string,
+  rules: RedactionRule[],
+  counts: Record<string, number>,
+): string {
+  let text = input;
   for (const rule of rules) {
     // Fresh RegExp per call: a shared /g/ regex carries lastIndex between
     // calls, which would silently skip matches on later invocations.
@@ -139,13 +148,96 @@ export function redact(input: string, rules: RedactionRule[] = defaultRedactionR
       hits += 1;
       return rule.placeholder;
     });
-    if (hits > 0) counts[rule.name] = hits;
+    if (hits > 0) counts[rule.name] = (counts[rule.name] ?? 0) + hits;
   }
+  return text;
+}
+
+/**
+ * Second pass over percent-encoded runs.
+ *
+ * WHY THIS EXISTS. Every rule matches readable text, and sensitive values
+ * do not always arrive readable. `someone@example.com` in a URL arrives as
+ * `someone%40example.com`; the email rule needs a literal `@`, never
+ * fires, and the value passes through untouched — into a log, an
+ * evaluation case, or an export — where anything that decodes will render
+ * it in full. Redaction applied only to the encoded form is redaction that
+ * looks like it works. This was found in the request logger and is fixed
+ * here rather than there, because the flaw belongs to the redactor and
+ * every caller inherits it.
+ *
+ * Only runs containing an escape are touched, and only when decoding
+ * actually reveals something, so ordinary text is returned unchanged.
+ */
+/**
+ * Decodes percent-escapes without ever throwing, and without letting one
+ * bad escape protect the rest of the string.
+ *
+ * WHY NOT JUST `decodeURIComponent`. It rejects the whole input on a
+ * single malformed sequence — a lone `%`. Applied to a run, that means
+ * `?bad=%&mail=k%40s.ai` fails wholesale and the perfectly valid `%40`
+ * survives unredacted. Since anyone can add a stray `%`, that turns a
+ * decoding quirk into a deliberate way to smuggle a value past redaction.
+ *
+ * So: try the whole run first, because that handles multi-byte UTF-8
+ * correctly; if it fails, decode escape by escape and leave the ones that
+ * cannot stand alone. Multi-byte sequences then stay encoded, which is
+ * harmless — every rule here matches ASCII.
+ */
+function decodePercentEscapes(run: string): string {
+  try {
+    return decodeURIComponent(run);
+  } catch {
+    return run.replace(/%[0-9A-Fa-f]{2}/g, (escape) => {
+      try {
+        return decodeURIComponent(escape);
+      } catch {
+        return escape;
+      }
+    });
+  }
+}
+
+function redactEncodedRuns(
+  input: string,
+  rules: RedactionRule[],
+  counts: Record<string, number>,
+): string {
+  const re = new RegExp(PERCENT_ENCODED_RUN.source, PERCENT_ENCODED_RUN.flags);
+
+  return input.replace(re, (run) => {
+    const decoded = decodePercentEscapes(run);
+    if (decoded === run) return run;
+
+    const found: Record<string, number> = {};
+    const cleaned = applyRules(decoded, rules, found);
+    if (Object.keys(found).length === 0) return run;
+
+    for (const [name, n] of Object.entries(found)) {
+      counts[name] = (counts[name] ?? 0) + n;
+    }
+    // The decoded, redacted form replaces the run. Structure survives —
+    // `?q=x%40y.com` becomes `?q=[REDACTED_EMAIL]`, not an opaque blob.
+    return cleaned;
+  });
+}
+
+export function redact(input: string, rules: RedactionRule[] = defaultRedactionRules): RedactionResult {
+  const counts: Record<string, number> = {};
+
+  // Readable form first, so direct matches are found on the text as
+  // supplied; then the encoded form, which catches what encoding hid.
+  let text = applyRules(input, rules, counts);
+  text = redactEncodedRuns(text, rules, counts);
 
   return { text, counts, redacted: Object.keys(counts).length > 0 };
 }
 
-/** True when the text still appears to contain anything the rules match. */
+/**
+ * True when the text still appears to contain anything the rules match.
+ * Runs the same two passes as `redact`, so an encoded value is not
+ * reported clean here while `redact` would remove it.
+ */
 export function containsSensitive(input: string, rules: RedactionRule[] = defaultRedactionRules): boolean {
-  return rules.some((rule) => new RegExp(rule.pattern.source, rule.pattern.flags).test(input));
+  return redact(input, rules).redacted;
 }
