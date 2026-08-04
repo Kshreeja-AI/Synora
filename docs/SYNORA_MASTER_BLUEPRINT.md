@@ -428,9 +428,29 @@ because conversation templates already own that path on the same mount —
 a second router claiming it would be silently shadowed, the same failure
 that once hid `/agents/runs` behind `/agents/:agentId`.
 
-**Missing, named:** workspace-authored templates. "Save this agent as a
-template" does not exist; the catalogue is fixed and ships with the
-platform.
+**Also implemented: workspace-authored templates**
+(`agents/workspace-templates.ts`). Saving an agent or workflow you have
+already tuned turns it into a starting point for the next one, listed
+alongside the built-in catalogue and any plugin contributions — a user
+choosing where to start does not care which source a template came from.
+
+These MAY name real tool ids, and the built-in and plugin ones may not.
+That is not an inconsistency: the rule elsewhere exists because a
+template shipped to another workspace would point at ids that mean
+nothing there, and a workspace template never leaves the workspace that
+wrote it. But a tool can still be DELETED after the template is saved, so
+tools are re-checked at instantiate time: what survives is granted, and
+what did not comes back as `droppedTools`. Narrowing that is reported is
+not the silent narrowing refused in the plugin permission model — the
+caller is told exactly what changed.
+
+No link back to the source agent is stored. A template is a snapshot
+taken at one moment; a stored source id would imply a live relationship
+that is never maintained and would be wrong the first time the source was
+edited.
+
+**Missing, named:** editing a saved template in place — changing one means
+saving a new one.
 
 ### 5.10 Workflow engine — Partially implemented (`apps/backend/src/workflows/`)
 

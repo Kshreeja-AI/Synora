@@ -47,9 +47,19 @@ export interface AgentTemplate {
   steps?: PlannedStep[];
 }
 
-export type InstantiateResult =
+export type InstantiateResult = { droppedTools: string[] } & (
   | { kind: 'agent'; agent: Agent }
-  | { kind: 'workflow'; workflow: WorkflowDefinition };
+  | { kind: 'workflow'; workflow: WorkflowDefinition }
+);
+
+export interface SaveTemplateInput {
+  agentId?: string;
+  workflowId?: string;
+  name?: string;
+  description?: string;
+  category?: AgentTemplateCategory;
+  outcome?: string;
+}
 
 const AGENT_TEMPLATES_KEY = 'agent-templates';
 
@@ -65,6 +75,43 @@ export function useAgentTemplates(
         `/api/workspaces/${workspaceId}/agent-templates${kind ? `?kind=${kind}` : ''}`,
       ),
     enabled: !!workspaceId && options?.enabled !== false,
+  });
+}
+
+/**
+ * Saves an agent or workflow as a starting point for future ones.
+ *
+ * A workspace template MAY carry real tool ids, unlike the built-in
+ * catalogue — it never leaves the workspace where those ids mean
+ * something. Tools are re-checked when the template is used, and any that
+ * have been deleted since come back as `droppedTools` rather than being
+ * granted dead or dropped in silence.
+ */
+export function useSaveAsTemplate(
+  workspaceId: string,
+): UseMutationResult<AgentTemplate, Error, SaveTemplateInput> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      api.post<AgentTemplate>(`/api/workspaces/${workspaceId}/agent-templates`, input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [AGENT_TEMPLATES_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useDeleteTemplate(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (templateId) =>
+      api.delete<{ deleted: boolean }>(
+        `/api/workspaces/${workspaceId}/agent-templates/${templateId}`,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [AGENT_TEMPLATES_KEY, workspaceId] });
+    },
   });
 }
 

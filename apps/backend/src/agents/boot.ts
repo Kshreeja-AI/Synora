@@ -10,6 +10,11 @@ import {
 import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
 import { createFileTriggerStore, hydrateTriggers, setTriggerStore } from '../workflows/trigger.js';
 import { createFilePluginStore, hydratePlugins, setPluginStore } from '../plugins/plugin-registry.js';
+import {
+  createFileWorkspaceTemplateStore,
+  hydrateWorkspaceTemplates,
+  setWorkspaceTemplateStore,
+} from './workspace-templates.js';
 import { createFileCanvasStore, hydrateCanvases, setCanvasStore } from '../canvas/canvas-store.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
@@ -54,6 +59,7 @@ export async function bootAgentStores(): Promise<void> {
   setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
   setTriggerStore(createFileTriggerStore(`${dir}/workflow-triggers.json`));
   setPluginStore(createFilePluginStore(`${dir}/plugins.json`));
+  setWorkspaceTemplateStore(createFileWorkspaceTemplateStore(`${dir}/workspace-templates.json`));
   setCanvasStore(createFileCanvasStore(`${dir}/canvases.json`));
 
   try {
@@ -70,6 +76,7 @@ export async function bootAgentStores(): Promise<void> {
     // partially-understood one is discarded whole rather than repaired:
     // acting on a grant nobody made is worse than losing the install.
     const pluginResult = await hydratePlugins();
+    const savedTemplates = await hydrateWorkspaceTemplates();
     if (pluginResult.discarded > 0) {
       logger.warn('Some installed plugins were discarded on load: their manifest no longer validates.', {
         discarded: pluginResult.discarded,
@@ -109,6 +116,7 @@ export async function bootAgentStores(): Promise<void> {
       schedules,
       triggers,
       plugins: pluginResult.loaded,
+      savedTemplates,
       canvases: canvasResult.loaded,
       runs: loaded,
       orphaned,

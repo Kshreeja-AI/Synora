@@ -18,6 +18,16 @@ import AgentsPage from '../page';
 import * as agentsApi from '@/lib/api/agents';
 import type { Agent, AgentRun, RunWithRuntime } from '@/lib/api/agents';
 
+vi.mock('@/lib/api/agentTemplates', async () => {
+  const actual = await vi.importActual<Record<string, unknown>>('@/lib/api/agentTemplates');
+  return {
+    ...actual,
+    useAgentTemplates: vi.fn(() => ({ data: [], isLoading: false })),
+    useInstantiateTemplate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+    useSaveAsTemplate: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  };
+});
+
 vi.mock('@/hooks/useCurrentWorkspace', () => ({
   useCurrentWorkspace: () => ({ currentWorkspace: { id: 'ws_1', name: 'Test Co' } }),
 }));
@@ -299,5 +309,21 @@ describe('agents page', () => {
 
     renderPage();
     expect(await screen.findByText('No agents yet')).toBeInTheDocument();
+  });
+
+  it('saves the selected agent as a template', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn();
+    const templatesApi = await import('@/lib/api/agentTemplates');
+    vi.mocked(templatesApi.useSaveAsTemplate).mockReturnValue({
+      mutate: save,
+      isPending: false,
+    } as never);
+
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    await user.click(screen.getByRole('button', { name: /save as template/i }));
+
+    expect(save).toHaveBeenCalledWith({ agentId: 'agent_1' }, expect.anything());
   });
 });

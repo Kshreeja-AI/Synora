@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, Bot, Loader2, Pencil, Play, Plus } from 'lucide-react';
+import { Archive, Bookmark, Bot, Loader2, Pencil, Play, Plus } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -14,6 +14,7 @@ import {
   type RunRuntime,
 } from '@/lib/api/agents';
 import { TemplateGallery } from '@/components/agents/TemplateGallery';
+import { useSaveAsTemplate } from '@/lib/api/agentTemplates';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { RunDetail } from '@/components/agents/RunDetail';
 import { RuntimeNotice } from '@/components/agents/RuntimeNotice';
@@ -44,6 +45,7 @@ export default function AgentsPage() {
   });
   const startRun = useStartRun(workspaceId);
   const archive = useArchiveAgent(workspaceId);
+  const saveAsTemplate = useSaveAsTemplate(workspaceId);
 
   function run() {
     if (!selectedAgent || !task.trim()) return;
@@ -167,6 +169,26 @@ export default function AgentsPage() {
                     >
                       <Pencil className="mr-1 h-4 w-4" />
                       Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        saveAsTemplate.mutate(
+                          { agentId: selectedAgent.id },
+                          {
+                            onSuccess: () =>
+                              toast.success(
+                                'Saved as a template — it now appears alongside the built-in ones',
+                              ),
+                            onError: (e) => toast.error(e.message),
+                          },
+                        )
+                      }
+                      disabled={saveAsTemplate.isPending}
+                    >
+                      <Bookmark className="mr-1 h-4 w-4" />
+                      Save as template
                     </Button>
                     <Button
                       variant="outline"

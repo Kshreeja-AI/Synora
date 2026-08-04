@@ -12,6 +12,11 @@ import {
   setAgentRunStore,
 } from '../../agents/agent-stores';
 import { resetWorkflows, setWorkflowStore } from '../../workflows/workflow-registry';
+import {
+  resetWorkspaceTemplates,
+  setWorkspaceTemplateStore,
+  type WorkspaceTemplate,
+} from '../../agents/workspace-templates';
 import { TEMPLATES } from '../../agents/templates';
 import type { AgentDefinition, AgentRun } from '../../agents/types';
 import type { WorkflowDefinition } from '../../workflows/types';
@@ -53,6 +58,8 @@ describe('template routes', () => {
     setAgentDefinitionStore(new InMemoryKeyedStore<AgentDefinition>());
     setAgentRunStore(new InMemoryKeyedStore<AgentRun>());
     setWorkflowStore(new InMemoryKeyedStore<WorkflowDefinition>());
+    resetWorkspaceTemplates();
+    setWorkspaceTemplateStore(new InMemoryKeyedStore<WorkspaceTemplate>());
   });
 
   afterEach(async () => {
@@ -189,6 +196,201 @@ describe('template routes', () => {
       .set('Cookie', owner.cookie)
       .send({});
     expect(res.status).toBe(404);
+  });
+
+  describe('saving your own templates', () => {
+    async function makeAgentWithTool(cookie: string, workspaceId: string) {
+      const tool = await prisma.toolDefinition.create({
+        data: {
+          workspaceId,
+          name: 'echo',
+          displayName: 'Echo',
+          description: 'echoes',
+          category: 'http',
+          type: 'HTTP',
+          inputSchema: {},
+          config: { url: 'https://example.com/echo' },
+        },
+      });
+      const agent = await request(app)
+        .post(`/api/workspaces/${workspaceId}/agents`)
+        .set('Cookie', cookie)
+        .send({
+          name: 'My tuned agent',
+          instructions: 'Do the specific thing this team needs, in the way we prefer.',
+          allowedTools: [tool.id],
+        });
+      return { tool, agent: agent.body.data };
+    }
+
+    it('saves an agent as a template that then appears in the list', async () => {
+      const owner = await register('tpl-save');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const { agent } = await makeAgentWithTool(owner.cookie, ws.id);
+
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ agentId: agent.id, outcome: 'I want another one of these.' });
+
+      expect(saved.status).toBe(201);
+      expect(saved.body.data.instructions).toBe(agent.instructions);
+      expect(saved.body.data.outcome).toBe('I want another one of these.');
+
+      const listed = await request(app)
+        .get(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie);
+      expect(listed.body.data.map((t: { id: string }) => t.id)).toContain(saved.body.data.id);
+    });
+
+    it('carries the tools forward when they still exist', async () => {
+      const owner = await register('tpl-save-tools');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const { tool, agent } = await makeAgentWithTool(owner.cookie, ws.id);
+
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ agentId: agent.id });
+
+      const created = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates/${saved.body.data.id}/instantiate`)
+        .set('Cookie', owner.cookie)
+        .send({});
+
+      // A workspace template MAY name tool ids, because it never leaves
+      // the workspace where those ids mean something.
+      expect(created.body.data.agent.allowedTools).toEqual([tool.id]);
+      expect(created.body.data.droppedTools).toEqual([]);
+    });
+
+    it('reports a tool that has been deleted since, rather than granting a dead id', async () => {
+      const owner = await register('tpl-save-dropped');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const { tool, agent } = await makeAgentWithTool(owner.cookie, ws.id);
+
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ agentId: agent.id });
+
+      await prisma.toolDefinition.delete({ where: { id: tool.id } });
+
+      const created = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates/${saved.body.data.id}/instantiate`)
+        .set('Cookie', owner.cookie)
+        .send({});
+
+      // Granting the dead id would produce a ready-looking agent that
+      // fails on first use. Dropping it silently would be the narrowing
+      // this codebase refuses. So: dropped, and said out loud.
+      expect(created.status).toBe(201);
+      expect(created.body.data.agent.allowedTools).toEqual([]);
+      expect(created.body.data.droppedTools).toEqual([tool.id]);
+    });
+
+    it('saves a workflow with its steps, and running the result works', async () => {
+      const owner = await register('tpl-save-wf');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const workflow = await request(app)
+        .post(`/api/workspaces/${ws.id}/workflows`)
+        .set('Cookie', owner.cookie)
+        .send({
+          name: 'Our nightly thing',
+          approvalPolicy: 'nothing',
+          steps: [{ id: 's1', kind: 'generate', description: 'do it', input: 'go' }],
+        });
+
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ workflowId: workflow.body.data.id });
+      expect(saved.body.data.kind).toBe('workflow');
+      expect(saved.body.data.steps).toHaveLength(1);
+
+      const created = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates/${saved.body.data.id}/instantiate`)
+        .set('Cookie', owner.cookie)
+        .send({});
+      const run = await request(app)
+        .post(`/api/workspaces/${ws.id}/workflows/${created.body.data.workflow.id}/runs`)
+        .set('Cookie', owner.cookie)
+        .send({ task: 't' });
+      expect(run.body.data.run.state).toBe('completed');
+    });
+
+    it('requires exactly one source', async () => {
+      const owner = await register('tpl-save-both');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+
+      for (const body of [{}, { agentId: 'a', workflowId: 'w' }]) {
+        const res = await request(app)
+          .post(`/api/workspaces/${ws.id}/agent-templates`)
+          .set('Cookie', owner.cookie)
+          .send(body);
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('cannot save something from another workspace', async () => {
+      const owner = await register('tpl-save-owner');
+      const stranger = await register('tpl-save-stranger');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const strangerWs = await createWorkspace(stranger.cookie, 'Other Co');
+      const { agent } = await makeAgentWithTool(owner.cookie, ws.id);
+
+      const res = await request(app)
+        .post(`/api/workspaces/${strangerWs.id}/agent-templates`)
+        .set('Cookie', stranger.cookie)
+        .send({ agentId: agent.id });
+      expect(res.status).toBe(404);
+    });
+
+    it('deletes a saved template but not the built-in catalogue', async () => {
+      const owner = await register('tpl-save-delete');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const { agent } = await makeAgentWithTool(owner.cookie, ws.id);
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ agentId: agent.id });
+
+      expect(
+        (
+          await request(app)
+            .delete(`/api/workspaces/${ws.id}/agent-templates/${saved.body.data.id}`)
+            .set('Cookie', owner.cookie)
+        ).status,
+      ).toBe(200);
+
+      // A built-in is not this workspace's to delete.
+      const builtIn = await request(app)
+        .delete(`/api/workspaces/${ws.id}/agent-templates/${agentTemplate.id}`)
+        .set('Cookie', owner.cookie);
+      expect(builtIn.status).toBe(404);
+
+      const listed = await request(app)
+        .get(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie);
+      expect(listed.body.data.map((t: { id: string }) => t.id)).toContain(agentTemplate.id);
+    });
+
+    it('keeps saved templates out of other workspaces', async () => {
+      const owner = await register('tpl-save-scope');
+      const stranger = await register('tpl-save-scope-2');
+      const ws = await createWorkspace(owner.cookie, 'Tpl Co');
+      const strangerWs = await createWorkspace(stranger.cookie, 'Other Co');
+      const { agent } = await makeAgentWithTool(owner.cookie, ws.id);
+      const saved = await request(app)
+        .post(`/api/workspaces/${ws.id}/agent-templates`)
+        .set('Cookie', owner.cookie)
+        .send({ agentId: agent.id });
+
+      const theirs = await request(app)
+        .get(`/api/workspaces/${strangerWs.id}/agent-templates`)
+        .set('Cookie', stranger.cookie);
+      expect(theirs.body.data.map((t: { id: string }) => t.id)).not.toContain(saved.body.data.id);
+    });
   });
 
   it('creates the definition in the caller\'s workspace only', async () => {
