@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `abac495` + agent-templates increment
-**Evidence basis**: 2,407 backend tests across 229 files and 529 frontend tests
-across 85 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `b51f91b` + plugin-foundation increment
+**Evidence basis**: 2,436 backend tests across 231 files and 537 frontend tests
+across 86 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
@@ -157,7 +157,8 @@ case, both are recorded.
 | Tool definitions + execution + audit trail | **A** | `tools.ts` mounted, `tool-engine.service.ts`, `ToolDefinition`/`ToolExecution`/`ToolAuditLog` models, `/dashboard/tools` page with a real executor and execution history. |
 | Tool secrets (encrypted, audited) | **A** | `toolSecrets.ts`, `toolSecret.service.ts`, `ToolSecretAuditLog`. |
 | Third-party integration catalogue | **F** | No catalogue, no OAuth connection flow, no per-integration adapters. |
-| Plugin system (install / sandbox / lifecycle) | **F** | One directory name matches `plugin`; no implementation. |
+| Plugin system — declarative packages (manifest / permissions / lifecycle) | **A** | `plugins/` + `routes/plugins.ts` + `/plugins` page, 22 registry tests + 7 route tests + 8 page tests. A plugin is a manifest describing what it contributes and what it needs. Validation refuses what it does not fully understand — an unrecognised permission is rejected by name rather than quietly dropped, because a silently narrowed grant produces a plugin that half-works for reasons nobody can see. The grant is exactly what was declared, frozen at install; a disabled plugin holds none of it, checked at every use rather than assumed from the record. Contributed templates are validated at INSTALL time with the engine's own `validatePlan`, so a template that could never run is refused before anyone tries it, and they appear in and disappear from the workspace's template list the moment the plugin is enabled or disabled. Uninstall removes the stored record too, so a plugin cannot return after a restart carrying permissions nobody re-granted. |
+| Plugin code execution (running third-party code) | **F** | **Deliberately refused, not merely absent.** A manifest declaring an entry point is rejected with an explanation, and `code:execute`/`network:outbound` are declared-but-ungrantable so asking for one gets a specific answer. Running untrusted code safely needs a real isolate — separate process, VM or WASM with resource limits and a syscall policy — and calling an in-process function call a "sandbox" would claim a protection that does not exist. That is a **launch blocker for any third-party plugin ecosystem**, and it is engineering work, not a credential. |
 
 ## Family K — Marketplace
 

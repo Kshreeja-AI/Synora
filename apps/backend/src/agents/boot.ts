@@ -9,6 +9,7 @@ import {
 } from '../workflows/workflow-registry.js';
 import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
 import { createFileTriggerStore, hydrateTriggers, setTriggerStore } from '../workflows/trigger.js';
+import { createFilePluginStore, hydratePlugins, setPluginStore } from '../plugins/plugin-registry.js';
 import { createFileCanvasStore, hydrateCanvases, setCanvasStore } from '../canvas/canvas-store.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
@@ -52,6 +53,7 @@ export async function bootAgentStores(): Promise<void> {
   setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
   setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
   setTriggerStore(createFileTriggerStore(`${dir}/workflow-triggers.json`));
+  setPluginStore(createFilePluginStore(`${dir}/plugins.json`));
   setCanvasStore(createFileCanvasStore(`${dir}/canvases.json`));
 
   try {
@@ -64,6 +66,15 @@ export async function bootAgentStores(): Promise<void> {
     // in a burst is how a scheduler turns an outage into an incident.
     const schedules = await hydrateSchedules();
     const triggers = await hydrateTriggers();
+    // A plugin record is a permission grant. Unlike a canvas, a
+    // partially-understood one is discarded whole rather than repaired:
+    // acting on a grant nobody made is worse than losing the install.
+    const pluginResult = await hydratePlugins();
+    if (pluginResult.discarded > 0) {
+      logger.warn('Some installed plugins were discarded on load: their manifest no longer validates.', {
+        discarded: pluginResult.discarded,
+      });
+    }
     // Canvases keep their good blocks and drop only invalid ones, unlike
     // definitions which are discarded whole — losing one note is better
     // than losing the surface around it.
@@ -97,6 +108,7 @@ export async function bootAgentStores(): Promise<void> {
       workflows,
       schedules,
       triggers,
+      plugins: pluginResult.loaded,
       canvases: canvasResult.loaded,
       runs: loaded,
       orphaned,

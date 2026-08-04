@@ -34,6 +34,13 @@ export interface KeyedStore<T> {
   readonly kind: string;
   save(key: string, value: T): Promise<void>;
   loadAll(): Promise<Record<string, T>>;
+  /**
+   * Removes one record. Required rather than optional: a store that
+   * cannot delete makes every removal temporary, so an uninstalled
+   * plugin or a deleted schedule quietly returns on the next restart —
+   * a resurrection nobody asked for and nobody would look for.
+   */
+  delete(key: string): Promise<void>;
   clear(): Promise<void>;
 }
 
@@ -47,6 +54,10 @@ export class InMemoryKeyedStore<T> implements KeyedStore<T> {
 
   async loadAll(): Promise<Record<string, T>> {
     return Object.fromEntries(this.entries);
+  }
+
+  async delete(key: string): Promise<void> {
+    this.entries.delete(key);
   }
 
   async clear(): Promise<void> {
@@ -80,6 +91,14 @@ export class FileKeyedStore<T> implements KeyedStore<T> {
 
   async loadAll(): Promise<Record<string, T>> {
     return this.readAll();
+  }
+
+  async delete(key: string): Promise<void> {
+    const all = await this.readAll();
+    if (!(key in all)) return;
+    delete all[key];
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await writeFile(this.filePath, JSON.stringify(all, null, 2), 'utf8');
   }
 
   async clear(): Promise<void> {

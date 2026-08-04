@@ -5,6 +5,7 @@ import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
 import { createAgent, persistAgent } from '../agents/agent-registry';
 import { getTemplate, listTemplates } from '../agents/templates';
+import { contributedTemplates } from '../plugins/plugin-registry';
 import { createWorkflow, persistWorkflow } from '../workflows/workflow-registry';
 
 /**
@@ -40,7 +41,13 @@ router.use('/:workspaceId/agent-templates', authMiddleware, requireWorkspaceAcce
 router.get('/:workspaceId/agent-templates', async (req: AuthRequest, res, next) => {
   try {
     const kind = z.enum(['agent', 'workflow']).optional().parse(req.query.kind);
-    res.json(createApiResponse(listTemplates(kind)));
+    // Plugin contributions are checked at READ time, not cached from
+    // install, so disabling a plugin removes its templates immediately
+    // rather than at some later refresh.
+    const contributed = contributedTemplates(req.params.workspaceId).filter(
+      (t) => !kind || t.kind === kind,
+    );
+    res.json(createApiResponse([...listTemplates(kind), ...contributed]));
   } catch (error) {
     next(error);
   }
@@ -55,7 +62,12 @@ router.post(
   '/:workspaceId/agent-templates/:templateId/instantiate',
   async (req: AuthRequest, res, next) => {
     try {
-      const template = getTemplate(req.params.templateId);
+      const template =
+        getTemplate(req.params.templateId) ??
+        contributedTemplates(req.params.workspaceId).find(
+          (t) => t.id === req.params.templateId,
+        ) ??
+        null;
       if (!template) return next(new NotFoundException('Template'));
       const { name } = instantiateSchema.parse(req.body ?? {});
 

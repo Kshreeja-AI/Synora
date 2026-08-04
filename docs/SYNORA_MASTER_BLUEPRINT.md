@@ -629,6 +629,57 @@ version deliberately avoids committing to an interaction model before
 anyone has arranged a real canvas); zoom; grouping; and inline previews of
 linked runs or conversations, which currently show their type and id only.
 
+### 5.12 Plugins — Partially implemented (`apps/backend/src/plugins/`, `/plugins`)
+
+A plugin is a **declarative package**: a manifest describing what it
+contributes and what permissions it needs. Installing one adds its
+contributions to a workspace. That is the entire model, and the limit is
+the point.
+
+**It does not run third-party code, and the refusal is explicit.** A
+manifest declaring an entry point is rejected with a message saying why;
+`code:execute` and `network:outbound` exist as declared-but-ungrantable
+permissions so that asking for one produces a specific answer rather than
+a confusing "unknown permission". Executing untrusted code safely needs a
+real isolate — a separate process, a VM, or WASM with an explicit host
+interface — plus resource limits and a syscall policy. None of that
+exists. A "sandbox" that is really a function call in the same process is
+not a sandbox; it is arbitrary code execution with reassuring naming, and
+shipping it would be worse than having no plugin system, because the word
+implies a protection that is not there. This is recorded as a **launch
+blocker** for any third-party ecosystem, and it is engineering work
+rather than a credential.
+
+**The permission model fails closed and never widens.** Validation
+refuses an unrecognised permission by name instead of dropping it —
+silently narrowing what someone asked for yields a plugin that half-works
+for reasons nobody can debug. The grant is exactly what the manifest
+declared, captured at install; wanting more is a new install decision,
+because a grant that can widen afterwards is not consent. A disabled
+plugin keeps its record but holds none of its permissions, checked at
+every use, or the switch would be decorative.
+
+**Contributions are validated like authored ones.** A contributed
+workflow template goes through the engine's own `validatePlan` at install
+time, so a template that could never run is refused before anyone tries
+it — the same authoring-time rule that stops a workflow being saved
+unrunnable. Contributed templates are read live rather than cached, so
+enabling or disabling a plugin changes what the workspace offers
+immediately.
+
+**Hydration discards rather than repairs**, unlike a canvas that keeps
+its good blocks. A plugin record is a permission grant: loading a
+partially-understood one would mean acting on a grant nobody made. Uninstall
+deletes the stored record too — which is why `KeyedStore` gained a
+required `delete`; a store that cannot delete makes every removal
+temporary, and an uninstalled plugin returning after a restart with its
+permissions intact is a resurrection nobody would think to look for.
+
+**Missing, named:** an execution isolate (above); tool contributions
+(templates are the only contribution kind); plugin signing or provenance
+verification; and a marketplace, which is deliberately downstream of this
+— a storefront for a runtime that does not exist would be a façade.
+
 ---
 
 ## 6. Frontend — see `SYNORA_UI_SYSTEM.md`
