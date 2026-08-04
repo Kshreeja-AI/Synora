@@ -118,6 +118,8 @@ export interface AgentRun {
   workspaceId: string;
   requestedBy: string;
   task: string;
+  /** The project this run is filed into, if any. */
+  projectId?: string;
   state: RunState;
   plan?: { steps: PlannedStep[]; origin: 'model' | 'local-deterministic' | 'authored' };
   steps: StepRecord[];
@@ -274,11 +276,18 @@ export function useAgentRun(
 
 export function useStartRun(
   workspaceId: string,
-): UseMutationResult<RunWithRuntime, Error, { agentId: string; task: string }> {
+): UseMutationResult<
+  RunWithRuntime,
+  Error,
+  { agentId: string; task: string; projectId?: string }
+> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ agentId, task }) =>
-      api.post<RunWithRuntime>(`/api/workspaces/${workspaceId}/agents/${agentId}/runs`, { task }),
+    mutationFn: ({ agentId, task, projectId }) =>
+      api.post<RunWithRuntime>(`/api/workspaces/${workspaceId}/agents/${agentId}/runs`, {
+        task,
+        projectId,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [RUNS_KEY, workspaceId] });
     },

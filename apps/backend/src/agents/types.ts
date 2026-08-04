@@ -206,6 +206,13 @@ export interface AgentRun {
   workspaceId: string;
   requestedBy: string;
   task: string;
+  /**
+   * The project this run is filed into, if any — same-workspace, checked
+   * at start time the same way a conversation's filing is: the project
+   * timeline reads runs by bare projectId, so an unchecked one could
+   * plant a run in a project the requester merely knows the id of.
+   */
+  projectId?: string;
   state: RunState;
   plan?: AgentPlan;
   steps: StepRecord[];

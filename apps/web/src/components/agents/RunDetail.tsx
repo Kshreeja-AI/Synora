@@ -123,7 +123,10 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
               start.mutate(
                 // A NEW run. The finished one is a record of what
                 // happened, and recovery must never edit the record.
-                { agentId: currentAgent.id, task: run.task },
+                // Filing carries over: a rerun of project work is still
+                // that project's work, and staying filed is the default
+                // a person would expect without having to redo it.
+                { agentId: currentAgent.id, task: run.task, projectId: run.projectId },
                 {
                   onSuccess: () => toast.success('Started a new run with the same task'),
                   onError: (e) => toast.error(e.message),

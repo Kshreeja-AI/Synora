@@ -497,6 +497,97 @@ describe('projects routes (M5)', () => {
       expect(renamed.body.data.projectId).toBe(project.id);
     });
 
+    async function makeAgent(cookie: string, workspaceId: string, name: string) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/agents`)
+        .set('Cookie', cookie)
+        .send({ name, instructions: 'Do the task carefully.' });
+      return res.body.data as { id: string };
+    }
+
+    async function startAgentRun(
+      cookie: string,
+      workspaceId: string,
+      agentId: string,
+      body: object,
+    ) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/agents/${agentId}/runs`)
+        .set('Cookie', cookie)
+        .send(body);
+    }
+
+    it('gathers an agent run into the project alongside the conversations', async () => {
+      const user = await register('proj-run');
+      const ws = await createWorkspace(user.accessToken, 'Run Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Summarise the competitive landscape',
+        projectId: project.id,
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBe(project.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      // A run is where the AI actually did something as part of this
+      // project's work — a project holding conversations and documents
+      // but not what an agent did in service of them would still be
+      // missing part of the picture.
+      expect(view.body.data.counts.agentRun).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'agentRun');
+      expect(entry?.title).toBe('Summarise the competitive landscape');
+      expect(entry?.detail).toContain('Researcher');
+    });
+
+    it("refuses to file an agent run into another workspace's project", async () => {
+      const owner = await register('proj-run-mine');
+      const stranger = await register('proj-run-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'Run Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'Run Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const agent = await makeAgent(owner.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(owner.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+        projectId: theirProject.id,
+      });
+
+      // 404, not 403 — the same rule as everywhere else a project id is
+      // accepted as a claim of access rather than trusted as a bare
+      // foreign key.
+      expect(started.status).toBe(404);
+    });
+
+    it('404s a run filed against a project id that does not exist', async () => {
+      const user = await register('proj-run-missing');
+      const ws = await createWorkspace(user.accessToken, 'Run Missing Co');
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+        projectId: 'proj_does_not_exist',
+      });
+      expect(started.status).toBe(404);
+    });
+
+    it('starts a run with no project just fine — filing is optional', async () => {
+      const user = await register('proj-run-none');
+      const ws = await createWorkspace(user.accessToken, 'Run None Co');
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBeUndefined();
+    });
+
     it('reports an empty project honestly rather than failing', async () => {
       const user = await register('proj-empty');
       const ws = await createWorkspace(user.accessToken, 'Empty Co');

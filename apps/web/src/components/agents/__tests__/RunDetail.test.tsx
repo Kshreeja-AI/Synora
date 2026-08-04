@@ -98,7 +98,23 @@ describe('RunDetail — run again', () => {
     // agent_v3. Replaying v2 silently would run rules the person has
     // since edited away.
     expect(start).toHaveBeenCalledWith(
-      { agentId: 'agent_v3', task: 'Summarise the market' },
+      { agentId: 'agent_v3', task: 'Summarise the market', projectId: undefined },
+      expect.anything(),
+    );
+  });
+
+  it('carries the original run\'s project filing over to the rerun', async () => {
+    const user = userEvent.setup();
+    const start = vi.fn();
+    vi.mocked(agentsApi.useStartRun).mockReturnValue(idle({ mutate: start }) as never);
+
+    renderDetail(run({ projectId: 'proj_9' }));
+    await user.click(screen.getByRole('button', { name: /run again/i }));
+
+    // A rerun of project work is still that project's work — staying
+    // filed is the default a person would expect without redoing it.
+    expect(start).toHaveBeenCalledWith(
+      { agentId: 'agent_v3', task: 'Summarise the market', projectId: 'proj_9' },
       expect.anything(),
     );
   });

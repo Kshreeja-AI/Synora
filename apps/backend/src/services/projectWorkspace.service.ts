@@ -4,6 +4,8 @@ import { requireMembership } from './workspace.service';
 import { requirePermission } from './permissions';
 import { recordAuditEvent } from './audit.service';
 import { listCanvasesForProject } from '../canvas/canvas-store';
+import { listRuns } from '../agents/run-engine';
+import { getAgent } from '../agents/agent-registry';
 
 /**
  * A project, seen as the work inside it rather than as a row.
@@ -39,7 +41,8 @@ export type ProjectItemKind =
   | 'document'
   | 'image'
   | 'video'
-  | 'audio';
+  | 'audio'
+  | 'agentRun';
 
 export interface ProjectTimelineEntry {
   kind: ProjectItemKind;
@@ -140,6 +143,11 @@ export async function getProjectWorkspace(
     (c) => !c.archived,
   );
 
+  // Agent (and workflow) runs live in the same in-memory/file-backed run
+  // store as canvases, not the database — filed the same way and read
+  // the same way, one more source merged into the one chronology.
+  const runs = listRuns(project.workspaceId, { projectId });
+
   const entries: ProjectTimelineEntry[] = [
     ...canvases.map((c) => ({
       kind: 'canvas' as const,
@@ -192,6 +200,18 @@ export async function getProjectWorkspace(
       at: iso(a.createdAt),
       detail: a.status,
     })),
+    // Task is what the person actually typed, so it — not the agent's
+    // name — is the title; the agent is context, in the detail line.
+    ...runs.map((r) => {
+      const agent = getAgent(r.agentId, r.workspaceId);
+      return {
+        kind: 'agentRun' as const,
+        id: r.id,
+        title: r.task.slice(0, 80),
+        at: iso(new Date(r.finishedAt ?? r.createdAt)),
+        detail: `${agent?.name ?? 'agent'} · ${r.state.replace('_', ' ')}`,
+      };
+    }),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   const timeline = entries.slice(0, PROJECT_TIMELINE_LIMIT);
@@ -214,6 +234,7 @@ export async function getProjectWorkspace(
       image: images.length,
       video: videos.length,
       audio: audios.length,
+      agentRun: runs.length,
     },
     timeline,
     // The newest non-archived conversation. Archived ones are excluded

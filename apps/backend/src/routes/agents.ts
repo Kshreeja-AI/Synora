@@ -1,5 +1,6 @@
 import { Router, type Router as ExpressRouter } from 'express';
 import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
@@ -94,6 +95,7 @@ const updateAgentSchema = z.object({
 
 const startRunSchema = z.object({
   task: z.string().min(1).max(10_000),
+  projectId: z.string().min(1).optional(),
 });
 
 const rejectSchema = z.object({
@@ -330,9 +332,21 @@ router.delete('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, nex
 
 router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, next) => {
   try {
-    const { task } = startRunSchema.parse(req.body);
+    const { task, projectId } = startRunSchema.parse(req.body);
     const agent = getAgent(req.params.agentId, req.params.workspaceId);
     if (!agent) return next(new NotFoundException('Agent'));
+
+    // The project must belong to the SAME workspace as the run — the
+    // project timeline reads runs by bare projectId, so filing into a
+    // project of another workspace would plant a run somewhere the
+    // requester's membership here says nothing about.
+    if (projectId) {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, workspaceId: req.params.workspaceId },
+        select: { id: true },
+      });
+      if (!project) return next(new NotFoundException('Project'));
+    }
 
     // Refused BEFORE anything executes: at deduction time the work is
     // already done, which is too late for a budget to mean anything.
@@ -353,6 +367,7 @@ router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, 
         workspaceId: req.params.workspaceId,
         requestedBy: req.userId!,
         task,
+        projectId,
       },
       { ...runtime.deps, generate: withRecalledContext(runtime.deps.generate, recalled) },
     );

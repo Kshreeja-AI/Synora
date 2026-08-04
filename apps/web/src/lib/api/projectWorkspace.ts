@@ -19,7 +19,8 @@ export type ProjectItemKind =
   | 'document'
   | 'image'
   | 'video'
-  | 'audio';
+  | 'audio'
+  | 'agentRun';
 
 export interface ProjectTimelineEntry {
   kind: ProjectItemKind;

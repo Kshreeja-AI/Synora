@@ -1,10 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, Bookmark, Bot, Loader2, Pencil, Play, Plus } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Archive, Bookmark, Bot, FolderKanban, Loader2, Pencil, Play, Plus } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
+import { listProjects } from '@/lib/api/projects';
 import {
   useAgentRuns,
   useAgents,
@@ -34,6 +36,7 @@ export default function AgentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [task, setTask] = useState('');
+  const [runProjectId, setRunProjectId] = useState('');
   const [lastRuntime, setLastRuntime] = useState<RunRuntime | null>(null);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -43,6 +46,11 @@ export default function AgentsPage() {
     lineageId: selectedAgent?.lineageId,
     enabled: !!selectedAgent,
   });
+  const { data: projects = [] } = useQuery({
+    queryKey: ['projects', workspaceId],
+    queryFn: () => listProjects(workspaceId),
+    enabled: !!workspaceId,
+  });
   const startRun = useStartRun(workspaceId);
   const archive = useArchiveAgent(workspaceId);
   const saveAsTemplate = useSaveAsTemplate(workspaceId);
@@ -50,7 +58,7 @@ export default function AgentsPage() {
   function run() {
     if (!selectedAgent || !task.trim()) return;
     startRun.mutate(
-      { agentId: selectedAgent.id, task: task.trim() },
+      { agentId: selectedAgent.id, task: task.trim(), projectId: runProjectId || undefined },
       {
         onSuccess: (result) => {
           // The provenance label is kept and shown, never discarded — the
@@ -229,14 +237,39 @@ export default function AgentsPage() {
                       placeholder="Describe what you want done"
                       className="w-full rounded-md border border-input bg-background p-3 text-sm"
                     />
-                    <Button onClick={run} disabled={startRun.isPending || !task.trim()}>
-                      {startRun.isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 h-4 w-4" />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button onClick={run} disabled={startRun.isPending || !task.trim()}>
+                        {startRun.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 h-4 w-4" />
+                        )}
+                        Run
+                      </Button>
+                      {projects.length > 0 && (
+                        // What happened lives in the project it served, the
+                        // same way a filed conversation or document does —
+                        // offered, never required, and gone entirely when
+                        // there is nowhere to file into.
+                        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <FolderKanban className="h-3 w-3" aria-hidden />
+                          <span className="sr-only">File this run into a project</span>
+                          <select
+                            aria-label="File this run into a project"
+                            value={runProjectId}
+                            onChange={(e) => setRunProjectId(e.target.value)}
+                            className="h-8 rounded-md border border-input bg-background px-1 text-xs"
+                          >
+                            <option value="">No project</option>
+                            {projects.map((project) => (
+                              <option key={project.id} value={project.id}>
+                                {project.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       )}
-                      Run
-                    </Button>
+                    </div>
                   </div>
 
                   {lastRuntime && <RuntimeNotice runtime={lastRuntime} />}

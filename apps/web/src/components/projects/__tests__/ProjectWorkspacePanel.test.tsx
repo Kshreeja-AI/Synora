@@ -30,7 +30,7 @@ function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0 },
+    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0, agentRun: 0 },
     timeline: [
       {
         kind: 'conversation',
@@ -123,6 +123,32 @@ describe('ProjectWorkspacePanel', () => {
     expect(screen.queryByRole('link', { name: /pricing\.csv/ })).not.toBeInTheDocument();
   });
 
+  it('shows an agent run in the chronology, unlinked — there is no run permalink yet', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, agentRun: 1 },
+        timeline: [
+          ...workspace().timeline,
+          {
+            kind: 'agentRun',
+            id: 'run1',
+            title: 'Summarise the competitive landscape',
+            at: new Date(Date.now() - 1_800_000).toISOString(),
+            detail: 'Researcher · completed',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText('Summarise the competitive landscape')).toBeInTheDocument();
+    expect(screen.getByText(/Researcher · completed/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: /Summarise the competitive landscape/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it('states last activity as a fact, and passes no judgement on the project', () => {
     renderPanel();
     expect(screen.getByText(/Last activity/)).toBeInTheDocument();
@@ -136,7 +162,7 @@ describe('ProjectWorkspacePanel', () => {
     vi.mocked(api.useProjectWorkspace).mockReturnValue({
       data: workspace({
         timeline: [],
-        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0 },
+        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0, agentRun: 0 },
         resumeConversationId: null,
         lastActivityAt: null,
       }),

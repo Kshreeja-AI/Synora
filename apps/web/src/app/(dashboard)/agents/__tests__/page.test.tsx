@@ -16,6 +16,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AgentsPage from '../page';
 import * as agentsApi from '@/lib/api/agents';
+import * as projectsApi from '@/lib/api/projects';
 import type { Agent, AgentRun, RunWithRuntime } from '@/lib/api/agents';
 
 vi.mock('@/lib/api/agentTemplates', async () => {
@@ -30,6 +31,10 @@ vi.mock('@/lib/api/agentTemplates', async () => {
 
 vi.mock('@/hooks/useCurrentWorkspace', () => ({
   useCurrentWorkspace: () => ({ currentWorkspace: { id: 'ws_1', name: 'Test Co' } }),
+}));
+
+vi.mock('@/lib/api/projects', () => ({
+  listProjects: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock('@/lib/api/agents', async () => {
@@ -145,6 +150,57 @@ describe('agents page', () => {
     // This is the assertion that matters most on this page.
     expect(await screen.findByText(/LOCAL — deterministic, not AI/)).toBeInTheDocument();
     expect(screen.getByText(/not model intelligence/)).toBeInTheDocument();
+  });
+
+  it('offers no project selector when the workspace has no projects', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    // An empty dropdown would invite a click that leads nowhere, so it
+    // is absent entirely rather than shown with only "No project" in it.
+    expect(screen.queryByLabelText(/file this run into a project/i)).not.toBeInTheDocument();
+  });
+
+  it('files a new run into the chosen project — offered, never required', async () => {
+    vi.mocked(projectsApi.listProjects).mockResolvedValue([
+      { id: 'proj_1', name: 'Q3 Launch' } as never,
+    ]);
+    const user = userEvent.setup();
+    const start = vi.fn();
+    vi.mocked(agentsApi.useStartRun).mockReturnValue(idleMutation({ mutate: start }) as never);
+
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    await user.type(screen.getByLabelText(/give it a task/i), 'do a thing');
+
+    const select = await screen.findByLabelText(/file this run into a project/i);
+    await user.selectOptions(select, 'proj_1');
+    await user.click(screen.getByRole('button', { name: /^run$/i }));
+
+    expect(start).toHaveBeenCalledWith(
+      { agentId: agent.id, task: 'do a thing', projectId: 'proj_1' },
+      expect.anything(),
+    );
+  });
+
+  it('starts a run with no project when none is chosen', async () => {
+    vi.mocked(projectsApi.listProjects).mockResolvedValue([
+      { id: 'proj_1', name: 'Q3 Launch' } as never,
+    ]);
+    const user = userEvent.setup();
+    const start = vi.fn();
+    vi.mocked(agentsApi.useStartRun).mockReturnValue(idleMutation({ mutate: start }) as never);
+
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    await user.type(screen.getByLabelText(/give it a task/i), 'do a thing');
+    await screen.findByLabelText(/file this run into a project/i);
+    await user.click(screen.getByRole('button', { name: /^run$/i }));
+
+    expect(start).toHaveBeenCalledWith(
+      { agentId: agent.id, task: 'do a thing', projectId: undefined },
+      expect.anything(),
+    );
   });
 
   it('labels a model-planned run as REAL and names the provider', async () => {

@@ -158,7 +158,14 @@ function resolveInput(input: string, steps: StepRecord[]): string {
  * then executes until a terminal state or an approval pause.
  */
 export async function startRun(
-  params: { agentId: string; workspaceId: string; requestedBy: string; task: string },
+  params: {
+    agentId: string;
+    workspaceId: string;
+    requestedBy: string;
+    task: string;
+    /** Same-workspace project access is verified by the caller (route). */
+    projectId?: string;
+  },
   deps: RunEngineDeps,
 ): Promise<AgentRun> {
   const agent = definitionResolver(deps)(params.agentId, params.workspaceId);
@@ -177,6 +184,7 @@ export async function startRun(
     workspaceId: agent.workspaceId,
     requestedBy: params.requestedBy,
     task: params.task,
+    projectId: params.projectId,
     state: 'planning',
     steps: [],
     toolCallsUsed: 0,
@@ -391,10 +399,14 @@ export function getRun(runId: string, workspaceId: string): AgentRun | null {
   return run;
 }
 
-export function listRuns(workspaceId: string, opts: { agentLineageId?: string } = {}): AgentRun[] {
+export function listRuns(
+  workspaceId: string,
+  opts: { agentLineageId?: string; projectId?: string } = {},
+): AgentRun[] {
   return [...runs.values()]
     .filter((r) => r.workspaceId === workspaceId)
     .filter((r) => !opts.agentLineageId || r.lineageId === opts.agentLineageId)
+    .filter((r) => !opts.projectId || r.projectId === opts.projectId)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 

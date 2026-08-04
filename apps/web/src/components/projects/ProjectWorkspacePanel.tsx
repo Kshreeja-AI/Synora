@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import {
+  Bot,
   FileText,
   Image as ImageIcon,
   LayoutGrid,
@@ -43,6 +44,7 @@ const ICONS: Record<ProjectItemKind, typeof MessageSquare> = {
   image: ImageIcon,
   video: Video,
   audio: Music,
+  agentRun: Bot,
 };
 
 const LABELS: Record<ProjectItemKind, string> = {
@@ -53,6 +55,7 @@ const LABELS: Record<ProjectItemKind, string> = {
   image: 'image',
   video: 'video',
   audio: 'audio',
+  agentRun: 'agent run',
 };
 
 /** Relative where it helps, absolute where precision matters more. */
