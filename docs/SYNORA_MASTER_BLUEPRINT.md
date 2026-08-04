@@ -452,6 +452,30 @@ edited.
 **Missing, named:** editing a saved template in place — changing one means
 saving a new one.
 
+**A defect worth naming before it happens.** A run executes synchronously
+inside the HTTP request that started it: `await startRun(...)` returns only
+when the run reaches a terminal state or parks for approval. Meanwhile a
+run's default wall-clock budget is five minutes and the default HTTP
+request timeout is thirty seconds — the run is allowed to take ten times
+longer than the request carrying it.
+
+Nothing goes wrong today, because with no model provider configured the
+deterministic local runtime returns instantly. It goes wrong the moment a
+real provider is connected: the request times out at thirty seconds with a
+408, the timeout handler does **not** abort the work, and the run carries
+on — executing steps, calling tools, spending budget, being metered, and
+landing in history — while the caller has an error and no run id, because
+the id existed only in the response that was discarded.
+
+No test catches this: the timeout middleware returns early when
+`NODE_ENV=test`, so every test runs with no timeout at all.
+
+The fix is asynchronous runs — start returns immediately with a `running`
+state, execution continues, and the client polls or streams. That changes
+the `POST /runs` contract, so it is recorded here as a decision rather than
+made silently. It is also the reason live run progress cannot be built
+before it: while the run *is* the request, there is nothing to observe.
+
 ### 5.10 Workflow engine — Partially implemented (`apps/backend/src/workflows/`)
 
 A workflow is a sequence a **human wrote down**, executed exactly as
