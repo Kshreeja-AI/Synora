@@ -1,14 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Check, Loader2, ShieldAlert, X } from 'lucide-react';
+import { Check, Loader2, RotateCcw, ShieldAlert, X } from 'lucide-react';
 import { Button } from '@synora/design-system';
 import { toast } from 'sonner';
 import {
   isTerminalRun,
+  useAgents,
   useApproveStep,
   useCancelRun,
   useRejectStep,
+  useStartRun,
   type AgentRun,
   type RunState,
   type StepState,
@@ -65,9 +67,23 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
   const approve = useApproveStep(workspaceId);
   const reject = useRejectStep(workspaceId);
   const cancel = useCancelRun(workspaceId);
+  const start = useStartRun(workspaceId);
+  const { data: agents = [] } = useAgents(workspaceId);
 
   const pending = run.pendingApproval;
   const terminal = isTerminalRun(run.state);
+
+  /**
+   * "Run again" resolves the CURRENT version of this run's lineage, never
+   * the pinned version the run executed under. `run.agentId` names the
+   * exact historical definition — replaying that silently would run rules
+   * the person has since edited away, which is the subtle version of the
+   * museum-of-old-names problem. If the agent is gone (archived, so absent
+   * from the latest-per-lineage list), the offer disappears rather than
+   * failing on click.
+   */
+  const currentAgent = agents.find((a) => a.lineageId === run.lineageId);
+  const rerunsOnNewerVersion = currentAgent ? currentAgent.id !== run.agentId : false;
 
   return (
     <div className="space-y-6">
@@ -99,7 +115,42 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
             {cancel.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Stop this run'}
           </Button>
         )}
+        {terminal && currentAgent && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              start.mutate(
+                // A NEW run. The finished one is a record of what
+                // happened, and recovery must never edit the record.
+                { agentId: currentAgent.id, task: run.task },
+                {
+                  onSuccess: () => toast.success('Started a new run with the same task'),
+                  onError: (e) => toast.error(e.message),
+                },
+              )
+            }
+            disabled={start.isPending}
+          >
+            {start.isPending ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-1 h-4 w-4" />
+            )}
+            Run again
+          </Button>
+        )}
       </div>
+
+      {terminal && currentAgent && rerunsOnNewerVersion && (
+        // Said before the click, not discovered after: the agent has been
+        // edited since this run, so "again" means the same task under the
+        // agent as it is NOW, not a replay of the old rules.
+        <p className="text-xs text-muted-foreground">
+          This agent has been edited since this run. “Run again” uses the current version
+          (v{currentAgent.version}); this run executed v{run.agentVersion}.
+        </p>
+      )}
 
       <div>
         <h4 className="text-sm font-semibold">Task</h4>
