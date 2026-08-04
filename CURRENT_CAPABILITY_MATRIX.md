@@ -109,6 +109,7 @@ case, both are recorded.
 | Capability | Class | Evidence and honest limits |
 |---|---|---|
 | File upload + processing pipeline | **A** | `files.ts`, `FileProcessingJob` model, end-to-end download path. |
+| Workspace-level file browser | **A** | `/knowledge/files`, 6 tests. `workspaces/:id/assets` has been storable and listable since M5; the only surface that ever showed it was the project detail page, so a file not attached to a project was reachable by the server and invisible to a person. Files already filed under a project are marked "in a project" rather than presented as loose. This is a navigation fix, not a new capability — nothing new is stored. |
 | Virus scanning | **E** | Real ClamAV provider abstraction with a **three-state** result (clean / infected / **unscanned**) and fail-closed policy. **ACTIVATION BLOCKED**: no ClamAV daemon configured. The third state exists precisely so an unscanned file is never reported as clean. |
 | Memory system (store, rank, dedupe, summarise, GDPR erase) | **A** | Nine memory services, `memories.ts` mounted, `/knowledge/memories` page. |
 | Semantic search over memory | **E** | pgvector store and embedding provider adapters are implemented and tested. **ACTIVATION BLOCKED**: no embedding credential. Semantic search is *gated off* rather than faked; the system falls back to real Postgres full-text search and says so. |

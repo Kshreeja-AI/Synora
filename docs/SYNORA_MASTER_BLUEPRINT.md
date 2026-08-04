@@ -513,8 +513,15 @@ currently show their type and id only.
 Surfaces Implemented: marketing (landing, pricing, features, changelog),
 auth (login, register, forgot/reset, verify), dashboard shell,
 conversations/chat, knowledge, search, admin + engineering dashboard,
-share and invite public pages. Studio (media) is Implemented but
-credential-gated. Developer portal is Partial.
+share and invite public pages, agents, workflows, canvas. Studio (media)
+is Implemented but credential-gated. Developer portal is Partial.
+
+`/knowledge/files` (added 2026-08-04) is a navigation fix rather than a
+new capability: workspace assets have been storable and listable since
+M5, and the project detail page was the only surface that ever showed
+them, so a file not attached to a project was reachable by the server and
+invisible to a person. The new page lists what already existed and marks
+project-attached files as such rather than presenting them as loose.
 
 ---
 
