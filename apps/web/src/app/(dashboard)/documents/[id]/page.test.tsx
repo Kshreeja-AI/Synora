@@ -6,12 +6,16 @@
  * A document filed into a shared project is readable by that project's
  * people but stays owner-only to edit; the Edit button is gated on
  * viewer identity so a non-owner never reaches a Save that would 404.
+ * When filed, the project is named and linked so landing here from a
+ * project's timeline is not a dead end.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DocumentDetailPage from './page';
 import * as documentsApi from '@/lib/api/documents';
+import * as projectsApi from '@/lib/api/projects';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 
 vi.mock('next/navigation', () => ({
@@ -27,6 +31,11 @@ vi.mock('@/lib/api/documents', async () => {
   return { ...actual, useDocument: vi.fn(), useUpdateDocument: vi.fn() };
 });
 
+vi.mock('@/lib/api/projects', async () => {
+  const actual = await vi.importActual<typeof projectsApi>('@/lib/api/projects');
+  return { ...actual, getProject: vi.fn() };
+});
+
 function mockUpdate(overrides: Record<string, unknown> = {}) {
   const mutation = {
     mutate: vi.fn(),
@@ -39,7 +48,17 @@ function mockUpdate(overrides: Record<string, unknown> = {}) {
   return mutation;
 }
 
+function renderPage() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <DocumentDetailPage />
+    </QueryClientProvider>,
+  );
+}
+
 beforeEach(() => {
+  vi.mocked(projectsApi.getProject).mockRejectedValue(new Error('not fetched in this test'));
   vi.mocked(useCurrentUser).mockReturnValue({
     data: { id: 'u1', role: 'USER' },
   } as unknown as ReturnType<typeof useCurrentUser>);
@@ -63,14 +82,14 @@ beforeEach(() => {
 
 describe('DocumentDetailPage', () => {
   it('renders the title and the markdown content', () => {
-    render(<DocumentDetailPage />);
+    renderPage();
     expect(screen.getByRole('heading', { name: 'Launch plan' })).toBeInTheDocument();
     expect(screen.getByText('Body paragraph.')).toBeInTheDocument();
   });
 
   it('edit prefills the stored text exactly, and save sends exactly what is shown', () => {
     const { mutate } = mockUpdate();
-    render(<DocumentDetailPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
 
@@ -91,7 +110,7 @@ describe('DocumentDetailPage', () => {
 
   it('cancel discards the edit and saves nothing', () => {
     const { mutate } = mockUpdate();
-    render(<DocumentDetailPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
     fireEvent.change(screen.getByLabelText('Content'), { target: { value: 'thrown away' } });
@@ -104,7 +123,7 @@ describe('DocumentDetailPage', () => {
 
   it('shows the save error where the person is looking', () => {
     mockUpdate({ isError: true, error: new Error('Content too large') });
-    render(<DocumentDetailPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole('button', { name: /edit/i }));
     expect(screen.getByRole('alert')).toHaveTextContent('Content too large');
@@ -115,12 +134,71 @@ describe('DocumentDetailPage', () => {
       data: { id: 'someone-else', role: 'USER' },
     } as unknown as ReturnType<typeof useCurrentUser>);
 
-    render(<DocumentDetailPage />);
+    renderPage();
 
     // Reachable here only because the caller can see the shared project
     // this document is filed into — read access, never a write claim.
     expect(screen.queryByRole('button', { name: /edit/i })).not.toBeInTheDocument();
     expect(screen.getByText('Body paragraph.')).toBeInTheDocument();
+  });
+
+  it('names and links the project a document is filed into', async () => {
+    vi.mocked(documentsApi.useDocument).mockReturnValue({
+      data: {
+        id: 'doc_1',
+        userId: 'u1',
+        projectId: 'proj_9',
+        title: 'Launch plan',
+        content: '# Heading\n\nBody paragraph.',
+        format: 'MARKDOWN',
+        status: 'DRAFT',
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-03T00:00:00Z',
+      },
+      isLoading: false,
+      error: null,
+    } as never);
+    vi.mocked(projectsApi.getProject).mockResolvedValue({
+      id: 'proj_9',
+      name: 'Q3 Launch',
+    } as never);
+
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: /Filed in Q3 Launch/i });
+    expect(link).toHaveAttribute('href', '/dashboard/projects/proj_9');
+  });
+
+  it('shows no project label for a document that was never filed', () => {
+    renderPage();
+    expect(screen.queryByText(/Filed in/)).not.toBeInTheDocument();
+  });
+
+  it('degrades quietly if the filed project is no longer reachable', async () => {
+    vi.mocked(documentsApi.useDocument).mockReturnValue({
+      data: {
+        id: 'doc_1',
+        userId: 'u1',
+        projectId: 'proj_gone',
+        title: 'Launch plan',
+        content: '# Heading\n\nBody paragraph.',
+        format: 'MARKDOWN',
+        status: 'DRAFT',
+        createdAt: '2026-08-01T00:00:00Z',
+        updatedAt: '2026-08-03T00:00:00Z',
+      },
+      isLoading: false,
+      error: null,
+    } as never);
+    vi.mocked(projectsApi.getProject).mockRejectedValue(new Error('Project not found'));
+
+    renderPage();
+
+    await waitFor(() => expect(projectsApi.getProject).toHaveBeenCalled());
+    // The document itself must still render; an ancillary label failing
+    // is not grounds to break the page.
+    expect(screen.getByText('Body paragraph.')).toBeInTheDocument();
+    expect(screen.queryByText(/Filed in/)).not.toBeInTheDocument();
   });
 
   it('says plainly when the document cannot be found, with a way back', () => {
@@ -130,7 +208,7 @@ describe('DocumentDetailPage', () => {
       error: new Error('Document not found'),
     } as never);
 
-    render(<DocumentDetailPage />);
+    renderPage();
     expect(screen.getByRole('alert')).toHaveTextContent('Document not found');
     expect(screen.getByRole('link', { name: /back to documents/i })).toHaveAttribute(
       'href',

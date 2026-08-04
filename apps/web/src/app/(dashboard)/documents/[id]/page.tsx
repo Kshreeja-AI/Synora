@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, FolderKanban, Loader2, Pencil } from 'lucide-react';
 import { Spinner } from '@synora/design-system/components/Spinner';
 import { Markdown } from '@/components/chat/Markdown';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import { useDocument, useUpdateDocument } from '@/lib/api/documents';
+import { getProject } from '@/lib/api/projects';
 
 /**
  * One document, whole — readable by default, editable on request.
@@ -20,6 +22,15 @@ import { useDocument, useUpdateDocument } from '@/lib/api/documents';
  * people, but editing stays owner-only (the server enforces this; the
  * Edit button is hidden here too, rather than letting a non-owner reach
  * a Save that would just 404).
+ *
+ * When filed, the project is named and linked — landing here from a
+ * project's timeline should not be a dead end with no way back, and a
+ * document reached some other way should still say what it belongs to.
+ * Changing that filing is not offered here: doing it honestly would mean
+ * picking from every project across every workspace this person is in,
+ * a picker nothing else in the product has built yet. Refiling stays
+ * where the context already exists — "Save as doc" and the conversation
+ * page's project select.
  */
 export default function DocumentDetailPage() {
   const params = useParams();
@@ -27,6 +38,15 @@ export default function DocumentDetailPage() {
   const { data: currentUser } = useCurrentUser();
   const { data: doc, isLoading, error } = useDocument(documentId);
   const update = useUpdateDocument(documentId);
+  const { data: project } = useQuery({
+    queryKey: ['project', doc?.projectId],
+    queryFn: () => getProject(doc!.projectId!),
+    enabled: !!doc?.projectId,
+    // If the project became unreachable (e.g. the owner left its
+    // workspace), degrade to showing the document without the label
+    // rather than retrying a call that will keep failing the same way.
+    retry: false,
+  });
 
   const [isEditing, setIsEditing] = useState(false);
   const [title, setTitle] = useState('');
@@ -104,8 +124,17 @@ export default function DocumentDetailPage() {
           </div>
         )}
 
-        <p className="mt-1 text-xs text-muted-foreground">
-          Updated {new Date(doc.updatedAt).toLocaleString()}
+        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>Updated {new Date(doc.updatedAt).toLocaleString()}</span>
+          {project && (
+            <Link
+              href={`/dashboard/projects/${project.id}`}
+              className="flex items-center gap-1 hover:text-foreground hover:underline"
+            >
+              <FolderKanban className="h-3 w-3" aria-hidden />
+              Filed in {project.name}
+            </Link>
+          )}
         </p>
       </div>
 
