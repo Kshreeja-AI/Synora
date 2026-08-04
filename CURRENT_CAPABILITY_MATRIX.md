@@ -2,7 +2,7 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `5d5f265` + workflow increment
+**Verified at commit**: `6ba2198` + workflow UI increment
 **Evidence basis**: 2,251 backend tests across 219 files and 481 frontend tests
 across 79 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
@@ -45,12 +45,12 @@ Three rules govern every entry:
 
 | Class | Count | What it means for the founder |
 |---|---:|---|
-| A — production-ready locally | 15 | Usable today. |
+| A — production-ready locally | 16 | Usable today. |
 | B — implemented but incomplete | 15 | Usable, with a stated hole. |
 | C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
-| F — not implemented | 11 | Does not exist. Named honestly rather than implied. |
+| F — not implemented | 10 | Does not exist. Named honestly rather than implied. |
 | G — needs real-world validation | 5 | Works in tests; never met reality. |
 
 Note that **G overlaps with A and B** rather than replacing them — a capability can
@@ -90,10 +90,10 @@ case, both are recorded.
 
 | Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Workflow engine (authored steps, executed exactly) | **B** | `workflows/` + `routes/workflows.ts`, 20 engine tests + 7 route tests. A workflow is a human-authored sequence, versioned immutably like agents, run through the *same* engine — so approval gates, tool permissions, retry and tool-call budgets, deadlines and cancellation are inherited rather than reimplemented. Plans are stamped `origin: 'authored'`, distinct from both `model` and `local-deterministic`. **Limit**: no UI. |
+| Workflow engine (authored steps, executed exactly) | **B** | `workflows/` + `routes/workflows.ts` + `/workflows` page, 20 engine tests + 7 route tests + 8 page tests. A workflow is a human-authored sequence, versioned immutably like agents, run through the *same* engine — so approval gates, tool permissions, retry and tool-call budgets, deadlines and cancellation are inherited rather than reimplemented. Plans are stamped `origin: 'authored'`, distinct from both `model` and `local-deterministic`. **Limit**: no scheduling — a workflow must be started by a person. |
 | Workflow authoring-time validation | **A** | A sequence that could never run is refused with a 400 when saved, naming the offending step — rather than accepted and failed on first use. Re-validated on edit (narrowing tool permissions can invalidate saved steps) and again on load from disk. |
 | Workflow durability | **B** | Definitions persist via the same `KeyedStore` and hydrate at boot; the run store's orphan check knows about workflows as well as agents, so workflow runs are not destroyed on restart. **Limit**: shares the `AGENT_STORE_DIR` gate — unset means in-memory, which the server logs. |
-| Workflow UI / builder | **F** | Does not exist. Workflows are created and run over the API only. |
+| Workflow UI / builder | **A** | `/workflows` page plus `StepBuilder`, 8 tests. Add, reorder and remove steps; ids renumber to stay sequential so the run record reads cleanly. Run inspection reuses `RunDetail` unchanged, because a workflow run *is* an engine run. The page states that the run note does not change what executes — the opposite of the agent page, and the difference a user must not get wrong. |
 | Scheduled / triggered automation | **F** | Does not exist. A workflow must be started by a request. Background *workers* exist (`src/workers/`), which is a different thing: they run platform maintenance, not user-defined automation. |
 
 ## Family D — Canvas

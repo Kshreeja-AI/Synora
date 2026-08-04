@@ -44,6 +44,18 @@ const STEP_STATE_LABEL: Record<StepState, string> = {
   skipped: 'skipped',
 };
 
+/**
+ * Three genuinely different provenances, so three labels. Collapsing
+ * `authored` into "deterministic plan" would imply the system generated a
+ * sequence a person wrote — false in the opposite direction from calling
+ * it model output, but still false.
+ */
+const PLAN_ORIGIN_LABEL: Record<'model' | 'local-deterministic' | 'authored', string> = {
+  model: 'planned by a model',
+  'local-deterministic': 'deterministic plan',
+  authored: 'steps you wrote',
+};
+
 function formatTime(ms: number): string {
   return new Date(ms).toLocaleString();
 }
@@ -169,7 +181,7 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
 
       <div>
         <h4 className="text-sm font-semibold">
-          Steps{run.plan ? ` (${run.plan.origin === 'model' ? 'planned by a model' : 'deterministic plan'})` : ''}
+          Steps{run.plan ? ` (${PLAN_ORIGIN_LABEL[run.plan.origin]})` : ''}
         </h4>
         {run.steps.length === 0 ? (
           <p className="mt-1 text-sm text-muted-foreground">

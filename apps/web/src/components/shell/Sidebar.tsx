@@ -15,6 +15,7 @@ import {
   Shield,
   Wand2,
   Bot,
+  Workflow,
 } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { href: '/search', label: 'Search', icon: Search },
   { href: '/studio', label: 'Studio', icon: Wand2 },
   { href: '/agents', label: 'Agents', icon: Bot },
+  { href: '/workflows', label: 'Workflows', icon: Workflow },
   { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/tools', label: 'Tools', icon: Wrench },

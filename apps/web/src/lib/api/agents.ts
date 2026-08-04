@@ -111,7 +111,7 @@ export interface AgentRun {
   requestedBy: string;
   task: string;
   state: RunState;
-  plan?: { steps: PlannedStep[]; origin: 'model' | 'local-deterministic' };
+  plan?: { steps: PlannedStep[]; origin: 'model' | 'local-deterministic' | 'authored' };
   steps: StepRecord[];
   pendingApproval?: { stepId: string; reason: string };
   toolCallsUsed: number;
@@ -131,7 +131,7 @@ export interface RunRuntime {
   mode: 'local' | 'model';
   provider?: string;
   notice: string;
-  planOrigin?: 'model' | 'local-deterministic';
+  planOrigin?: 'model' | 'local-deterministic' | 'authored';
 }
 
 export interface RunWithRuntime {

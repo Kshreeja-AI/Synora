@@ -393,9 +393,23 @@ registry; an agent-only check would have silently destroyed every workflow
 run on restart, turning a guard against corruption into a cause of data
 loss.
 
-**Missing, named:** UI (workflows are created and run over the API only);
-scheduling and triggers, so a workflow must be started by a request rather
-than by a clock or an event; and per-run cost metering.
+**Also implemented:** the authoring surface. `/workflows` builds a step
+sequence — add, reorder, remove, with ids renumbering to stay sequential so
+a run record reading "waiting on step s2" refers to something the author
+has seen. Run inspection reuses `RunDetail` unchanged, because a workflow
+run *is* an engine run; a separate viewer would be a second thing to keep
+correct for no gain. Two wordings are deliberate: the run note is labelled
+as recorded-for-reference and explicitly *not* something that steers the
+run (the opposite of the agent page, and the difference a user must not
+get wrong), and a tool step's read-only checkbox is phrased as a claim the
+author is making rather than a convenience toggle, because getting it wrong
+in the permissive direction is how an automation quietly changes data
+nobody approved.
+
+**Missing, named:** scheduling and triggers, so a workflow must be started
+by a person rather than by a clock or an event; editing an existing
+workflow from the screen (create, run and archive only); and per-run cost
+metering.
 
 ---
 
@@ -502,7 +516,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability and HTTP routes: built and tested, executing through the agent run engine rather than a second copy of it. UI and scheduling: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes and UI: built and tested, executing through the agent run engine rather than a second copy of it. Scheduling: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |
