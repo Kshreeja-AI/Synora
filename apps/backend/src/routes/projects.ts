@@ -12,18 +12,23 @@ import {
   updateProject,
   deleteProject,
 } from '../services/project.service';
+import { getProjectWorkspace } from '../services/projectWorkspace.service';
 
 const router: Router = Router();
 
 const createProjectSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional(),
+  // What "done" would look like, in the person's words. Optional: nobody
+  // should be made to write a goal before they are allowed to start.
+  goal: z.string().trim().max(2000).optional(),
   workspaceId: z.string().optional(),
 });
 
 const updateProjectSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(2000).optional(),
+  goal: z.string().trim().max(2000).optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED', 'DELETED']).optional(),
 });
 
@@ -79,6 +84,27 @@ router.get('/:projectId', authMiddleware, requireProjectAccess(), async (req: Au
     next(error);
   }
 });
+
+/**
+ * The project as the work inside it: conversations, files, documents and
+ * generated media in one chronology, plus where to pick up.
+ *
+ * Declared before the `/:projectId` PATCH/DELETE handlers is not required
+ * (this is a distinct literal sub-path), but it does need to sit after the
+ * bare `/:projectId` GET or Express would never reach it.
+ */
+router.get(
+  '/:projectId/workspace',
+  authMiddleware,
+  requireProjectAccess(),
+  async (req: AuthRequest, res, next) => {
+    try {
+      res.json(createApiResponse(await getProjectWorkspace(req.userId!, req.params.projectId)));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 router.patch(
   '/:projectId',

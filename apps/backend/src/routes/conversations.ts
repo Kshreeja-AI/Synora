@@ -21,6 +21,9 @@ const updateConversationSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   tagNames: z.array(z.string().min(1).max(50)).max(20).optional(),
+  // Nullable on purpose: null means "take it out of the project", which
+  // is different from omitting the field ("leave it where it is").
+  projectId: z.string().nullable().optional(),
 })
 
 const sortFieldSchema = z.enum(['createdAt', 'updatedAt', 'lastMessageAt', 'title'])

@@ -27,6 +27,7 @@ import { listFolders, createFolder, deleteFolder } from '../../../../lib/api/fol
 import type { Folder } from '../../../../lib/api/types';
 import { listAssets, uploadAsset, deleteAsset } from '../../../../lib/api/assets';
 import { ApiError } from '../../../../lib/api/client';
+import { ProjectWorkspacePanel } from '../../../../components/projects/ProjectWorkspacePanel';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -207,6 +208,10 @@ export default function ProjectDetailPage(): React.JSX.Element {
           </Button>
         )}
       </div>
+
+      {/* The work first, files second. Someone returning to a project
+          wants to know where they were, not which folder a PDF is in. */}
+      <ProjectWorkspacePanel projectId={projectId} />
 
       <Card>
         <CardContent className="space-y-4 p-6">

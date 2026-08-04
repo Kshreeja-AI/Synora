@@ -19,6 +19,13 @@ export interface UpdateConversationInput {
   provider?: string
   model?: string
   tagNames?: string[]
+  /**
+   * Files this conversation into a project, or takes it out again when
+   * explicitly null. Filing is an edit to the conversation rather than a
+   * separate endpoint, because that is what it is — and it keeps one path
+   * for "change something about this conversation".
+   */
+  projectId?: string | null
 }
 
 export type ConversationSortField = 'createdAt' | 'updatedAt' | 'lastMessageAt' | 'title'
@@ -154,11 +161,28 @@ export class ConversationService {
       await this.validateProvider(input.provider)
     }
 
+    if (input.projectId) {
+      // The project must belong to the SAME workspace as the conversation.
+      // Without this check, filing would move a conversation into a
+      // project somebody else owns — and the accept/reject answer would
+      // reveal which project ids exist elsewhere.
+      const project = await prisma.project.findFirst({
+        where: { id: input.projectId, workspaceId: conversation.workspaceId },
+        select: { id: true },
+      })
+      if (!project) {
+        throw new NotFoundException('Project')
+      }
+    }
+
     const updated = await prisma.conversation.update({
       where: { id },
       data: {
         ...(input.title && { title: input.title }),
         ...(input.description !== undefined && { description: input.description }),
+        // `undefined` leaves it alone; an explicit null takes it out of
+        // whatever project it was in.
+        ...(input.projectId !== undefined && { projectId: input.projectId }),
         ...(input.provider && { provider: input.provider }),
         ...(input.model && { model: input.model }),
         ...(input.tagNames && {
