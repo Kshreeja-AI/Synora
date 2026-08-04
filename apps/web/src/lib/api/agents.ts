@@ -182,12 +182,13 @@ export function useAgents(
 export function useAgent(
   workspaceId: string,
   agentId: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; retry?: boolean },
 ): UseQueryResult<Agent> {
   return useQuery({
     queryKey: [AGENTS_KEY, workspaceId, 'agent', agentId],
     queryFn: () => api.get<Agent>(`/api/workspaces/${workspaceId}/agents/${agentId}`),
     enabled: !!workspaceId && !!agentId && options?.enabled !== false,
+    retry: options?.retry ?? true,
   });
 }
 

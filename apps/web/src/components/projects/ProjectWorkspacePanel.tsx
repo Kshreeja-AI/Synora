@@ -77,6 +77,7 @@ function href(entry: ProjectTimelineEntry): string | null {
   // without one rather than given one that goes nowhere.
   if (entry.kind === 'conversation') return `/conversations/${entry.id}`;
   if (entry.kind === 'document') return `/documents/${entry.id}`;
+  if (entry.kind === 'agentRun') return `/agents/runs/${entry.id}`;
   return null;
 }
 

@@ -178,6 +178,22 @@ export function useWorkflows(
   });
 }
 
+/** One workflow by its exact id — the version that actually ran, not
+ *  necessarily the latest in its lineage. Mirrors `useAgent`. */
+export function useWorkflow(
+  workspaceId: string,
+  workflowId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<WorkflowDefinition> {
+  return useQuery({
+    queryKey: [WORKFLOWS_KEY, workspaceId, 'workflow', workflowId],
+    queryFn: () =>
+      api.get<WorkflowDefinition>(`/api/workspaces/${workspaceId}/workflows/${workflowId}`),
+    enabled: !!workspaceId && !!workflowId && options?.enabled !== false,
+    retry: false,
+  });
+}
+
 export function useWorkflowHistory(
   workspaceId: string,
   workflowId: string,

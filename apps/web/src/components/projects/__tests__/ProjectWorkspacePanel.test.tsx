@@ -123,7 +123,7 @@ describe('ProjectWorkspacePanel', () => {
     expect(screen.queryByRole('link', { name: /pricing\.csv/ })).not.toBeInTheDocument();
   });
 
-  it('shows an agent run in the chronology, unlinked — there is no run permalink yet', () => {
+  it('shows an agent run in the chronology, linked to its own permalink page', () => {
     vi.mocked(api.useProjectWorkspace).mockReturnValue({
       data: workspace({
         counts: { ...workspace().counts, agentRun: 1 },
@@ -145,8 +145,8 @@ describe('ProjectWorkspacePanel', () => {
     expect(screen.getByText('Summarise the competitive landscape')).toBeInTheDocument();
     expect(screen.getByText(/Researcher · completed/)).toBeInTheDocument();
     expect(
-      screen.queryByRole('link', { name: /Summarise the competitive landscape/ }),
-    ).not.toBeInTheDocument();
+      screen.getByRole('link', { name: /Summarise the competitive landscape/ }),
+    ).toHaveAttribute('href', '/agents/runs/run1');
   });
 
   it('states last activity as a fact, and passes no judgement on the project', () => {
