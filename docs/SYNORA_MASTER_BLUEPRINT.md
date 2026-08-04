@@ -572,11 +572,31 @@ consequence: a bad definition would hand an executor a configuration nobody
 wrote, whereas losing one bad note is better than losing the afternoon's
 work arranged around it.
 
+**Also implemented: connections between blocks.** Directed lines with
+optional labels, drawn as SVG behind the blocks and also listed in text
+with a delete control, so a connection is reachable without pointing at a
+line.
+
+**Cycles are allowed here and forbidden in a workflow's `dependsOn`**,
+which is the same kind of distinction as the mutability one above. The
+workflow rule exists because steps execute in an order and a cycle would
+mean a step waiting on itself. A canvas has no execution order; "A relates
+to B, which relates back to A" is a thing people genuinely mean when
+arranging thought. Enforcing the workflow constraint here would be
+copying it past its reason, exactly as versioning canvas blocks would.
+
+What *is* enforced is that every line has two real endpoints: no
+self-connection, no duplicate in the same direction (the reverse is a
+separate statement, not a duplicate), both endpoints on **this** canvas,
+and a bounded count. Deleting a block deletes every connection touching
+it, and hydration re-applies the same check — a line whose block did not
+survive the load is dropped and counted, because the no-dangling-edges
+invariant has to hold across a restart and not only across a live delete.
+
 **Missing, named:** dragging (movement is by nudge button — the first
 version deliberately avoids committing to an interaction model before
-anyone has arranged a real canvas); zoom; grouping; connections between
-blocks; and inline previews of linked runs or conversations, which
-currently show their type and id only.
+anyone has arranged a real canvas); zoom; grouping; and inline previews of
+linked runs or conversations, which currently show their type and id only.
 
 ---
 

@@ -20,7 +20,9 @@ import { InMemoryKeyedStore } from '../../agents/agent-stores';
 import {
   addBlock,
   archiveCanvas,
+  connectBlocks,
   createCanvas,
+  disconnectBlocks,
   getCanvas,
   hydrateCanvases,
   listCanvases,
@@ -199,6 +201,124 @@ describe('blocks', () => {
   });
 });
 
+describe('connecting blocks', () => {
+  function twoBlocks() {
+    const canvas = makeCanvas();
+    const a = addBlock(canvas.id, WS, textBlock);
+    const b = addBlock(canvas.id, WS, { ...textBlock, x: 200 });
+    return { canvas, a, b };
+  }
+
+  it('joins two blocks with an optional label', () => {
+    const { canvas, a, b } = twoBlocks();
+    const conn = connectBlocks(canvas.id, WS, { from: a.id, to: b.id, label: 'then' });
+
+    expect(conn.from).toBe(a.id);
+    expect(conn.to).toBe(b.id);
+    expect(conn.label).toBe('then');
+    expect(getCanvas(canvas.id, WS)!.connections).toHaveLength(1);
+  });
+
+  it('refuses a block connected to itself', () => {
+    const { canvas, a } = twoBlocks();
+    // A line from a block to itself says nothing.
+    expect(() => connectBlocks(canvas.id, WS, { from: a.id, to: a.id })).toThrow(
+      /connected to itself/,
+    );
+  });
+
+  it('refuses an endpoint that is not a block on this canvas', () => {
+    const { canvas, a } = twoBlocks();
+    const other = makeCanvas('Other');
+    const foreign = addBlock(other.id, WS, textBlock);
+
+    expect(() => connectBlocks(canvas.id, WS, { from: a.id, to: 'block_missing' })).toThrow(
+      /blocks that exist/,
+    );
+    // A block on a DIFFERENT canvas is just as absent from this one.
+    expect(() => connectBlocks(canvas.id, WS, { from: a.id, to: foreign.id })).toThrow(
+      /blocks that exist/,
+    );
+  });
+
+  it('refuses a duplicate in the same direction but allows the reverse', () => {
+    const { canvas, a, b } = twoBlocks();
+    connectBlocks(canvas.id, WS, { from: a.id, to: b.id });
+
+    expect(() => connectBlocks(canvas.id, WS, { from: a.id, to: b.id })).toThrow(
+      /already connected/,
+    );
+    // B→A is a different statement from A→B, not a duplicate.
+    expect(() => connectBlocks(canvas.id, WS, { from: b.id, to: a.id })).not.toThrow();
+  });
+
+  it('allows a cycle, unlike a workflow dependency', () => {
+    const { canvas, a, b } = twoBlocks();
+    const c = addBlock(canvas.id, WS, { ...textBlock, x: 400 });
+
+    connectBlocks(canvas.id, WS, { from: a.id, to: b.id });
+    connectBlocks(canvas.id, WS, { from: b.id, to: c.id });
+    // Workflows forbid cycles because steps execute in an order. A canvas
+    // has no execution order, so "C relates back to A" is a thing people
+    // genuinely mean — enforcing the workflow rule here would be copying
+    // a constraint past its reason.
+    expect(() => connectBlocks(canvas.id, WS, { from: c.id, to: a.id })).not.toThrow();
+    expect(getCanvas(canvas.id, WS)!.connections).toHaveLength(3);
+  });
+
+  it('deletes every connection touching a removed block', () => {
+    const { canvas, a, b } = twoBlocks();
+    const c = addBlock(canvas.id, WS, { ...textBlock, x: 400 });
+    connectBlocks(canvas.id, WS, { from: a.id, to: b.id });
+    connectBlocks(canvas.id, WS, { from: b.id, to: c.id });
+    connectBlocks(canvas.id, WS, { from: a.id, to: c.id });
+
+    removeBlock(canvas.id, WS, b.id);
+
+    // Only A→C survives: the other two pointed at a block that is gone,
+    // and a line from nothing to nothing is not a connection.
+    const left = getCanvas(canvas.id, WS)!.connections!;
+    expect(left).toHaveLength(1);
+    expect(left[0]).toMatchObject({ from: a.id, to: c.id });
+  });
+
+  it('disconnects by id and reports when there was nothing to remove', () => {
+    const { canvas, a, b } = twoBlocks();
+    const conn = connectBlocks(canvas.id, WS, { from: a.id, to: b.id });
+
+    expect(disconnectBlocks(canvas.id, WS, conn.id)).toBe(true);
+    expect(getCanvas(canvas.id, WS)!.connections).toHaveLength(0);
+    expect(disconnectBlocks(canvas.id, WS, conn.id)).toBe(false);
+  });
+
+  it('caps the number of connections', () => {
+    const canvas = makeCanvas();
+    const blocks = Array.from({ length: 30 }, (_, i) =>
+      addBlock(canvas.id, WS, { ...textBlock, x: i * 10 }),
+    );
+    let made = 0;
+    outer: for (const from of blocks) {
+      for (const to of blocks) {
+        if (from.id === to.id) continue;
+        if (made >= CANVAS_LIMITS.maxConnections) break outer;
+        connectBlocks(canvas.id, WS, { from: from.id, to: to.id });
+        made += 1;
+      }
+    }
+    expect(() =>
+      connectBlocks(canvas.id, WS, { from: blocks[29].id, to: blocks[0].id }),
+    ).toThrow(/at most/);
+  });
+
+  it('scopes connecting to the workspace', () => {
+    const { canvas, a, b } = twoBlocks();
+    expect(() => connectBlocks(canvas.id, 'ws_other', { from: a.id, to: b.id })).toThrow(
+      /not found/,
+    );
+    expect(() => disconnectBlocks(canvas.id, 'ws_other', 'conn_x')).toThrow(/not found/);
+  });
+});
+
 describe('canvas durability', () => {
   it('restores a canvas with its blocks', async () => {
     const canvas = makeCanvas();
@@ -206,7 +326,7 @@ describe('canvas durability', () => {
     await persistCanvas(canvas.id);
 
     resetCanvases();
-    expect(await hydrateCanvases()).toEqual({ loaded: 1, droppedBlocks: 0 });
+    expect(await hydrateCanvases()).toEqual({ loaded: 1, droppedBlocks: 0, droppedConnections: 0 });
     expect(getCanvas(canvas.id, WS)!.blocks).toHaveLength(1);
   });
 
@@ -232,8 +352,80 @@ describe('canvas durability', () => {
     // definition whole: there, a bad record would hand an executor a
     // configuration nobody wrote. Here, losing one note is better than
     // losing everything around it.
-    expect(await hydrateCanvases()).toEqual({ loaded: 1, droppedBlocks: 1 });
+    expect(await hydrateCanvases()).toEqual({ loaded: 1, droppedBlocks: 1, droppedConnections: 0 });
     expect(getCanvas('canvas_1', WS)!.blocks.map((b) => b.id)).toEqual(['b1']);
+  });
+
+  it('restores connections along with their blocks', async () => {
+    const canvas = makeCanvas();
+    const a = addBlock(canvas.id, WS, textBlock);
+    const b = addBlock(canvas.id, WS, { ...textBlock, x: 200 });
+    connectBlocks(canvas.id, WS, { from: a.id, to: b.id, label: 'then' });
+    await persistCanvas(canvas.id);
+
+    resetCanvases();
+    expect(await hydrateCanvases()).toEqual({
+      loaded: 1,
+      droppedBlocks: 0,
+      droppedConnections: 0,
+    });
+    expect(getCanvas(canvas.id, WS)!.connections![0].label).toBe('then');
+  });
+
+  it('drops a connection whose block did not survive the load', async () => {
+    const store = new InMemoryKeyedStore<CanvasDocument>();
+    await store.save('canvas_2', {
+      id: 'canvas_2',
+      workspaceId: WS,
+      title: 'Dangling',
+      blocks: [
+        { id: 'b1', kind: 'text', content: 'fine', x: 0, y: 0, width: 10, height: 10, createdAt: 1, updatedAt: 1 },
+        { id: 'b2', kind: 'text', content: 'lost', x: 1e9, y: 0, width: 10, height: 10, createdAt: 1, updatedAt: 1 },
+      ],
+      connections: [
+        { id: 'c1', from: 'b1', to: 'b2', createdAt: 1 },
+        { id: 'c2', from: 'b1', to: 'b_never_existed', createdAt: 1 },
+      ],
+      createdBy: 'u1',
+      createdAt: 1,
+      updatedAt: 1,
+      archived: false,
+    });
+    setCanvasStore(store);
+
+    // The no-dangling-edges invariant has to survive a restart too, not
+    // only a live delete.
+    expect(await hydrateCanvases()).toEqual({
+      loaded: 1,
+      droppedBlocks: 1,
+      droppedConnections: 2,
+    });
+    expect(getCanvas('canvas_2', WS)!.connections).toEqual([]);
+  });
+
+  it('loads a canvas stored before connections existed', async () => {
+    const store = new InMemoryKeyedStore<CanvasDocument>();
+    await store.save('canvas_3', {
+      id: 'canvas_3',
+      workspaceId: WS,
+      title: 'Old',
+      blocks: [
+        { id: 'b1', kind: 'text', content: 'x', x: 0, y: 0, width: 10, height: 10, createdAt: 1, updatedAt: 1 },
+      ],
+      createdBy: 'u1',
+      createdAt: 1,
+      updatedAt: 1,
+      archived: false,
+    } as CanvasDocument);
+    setCanvasStore(store);
+
+    // No `connections` key at all: absent is not corrupt.
+    expect(await hydrateCanvases()).toEqual({
+      loaded: 1,
+      droppedBlocks: 0,
+      droppedConnections: 0,
+    });
+    expect(getCanvas('canvas_3', WS)!.connections).toEqual([]);
   });
 
   it('restores an archived canvas as archived', async () => {

@@ -44,11 +44,39 @@ export interface CanvasBlock {
   updatedAt: number;
 }
 
+/**
+ * A directed line from one block to another.
+ *
+ * CYCLES ARE ALLOWED HERE, and are forbidden in a workflow's `dependsOn`.
+ * That is not an inconsistency: the workflow rule exists because steps
+ * execute in an order, and a cycle would mean a step waiting on itself. A
+ * canvas has no execution order — it is a surface for arranging thought,
+ * where "A relates to B, which relates back to A" is a thing people
+ * genuinely mean. Copying the workflow rule here would be enforcing a
+ * constraint past the reason for it.
+ *
+ * WHAT IS ENFORCED is that a connection always has two real endpoints. A
+ * line to a block that no longer exists is drawn from nothing to nothing,
+ * so deleting a block deletes its connections rather than leaving them
+ * dangling.
+ */
+export interface CanvasConnection {
+  id: string;
+  /** Block ids. Both must exist on this canvas. */
+  from: string;
+  to: string;
+  /** Optional text on the line — "then", "because", "blocks". */
+  label?: string;
+  createdAt: number;
+}
+
 export interface CanvasDocument {
   id: string;
   workspaceId: string;
   title: string;
   blocks: CanvasBlock[];
+  /** Absent on documents stored before connections existed. */
+  connections?: CanvasConnection[];
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -65,4 +93,7 @@ export const CANVAS_LIMITS = {
   maxCoordinate: 100_000,
   minSize: 1,
   maxSize: 10_000,
+  /** Generous next to maxBlocks, but still finite. */
+  maxConnections: 400,
+  maxLabelLength: 200,
 } as const;

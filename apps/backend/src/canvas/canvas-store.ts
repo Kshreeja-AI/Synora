@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { FileKeyedStore, InMemoryKeyedStore, type KeyedStore } from '../agents/agent-stores.js';
-import { CANVAS_LIMITS, type BlockKind, type CanvasBlock, type CanvasDocument, type LinkTarget } from './types.js';
+import {
+  CANVAS_LIMITS,
+  type BlockKind,
+  type CanvasBlock,
+  type CanvasConnection,
+  type CanvasDocument,
+  type LinkTarget,
+} from './types.js';
 
 /**
  * Canvas documents: workspace-scoped, mutable, bounded.
@@ -93,6 +100,7 @@ export function createCanvas(input: {
     workspaceId: input.workspaceId,
     title,
     blocks: [],
+    connections: [],
     createdBy: input.createdBy,
     createdAt: now,
     updatedAt: now,
@@ -100,6 +108,12 @@ export function createCanvas(input: {
   };
   documents.set(canvas.id, canvas);
   return canvas;
+}
+
+/** Documents stored before connections existed have no array. */
+function connectionsOf(canvas: CanvasDocument): CanvasConnection[] {
+  if (!canvas.connections) canvas.connections = [];
+  return canvas.connections;
 }
 
 /** Workspace scoping is part of the lookup, as everywhere else. */
@@ -204,6 +218,70 @@ export function removeBlock(canvasId: string, workspaceId: string, blockId: stri
   const before = canvas.blocks.length;
   canvas.blocks = canvas.blocks.filter((b) => b.id !== blockId);
   if (canvas.blocks.length === before) return false;
+  // Every line touching this block goes with it. A connection to a block
+  // that no longer exists is drawn from nothing to nothing.
+  canvas.connections = connectionsOf(canvas).filter(
+    (c) => c.from !== blockId && c.to !== blockId,
+  );
+  canvas.updatedAt = Date.now();
+  return true;
+}
+
+export function connectBlocks(
+  canvasId: string,
+  workspaceId: string,
+  input: { from: string; to: string; label?: string },
+): CanvasConnection {
+  const canvas = getCanvas(canvasId, workspaceId);
+  if (!canvas) throw new Error('canvas not found');
+
+  if (input.from === input.to) {
+    // A block connected to itself draws a line that says nothing.
+    throw new Error('a block cannot be connected to itself');
+  }
+  for (const end of [input.from, input.to]) {
+    if (!canvas.blocks.some((b) => b.id === end)) {
+      throw new Error('a connection must join two blocks that exist on this canvas');
+    }
+  }
+  if ((input.label?.length ?? 0) > CANVAS_LIMITS.maxLabelLength) {
+    throw new Error(`a connection label exceeds ${CANVAS_LIMITS.maxLabelLength} characters`);
+  }
+
+  const connections = connectionsOf(canvas);
+  if (connections.length >= CANVAS_LIMITS.maxConnections) {
+    throw new Error(`a canvas holds at most ${CANVAS_LIMITS.maxConnections} connections`);
+  }
+  // Same direction between the same pair is one line, not two stacked
+  // invisibly on top of each other. The reverse direction is a separate,
+  // legitimate connection.
+  if (connections.some((c) => c.from === input.from && c.to === input.to)) {
+    throw new Error('these blocks are already connected in that direction');
+  }
+
+  const connection: CanvasConnection = {
+    id: `conn_${randomUUID()}`,
+    from: input.from,
+    to: input.to,
+    label: input.label,
+    createdAt: Date.now(),
+  };
+  connections.push(connection);
+  canvas.updatedAt = connection.createdAt;
+  return connection;
+}
+
+export function disconnectBlocks(
+  canvasId: string,
+  workspaceId: string,
+  connectionId: string,
+): boolean {
+  const canvas = getCanvas(canvasId, workspaceId);
+  if (!canvas) throw new Error('canvas not found');
+  const connections = connectionsOf(canvas);
+  const before = connections.length;
+  canvas.connections = connections.filter((c) => c.id !== connectionId);
+  if (canvas.connections.length === before) return false;
   canvas.updatedAt = Date.now();
   return true;
 }
@@ -232,10 +310,15 @@ export async function persistCanvas(canvasId: string): Promise<boolean> {
  * surface, not an executor: losing one bad block costs a note, while
  * discarding the document costs everything on it.
  */
-export async function hydrateCanvases(): Promise<{ loaded: number; droppedBlocks: number }> {
+export async function hydrateCanvases(): Promise<{
+  loaded: number;
+  droppedBlocks: number;
+  droppedConnections: number;
+}> {
   const stored = await store.loadAll();
   let loaded = 0;
   let droppedBlocks = 0;
+  let droppedConnections = 0;
 
   for (const canvas of Object.values(stored)) {
     if (!canvas?.id || !canvas.workspaceId) continue;
@@ -249,10 +332,21 @@ export async function hydrateCanvases(): Promise<{ loaded: number; droppedBlocks
       }
     }
     canvas.blocks = kept.slice(0, CANVAS_LIMITS.maxBlocks);
+
+    // The no-dangling-edges invariant has to hold on load too: a block
+    // dropped just above (or by an older version of this code) would
+    // otherwise leave a line pointing at nothing.
+    const survivingIds = new Set(canvas.blocks.map((b) => b.id));
+    const keptConnections = (canvas.connections ?? [])
+      .filter((c) => c?.id && survivingIds.has(c.from) && survivingIds.has(c.to))
+      .slice(0, CANVAS_LIMITS.maxConnections);
+    droppedConnections += (canvas.connections ?? []).length - keptConnections.length;
+    canvas.connections = keptConnections;
+
     documents.set(canvas.id, canvas);
     loaded += 1;
   }
-  return { loaded, droppedBlocks };
+  return { loaded, droppedBlocks, droppedConnections };
 }
 
 /** Test-only. */

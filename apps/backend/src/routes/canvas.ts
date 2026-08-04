@@ -6,7 +6,9 @@ import { createApiResponse, NotFoundException, ValidationException } from '@syno
 import {
   addBlock,
   archiveCanvas,
+  connectBlocks,
   createCanvas,
+  disconnectBlocks,
   getCanvas,
   listCanvases,
   persistCanvas,
@@ -62,7 +64,10 @@ function toHttpError(err: unknown): unknown {
     message.includes('only a link block') ||
     message.includes('cannot be found again') ||
     message.includes('at most') ||
-    message.includes('must be between')
+    message.includes('must be between') ||
+    message.includes('connected to itself') ||
+    message.includes('blocks that exist') ||
+    message.includes('already connected')
   ) {
     return new ValidationException(message);
   }
@@ -166,6 +171,41 @@ router.delete(
         req.params.blockId,
       );
       if (!removed) return next(new NotFoundException('Block'));
+      await persistCanvas(req.params.canvasId);
+      res.json(createApiResponse({ deleted: true }));
+    } catch (error) {
+      next(toHttpError(error));
+    }
+  },
+);
+
+const connectionSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  label: z.string().max(CANVAS_LIMITS.maxLabelLength).optional(),
+});
+
+router.post('/:workspaceId/canvases/:canvasId/connections', async (req: AuthRequest, res, next) => {
+  try {
+    const body = connectionSchema.parse(req.body);
+    const connection = connectBlocks(req.params.canvasId, req.params.workspaceId, body);
+    await persistCanvas(req.params.canvasId);
+    res.status(201).json(createApiResponse(connection));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.delete(
+  '/:workspaceId/canvases/:canvasId/connections/:connectionId',
+  async (req: AuthRequest, res, next) => {
+    try {
+      const removed = disconnectBlocks(
+        req.params.canvasId,
+        req.params.workspaceId,
+        req.params.connectionId,
+      );
+      if (!removed) return next(new NotFoundException('Connection'));
       await persistCanvas(req.params.canvasId);
       res.json(createApiResponse({ deleted: true }));
     } catch (error) {

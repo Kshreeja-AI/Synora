@@ -31,6 +31,8 @@ vi.mock('@/lib/api/canvas', async () => {
     useAddBlock: vi.fn(),
     useUpdateBlock: vi.fn(),
     useRemoveBlock: vi.fn(),
+    useConnectBlocks: vi.fn(),
+    useDisconnectBlocks: vi.fn(),
   };
 });
 
@@ -87,6 +89,8 @@ beforeEach(() => {
   vi.mocked(canvasApi.useAddBlock).mockReturnValue(idle() as never);
   vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle() as never);
   vi.mocked(canvasApi.useRemoveBlock).mockReturnValue(idle() as never);
+  vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(idle() as never);
+  vi.mocked(canvasApi.useDisconnectBlocks).mockReturnValue(idle() as never);
 });
 
 describe('canvas page', () => {
@@ -171,5 +175,120 @@ describe('canvas page', () => {
     renderPage();
     await openCanvas(user);
     expect(screen.getByText(/Empty canvas/)).toBeInTheDocument();
+  });
+
+  describe('connections', () => {
+    const twoBlocks: CanvasDocument = {
+      ...canvas,
+      blocks: [
+        canvas.blocks[0],
+        { ...canvas.blocks[0], id: 'b2', kind: 'text', content: 'Tell the team', x: 300 },
+      ],
+    };
+
+    it('connects two blocks in two clicks, and explains the pending step', async () => {
+      const user = userEvent.setup();
+      const connect = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(idle({ mutate: connect }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /connect from this note block/i }));
+
+      // The half-finished state has to say what it is waiting for.
+      expect(screen.getByRole('status')).toHaveTextContent(/Pick the block this one connects to/);
+
+      await user.click(screen.getByRole('button', { name: /connect to this text block/i }));
+      expect(connect).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', from: 'b1', to: 'b2' },
+        expect.anything(),
+      );
+    });
+
+    it('cancels when the same block is picked twice, without calling the server', async () => {
+      const user = userEvent.setup();
+      const connect = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(idle({ mutate: connect }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /connect from this note block/i }));
+      await user.click(screen.getByRole('button', { name: /cancel connecting from this note block/i }));
+
+      // A self-connection would be refused anyway; asking is pointless.
+      expect(connect).not.toHaveBeenCalled();
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    it('lists existing connections by the text of the blocks they join', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({
+        data: {
+          ...twoBlocks,
+          connections: [{ id: 'c1', from: 'b1', to: 'b2', label: 'then', createdAt: 1 }],
+        },
+      } as never);
+
+      renderPage();
+      await openCanvas(user);
+
+      expect(screen.getByText(/Connections \(1\)/)).toBeInTheDocument();
+      expect(screen.getByText(/Ship on Friday → Tell the team \(then\)/)).toBeInTheDocument();
+    });
+
+    it('removes a connection', async () => {
+      const user = userEvent.setup();
+      const disconnect = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({
+        data: {
+          ...twoBlocks,
+          connections: [{ id: 'c1', from: 'b1', to: 'b2', createdAt: 1 }],
+        },
+      } as never);
+      vi.mocked(canvasApi.useDisconnectBlocks).mockReturnValue(
+        idle({ mutate: disconnect }) as never,
+      );
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /remove connection/i }));
+
+      expect(disconnect).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', connectionId: 'c1' },
+        expect.anything(),
+      );
+    });
+
+    it('surfaces the server\'s refusal verbatim when a connection is rejected', async () => {
+      const user = userEvent.setup();
+      const { toast } = await import('sonner');
+      const toastError = vi.spyOn(toast, 'error');
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(
+        idle({
+          mutate: vi.fn((_v, opts) =>
+            opts?.onError?.(new Error('these blocks are already connected in that direction')),
+          ),
+        }) as never,
+      );
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /connect from this note block/i }));
+      await user.click(screen.getByRole('button', { name: /connect to this text block/i }));
+
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('already connected'));
+    });
+
+    it('says that deleting a block also deletes its lines', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+
+      renderPage();
+      await openCanvas(user);
+      expect(screen.getByText(/deletes the lines that touched it/)).toBeInTheDocument();
+    });
   });
 });

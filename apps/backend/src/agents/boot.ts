@@ -68,9 +68,12 @@ export async function bootAgentStores(): Promise<void> {
     // definitions which are discarded whole — losing one note is better
     // than losing the surface around it.
     const canvasResult = await hydrateCanvases();
-    if (canvasResult.droppedBlocks > 0) {
-      logger.warn('Some canvas blocks were dropped on load: they no longer validate.', {
+    if (canvasResult.droppedBlocks > 0 || canvasResult.droppedConnections > 0) {
+      logger.warn('Some canvas blocks or connections were dropped on load.', {
         droppedBlocks: canvasResult.droppedBlocks,
+        // A connection whose endpoint did not survive would be a line
+        // drawn from nothing to nothing.
+        droppedConnections: canvasResult.droppedConnections,
       });
     }
     // The run store holds agent runs and workflow runs alike, so the

@@ -189,4 +189,108 @@ describe('canvas routes', () => {
       .set('Cookie', owner.cookie);
     expect(stillThere.status).toBe(200);
   });
+
+  describe('connections', () => {
+    async function canvasWithTwoBlocks(cookie: string, workspaceId: string) {
+      const canvas = (await makeCanvas(cookie, workspaceId)).body.data;
+      const block = async (x: number) =>
+        (
+          await request(app)
+            .post(`/api/workspaces/${workspaceId}/canvases/${canvas.id}/blocks`)
+            .set('Cookie', cookie)
+            .send({ kind: 'text', content: 'x', x, y: 0 })
+        ).body.data;
+      return { canvas, a: await block(0), b: await block(300) };
+    }
+
+    it('connects two blocks and shows the line on the canvas', async () => {
+      const owner = await register('canvas-connect');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const { canvas, a, b } = await canvasWithTwoBlocks(owner.cookie, ws.id);
+
+      const res = await request(app)
+        .post(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections`)
+        .set('Cookie', owner.cookie)
+        .send({ from: a.id, to: b.id, label: 'then' });
+
+      expect(res.status).toBe(201);
+
+      const read = await request(app)
+        .get(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', owner.cookie);
+      expect(read.body.data.connections).toHaveLength(1);
+      expect(read.body.data.connections[0].label).toBe('then');
+    });
+
+    it('refuses an endpoint that is not on the canvas, with a 400 that says why', async () => {
+      const owner = await register('canvas-connect-bad');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const { canvas, a } = await canvasWithTwoBlocks(owner.cookie, ws.id);
+
+      const res = await request(app)
+        .post(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections`)
+        .set('Cookie', owner.cookie)
+        .send({ from: a.id, to: 'block_nope' });
+
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toMatch(/blocks that exist/);
+    });
+
+    it('deleting a block deletes the lines that touched it', async () => {
+      const owner = await register('canvas-connect-cascade');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const { canvas, a, b } = await canvasWithTwoBlocks(owner.cookie, ws.id);
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections`)
+        .set('Cookie', owner.cookie)
+        .send({ from: a.id, to: b.id });
+
+      await request(app)
+        .delete(`/api/workspaces/${ws.id}/canvases/${canvas.id}/blocks/${b.id}`)
+        .set('Cookie', owner.cookie);
+
+      const read = await request(app)
+        .get(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', owner.cookie);
+      // A line to a block that no longer exists is drawn from nothing to
+      // nothing, so it goes with the block.
+      expect(read.body.data.connections).toEqual([]);
+    });
+
+    it('disconnects, and answers 404 for a connection that is already gone', async () => {
+      const owner = await register('canvas-disconnect');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const { canvas, a, b } = await canvasWithTwoBlocks(owner.cookie, ws.id);
+      const conn = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections`)
+          .set('Cookie', owner.cookie)
+          .send({ from: a.id, to: b.id })
+      ).body.data;
+
+      const first = await request(app)
+        .delete(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections/${conn.id}`)
+        .set('Cookie', owner.cookie);
+      expect(first.status).toBe(200);
+
+      const second = await request(app)
+        .delete(`/api/workspaces/${ws.id}/canvases/${canvas.id}/connections/${conn.id}`)
+        .set('Cookie', owner.cookie);
+      expect(second.status).toBe(404);
+    });
+
+    it('hides connections on another workspace\'s canvas', async () => {
+      const owner = await register('canvas-conn-owner');
+      const stranger = await register('canvas-conn-stranger');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const { canvas, a, b } = await canvasWithTwoBlocks(owner.cookie, ws.id);
+      const strangerWs = await createWorkspace(stranger.cookie, 'Other Co');
+
+      const cross = await request(app)
+        .post(`/api/workspaces/${strangerWs.id}/canvases/${canvas.id}/connections`)
+        .set('Cookie', stranger.cookie)
+        .send({ from: a.id, to: b.id });
+      expect(cross.status).toBe(404);
+    });
+  });
 });

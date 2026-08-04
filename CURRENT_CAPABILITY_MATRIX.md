@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `b969c18` + workflow-trigger increment
-**Evidence basis**: 2,375 backend tests across 227 files and 516 frontend tests
+**Verified at commit**: `93121b1` + canvas-connections increment
+**Evidence basis**: 2,392 backend tests across 227 files and 522 frontend tests
 across 83 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -102,7 +102,8 @@ case, both are recorded.
 
 | Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Canvas / spatial workspace | **B** | `canvas/` + `routes/canvas.ts` + `/canvas` page, 20 store tests + 6 route tests + 7 page tests. Text, note and link blocks positioned on a bounded surface; create, rename, archive; add, edit, move and remove blocks; durable across restart. Link blocks store **ids only**, resolved on read, so a canvas cannot become a stale copy of what it points at. Blocks are deliberately **mutable** — unlike agents and workflows, nothing references a canvas as a record of the past. **Limit**: movement is by nudge button, not drag; no zoom, no grouping, no connections between blocks. |
+| Canvas / spatial workspace | **B** | `canvas/` + `routes/canvas.ts` + `/canvas` page, 32 store tests + 11 route tests + 13 page tests. Text, note and link blocks positioned on a bounded surface; create, rename, archive; add, edit, move and remove blocks; durable across restart. Link blocks store **ids only**, resolved on read, so a canvas cannot become a stale copy of what it points at. Blocks are deliberately **mutable** — unlike agents and workflows, nothing references a canvas as a record of the past. **Limit**: movement is by nudge button, not drag; no zoom, no grouping. |
+| Canvas connections between blocks | **A** | Directed lines with optional labels, drawn as SVG behind the blocks and listed with a delete control. Cycles are **allowed** — the workflow rule against them exists because steps execute in an order, and a canvas has no execution order, so enforcing it here would copy a constraint past its reason. What *is* enforced: no self-connection, no duplicate in the same direction (the reverse is a separate statement), both endpoints must exist on **this** canvas, and a bounded count. Deleting a block deletes every line touching it, and hydration re-checks the same invariant, so a line from nothing to nothing cannot survive a restart either. |
 | Canvas link resolution (rendering the linked run/conversation inline) | **F** | A link block shows its target type and id, not a preview of the thing. |
 
 ## Family E — Knowledge & File Intelligence

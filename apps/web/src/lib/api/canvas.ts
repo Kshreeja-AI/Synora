@@ -26,11 +26,26 @@ export interface CanvasBlock {
   updatedAt: number;
 }
 
+/**
+ * A directed line between two blocks. Both endpoints always exist: the
+ * server deletes a block's connections along with the block, so the client
+ * never has to render a line to nothing.
+ */
+export interface CanvasConnection {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  createdAt: number;
+}
+
 export interface CanvasDocument {
   id: string;
   workspaceId: string;
   title: string;
   blocks: CanvasBlock[];
+  /** Absent on canvases stored before connections existed. */
+  connections?: CanvasConnection[];
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -134,6 +149,37 @@ export function useRemoveBlock(
     mutationFn: ({ canvasId, blockId }) =>
       api.delete<{ deleted: boolean }>(
         `/api/workspaces/${workspaceId}/canvases/${canvasId}/blocks/${blockId}`,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useConnectBlocks(
+  workspaceId: string,
+): UseMutationResult<
+  CanvasConnection,
+  Error,
+  { canvasId: string; from: string; to: string; label?: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, from, to, label }) =>
+      api.post<CanvasConnection>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/connections`,
+        { from, to, label },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useDisconnectBlocks(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, { canvasId: string; connectionId: string }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, connectionId }) =>
+      api.delete<{ deleted: boolean }>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/connections/${connectionId}`,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
   });

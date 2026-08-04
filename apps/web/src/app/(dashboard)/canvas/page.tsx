@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, LayoutGrid, Loader2, Plus, StickyNote, Trash2 } from 'lucide-react';
+import { Archive, LayoutGrid, Link2, Loader2, Plus, StickyNote, Trash2, X } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -10,7 +10,9 @@ import {
   useArchiveCanvas,
   useCanvas,
   useCanvases,
+  useConnectBlocks,
   useCreateCanvas,
+  useDisconnectBlocks,
   useRemoveBlock,
   useUpdateBlock,
   type BlockKind,
@@ -44,6 +46,8 @@ export default function CanvasPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState('');
+  /** The block a connection is being drawn FROM, once one is chosen. */
+  const [connectFrom, setConnectFrom] = useState<string | null>(null);
 
   const { data: canvases = [], isLoading } = useCanvases(workspaceId);
   const { data: canvas } = useCanvas(workspaceId, selectedId ?? '', { enabled: !!selectedId });
@@ -52,6 +56,38 @@ export default function CanvasPage() {
   const addBlock = useAddBlock(workspaceId);
   const updateBlock = useUpdateBlock(workspaceId);
   const removeBlock = useRemoveBlock(workspaceId);
+  const connect = useConnectBlocks(workspaceId);
+  const disconnect = useDisconnectBlocks(workspaceId);
+
+  const connections = canvas?.connections ?? [];
+
+  function blockCentre(block: CanvasBlock) {
+    return { cx: block.x + 16 + block.width / 2, cy: block.y + 16 + block.height / 2 };
+  }
+
+  function onConnectClick(blockId: string) {
+    if (!canvas) return;
+    if (!connectFrom) {
+      setConnectFrom(blockId);
+      return;
+    }
+    if (connectFrom === blockId) {
+      // Clicking the same block again cancels rather than attempting a
+      // self-connection the server would refuse anyway.
+      setConnectFrom(null);
+      return;
+    }
+    connect.mutate(
+      { canvasId: canvas.id, from: connectFrom, to: blockId },
+      {
+        onSuccess: () => setConnectFrom(null),
+        onError: (e) => {
+          toast.error(e.message);
+          setConnectFrom(null);
+        },
+      },
+    );
+  }
 
   function add(kind: BlockKind) {
     if (!selectedId) return;
@@ -207,6 +243,34 @@ export default function CanvasPage() {
                     aria-label="Canvas blocks"
                     className="relative min-h-[24rem] overflow-auto rounded-md border bg-muted/30 p-4"
                   >
+                    {/* Lines sit behind the blocks and never intercept
+                        clicks — a connection is deleted from the list
+                        below, where it has a name and a label. */}
+                    <svg
+                      aria-hidden
+                      className="pointer-events-none absolute inset-0 h-full w-full"
+                    >
+                      {connections.map((c) => {
+                        const from = canvas.blocks.find((b) => b.id === c.from);
+                        const to = canvas.blocks.find((b) => b.id === c.to);
+                        if (!from || !to) return null;
+                        const a = blockCentre(from);
+                        const b = blockCentre(to);
+                        return (
+                          <line
+                            key={c.id}
+                            x1={a.cx}
+                            y1={a.cy}
+                            x2={b.cx}
+                            y2={b.cy}
+                            stroke="currentColor"
+                            strokeWidth={1.5}
+                            className="text-muted-foreground"
+                          />
+                        );
+                      })}
+                    </svg>
+
                     {canvas.blocks.map((block) => (
                       <div
                         key={block.id}
@@ -266,6 +330,22 @@ export default function CanvasPage() {
                           ))}
                           <button
                             type="button"
+                            aria-label={
+                              connectFrom === block.id
+                                ? `Cancel connecting from this ${block.kind} block`
+                                : connectFrom
+                                  ? `Connect to this ${block.kind} block`
+                                  : `Connect from this ${block.kind} block`
+                            }
+                            onClick={() => onConnectClick(block.id)}
+                            className={`rounded border px-1 text-xs hover:bg-muted ${
+                              connectFrom === block.id ? 'border-primary bg-primary/10' : ''
+                            }`}
+                          >
+                            <Link2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            type="button"
                             aria-label={`Remove ${block.kind} block`}
                             onClick={() =>
                               removeBlock.mutate(
@@ -283,10 +363,66 @@ export default function CanvasPage() {
                   </div>
                 )}
 
+                {connectFrom && (
+                  <div
+                    role="status"
+                    className="flex items-center gap-2 rounded-md border border-primary bg-primary/5 p-2 text-sm"
+                  >
+                    <Link2 className="h-4 w-4" aria-hidden />
+                    <span className="flex-1">
+                      Pick the block this one connects to. Picking the same block again cancels.
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => setConnectFrom(null)}>
+                      <X className="mr-1 h-3 w-3" />
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+
+                {connections.length > 0 && (
+                  <section className="space-y-2">
+                    <h3 className="text-sm font-semibold">
+                      Connections ({connections.length})
+                    </h3>
+                    <ul className="space-y-1">
+                      {connections.map((c) => {
+                        const from = canvas.blocks.find((b) => b.id === c.from);
+                        const to = canvas.blocks.find((b) => b.id === c.to);
+                        const label = (b?: CanvasBlock) =>
+                          (b?.content || '').slice(0, 30) || '(untitled block)';
+                        return (
+                          <li
+                            key={c.id}
+                            className="flex items-center gap-2 rounded-md border p-2 text-xs"
+                          >
+                            <span className="flex-1">
+                              {label(from)} → {label(to)}
+                              {c.label ? ` (${c.label})` : ''}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label="Remove connection"
+                              onClick={() =>
+                                disconnect.mutate(
+                                  { canvasId: canvas.id, connectionId: c.id },
+                                  { onError: (e) => toast.error(e.message) },
+                                )
+                              }
+                              className="rounded border px-1 hover:bg-muted"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
                 <p className="text-xs text-muted-foreground">
                   Blocks move in {GRID}px steps. Dragging is not built yet — this is the first
                   version of the surface, and how people actually arrange a canvas will decide
-                  what it should become.
+                  what it should become. Deleting a block also deletes the lines that touched it.
                 </p>
               </>
             )}
