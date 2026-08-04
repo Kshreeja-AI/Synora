@@ -10,6 +10,8 @@ import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
 import { WaitingForYou } from '../../components/shell/WaitingForYou';
+import { ActiveWork } from '../../components/shell/ActiveWork';
+import { NeedsAttention } from '../../components/shell/NeedsAttention';
 import { RecentActivity } from '../../components/shell/RecentActivity';
 
 export default function DashboardPage(): React.JSX.Element {
@@ -82,10 +84,14 @@ export default function DashboardPage(): React.JSX.Element {
         />
       ) : (
         <div className="space-y-6">
-          {/* What is actually blocked on this person, before anything
-              else on the page. A paused run is a fact, not a guess about
-              what might matter. */}
+          {/* Ordered by how real the claim on attention is: blocked on a
+              decision only a person can make, then in progress right
+              now, then things that stopped on their own without being
+              asked to. Each of these is a fact — never a rank, a score,
+              or the platform inventing urgency about someone's work. */}
           <WaitingForYou workspaceId={currentWorkspace.id} />
+          <ActiveWork workspaceId={currentWorkspace.id} />
+          <NeedsAttention workspaceId={currentWorkspace.id} />
 
           {/* What merely happened, below what is blocked. History reads
               when wanted; it never claims attention. */}
