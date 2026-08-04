@@ -28,6 +28,18 @@ import {
   persistTrigger,
   setTriggerEnabled,
 } from '../workflows/trigger';
+import {
+  BURST_LIMIT,
+  BURST_WINDOW_MS,
+  createEventTrigger,
+  deleteEventTrigger,
+  forgetEventTrigger,
+  listEventTriggers,
+  persistEventTrigger,
+  setEventTriggerEnabled,
+  WORKFLOW_EVENTS,
+  type WorkflowEventName,
+} from '../workflows/event-trigger';
 import { persistRun } from '../agents/run-engine';
 import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
@@ -101,6 +113,7 @@ function toHttpError(err: unknown): unknown {
   }
   if (message === 'schedule not found') return new NotFoundException('Schedule');
   if (message === 'trigger not found') return new NotFoundException('Trigger');
+  if (message.startsWith('unknown event ')) return new ValidationException(message);
   if (
     message.includes('schedule kind') ||
     message.includes('time of day') ||
@@ -388,6 +401,100 @@ router.delete('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res,
   try {
     const removed = deleteTrigger(req.params.triggerId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Trigger'));
+    res.json(createApiResponse({ deleted: true }));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Event triggers --------------------------------------------------------
+//
+// The other half: a workflow starting because something happened INSIDE
+// Synora. There is no secret, because there is no outside caller to
+// authenticate — the platform is the one firing, and the authority a run
+// executes with is the trigger's creator, not whoever's action emitted the
+// event.
+//
+// `router.use` guards only the prefix it names, so this path needs its own
+// guard exactly like `/:workspaceId/triggers` did.
+router.use('/:workspaceId/event-triggers', authMiddleware, requireWorkspaceAccess());
+
+/** Surfaced so nobody has to guess which events exist by trying them. */
+router.get('/:workspaceId/event-triggers', async (req: AuthRequest, res, next) => {
+  try {
+    res.json(
+      createApiResponse({
+        triggers: listEventTriggers(req.params.workspaceId),
+        availableEvents: WORKFLOW_EVENTS,
+        burst: { limit: BURST_LIMIT, windowMs: BURST_WINDOW_MS },
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+const eventTriggerSchema = z.object({
+  event: z.string(),
+  filter: z
+    .object({
+      projectId: z.string().optional(),
+      mimeTypePrefix: z.string().max(100).optional(),
+    })
+    .optional(),
+});
+
+router.post(
+  '/:workspaceId/workflows/:workflowId/event-triggers',
+  async (req: AuthRequest, res, next) => {
+    try {
+      const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
+      if (!workflow) return next(new NotFoundException('Workflow'));
+      if (workflow.archived) {
+        return next(new ValidationException('an archived workflow cannot be given a trigger'));
+      }
+
+      const body = eventTriggerSchema.parse(req.body ?? {});
+      const trigger = createEventTrigger({
+        workspaceId: req.params.workspaceId,
+        workflowId: workflow.id,
+        // Validated inside the registry, which owns the catalogue and
+        // refuses an unknown name rather than storing a trigger that would
+        // sit enabled and never fire.
+        event: body.event as WorkflowEventName,
+        filter: body.filter,
+        createdBy: req.userId!,
+      });
+      await persistEventTrigger(trigger.id);
+      res.status(201).json(createApiResponse(trigger));
+    } catch (error) {
+      next(toHttpError(error));
+    }
+  },
+);
+
+router.patch('/:workspaceId/event-triggers/:triggerId', async (req: AuthRequest, res, next) => {
+  try {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    const trigger = setEventTriggerEnabled(
+      req.params.triggerId,
+      req.params.workspaceId,
+      enabled,
+    );
+    await persistEventTrigger(trigger.id);
+    res.json(createApiResponse(trigger));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.delete('/:workspaceId/event-triggers/:triggerId', async (req: AuthRequest, res, next) => {
+  try {
+    const removed = deleteEventTrigger(req.params.triggerId, req.params.workspaceId);
+    if (!removed) return next(new NotFoundException('Trigger'));
+    // Removed from the store too, or it returns on the next restart and
+    // starts firing again after somebody deliberately stopped it.
+    await forgetEventTrigger(req.params.triggerId);
     res.json(createApiResponse({ deleted: true }));
   } catch (error) {
     next(toHttpError(error));

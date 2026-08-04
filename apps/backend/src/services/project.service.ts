@@ -6,6 +6,7 @@ import { requirePermission } from './permissions';
 import { recordAuditEvent } from './audit.service';
 import { deleteWorkspaceAsset } from '../storage';
 import { logger } from '../utils/logger';
+import { emitWorkflowEvent } from '../workflows/event-dispatch';
 
 /**
  * A project either belongs to a single user (personal, `workspaceId: null`
@@ -48,6 +49,17 @@ export async function createProject(
   if (input.workspaceId) {
     await recordAuditEvent(input.workspaceId, userId, 'project.created', 'project', project.id, {
       name: project.name,
+    });
+    // Only workspace projects announce themselves: an event trigger is
+    // scoped to a workspace, so a personal project has nothing listening
+    // and no workspace to name.
+    emitWorkflowEvent({
+      name: 'project.created',
+      workspaceId: input.workspaceId,
+      actorId: userId,
+      subjectId: project.id,
+      subjectName: project.name,
+      projectId: project.id,
     });
   }
 

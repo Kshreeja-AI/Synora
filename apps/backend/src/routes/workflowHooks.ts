@@ -1,12 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
-import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
-import { persistRun } from '../agents/run-engine';
-import { resolveAgentRuntime } from '../agents/runtime';
-import { TERMINAL_RUN_STATES } from '../agents/types';
+import { BudgetExceededError } from '../agents/metering';
 import { persistTrigger, recordFired, resolveTriggerBySecret } from '../workflows/trigger';
-import { startWorkflowRun } from '../workflows/workflow-engine';
+import { startTriggeredWorkflowRun } from '../workflows/triggered-run';
 
 /**
  * Fires a workflow from OUTSIDE Synora — the event-triggered half of
@@ -43,28 +40,20 @@ router.post('/workflows/:secret', async (req, res, next) => {
 
     const { task } = fireSchema.parse(req.body ?? {});
 
+    let run;
     try {
-      await assertRunBudget(trigger.workspaceId);
-    } catch (err) {
-      if (err instanceof BudgetExceededError) return next(new ValidationException(err.message));
-      throw err;
-    }
-
-    const runtime = await resolveAgentRuntime(trigger.createdBy);
-    const run = await startWorkflowRun(
-      {
+      // Shared with internal event triggers, so the two ways a workflow
+      // starts without a person cannot drift apart on budget, authority or
+      // billing.
+      run = await startTriggeredWorkflowRun({
         workflowId: trigger.workflowId,
         workspaceId: trigger.workspaceId,
         requestedBy: trigger.createdBy,
         task: task || 'Triggered via webhook',
-      },
-      { toolRunner: runtime.deps.toolRunner, generate: runtime.deps.generate },
-    );
-    await persistRun(run.id);
-    // A webhook-started run consumes the same resources as a manual one
-    // and is billed identically — an external caller is not a discount.
-    if (TERMINAL_RUN_STATES.includes(run.state)) {
-      await meterRun({ run, capability: 'workflow-run' });
+      });
+    } catch (err) {
+      if (err instanceof BudgetExceededError) return next(new ValidationException(err.message));
+      throw err;
     }
     recordFired(trigger.id);
     await persistTrigger(trigger.id);

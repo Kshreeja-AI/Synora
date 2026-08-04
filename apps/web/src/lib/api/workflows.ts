@@ -352,6 +352,99 @@ export function useDeleteTrigger(
 }
 
 /**
+ * Event triggers: a workflow starting because something happened INSIDE
+ * Synora. No secret, because there is no outside caller to authenticate.
+ *
+ * The available events come from the server rather than a list hardcoded
+ * here. A UI offering an event the backend does not emit would let someone
+ * build an automation that looks enabled and never fires.
+ */
+export interface EventTrigger {
+  id: string;
+  workspaceId: string;
+  workflowId: string;
+  event: string;
+  filter?: { projectId?: string; mimeTypePrefix?: string };
+  enabled: boolean;
+  createdBy: string;
+  createdAt: number;
+  lastFiredAt?: number;
+  firedCount: number;
+  /** Fires declined because the burst budget was spent. */
+  suppressedCount: number;
+}
+
+export interface EventTriggerListing {
+  triggers: EventTrigger[];
+  availableEvents: string[];
+  burst: { limit: number; windowMs: number };
+}
+
+const EVENT_TRIGGERS_KEY = 'workflow-event-triggers';
+
+export function useEventTriggers(
+  workspaceId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<EventTriggerListing> {
+  return useQuery({
+    queryKey: [EVENT_TRIGGERS_KEY, workspaceId],
+    queryFn: () =>
+      api.get<EventTriggerListing>(`/api/workspaces/${workspaceId}/event-triggers`),
+    enabled: !!workspaceId && options?.enabled !== false,
+  });
+}
+
+export function useCreateEventTrigger(
+  workspaceId: string,
+): UseMutationResult<
+  EventTrigger,
+  Error,
+  { workflowId: string; event: string; filter?: { projectId?: string; mimeTypePrefix?: string } }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ workflowId, event, filter }) =>
+      api.post<EventTrigger>(
+        `/api/workspaces/${workspaceId}/workflows/${workflowId}/event-triggers`,
+        { event, ...(filter ? { filter } : {}) },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [EVENT_TRIGGERS_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useSetEventTriggerEnabled(
+  workspaceId: string,
+): UseMutationResult<EventTrigger, Error, { triggerId: string; enabled: boolean }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ triggerId, enabled }) =>
+      api.patch<EventTrigger>(`/api/workspaces/${workspaceId}/event-triggers/${triggerId}`, {
+        enabled,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [EVENT_TRIGGERS_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useDeleteEventTrigger(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (triggerId) =>
+      api.delete<{ deleted: boolean }>(
+        `/api/workspaces/${workspaceId}/event-triggers/${triggerId}`,
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [EVENT_TRIGGERS_KEY, workspaceId] });
+    },
+  });
+}
+
+/**
  * Runs nothing. Reports what a real run would do: which steps would pause
  * for approval, whether the workspace's tools and budget would let it
  * start, and every problem discoverable in advance — without spending

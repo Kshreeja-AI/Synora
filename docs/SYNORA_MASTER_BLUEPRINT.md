@@ -606,6 +606,54 @@ The surface is `TriggerPanel` on `/workflows`. It shows the full URL
 exactly once, at creation, and says so; every later view shows only a
 non-secret prefix, because no endpoint will ever return the secret again.
 
+**Also implemented: internal event triggers** (`event-trigger.ts`,
+`event-dispatch.ts`). A workflow starts because something happened INSIDE
+Synora, without anything outside having to call in. Today that means
+`asset.uploaded` and `project.created`.
+
+**The event catalogue is closed, and every name in it has a real emit
+site.** This is the load-bearing rule. A catalogue listing events nobody
+emits would be the worst dishonesty available here: someone wires an
+automation to `document.changed`, sees a trigger sitting there marked
+enabled, and waits forever for a run that was never possible — which looks
+exactly like a broken workflow. So an unknown event is refused **by name**
+at creation, discarded at hydration, and the UI offers only what the
+server says it emits. Adding an event means adding the emit alongside it.
+
+**Emitting never fails the action that caused it.** Someone uploading a
+file asked to upload a file. If an automation another member wired up is
+broken, out of budget, or pointing at an archived workflow, that is not
+the uploader's problem and must not become their error message — so
+dispatch happens off the request path and every failure is logged rather
+than raised.
+
+**Authority is the trigger's creator, never the actor.** Uploading to a
+shared workspace is not agreeing to lend your permissions to whatever
+somebody else automated. Both trigger kinds now go through one
+`startTriggeredWorkflowRun`, so the webhook path and the event path cannot
+drift apart on budget, authority or billing — a second copy of that
+sequence would eventually disagree, and the disagreement would be about
+money and permissions.
+
+**A per-trigger burst limit** (20 a minute, counted and shown in the UI)
+is the blast radius of a mistake rather than a tuning knob: a workflow
+wired to `asset.uploaded` in a workspace where somebody drags in four
+hundred files would otherwise start four hundred billed runs before anyone
+noticed. Suppression is counted separately from firing, because "nothing
+happened" and "something happened and was declined" are different things
+to debug.
+
+**Deliberately absent: `workflow.completed`.** It is the obvious next
+event and the one that makes loops possible — a workflow whose completion
+starts a workflow whose completion starts the first. Bounding that safely
+needs causation tracking through the run engine, knowing that THIS run was
+started by THAT event several hops back, and that does not exist. The
+burst limit would keep such a loop from running away, but "bounded by a
+rate limit" is not "cannot happen", and shipping the event while calling
+it safe would be claiming the second. Also absent: any replay of events
+that occurred while the process was down, because there is no durable
+event log — that would be a different subsystem, not a flag on this one.
+
 **Also implemented: time zones for daily schedules.** A daily schedule
 names an IANA zone and runs at that local time — 09:00 in New York, not
 09:00 UTC, which was five hours wrong for anyone who did not live in
@@ -956,7 +1004,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Run cost metering and the pre-run budget gate: implemented. Multi-agent orchestration: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI, dry runs, webhook triggers: built and tested, executing through the agent run engine rather than a second copy of it. Internal event triggers and timezones: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling with time zones and its UI, dry runs, webhook triggers, and internal event triggers: built and tested, executing through the agent run engine rather than a second copy of it. Missing: `workflow.completed` as an event (loops), replay of events missed during a restart, and asynchronous runs — see the run-timeout mismatch. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |

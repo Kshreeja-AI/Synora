@@ -10,6 +10,11 @@ import { InMemoryKeyedStore, setAgentRunStore } from '../../agents/agent-stores'
 import { resetWorkflows, setWorkflowStore } from '../../workflows/workflow-registry';
 import { resetSchedules, setScheduleStore, type WorkflowSchedule } from '../../workflows/schedule';
 import { resetTriggers, setTriggerStore, type WorkflowTrigger } from '../../workflows/trigger';
+import {
+  resetEventTriggers,
+  setEventTriggerStore,
+  type EventTrigger,
+} from '../../workflows/event-trigger';
 import type { AgentRun } from '../../agents/types';
 import type { WorkflowDefinition } from '../../workflows/types';
 
@@ -50,10 +55,12 @@ describe('workflow routes', () => {
     resetWorkflows();
     resetSchedules();
     resetTriggers();
+    resetEventTriggers();
     setAgentRunStore(new InMemoryKeyedStore<AgentRun>());
     setWorkflowStore(new InMemoryKeyedStore<WorkflowDefinition>());
     setScheduleStore(new InMemoryKeyedStore<WorkflowSchedule>());
     setTriggerStore(new InMemoryKeyedStore<WorkflowTrigger>());
+    setEventTriggerStore(new InMemoryKeyedStore<EventTrigger>());
   });
 
   afterEach(async () => {
@@ -550,6 +557,190 @@ describe('workflow routes', () => {
           .status,
       ).toBe(401);
       expect((await request(app).delete(`/api/workspaces/${ws.id}/triggers/${created.trigger.id}`)).status).toBe(401);
+    });
+  });
+
+  /**
+   * Event triggers — a workflow starting because something happened inside
+   * Synora rather than because an outside system called in.
+   *
+   * The assertion that matters is the end-to-end one: uploading a real
+   * file through the real endpoint produces a real run. Everything else
+   * here could pass while the feature did nothing at all.
+   */
+  describe('event triggers', () => {
+    async function makeEventTrigger(
+      cookie: string,
+      workspaceId: string,
+      workflowId: string,
+      body: Record<string, unknown> = {},
+    ) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows/${workflowId}/event-triggers`)
+        .set('Cookie', cookie)
+        .send({ event: 'asset.uploaded', ...body });
+    }
+
+    /** Dispatch is scheduled with setImmediate, so let the loop turn. */
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('lists the events it can actually react to', async () => {
+      const owner = await register('wf-evt-list');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+
+      const res = await request(app)
+        .get(`/api/workspaces/${ws.id}/event-triggers`)
+        .set('Cookie', owner.cookie);
+
+      expect(res.status).toBe(200);
+      // Surfaced so nobody has to discover the catalogue by trying names.
+      expect(res.body.data.availableEvents).toContain('asset.uploaded');
+      expect(res.body.data.burst.limit).toBeGreaterThan(0);
+    });
+
+    it('refuses an event nobody emits, naming the ones that exist', async () => {
+      const owner = await register('wf-evt-bad');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+      const res = await makeEventTrigger(owner.cookie, ws.id, wf.id, {
+        event: 'document.changed',
+      });
+
+      // A trigger for an event nobody emits would sit enabled forever.
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toMatch(/unknown event/);
+      expect(JSON.stringify(res.body)).toMatch(/asset\.uploaded/);
+    });
+
+    it('uploading a file really starts the workflow', async () => {
+      const owner = await register('wf-evt-fire');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const trigger = (await makeEventTrigger(owner.cookie, ws.id, wf.id)).body.data;
+      expect(trigger.enabled).toBe(true);
+
+      const before = await request(app)
+        .get(`/api/workspaces/${ws.id}/agents/runs`)
+        .set('Cookie', owner.cookie);
+      const countBefore = (before.body.data as unknown[]).length;
+
+      const uploaded = await request(app)
+        .post(`/api/workspaces/${ws.id}/assets`)
+        .set('Cookie', owner.cookie)
+        .attach('file', Buffer.from('quarterly numbers'), {
+          filename: 'quarterly.csv',
+          contentType: 'text/csv',
+        });
+      // The upload succeeds on its own terms, whatever the automation does.
+      expect(uploaded.status).toBe(201);
+
+      await settle();
+      await settle();
+
+      const after = await request(app)
+        .get(`/api/workspaces/${ws.id}/agents/runs`)
+        .set('Cookie', owner.cookie);
+      // The whole point: a real file through the real endpoint produced a
+      // real run, not a record that something was noticed.
+      expect((after.body.data as unknown[]).length).toBe(countBefore + 1);
+    });
+
+    it('does not fire a disabled trigger', async () => {
+      const owner = await register('wf-evt-off');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const trigger = (await makeEventTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      const disabled = await request(app)
+        .patch(`/api/workspaces/${ws.id}/event-triggers/${trigger.id}`)
+        .set('Cookie', owner.cookie)
+        .send({ enabled: false });
+      expect(disabled.body.data.enabled).toBe(false);
+
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/assets`)
+        .set('Cookie', owner.cookie)
+        .attach('file', Buffer.from('x'), { filename: 'x.csv', contentType: 'text/csv' });
+      await settle();
+      await settle();
+
+      const runs = await request(app)
+        .get(`/api/workspaces/${ws.id}/agents/runs`)
+        .set('Cookie', owner.cookie);
+      // Pausing an automation has to actually pause it.
+      expect(runs.body.data).toEqual([]);
+    });
+
+    it('respects a filter rather than firing on everything', async () => {
+      const owner = await register('wf-evt-filter');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      await makeEventTrigger(owner.cookie, ws.id, wf.id, {
+        filter: { mimeTypePrefix: 'image/' },
+      });
+
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/assets`)
+        .set('Cookie', owner.cookie)
+        .attach('file', Buffer.from('not an image'), {
+          filename: 'notes.txt',
+          contentType: 'text/plain',
+        });
+      await settle();
+      await settle();
+
+      const runs = await request(app)
+        .get(`/api/workspaces/${ws.id}/agents/runs`)
+        .set('Cookie', owner.cookie);
+      expect(runs.body.data).toEqual([]);
+    });
+
+    it('does not fire for another workspace\'s event', async () => {
+      const owner = await register('wf-evt-scope');
+      const stranger = await register('wf-evt-stranger');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const otherWs = await createWorkspace(stranger.cookie, 'Other Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      await makeEventTrigger(owner.cookie, ws.id, wf.id);
+
+      await request(app)
+        .post(`/api/workspaces/${otherWs.id}/assets`)
+        .set('Cookie', stranger.cookie)
+        .attach('file', Buffer.from('theirs'), {
+          filename: 'theirs.csv',
+          contentType: 'text/csv',
+        });
+      await settle();
+      await settle();
+
+      const runs = await request(app)
+        .get(`/api/workspaces/${ws.id}/agents/runs`)
+        .set('Cookie', owner.cookie);
+      // The worst possible bug in this subsystem would be a cross-workspace
+      // fire, so it is asserted rather than assumed from the filter code.
+      expect(runs.body.data).toEqual([]);
+    });
+
+    it('guards the event-trigger path with auth, like every other prefix', async () => {
+      const owner = await register('wf-evt-guard');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const trigger = (await makeEventTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      // `router.use` covers only the prefix it names, so this path needed
+      // its own guard.
+      expect((await request(app).get(`/api/workspaces/${ws.id}/event-triggers`)).status).toBe(401);
+      expect(
+        (
+          await request(app)
+            .patch(`/api/workspaces/${ws.id}/event-triggers/${trigger.id}`)
+            .send({ enabled: false })
+        ).status,
+      ).toBe(401);
+      expect(
+        (await request(app).delete(`/api/workspaces/${ws.id}/event-triggers/${trigger.id}`)).status,
+      ).toBe(401);
     });
   });
 });

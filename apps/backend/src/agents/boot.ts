@@ -9,6 +9,11 @@ import {
 } from '../workflows/workflow-registry.js';
 import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
 import { createFileTriggerStore, hydrateTriggers, setTriggerStore } from '../workflows/trigger.js';
+import {
+  createFileEventTriggerStore,
+  hydrateEventTriggers,
+  setEventTriggerStore,
+} from '../workflows/event-trigger.js';
 import { createFilePluginStore, hydratePlugins, setPluginStore } from '../plugins/plugin-registry.js';
 import {
   createFileWorkspaceTemplateStore,
@@ -58,6 +63,7 @@ export async function bootAgentStores(): Promise<void> {
   setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
   setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
   setTriggerStore(createFileTriggerStore(`${dir}/workflow-triggers.json`));
+  setEventTriggerStore(createFileEventTriggerStore(`${dir}/workflow-event-triggers.json`));
   setPluginStore(createFilePluginStore(`${dir}/plugins.json`));
   setWorkspaceTemplateStore(createFileWorkspaceTemplateStore(`${dir}/workspace-templates.json`));
   setCanvasStore(createFileCanvasStore(`${dir}/canvases.json`));
@@ -72,6 +78,11 @@ export async function bootAgentStores(): Promise<void> {
     // in a burst is how a scheduler turns an outage into an incident.
     const schedules = await hydrateSchedules();
     const triggers = await hydrateTriggers();
+    // Event triggers carry no backlog of their own: an event that happened
+    // while the process was down is gone, and there is nothing to replay
+    // from. That is stated rather than worked around — a durable event log
+    // would be a different subsystem, not a flag on this one.
+    const eventTriggers = await hydrateEventTriggers();
     // A plugin record is a permission grant. Unlike a canvas, a
     // partially-understood one is discarded whole rather than repaired:
     // acting on a grant nobody made is worse than losing the install.
@@ -115,6 +126,7 @@ export async function bootAgentStores(): Promise<void> {
       workflows,
       schedules,
       triggers,
+      eventTriggers,
       plugins: pluginResult.loaded,
       savedTemplates,
       canvases: canvasResult.loaded,
