@@ -5,6 +5,7 @@ import {
   type AgentLimits,
   type ApprovalPolicy,
 } from './types.js';
+import { getAgentDefinitionStore } from './agent-stores.js';
 
 /**
  * Agent definitions: versioned, workspace-scoped, never edited in place.
@@ -164,6 +165,45 @@ export function archiveAgent(agentId: string, workspaceId: string): AgentDefinit
   const archived = { ...agent, archived: true };
   definitions.set(agent.id, archived);
   return archived;
+}
+
+/**
+ * Writes a definition through to the durable store. In-memory stays the
+ * working set so lookups remain synchronous; the store is the durable
+ * copy, not the hot path — the same split `launch-gates` uses.
+ */
+export async function persistAgent(agentId: string): Promise<boolean> {
+  const agent = definitions.get(agentId);
+  if (!agent) return false;
+  await getAgentDefinitionStore().save(agent.id, agent);
+  return true;
+}
+
+/**
+ * Loads definitions at startup. Re-validated on the way in: a record
+ * written by an earlier version that no longer satisfies today's rules is
+ * discarded rather than trusted because it is on disk.
+ */
+export async function hydrateAgents(): Promise<number> {
+  const stored = await getAgentDefinitionStore().loadAll();
+  let loaded = 0;
+  for (const agent of Object.values(stored)) {
+    try {
+      validate(agent);
+      if (!agent.id || !agent.workspaceId || !agent.lineageId) continue;
+      definitions.set(agent.id, agent);
+      loaded += 1;
+    } catch {
+      // Discarded, not repaired: guessing at what a malformed definition
+      // meant would hand an executor a configuration nobody wrote.
+    }
+  }
+  return loaded;
+}
+
+/** Whether a definition id is currently resolvable. Used by run hydration. */
+export function hasAgentDefinition(agentId: string): boolean {
+  return definitions.has(agentId);
 }
 
 /** Test-only. */

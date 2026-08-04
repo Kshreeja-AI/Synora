@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { getAgent } from './agent-registry.js';
+import { getAgent, hasAgentDefinition } from './agent-registry.js';
+import { getAgentRunStore } from './agent-stores.js';
 import {
   TERMINAL_RUN_STATES,
   type AgentGenerate,
@@ -370,6 +371,54 @@ export function listRuns(workspaceId: string, opts: { agentLineageId?: string } 
     .filter((r) => r.workspaceId === workspaceId)
     .filter((r) => !opts.agentLineageId || r.lineageId === opts.agentLineageId)
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Writes a run through to the durable store. */
+export async function persistRun(runId: string): Promise<boolean> {
+  const run = runs.get(runId);
+  if (!run) return false;
+  await getAgentRunStore().save(run.id, run);
+  return true;
+}
+
+/**
+ * Loads runs at startup, and REFUSES ONES WHOSE AGENT DEFINITION IS GONE.
+ *
+ * This is the benchmark-registry deadlock generalised. A run names the
+ * exact definition version it executed under; restoring a run whose
+ * definition was not restored produces a record that cannot be resumed,
+ * cannot be explained, and — for a parked run — cannot be approved,
+ * because `approveStep` resolves the agent before continuing. Hydrating
+ * such a run would look like recovery and behave like corruption.
+ *
+ * Definitions must therefore be hydrated FIRST. A run that still cannot
+ * find its definition is skipped and counted, so the loss is visible
+ * rather than silent.
+ */
+export async function hydrateRuns(): Promise<{ loaded: number; orphaned: number }> {
+  const stored = await getAgentRunStore().loadAll();
+  let loaded = 0;
+  let orphaned = 0;
+
+  for (const run of Object.values(stored)) {
+    if (!run?.id || !run.workspaceId || !run.agentId) continue;
+    if (!hasAgentDefinition(run.agentId)) {
+      orphaned += 1;
+      continue;
+    }
+    // A run interrupted mid-flight cannot silently resume: the process
+    // that owned its loop is gone. It is restored in a terminal state so
+    // history is preserved and nothing pretends to still be running.
+    if (!TERMINAL_RUN_STATES.includes(run.state) && run.state !== 'awaiting_approval') {
+      run.state = 'failed';
+      run.error = 'interrupted by a restart — the executing process no longer exists';
+      run.finishedAt = run.finishedAt ?? Date.now();
+      run.log.push({ at: Date.now(), event: 'run.failed', detail: run.error });
+    }
+    runs.set(run.id, run);
+    loaded += 1;
+  }
+  return { loaded, orphaned };
 }
 
 /** Test-only. */
