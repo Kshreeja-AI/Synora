@@ -260,6 +260,15 @@ export function useAgentRuns(
       return api.get<AgentRun[]>(`/api/workspaces/${workspaceId}/agents/runs${qs}`);
     },
     enabled: !!workspaceId && options?.enabled !== false,
+    // Polls while any run in the list is still moving, so a run in
+    // progress is not a state someone has to reopen the page to see
+    // change. Stops the moment every run is terminal — a finished list
+    // has nothing left to reveal by asking again.
+    refetchInterval: (query) => {
+      const runs = query.state.data;
+      if (!runs) return false;
+      return runs.some((r) => !isTerminalRun(r.state)) ? 1500 : false;
+    },
   });
 }
 
@@ -272,6 +281,13 @@ export function useAgentRun(
     queryKey: [RUNS_KEY, workspaceId, 'run', runId],
     queryFn: () => api.get<AgentRun>(`/api/workspaces/${workspaceId}/agents/runs/${runId}`),
     enabled: !!workspaceId && !!runId && options?.enabled !== false,
+    // Mirrors useAgentRuns: the permalink page for a single run must not
+    // require a manual reload to see a run that is still in progress
+    // move — the exact gap this closes.
+    refetchInterval: (query) => {
+      const run = query.state.data;
+      return run === undefined || !isTerminalRun(run.state) ? 1500 : false;
+    },
   });
 }
 
