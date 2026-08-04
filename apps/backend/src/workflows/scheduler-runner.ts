@@ -1,6 +1,8 @@
 import { collectDue, persistSchedule } from './schedule.js';
 import { startWorkflowRun } from './workflow-engine.js';
 import { persistRun } from '../agents/run-engine.js';
+import { meterRun } from '../agents/metering.js';
+import { TERMINAL_RUN_STATES } from '../agents/types.js';
 import { resolveAgentRuntime } from '../agents/runtime.js';
 import { logger } from '../utils/logger.js';
 
@@ -54,6 +56,11 @@ export async function fireDueSchedules(now = Date.now()): Promise<number> {
         { toolRunner: runtime.deps.toolRunner, generate: runtime.deps.generate },
       );
       await persistRun(run.id);
+      // A scheduled run consumes the same resources as a manual one and
+      // is billed identically — a clock is not a discount.
+      if (TERMINAL_RUN_STATES.includes(run.state)) {
+        await meterRun({ run, capability: 'workflow-run' });
+      }
       started += 1;
     } catch (err) {
       // An archived or deleted workflow, or a workflow the creator can no

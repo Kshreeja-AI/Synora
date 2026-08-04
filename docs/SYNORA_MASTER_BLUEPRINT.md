@@ -366,7 +366,21 @@ later by a run history pointing at "old" configurations — and the page
 switches to the new version's id on save, because the id it held is now a
 superseded version.
 
-**Missing, named:** recall quality is UNMEASURED
+**Also implemented: run metering** (`agents/metering.ts`). Every terminal
+run — started, approved to completion, rejected, or fired by the
+scheduler — lands in the same usage ledger everything else bills through.
+Two accounting rules carry it: usage is always counted even when credit
+deduction cannot happen (the record then says `deducted: false` and why,
+because a history that loses records whenever billing hiccups lies by
+omission); and deterministic generate-steps cost zero, since no tokens
+were bought and charging would fabricate a cost, while tool calls are
+charged regardless of origin because a tool does real work either way.
+Metering never fails a run. Pre-run budget enforcement is missing and
+named below.
+
+**Missing, named:** pre-run budget enforcement (a zero-balance workspace
+can still start runs — discovered at deduction, not blocked upfront);
+recall quality is UNMEASURED
 (with no embedding provider, retrieval falls back to keyword search);
 live progress for a long run (the page shows the state the
 request returned, so a run must be reopened to see movement); usage/cost

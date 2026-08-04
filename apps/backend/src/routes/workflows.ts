@@ -21,6 +21,8 @@ import {
   setScheduleEnabled,
 } from '../workflows/schedule';
 import { persistRun } from '../agents/run-engine';
+import { meterRun } from '../agents/metering';
+import { TERMINAL_RUN_STATES } from '../agents/types';
 import { resolveAgentRuntime } from '../agents/runtime';
 
 /**
@@ -202,6 +204,9 @@ router.post('/:workspaceId/workflows/:workflowId/runs', async (req: AuthRequest,
       },
     );
     await persistRun(run.id);
+    if (TERMINAL_RUN_STATES.includes(run.state)) {
+      await meterRun({ run, capability: 'workflow-run' });
+    }
     res.status(201).json(
       createApiResponse({
         run,

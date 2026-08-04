@@ -23,6 +23,8 @@ import {
 } from '../agents/run-engine';
 import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
 import { canRecall, canRecord, recallForTask, recordRunOutcome, withRecalledContext } from '../agents/memory';
+import { meterRun } from '../agents/metering';
+import { TERMINAL_RUN_STATES } from '../agents/types';
 import type { AgentRun } from '../agents/types';
 
 /**
@@ -217,6 +219,14 @@ router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/approve', async (req
       { ...runtime.deps, resolveDefinition: resolveAnyDefinition },
     );
     await persistRun(run.id);
+    if (TERMINAL_RUN_STATES.includes(run.state)) {
+      // Workflow runs resume through this endpoint too; the capability
+      // line follows what the run actually is.
+      await meterRun({
+        run,
+        capability: run.agentId.startsWith('wf_') ? 'workflow-run' : 'agent-run',
+      });
+    }
     res.json(createApiResponse(runResponse(run, runtime)));
   } catch (error) {
     next(toHttpError(error));
@@ -235,6 +245,11 @@ router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/reject', async (req:
       reason,
     });
     await persistRun(run.id);
+    // Rejection is terminal; steps that ran before the park are billed.
+    await meterRun({
+      run,
+      capability: run.agentId.startsWith('wf_') ? 'workflow-run' : 'agent-run',
+    });
     res.json(createApiResponse(run));
   } catch (error) {
     next(toHttpError(error));
@@ -337,6 +352,11 @@ router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, 
       { ...runtime.deps, generate: withRecalledContext(runtime.deps.generate, recalled) },
     );
     await persistRun(run.id);
+    // Metered at the terminal transition, exactly once. A parked run is
+    // metered later, when approval (or rejection) finishes it.
+    if (TERMINAL_RUN_STATES.includes(run.state)) {
+      await meterRun({ run, capability: 'agent-run' });
+    }
 
     // Recorded only on success, and only if declared. The memory carries
     // the plan's origin in its text, so a deterministic run can never be

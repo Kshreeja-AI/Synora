@@ -179,6 +179,7 @@ case, both are recorded.
 |---|---|---|
 | Plans, subscriptions, invoices, refunds, payment methods | **B** | Five services and four routes, all tested, `/dashboard/billing` and `/dashboard/settings/billing` pages. **Limit**: no real payment processor is connected, so no money has ever moved through this code. |
 | Credits + usage ledger | **A** | `credit.service.ts`, `usage.ts`, real aggregation, `/dashboard/usage` page. |
+| Agent/workflow run metering | **B** | `agents/metering.ts`, 11 tests, wired into every terminal transition (start, approve, reject, scheduler). Usage is always counted even when deduction cannot happen — the record then says `deducted: false` and why. Deterministic generate-steps cost zero (no tokens were bought; charging would fabricate a cost); tool calls are charged regardless of plan origin. **Limit**: no pre-run budget enforcement — a workspace with zero balance can still start runs, discovered at deduction time rather than blocked upfront. |
 | Webhook handling with replay protection | **A** | `billingWebhook.ts`, `ProcessedWebhookEvent` model, dedup race condition fixed. |
 | Live payment processing | **E** | **ACTIVATION BLOCKED**: requires a production payment account — a founder/business decision, not an engineering one. |
 
