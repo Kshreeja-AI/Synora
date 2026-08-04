@@ -14,6 +14,7 @@ import {
   MIN_INTERVAL_MS,
   collectDue,
   computeNextFire,
+  isKnownTimeZone,
   createSchedule,
   deleteSchedule,
   getSchedule,
@@ -266,3 +267,109 @@ describe('schedule durability', () => {
     expect(getSchedule(s.id, WS)!.missedOccurrences).toBe(0);
   });
 });
+
+describe('daily schedules in a real time zone', () => {
+  function daily(atMinuteUtc: number, timeZone: string | undefined, now: number) {
+    return createSchedule(
+      { workspaceId: WS, workflowId: 'wf_1', kind: 'daily', atMinuteUtc, timeZone, createdBy: 'u1' },
+      now,
+    );
+  }
+
+  function localTimeOf(instant: number, timeZone: string): string {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(instant));
+  }
+
+  it('refuses a zone the runtime does not know, rather than falling back to UTC', () => {
+    // A typo that silently became UTC would fire at the wrong hour every
+    // day, forever, with nothing anywhere to see.
+    expect(isKnownTimeZone('Europe/Atlantis')).toBe(false);
+    expect(() => daily(540, 'Europe/Atlantis', T0)).toThrow(/unknown time zone/);
+  });
+
+  it('refuses a time zone on an interval schedule, which has no time of day', () => {
+    expect(() =>
+      createSchedule({
+        workspaceId: WS,
+        workflowId: 'wf_1',
+        kind: 'interval',
+        intervalMs: HOUR,
+        timeZone: 'Europe/London',
+        createdBy: 'u1',
+      }),
+    ).toThrow(/must not specify a time zone/);
+  });
+
+  it('fires at the chosen local hour, not the same UTC hour', () => {
+    // 09:00 in New York in January is 14:00 UTC — five hours off what the
+    // old UTC-only behaviour would have produced.
+    const schedule = daily(9 * 60, 'America/New_York', Date.UTC(2026, 0, 15, 0, 0));
+    expect(localTimeOf(schedule.nextFireAt, 'America/New_York')).toBe('09:00');
+    expect(new Date(schedule.nextFireAt).getUTCHours()).toBe(14);
+  });
+
+  it('keeps the same local time across a spring-forward boundary', () => {
+    // The US moves to DST on 8 March 2026. A schedule set for 09:00 local
+    // must still be 09:00 local afterwards, even though the UTC hour
+    // changed — adding a flat 24 hours would have drifted it.
+    // 05:00 in New York on 7 March — BEFORE that day's 09:00, so the
+    // first fire is on EST and the second lands after the switch. Placing
+    // it after 09:00 would put both fires on EDT and prove nothing.
+    const before = Date.UTC(2026, 2, 7, 10, 0);
+    const schedule = daily(9 * 60, 'America/New_York', before);
+    expect(localTimeOf(schedule.nextFireAt, 'America/New_York')).toBe('09:00');
+    expect(new Date(schedule.nextFireAt).getUTCHours()).toBe(14);
+
+    const next = computeNextFire(schedule, schedule.nextFireAt);
+    expect(localTimeOf(next, 'America/New_York')).toBe('09:00');
+    // Same wall clock, different UTC hour: that IS the point.
+    expect(new Date(next).getUTCHours()).toBe(13);
+    // And the gap between them is 23 hours, because that local day was.
+    expect(next - schedule.nextFireAt).toBe(23 * HOUR);
+  });
+
+  it('keeps the same local time across an autumn-back boundary', () => {
+    // 1 November 2026, the other direction: a 25-hour local day. Again
+    // placed before the 31st's 09:00 so the pair straddles the switch.
+    const before = Date.UTC(2026, 9, 31, 10, 0);
+    const schedule = daily(9 * 60, 'America/New_York', before);
+    const next = computeNextFire(schedule, schedule.nextFireAt);
+    expect(localTimeOf(next, 'America/New_York')).toBe('09:00');
+    expect(next - schedule.nextFireAt).toBe(25 * HOUR);
+  });
+
+  it('advances to tomorrow when today\'s local time has passed', () => {
+    const morning = Date.UTC(2026, 5, 15, 18, 0); // 14:00 in New York
+    const schedule = daily(9 * 60, 'America/New_York', morning);
+    // 09:00 today is behind us, so the next one is tomorrow — still 09:00.
+    expect(localTimeOf(schedule.nextFireAt, 'America/New_York')).toBe('09:00');
+    expect(schedule.nextFireAt).toBeGreaterThan(morning);
+    expect(schedule.nextFireAt - morning).toBeLessThan(DAY);
+  });
+
+  it('leaves a zone-less schedule on exactly its old UTC behaviour', () => {
+    // Every schedule created before zones existed meant UTC, and must
+    // keep meaning UTC after this change.
+    const schedule = daily(9 * 60, undefined, T0);
+    expect(schedule.nextFireAt).toBe(T0 + 9 * HOUR);
+    expect(schedule.timeZone).toBeUndefined();
+  });
+
+  it('survives a restart with its zone intact', async () => {
+    const schedule = daily(9 * 60, 'Asia/Kolkata', Date.UTC(2026, 5, 15, 0, 0));
+    await persistSchedule(schedule.id);
+
+    resetSchedules();
+    await hydrateSchedules(Date.UTC(2026, 5, 15, 0, 0));
+
+    const loaded = getSchedule(schedule.id, WS)!;
+    expect(loaded.timeZone).toBe('Asia/Kolkata');
+    expect(localTimeOf(loaded.nextFireAt, 'Asia/Kolkata')).toBe('09:00');
+  });
+});
+

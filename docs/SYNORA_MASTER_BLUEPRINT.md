@@ -606,11 +606,33 @@ The surface is `TriggerPanel` on `/workflows`. It shows the full URL
 exactly once, at creation, and says so; every later view shows only a
 non-secret prefix, because no endpoint will ever return the secret again.
 
+**Also implemented: time zones for daily schedules.** A daily schedule
+names an IANA zone and runs at that local time — 09:00 in New York, not
+09:00 UTC, which was five hours wrong for anyone who did not live in
+Greenwich.
+
+The interesting part is DST. The next fire is computed by walking
+**calendar days in the zone**, not by adding 24 hours: on a transition the
+local day is 23 or 25 hours long, and a flat day would drift the wall
+clock the user actually chose. The offset itself comes from the runtime's
+own zone database, measured by rendering the instant in that zone and
+comparing — two passes, because the offset depends on the answer, and a
+single guess can land on the far side of a boundary. Both directions are
+pinned by tests against real 2026 transitions, asserting the 23-hour and
+25-hour gaps explicitly.
+
+An unknown zone is **refused by name** rather than quietly treated as
+UTC: `Europe/Atlantis` looks exactly like a real zone, and a silent
+fallback would fire at the wrong hour every day forever with nothing
+anywhere to see. A zone on an interval schedule is refused too — an
+interval has no time of day, and accepting a meaningless field implies it
+does something. Schedules created before this existed carry no zone and
+keep meaning UTC, unchanged.
+
 **Missing, named:** internal event triggers (nothing yet reacts to a file
-arriving or a document changing — only an external HTTP call or a clock);
-and timezone support (UTC only). The scheduler is also tested only against
-an injected clock — it has never been observed running over real elapsed
-time.
+arriving or a document changing — only an external HTTP call or a clock).
+The scheduler is also tested only against an injected clock — it has never
+been observed running over real elapsed time.
 
 ### 5.11 Canvas — Partially implemented (`apps/backend/src/canvas/`, `/canvas`)
 

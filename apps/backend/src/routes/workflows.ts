@@ -106,7 +106,9 @@ function toHttpError(err: unknown): unknown {
     message.includes('time of day') ||
     message.includes('specify an interval') ||
     message.includes('atMinuteUtc') ||
-    message.includes('intervalMs')
+    message.includes('intervalMs') ||
+    message.includes('unknown time zone') ||
+    message.includes('must not specify a time zone')
   ) {
     return new ValidationException(message);
   }
@@ -268,6 +270,10 @@ const scheduleSchema = z.object({
   kind: z.enum(['interval', 'daily']),
   intervalMs: z.number().int().positive().optional(),
   atMinuteUtc: z.number().int().min(0).max(1439).optional(),
+  // Validated by the registry against the runtime's own zone database
+  // rather than by a pattern here — the runtime is the only authority on
+  // which zones actually exist.
+  timeZone: z.string().max(100).optional(),
 });
 
 router.get('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthRequest, res, next) => {

@@ -30,6 +30,20 @@ import {
  * the system is not claiming to the second.
  */
 
+/**
+ * The browser's own zone, which is very probably the one the person
+ * means. Offered as the default rather than assumed: the field is
+ * visible, so a schedule shared with a colleague elsewhere is not
+ * silently in someone else's morning.
+ */
+function localZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
 function describe(schedule: WorkflowSchedule): string {
   if (schedule.kind === 'interval') {
     const minutes = Math.round((schedule.intervalMs ?? 0) / 60_000);
@@ -42,7 +56,9 @@ function describe(schedule: WorkflowSchedule): string {
   const at = schedule.atMinuteUtc ?? 0;
   const hh = String(Math.floor(at / 60)).padStart(2, '0');
   const mm = String(at % 60).padStart(2, '0');
-  return `daily at ${hh}:${mm} UTC`;
+  // The zone is always named, never left to be assumed — "09:00" without
+  // one is the ambiguity this feature exists to remove.
+  return `daily at ${hh}:${mm} ${schedule.timeZone ?? 'UTC'}`;
 }
 
 export function SchedulePanel({
@@ -54,6 +70,7 @@ export function SchedulePanel({
 }) {
   const [kind, setKind] = useState<ScheduleKind>('daily');
   const [hours, setHours] = useState(9);
+  const [timeZone, setTimeZone] = useState(localZone());
   const [intervalMinutes, setIntervalMinutes] = useState(60);
 
   const { data: schedules = [], isLoading } = useWorkflowSchedules(workspaceId, workflowId);
@@ -67,7 +84,7 @@ export function SchedulePanel({
         workflowId,
         input:
           kind === 'daily'
-            ? { kind, atMinuteUtc: hours * 60 }
+            ? { kind, atMinuteUtc: hours * 60, timeZone }
             : { kind, intervalMs: intervalMinutes * 60_000 },
       },
       {
@@ -173,20 +190,33 @@ export function SchedulePanel({
         </div>
 
         {kind === 'daily' ? (
-          <div className="space-y-1">
-            <label htmlFor="sched-hour" className="text-xs font-medium">
-              Hour (UTC)
-            </label>
-            <input
-              id="sched-hour"
-              type="number"
-              min={0}
-              max={23}
-              value={hours}
-              onChange={(e) => setHours(Number(e.target.value))}
-              className="h-9 w-20 rounded-md border border-input bg-background px-2 text-sm"
-            />
-          </div>
+          <>
+            <div className="space-y-1">
+              <label htmlFor="sched-hour" className="text-xs font-medium">
+                Hour
+              </label>
+              <input
+                id="sched-hour"
+                type="number"
+                min={0}
+                max={23}
+                value={hours}
+                onChange={(e) => setHours(Number(e.target.value))}
+                className="h-9 w-20 rounded-md border border-input bg-background px-2 text-sm"
+              />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="sched-zone" className="text-xs font-medium">
+                Time zone
+              </label>
+              <input
+                id="sched-zone"
+                value={timeZone}
+                onChange={(e) => setTimeZone(e.target.value)}
+                className="h-9 w-56 rounded-md border border-input bg-background px-2 text-sm"
+              />
+            </div>
+          </>
         ) : (
           <div className="space-y-1">
             <label htmlFor="sched-interval" className="text-xs font-medium">
@@ -210,9 +240,10 @@ export function SchedulePanel({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Times are UTC, and a run starts at or shortly after its scheduled moment — the clock is
-        checked every 30 seconds. A scheduled run uses your permissions, so it can only do what
-        you can do.
+        A daily run happens at that time in the zone you name, and keeps happening at that
+        local time when the clocks change. A run starts at or shortly after its scheduled
+        moment — the clock is checked every 30 seconds. A scheduled run uses your permissions,
+        so it can only do what you can do.
       </p>
     </section>
   );

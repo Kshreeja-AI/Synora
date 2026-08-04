@@ -72,7 +72,32 @@ describe('SchedulePanel', () => {
     expect(screen.getByText(/runs only when someone starts it/)).toBeInTheDocument();
   });
 
-  it('describes a daily schedule in UTC and an interval in plain units', () => {
+  it('names the zone a daily schedule runs in, and keeps UTC for older ones', () => {
+    vi.mocked(workflowsApi.useWorkflowSchedules).mockReturnValue({
+      data: [
+        makeSchedule({ timeZone: 'Europe/London' }),
+        // Created before zones existed: it meant UTC then and must still
+        // say UTC now.
+        makeSchedule({ id: 'sched_old' }),
+      ],
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText('daily at 09:00 Europe/London')).toBeInTheDocument();
+    expect(screen.getByText('daily at 09:00 UTC')).toBeInTheDocument();
+  });
+
+  it('offers a time zone field defaulting to something real', async () => {
+    renderPanel();
+    const field = screen.getByLabelText(/time zone/i) as HTMLInputElement;
+    // Whatever the browser reports, it must be a zone the runtime knows —
+    // an empty or invented default would be refused by the server.
+    expect(field.value.length).toBeGreaterThan(0);
+    expect(() => new Intl.DateTimeFormat('en-US', { timeZone: field.value })).not.toThrow();
+  });
+
+  it('describes a daily schedule with its zone and an interval in plain units', () => {
     vi.mocked(workflowsApi.useWorkflowSchedules).mockReturnValue({
       data: [
         makeSchedule(),
@@ -82,7 +107,7 @@ describe('SchedulePanel', () => {
     } as never);
 
     renderPanel();
-    expect(screen.getByText('daily at 09:00 UTC')).toBeInTheDocument();
+    expect(screen.getByText(/daily at 09:00/)).toBeInTheDocument();
     expect(screen.getByText('every 2 hours')).toBeInTheDocument();
   });
 
@@ -137,12 +162,17 @@ describe('SchedulePanel', () => {
     vi.mocked(workflowsApi.useCreateSchedule).mockReturnValue(idle({ mutate: create }) as never);
 
     renderPanel();
-    await user.clear(screen.getByLabelText(/hour \(utc\)/i));
-    await user.type(screen.getByLabelText(/hour \(utc\)/i), '14');
+    await user.clear(screen.getByLabelText(/^hour$/i));
+    await user.type(screen.getByLabelText(/^hour$/i), '14');
     await user.click(screen.getByRole('button', { name: /add schedule/i }));
 
     expect(create).toHaveBeenCalledWith(
-      { workflowId: 'wf_1', input: { kind: 'daily', atMinuteUtc: 14 * 60 } },
+      {
+        workflowId: 'wf_1',
+        // The zone travels with the time. Sending an hour without one is
+        // the ambiguity this field exists to remove.
+        input: { kind: 'daily', atMinuteUtc: 14 * 60, timeZone: expect.any(String) },
+      },
       expect.anything(),
     );
   });
@@ -169,6 +199,8 @@ describe('SchedulePanel', () => {
     // Both are things a user would otherwise have to guess, and guessing
     // wrong about either matters.
     expect(screen.getByText(/at or shortly after/)).toBeInTheDocument();
+    // The DST promise, said rather than left to be discovered.
+    expect(screen.getByText(/when the clocks change/)).toBeInTheDocument();
     expect(screen.getByText(/uses your permissions/)).toBeInTheDocument();
   });
 });

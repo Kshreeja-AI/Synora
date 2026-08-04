@@ -111,6 +111,8 @@ export interface WorkflowSchedule {
   kind: ScheduleKind;
   intervalMs?: number;
   atMinuteUtc?: number;
+  /** Absent means UTC — what every schedule meant before zones existed. */
+  timeZone?: string;
   enabled: boolean;
   createdBy: string;
   createdAt: number;
@@ -129,6 +131,7 @@ export interface CreateScheduleInput {
   kind: ScheduleKind;
   intervalMs?: number;
   atMinuteUtc?: number;
+  timeZone?: string;
 }
 
 /**
