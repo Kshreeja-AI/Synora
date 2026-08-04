@@ -33,6 +33,7 @@ vi.mock('@/lib/api/agents', async () => {
     useApproveStep: vi.fn(),
     useRejectStep: vi.fn(),
     useCancelRun: vi.fn(),
+    useUpdateAgent: vi.fn(),
   };
 });
 
@@ -94,6 +95,7 @@ beforeEach(() => {
   vi.mocked(agentsApi.useApproveStep).mockReturnValue(idleMutation() as never);
   vi.mocked(agentsApi.useRejectStep).mockReturnValue(idleMutation() as never);
   vi.mocked(agentsApi.useCancelRun).mockReturnValue(idleMutation() as never);
+  vi.mocked(agentsApi.useUpdateAgent).mockReturnValue(idleMutation() as never);
 });
 
 describe('agents page', () => {
@@ -238,6 +240,54 @@ describe('agents page', () => {
 
     await waitFor(() => expect(screen.getByText('Task')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /stop this run/i })).not.toBeInTheDocument();
+  });
+
+  it('shows memory access in the summary only when it is granted', async () => {
+    renderPage();
+    await screen.findByText('Researcher');
+    // The default is no access, and showing "memory: none" for every agent
+    // would make the exceptions harder to spot.
+    expect(screen.queryByText(/memory:/)).not.toBeInTheDocument();
+
+    vi.mocked(agentsApi.useAgents).mockReturnValue({
+      data: [{ ...agent, memoryAccess: 'both' }],
+      isLoading: false,
+      error: null,
+    } as never);
+    renderPage();
+    expect(await screen.findByText(/memory: both/)).toBeInTheDocument();
+  });
+
+  it('says editing creates a new version rather than changing this one', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+
+    // A user who thinks they edited in place will be confused later by a
+    // run history pointing at "old" configurations. Said before the button
+    // is pressed, not after.
+    expect(screen.getByText(/Saving creates version 2/)).toBeInTheDocument();
+    expect(screen.getByText(/Version 1 is kept/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save as version 2/i })).toBeInTheDocument();
+  });
+
+  it('switches to the new version after saving an edit', async () => {
+    const user = userEvent.setup();
+    const updated = { ...agent, id: 'agent_2', version: 2, previousVersionId: agent.id };
+    vi.mocked(agentsApi.useUpdateAgent).mockReturnValue(
+      idleMutation({ mutate: vi.fn((_v, opts) => opts?.onSuccess?.(updated)) }) as never,
+    );
+
+    renderPage();
+    await user.click(await screen.findByText('Researcher'));
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+    await user.click(screen.getByRole('button', { name: /save as version 2/i }));
+
+    // Re-opening edit must offer version 3, proving the page moved to the
+    // new id rather than holding the superseded one.
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+    expect(screen.getByRole('button', { name: /save as version 3/i })).toBeInTheDocument();
   });
 
   it('shows an empty state before any agent exists', async () => {

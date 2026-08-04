@@ -359,9 +359,14 @@ still learn where it came from. Memories are filed EPISODIC — a record of
 something that happened, not a fact about the world — and only successful
 runs are recorded, so a broken run cannot poison future recall.
 
-**Missing, named:** editing an agent from the screen (the API and client
-hook exist; no UI calls them — agents are created and archived, not
-edited); no UI control for memory access; recall quality is UNMEASURED
+Memory access and agent editing are both on the screen now. The edit
+dialog states BEFORE the save button that it creates version N+1 and keeps
+version N — a user who believes they edited in place would be confused
+later by a run history pointing at "old" configurations — and the page
+switches to the new version's id on save, because the id it held is now a
+superseded version.
+
+**Missing, named:** recall quality is UNMEASURED
 (with no embedding provider, retrieval falls back to keyword search);
 live progress for a long run (the page shows the state the
 request returned, so a run must be reopened to see movement); usage/cost

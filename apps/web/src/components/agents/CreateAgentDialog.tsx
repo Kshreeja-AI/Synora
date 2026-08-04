@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Button } from '@synora/design-system';
 import { toast } from 'sonner';
-import { useCreateAgent, type ApprovalPolicy } from '@/lib/api/agents';
+import { useCreateAgent, type ApprovalPolicy, type MemoryAccess } from '@/lib/api/agents';
 
 /**
  * Creating an agent is creating something that will act on the user's
@@ -30,6 +30,7 @@ export function CreateAgentDialog({
   const [instructions, setInstructions] = useState('');
   const [allowedTools, setAllowedTools] = useState('');
   const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicy>('mutations');
+  const [memoryAccess, setMemoryAccess] = useState<MemoryAccess>('none');
   const create = useCreateAgent(workspaceId);
 
   if (!open) return null;
@@ -40,6 +41,7 @@ export function CreateAgentDialog({
     setInstructions('');
     setAllowedTools('');
     setApprovalPolicy('mutations');
+    setMemoryAccess('none');
   }
 
   function submit(e: React.FormEvent) {
@@ -54,6 +56,7 @@ export function CreateAgentDialog({
           .map((t) => t.trim())
           .filter(Boolean),
         approvalPolicy,
+        memoryAccess,
       },
       {
         onSuccess: () => {
@@ -156,6 +159,28 @@ export function CreateAgentDialog({
           <p className="text-xs text-muted-foreground">
             A step that does not declare itself read-only is treated as if it changes
             something, so &quot;never asks&quot; is always a deliberate choice.
+          </p>
+        </fieldset>
+
+        <fieldset className="space-y-1">
+          <legend className="text-sm font-medium">Workspace memory</legend>
+          <select
+            value={memoryAccess}
+            onChange={(e) => setMemoryAccess(e.target.value as MemoryAccess)}
+            aria-label="Memory access"
+            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+          >
+            <option value="none">No access (recommended)</option>
+            <option value="recall">Read past notes and results</option>
+            <option value="record">Write down what it did</option>
+            <option value="both">Read and write</option>
+          </select>
+          {/* Stated because "memory" sounds harmless and is not: it is
+              whatever your workspace has written down. */}
+          <p className="text-xs text-muted-foreground">
+            Reading lets this agent see your workspace&apos;s saved notes and past results — but
+            only the ones you could already see yourself. Writing adds a record of each
+            successful run, labelled with what produced it.
           </p>
         </fieldset>
 

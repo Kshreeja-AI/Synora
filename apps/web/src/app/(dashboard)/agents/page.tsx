@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, Bot, Loader2, Play, Plus } from 'lucide-react';
+import { Archive, Bot, Loader2, Pencil, Play, Plus } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -16,6 +16,7 @@ import {
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { RunDetail } from '@/components/agents/RunDetail';
 import { RuntimeNotice } from '@/components/agents/RuntimeNotice';
+import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
 
 /**
  * The agent workspace: define agents, run them, watch what they did, and
@@ -33,6 +34,7 @@ export default function AgentsPage() {
   const [task, setTask] = useState('');
   const [lastRuntime, setLastRuntime] = useState<RunRuntime | null>(null);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   const { data: agents = [], isLoading, error } = useAgents(workspaceId);
   const { data: runs = [] } = useAgentRuns(workspaceId, {
@@ -127,6 +129,9 @@ export default function AgentsPage() {
                       : agent.approvalPolicy === 'everything'
                         ? 'every tool'
                         : 'before changes'}
+                    {agent.memoryAccess && agent.memoryAccess !== 'none'
+                      ? ` · memory: ${agent.memoryAccess}`
+                      : ''}
                   </p>
                 </button>
               </li>
@@ -148,6 +153,15 @@ export default function AgentsPage() {
                         {selectedAgent.description || selectedAgent.instructions}
                       </p>
                     </div>
+                    <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditOpen(true)}
+                    >
+                      <Pencil className="mr-1 h-4 w-4" />
+                      Edit
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -165,6 +179,7 @@ export default function AgentsPage() {
                       <Archive className="mr-1 h-4 w-4" />
                       Archive
                     </Button>
+                    </div>
                   </div>
 
                   <p className="text-xs text-muted-foreground">
@@ -244,6 +259,18 @@ export default function AgentsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
       />
+
+      {selectedAgent && (
+        <EditAgentDialog
+          workspaceId={workspaceId}
+          agent={selectedAgent}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          // Selecting the NEW version: the id held a moment ago is now a
+          // previous version, still resolvable but no longer current.
+          onSaved={(next) => setSelectedAgent(next)}
+        />
+      )}
     </div>
   );
 }

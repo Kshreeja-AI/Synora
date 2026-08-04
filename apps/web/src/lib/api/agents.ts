@@ -21,6 +21,13 @@ import { api } from './client';
 
 export type ApprovalPolicy = 'nothing' | 'mutations' | 'everything';
 
+/**
+ * Whether an agent may read the workspace's memory, write to it, both, or
+ * neither. Absent means none — the server fails closed, and the client
+ * must not present a friendlier default than the server enforces.
+ */
+export type MemoryAccess = 'none' | 'recall' | 'record' | 'both';
+
 export type RunState =
   | 'pending'
   | 'planning'
@@ -67,6 +74,7 @@ export interface Agent {
   instructions: string;
   allowedTools: string[];
   approvalPolicy: ApprovalPolicy;
+  memoryAccess?: MemoryAccess;
   limits: AgentLimits;
   version: number;
   previousVersionId?: string;
@@ -145,6 +153,7 @@ export interface CreateAgentInput {
   instructions: string;
   allowedTools?: string[];
   approvalPolicy?: ApprovalPolicy;
+  memoryAccess?: MemoryAccess;
   limits?: Partial<AgentLimits>;
 }
 
