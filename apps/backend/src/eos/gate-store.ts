@@ -18,6 +18,22 @@ import type { GateMeasurement } from './launch-gates.js';
  * liability, so it stays duplicated and explicit. A third should trigger
  * extraction into one generic keyed store, and this comment is the marker
  * for whoever adds it.
+ *
+ * STILL TWO, CHECKED 2026-08-04. The count was re-examined and the other
+ * candidates are not instances of this shape:
+ *
+ *   - `EngineeringHistoryStore` is an append-only bounded log with query
+ *     filters. Same motive — surviving the process — but a different data
+ *     structure, and folding it in would produce an abstraction that fits
+ *     neither.
+ *   - The benchmark registry is a plain in-memory Map with no persistence
+ *     seam at all, so there is nothing to consolidate. Giving it one is
+ *     blocked on the evaluation datasets persisting too: a registry that
+ *     outlives its datasets deadlocks, which was reachable and is now
+ *     guarded in `benchmark-importer.ts`.
+ *
+ * So the trigger has not fired. Extracting a generic store for two callers
+ * would be an abstraction built to satisfy a plan rather than a need.
  */
 export interface GateStore {
   readonly kind: string;

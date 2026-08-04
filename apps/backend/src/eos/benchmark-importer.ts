@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { addCase, createDataset, deleteDataset } from './evaluation-datasets.js';
+import { addCase, createDataset, deleteDataset, getCases } from './evaluation-datasets.js';
 import { runEvaluation, type CaseExecutor } from './evaluation-runner.js';
 import { recordGateMeasurement, persistGateMeasurement } from './launch-gates.js';
 
@@ -200,14 +200,33 @@ export function importBenchmark(
   if (existing) {
     if (existing.contentHash === contentHash) {
       // Same declared version, same content: importing again changes
-      // nothing and should not pretend to.
-      return { ...existing, alreadyImported: true };
+      // nothing and should not pretend to — but only if the cases are
+      // still there.
+      //
+      // THE REGISTRY MUST NEVER OUTLIVE ITS DATASETS. If it does, this
+      // branch reports "already imported" while the dataset is empty, the
+      // gate measures over zero cases, and re-importing the identical
+      // content is refused as a no-op — so the benchmark becomes
+      // permanently unusable and the reproducibility check is what blocks
+      // the recovery. Verified reachable: clearing datasets without
+      // clearing the registry produced exactly that state.
+      //
+      // The hash already proves the supplied records are the same content,
+      // so repopulating from them is safe and the deterministic split
+      // reproduces the identical case ids.
+      const publicIntact = getCases(datasetId).length === existing.publicCases;
+      const holdoutIntact = getCases(holdoutDatasetId).length === existing.holdoutCases;
+      if (publicIntact && holdoutIntact) {
+        return { ...existing, alreadyImported: true };
+      }
+      imported.delete(datasetId);
+    } else {
+      throw new Error(
+        `benchmark ${manifest.benchmarkId}@${manifest.sourceVersion} is already imported with different ` +
+          `content (hash ${existing.contentHash.slice(0, 12)} vs ${contentHash.slice(0, 12)}). The same ` +
+          `declared version must always mean the same questions; import the new content under a new version.`,
+      );
     }
-    throw new Error(
-      `benchmark ${manifest.benchmarkId}@${manifest.sourceVersion} is already imported with different ` +
-        `content (hash ${existing.contentHash.slice(0, 12)} vs ${contentHash.slice(0, 12)}). The same ` +
-        `declared version must always mean the same questions; import the new content under a new version.`,
-    );
   }
 
   const provenance = `imported from ${manifest.source}@${manifest.sourceVersion} (license: ${manifest.license})`;

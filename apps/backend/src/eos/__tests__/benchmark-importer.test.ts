@@ -112,6 +112,40 @@ describe('benchmark-importer', () => {
       expect(getDataset(first.datasetId)!.version).toBe(versionBefore);
     });
 
+    it('repopulates when the registry outlived its datasets', () => {
+      // A reachable deadlock, not a hypothetical. With the registry
+      // remembering an import whose cases are gone, 'already imported'
+      // was returned, nothing was restored, the gate measured over zero
+      // cases, and re-importing the identical content could not fix it —
+      // the reproducibility check was what blocked the recovery.
+      const first = importBenchmark(manifest, records(50));
+      expect(getCases(first.datasetId).length).toBe(first.publicCases);
+
+      resetDatasets();
+      expect(getCases(first.datasetId)).toHaveLength(0);
+
+      const second = importBenchmark(manifest, records(50));
+
+      expect(second.alreadyImported).toBe(false);
+      expect(getCases(second.datasetId).length).toBe(second.publicCases);
+      expect(getCases(second.holdoutDatasetId).length).toBe(second.holdoutCases);
+      // The hash proves it is the same content, so the deterministic split
+      // must reproduce exactly — recovery cannot quietly change the data.
+      expect(second.contentHash).toBe(first.contentHash);
+      expect(second.publicCases).toBe(first.publicCases);
+    });
+
+    it('still reports a genuine no-op when the datasets are intact', () => {
+      // The repair path must not turn every re-import into a rewrite.
+      const first = importBenchmark(manifest, records(20));
+      const version = getDataset(first.datasetId)!.version;
+
+      const second = importBenchmark(manifest, records(20));
+
+      expect(second.alreadyImported).toBe(true);
+      expect(getDataset(first.datasetId)!.version).toBe(version);
+    });
+
     it('refuses the same declared version with different content', () => {
       importBenchmark(manifest, records(20));
 
