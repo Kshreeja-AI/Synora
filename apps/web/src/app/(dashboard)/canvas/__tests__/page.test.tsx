@@ -375,10 +375,79 @@ describe('canvas page', () => {
       await openCanvas(user);
       await user.click(screen.getByRole('checkbox', { name: /select note block/i }));
 
-      expect(screen.getByText(/1 selected — they move together/)).toBeInTheDocument();
+      expect(screen.getByText(/1 selected — move or delete them together/)).toBeInTheDocument();
 
       await user.click(screen.getByRole('button', { name: /clear selection/i }));
-      expect(screen.queryByText(/selected — they move together/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/selected — move or delete them together/),
+      ).not.toBeInTheDocument();
+    });
+
+    it('deletes every selected block in one action', async () => {
+      const user = userEvent.setup();
+      const twoBlocks = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', x: 100, y: 40 }],
+      };
+      const removeAsync = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useRemoveBlock).mockReturnValue(
+        idle({ mutateAsync: removeAsync }) as never,
+      );
+
+      renderPage();
+      await openCanvas(user);
+      for (const box of screen.getAllByRole('checkbox', { name: /select note block/i })) {
+        await user.click(box);
+      }
+      await user.click(screen.getByRole('button', { name: /delete selected/i }));
+
+      expect(removeAsync).toHaveBeenCalledTimes(2);
+      expect(removeAsync).toHaveBeenCalledWith({ canvasId: 'canvas_1', blockId: 'b1' });
+      expect(removeAsync).toHaveBeenCalledWith({ canvasId: 'canvas_1', blockId: 'b2' });
+      // Deleted blocks can no longer be a stale part of a selection.
+      expect(screen.queryByText(/selected — move or delete them together/)).not.toBeInTheDocument();
+    });
+
+    it('undoes a group delete in one press, restoring every block and the line between them', async () => {
+      const user = userEvent.setup();
+      const withConnection = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', content: 'Other', x: 300 }],
+        connections: [{ id: 'c1', from: 'b1', to: 'b2', createdAt: 1 }],
+      };
+      const removeAsync = vi.fn().mockResolvedValue(undefined);
+      const addAsync = vi
+        .fn()
+        .mockResolvedValueOnce({ ...withConnection.blocks[0], id: 'b1_new' })
+        .mockResolvedValueOnce({ ...withConnection.blocks[1], id: 'b2_new' });
+      const connectAsync = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: withConnection } as never);
+      vi.mocked(canvasApi.useRemoveBlock).mockReturnValue(
+        idle({ mutateAsync: removeAsync }) as never,
+      );
+      vi.mocked(canvasApi.useAddBlock).mockReturnValue(idle({ mutateAsync: addAsync }) as never);
+      vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(
+        idle({ mutateAsync: connectAsync }) as never,
+      );
+
+      renderPage();
+      await openCanvas(user);
+      for (const box of screen.getAllByRole('checkbox', { name: /select note block/i })) {
+        await user.click(box);
+      }
+      await user.click(screen.getByRole('button', { name: /delete selected/i }));
+
+      // One action, one press to reverse it — not one press per block.
+      await user.click(await screen.findByRole('button', { name: /undo deleting 2 blocks/i }));
+
+      expect(addAsync).toHaveBeenCalledTimes(2);
+      // The connection between them comes back too, re-pointed at both new
+      // ids — restoring a lonely pair of blocks with the line between them
+      // quietly dropped would still be losing part of the structure.
+      expect(connectAsync).toHaveBeenCalledWith(
+        expect.objectContaining({ from: 'b1_new', to: 'b2_new' }),
+      );
     });
 
     it('keeps the keyboard path alongside the pointer one', async () => {

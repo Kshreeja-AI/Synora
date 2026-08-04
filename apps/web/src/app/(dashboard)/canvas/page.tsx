@@ -130,6 +130,18 @@ type UndoEntry =
       connections: CanvasConnection[];
       label: string;
     }
+  /**
+   * Several blocks deleted as one gesture — the delete-selection sibling
+   * of `moveBlocks`. Restoring them one undo entry at a time would turn
+   * one action (delete the selection) into several presses to reverse,
+   * exactly the asymmetry `moveBlocks` already exists to avoid.
+   */
+  | {
+      kind: 'restoreBlocks';
+      blocks: CanvasBlock[];
+      connections: CanvasConnection[];
+      label: string;
+    }
   | { kind: 'moveBlock'; blockId: string; x: number; y: number; label: string }
   /**
    * Several blocks moved as one gesture. A separate kind rather than a
@@ -160,7 +172,7 @@ export default function CanvasPage() {
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [drag, setDrag] = useState<DragState | null>(null);
   /**
-   * Blocks chosen to move together.
+   * Blocks chosen to move or delete together.
    *
    * SELECTION IS BY AN EXPLICIT TOGGLE, not by clicking the block. The
    * body of a text block is an editable field — making a click select
@@ -207,7 +219,7 @@ export default function CanvasPage() {
    * functionally the state that existed before. Link blocks point at
    * conversations and runs by THEIR ids, which are untouched.
    */
-  function undo() {
+  async function undo() {
     if (!canvas || undoStack.length === 0) return;
     const entry = undoStack[undoStack.length - 1];
     setUndoStack((stack) => stack.slice(0, -1));
@@ -280,6 +292,42 @@ export default function CanvasPage() {
           },
         );
         return;
+      case 'restoreBlocks': {
+        // Awaited rather than fire-and-forget: a connection between two
+        // blocks that were BOTH just deleted must be re-created against
+        // their NEW ids, which only exist once each block's own restore
+        // has returned.
+        const idMap = new Map<string, string>();
+        try {
+          for (const block of entry.blocks) {
+            const restored = await addBlock.mutateAsync({
+              canvasId: canvas.id,
+              input: {
+                kind: block.kind,
+                content: block.content,
+                target: block.target,
+                targetId: block.targetId,
+                x: block.x,
+                y: block.y,
+                width: block.width,
+                height: block.height,
+              },
+            });
+            idMap.set(block.id, restored.id);
+          }
+          for (const c of entry.connections) {
+            await connect.mutateAsync({
+              canvasId: canvas.id,
+              from: idMap.get(c.from) ?? c.from,
+              to: idMap.get(c.to) ?? c.to,
+              label: c.label,
+            });
+          }
+        } catch (e) {
+          onError(e instanceof Error ? e : new Error('Restore failed'));
+        }
+        return;
+      }
     }
   }
 
@@ -310,6 +358,47 @@ export default function CanvasPage() {
         onError: (e) => toast.error(e.message),
       },
     );
+  }
+
+  /**
+   * Deletes every selected block in one action, undoable in one action —
+   * the delete-selection sibling of the multi-move a selection already
+   * supports. A partial failure (some blocks deleted, one refused) still
+   * clears and un-tracks whatever DID delete, rather than leaving the
+   * selection claiming blocks that are already gone.
+   */
+  async function deleteSelected() {
+    if (!canvas || selected.size === 0) return;
+    const ids = Array.from(selected);
+    const blocksToDelete = canvas.blocks.filter((b) => ids.includes(b.id));
+    // Captured BEFORE the requests, same reasoning as the single-block
+    // delete: the server removes touching connections with the block, and
+    // they cannot be read back afterwards.
+    const touching = connections.filter((c) => ids.includes(c.from) || ids.includes(c.to));
+
+    const deleted: CanvasBlock[] = [];
+    for (const block of blocksToDelete) {
+      try {
+        await removeBlock.mutateAsync({ canvasId: canvas.id, blockId: block.id });
+        deleted.push(block);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : `Could not delete the ${block.kind} block`);
+      }
+    }
+    if (deleted.length === 0) return;
+
+    const deletedIds = new Set(deleted.map((b) => b.id));
+    setSelected((current) => {
+      const next = new Set(current);
+      for (const id of deletedIds) next.delete(id);
+      return next;
+    });
+    pushUndo({
+      kind: 'restoreBlocks',
+      blocks: deleted,
+      connections: touching.filter((c) => deletedIds.has(c.from) || deletedIds.has(c.to)),
+      label: `deleting ${deleted.length} block${deleted.length === 1 ? '' : 's'}`,
+    });
   }
 
   /**
@@ -697,8 +786,12 @@ export default function CanvasPage() {
                   {selected.size > 0 && (
                     <>
                       <span className="text-xs text-muted-foreground">
-                        {selected.size} selected — they move together
+                        {selected.size} selected — move or delete them together
                       </span>
+                      <Button variant="outline" size="sm" onClick={deleteSelected}>
+                        <Trash2 className="mr-1 h-3 w-3" />
+                        Delete selected
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
