@@ -59,6 +59,7 @@ import datasetExportRoutes from './routes/datasetExport';
 import usageRoutes from './routes/usage';
 import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
+import agentRoutes from './routes/agents';
 import { eosRouter } from './eos/index';
 import { eosApiCollector } from './eos/api-collector.js';
 
@@ -266,6 +267,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', exportImportRoutes);
   app.use('/api/workspaces', toolRoutes);
   app.use('/api/workspaces', toolSecretRoutes);
+  app.use('/api/workspaces', agentRoutes);
   app.use('/api/workspaces', fileRoutes);
   app.use('/api/workspaces', feedbackRoutes);
   app.use('/api/workspaces', privacyConsentRoutes);

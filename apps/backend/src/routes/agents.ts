@@ -1,0 +1,329 @@
+import { Router, type Router as ExpressRouter } from 'express';
+import { z } from 'zod';
+import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
+import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
+import {
+  archiveAgent,
+  createAgent,
+  getAgent,
+  getAgentHistory,
+  listAgents,
+  persistAgent,
+  updateAgent,
+} from '../agents/agent-registry';
+import {
+  approveStep,
+  cancelRun,
+  getRun,
+  listRuns,
+  persistRun,
+  rejectStep,
+  startRun,
+} from '../agents/run-engine';
+import { resolveAgentRuntime } from '../agents/runtime';
+import type { AgentRun } from '../agents/types';
+
+/**
+ * The agent HTTP surface.
+ *
+ * WHY THIS EXISTS. The registry, run engine and durable store were built,
+ * tested, and completely unreachable: no route mounted them, so no human
+ * could create an agent or start a run. This file is the whole distance
+ * between "works in tests" and "a person can use it".
+ *
+ * FOUR THINGS ARE DELIBERATE HERE:
+ *
+ * 1. Workspace scoping is the middleware's job AND the module's job. Every
+ *    handler passes workspaceId into the registry/engine lookup rather than
+ *    trusting that the membership check upstream was enough. Two layers,
+ *    not one — the same discipline the tool runner applies.
+ *
+ * 2. Not-found beats forbidden. An agent in another workspace is answered
+ *    identically to one that does not exist, so the API never confirms the
+ *    existence of something the caller may not see.
+ *
+ * 3. Every response carries the runtime notice. A run planned by the
+ *    deterministic local planner is materially different from one planned
+ *    by a model, and the caller is told which without having to ask. A UI
+ *    cannot accidentally render local scaffolding as intelligence, because
+ *    the label arrives with the data.
+ *
+ * 4. Durability is part of the request, not a background hope. Definitions
+ *    and runs are written through to the store before the response is sent,
+ *    so a 201 means "this survives a restart" rather than "this exists
+ *    until the process dies".
+ */
+
+const router: ExpressRouter = Router({ mergeParams: true });
+
+const limitsSchema = z
+  .object({
+    maxSteps: z.number().int().positive().optional(),
+    maxToolCalls: z.number().int().positive().optional(),
+    maxDurationMs: z.number().int().positive().optional(),
+    // Zero is a legitimate policy — "never retry" — and is not lumped in
+    // with the budgets above, where zero would make every run unrunnable
+    // while looking configured.
+    maxRetriesPerStep: z.number().int().min(0).optional(),
+  })
+  .optional();
+
+const createAgentSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(2000).optional(),
+  instructions: z.string().min(1).max(20_000),
+  allowedTools: z.array(z.string()).optional(),
+  approvalPolicy: z.enum(['nothing', 'mutations', 'everything']).optional(),
+  limits: limitsSchema,
+});
+
+const updateAgentSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().max(2000).optional(),
+  instructions: z.string().min(1).max(20_000).optional(),
+  allowedTools: z.array(z.string()).optional(),
+  approvalPolicy: z.enum(['nothing', 'mutations', 'everything']).optional(),
+  limits: limitsSchema,
+});
+
+const startRunSchema = z.object({
+  task: z.string().min(1).max(10_000),
+});
+
+const rejectSchema = z.object({
+  reason: z.string().max(2000).optional(),
+});
+
+/**
+ * Translates the domain layer's plain errors into HTTP. The engine and
+ * registry throw Errors deliberately — they are a library and must stay
+ * usable without Express — so the mapping lives here, at the boundary.
+ */
+function toHttpError(err: unknown): unknown {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message === 'agent not found' || message === 'run not found') {
+    return new NotFoundException(message === 'run not found' ? 'Run' : 'Agent');
+  }
+  if (
+    message.includes('archived') ||
+    message.includes('needs a task') ||
+    message.includes('needs a name') ||
+    message.includes('needs instructions') ||
+    message.includes('not awaiting approval') ||
+    message.startsWith('limit ')
+  ) {
+    return new ValidationException(message);
+  }
+  return err;
+}
+
+router.use('/:workspaceId/agents', authMiddleware, requireWorkspaceAccess());
+
+// --- Definitions: collection ---------------------------------------------
+
+router.get('/:workspaceId/agents', async (req: AuthRequest, res, next) => {
+  try {
+    const includeArchived = req.query.includeArchived === 'true';
+    res.json(createApiResponse(listAgents(req.params.workspaceId, { includeArchived })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:workspaceId/agents', async (req: AuthRequest, res, next) => {
+  try {
+    const body = createAgentSchema.parse(req.body);
+    const agent = createAgent({
+      ...body,
+      workspaceId: req.params.workspaceId,
+      createdBy: req.userId!,
+    });
+    // Written through before the 201, so the status code means durable.
+    await persistAgent(agent.id);
+    res.status(201).json(createApiResponse(agent));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Runs ----------------------------------------------------------------
+//
+// ORDER IS LOAD-BEARING. These are declared BEFORE `/agents/:agentId`
+// because Express matches in declaration order, and `/agents/runs` would
+// otherwise be swallowed by the parameterised route with agentId="runs".
+// The shadowing is safe in the other direction too: agent ids are minted as
+// `agent_<uuid>`, so no real agent can ever be named "runs".
+
+/**
+ * The run payload always travels with the label describing what produced
+ * it. Bundling them makes the honest thing the default: there is no shape
+ * of this response that carries a run without its provenance.
+ */
+function runResponse(run: AgentRun, runtime: { mode: string; provider?: string; notice: string }) {
+  return {
+    run,
+    runtime: {
+      mode: runtime.mode,
+      provider: runtime.provider,
+      notice: runtime.notice,
+      planOrigin: run.plan?.origin,
+    },
+  };
+}
+
+router.get('/:workspaceId/agents/runs', async (req: AuthRequest, res, next) => {
+  try {
+    const agentLineageId =
+      typeof req.query.lineageId === 'string' ? req.query.lineageId : undefined;
+    res.json(createApiResponse(listRuns(req.params.workspaceId, { agentLineageId })));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/:workspaceId/agents/runs/:runId', async (req: AuthRequest, res, next) => {
+  try {
+    const run = getRun(req.params.runId, req.params.workspaceId);
+    if (!run) return next(new NotFoundException('Run'));
+    res.json(createApiResponse(run));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Approving a parked step resumes execution, so this returns the run in
+ * whatever state it reached next — possibly parked again at a later step.
+ * The approver is recorded on the step; there is no anonymous approval and
+ * no execute-first path.
+ */
+router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/approve', async (req: AuthRequest, res, next) => {
+  try {
+    const runtime = await resolveAgentRuntime(req.userId!);
+    const run = await approveStep(
+      {
+        runId: req.params.runId,
+        workspaceId: req.params.workspaceId,
+        stepId: req.params.stepId,
+        approvedBy: req.userId!,
+      },
+      runtime.deps,
+    );
+    await persistRun(run.id);
+    res.json(createApiResponse(runResponse(run, runtime)));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+/** A rejected step ends the run. It is refused, not skipped past. */
+router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/reject', async (req: AuthRequest, res, next) => {
+  try {
+    const { reason } = rejectSchema.parse(req.body ?? {});
+    const run = rejectStep({
+      runId: req.params.runId,
+      workspaceId: req.params.workspaceId,
+      stepId: req.params.stepId,
+      rejectedBy: req.userId!,
+      reason,
+    });
+    await persistRun(run.id);
+    res.json(createApiResponse(run));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+/** The emergency stop. Always available while a run is not yet terminal. */
+router.post('/:workspaceId/agents/runs/:runId/cancel', async (req: AuthRequest, res, next) => {
+  try {
+    const run = cancelRun(req.params.runId, req.params.workspaceId);
+    await persistRun(run.id);
+    res.json(createApiResponse(run));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Definitions: single resource ----------------------------------------
+
+router.get('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, next) => {
+  try {
+    const agent = getAgent(req.params.agentId, req.params.workspaceId);
+    if (!agent) return next(new NotFoundException('Agent'));
+    res.json(createApiResponse(agent));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Editing creates version+1 rather than mutating. The response is the NEW
+ * version with a new id — callers must not assume the id they sent is still
+ * the current one, because runs recorded against the old version continue to
+ * resolve the old version, exactly as they executed it.
+ */
+router.patch('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, next) => {
+  try {
+    const body = updateAgentSchema.parse(req.body);
+    const next_ = updateAgent(req.params.agentId, req.params.workspaceId, body, req.userId!);
+    await persistAgent(next_.id);
+    res.json(createApiResponse(next_));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+/** Every version in the lineage, oldest first — the audit history. */
+router.get('/:workspaceId/agents/:agentId/history', async (req: AuthRequest, res, next) => {
+  try {
+    const agent = getAgent(req.params.agentId, req.params.workspaceId);
+    if (!agent) return next(new NotFoundException('Agent'));
+    res.json(createApiResponse(getAgentHistory(agent.lineageId, req.params.workspaceId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Archiving, not deleting. An archived agent starts no new runs, but its
+ * definition stays resolvable because historical runs reference it — the
+ * same reason versions are immutable.
+ */
+router.delete('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, next) => {
+  try {
+    const archived = archiveAgent(req.params.agentId, req.params.workspaceId);
+    await persistAgent(archived.id);
+    res.json(createApiResponse(archived));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Runs: starting one on a specific agent ------------------------------
+//
+// Unambiguous against the routes above because it has a trailing segment,
+// so it does not need to precede `/agents/:agentId`.
+
+router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, next) => {
+  try {
+    const { task } = startRunSchema.parse(req.body);
+    const runtime = await resolveAgentRuntime(req.userId!);
+    const run = await startRun(
+      {
+        agentId: req.params.agentId,
+        workspaceId: req.params.workspaceId,
+        requestedBy: req.userId!,
+        task,
+      },
+      runtime.deps,
+    );
+    await persistRun(run.id);
+    res.status(201).json(createApiResponse(runResponse(run, runtime)));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+export default router;

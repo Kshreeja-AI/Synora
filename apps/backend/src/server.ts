@@ -19,6 +19,7 @@ import { startProviderDegradation } from './eos/provider-degradation.js';
 import { startProposalEngine } from './eos/proposal-engine.js';
 import { registerEgressPaths } from './eos/egress-registry.js';
 import { wireJudgeIfProviderAvailable } from './eos/judge-wiring.js';
+import { bootAgentStores } from './agents/boot.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -46,6 +47,9 @@ async function bootstrap() {
   // Both are credential-gated no-ops when unconfigured.
   initObservability();
   const { app, config } = await initializeApp();
+  // Awaited before the server accepts traffic: an unhydrated registry would
+  // answer 404 for agents that exist, which is a confident wrong answer.
+  await bootAgentStores();
   httpServer = await startServer(app, config);
   registerDependencyProbes();
   registerEgressPaths();

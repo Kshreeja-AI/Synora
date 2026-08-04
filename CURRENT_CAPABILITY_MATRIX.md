@@ -44,9 +44,9 @@ Three rules govern every entry:
 
 | Class | Count | What it means for the founder |
 |---|---:|---|
-| A — production-ready locally | 12 | Usable today. |
-| B — implemented but incomplete | 9 | Usable, with a stated hole. |
-| C — backend foundation only | 6 | Built and tested, but unreachable by a user. |
+| A — production-ready locally | 13 | Usable today. |
+| B — implemented but incomplete | 13 | Usable, with a stated hole. |
+| C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
 | F — not implemented | 11 | Does not exist. Named honestly rather than implied. |
@@ -74,13 +74,14 @@ case, both are recorded.
 
 | Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Agent definitions (versioned, workspace-scoped) | **C** | `agents/agent-registry.ts`, fully tested. Editing creates version+1 with `previousVersionId`; old versions stay resolvable because runs reference them. **No HTTP route exists**, so no user can create an agent. |
-| Agent run engine (plan → steps → approval → terminal state) | **C** | `agents/run-engine.ts`, 28 tests. Enforces step budgets, tool-call budgets, deadlines, forward-only dependencies, and refuses a whole run that names a forbidden tool. **No HTTP route.** |
-| Agent durability across restart | **C** | `agents/agent-stores.ts` + `hydrateAgents`/`hydrateRuns`, 11 tests (commit `29ecb70`). A run whose definition did not restore is refused and counted, never silently loaded. Interrupted runs restore as `failed`; parked runs stay `awaiting_approval`. **No HTTP route.** |
+| Agent definitions (versioned, workspace-scoped) | **B** | `agents/agent-registry.ts` + `routes/agents.ts`, reachable at `/api/workspaces/:id/agents`. Editing creates version+1 with `previousVersionId`; old versions stay resolvable because runs reference them. **Limit**: no UI, so today only an API client can use it. |
+| Agent run engine (plan → steps → approval → terminal state) | **B** | `agents/run-engine.ts`, 28 engine tests + 14 route tests. Enforces step budgets, tool-call budgets, deadlines, forward-only dependencies, and refuses a whole run that names a forbidden tool. Start, approve, reject and cancel are all reachable over HTTP. **Limit**: no UI. |
+| Agent durability across restart | **B** | `agents/agent-stores.ts` + `hydrateAgents`/`hydrateRuns`, 11 tests. A run whose definition did not restore is refused and counted, never silently loaded. Interrupted runs restore as `failed`; parked runs stay `awaiting_approval`. Attached at boot via `AGENT_STORE_DIR` and awaited before traffic. **Limit**: with the variable unset the stores are in-memory, which the server logs plainly rather than implying durability. |
+| Agent runtime honesty label (LOCAL vs REAL) | **A** | `agents/runtime.ts`, 4 tests. Every run response carries the mode, a plain-language notice, and the plan's `origin`; a configured provider that fails at call time does not silently degrade to the local planner. |
+| Agent tool execution inheriting caller permissions | **B** | `agents/tool-runner-adapter.ts` routes through `toolService.executeTool` with the requester's identity, and the runtime binds a fresh runner per request so no run inherits another user's authority. **Limit**: exercised in tests against the tool layer, never against a real registered tool end-to-end. |
 | Agent planning from natural language | **E** | `agents/model-planner.ts` parses and strictly validates model-produced plans, refusing rather than coercing malformed output. **ACTIVATION BLOCKED**: requires a model endpoint; `OLLAMA_BASE_URL` is unset, so the model planner is unwired. |
 | Deterministic local planner | **A (LOCAL)** | `agents/local-runtime.ts`. Stamped `origin: 'local-deterministic'` in the plan record so no consumer can mistake it for model output. This is orchestration scaffolding, **not intelligence**. |
-| Agent tool execution inheriting caller permissions | **C** | `agents/tool-runner-adapter.ts` routes through `toolService.executeTool` with the requester's identity, so an agent can never exceed the human who invoked it. **No HTTP route.** |
-| Agent UI / testing console / run history view | **F** | Nothing exists. No page, no component. |
+| Agent UI / testing console / run history view | **F** | Nothing exists. No page, no component. This is now the single thing standing between the agent platform and a usable product. |
 | Agent memory integration | **F** | The memory subsystem and the agent subsystem have not been connected. |
 
 ## Family C — Workflow Automation
@@ -237,12 +238,15 @@ The declared priority order begins: agent persistence, agent HTTP routes, agent 
 agent testing interface, agent execution history, agent memory. The matrix confirms
 that ordering is right for a reason worth stating plainly:
 
-**The agent platform is the single largest gap between "engineering foundation" and
-"user product."** Three substantial, fully tested subsystems (registry, run engine,
-durability) sit at class **C** — real, correct, and completely unreachable by any
-human being, because no HTTP route exposes them. That is the cheapest, highest-value
-distance to close in the entire repository: the hard part is built and proven; what
-remains is the surface.
+**The agent platform was the single largest gap between "engineering foundation" and
+"user product," and half of it is now closed.** Three substantial, fully tested
+subsystems (registry, run engine, durability) sat at class **C** — real, correct, and
+unreachable by any human being, because no HTTP route exposed them. The routes now
+exist and are tested, moving them to **B**. What still separates them from a product
+is the UI: an API a founder cannot click is not yet a capability a customer has.
+
+The remaining class **C** entry is MFA, which has a route but no enrolment screen —
+the same shape of gap, one layer further along.
 
 Everything in class **E** is finished engineering waiting on a credential or an
 account. No amount of further code moves those forward — they move when the founder

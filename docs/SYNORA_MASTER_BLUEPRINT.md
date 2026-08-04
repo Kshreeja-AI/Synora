@@ -298,12 +298,41 @@ instances three and four, so the generic `KeyedStore<T>` now exists
 rather than a third copy. Migrating the two older stores onto it is
 named follow-up work.
 
-**Missing, named:** HTTP routes and UI (the registry, run engine and
-store are real, tested, and currently unreachable by any user — no route
-mounts them); usage/cost metering into the billing ledger; agent memory
-integration; and no live model has ever produced a plan — the planner's
-parsing is fully tested, its intelligence is UNMEASURED — EXTERNAL
-PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
+**Also implemented (fourth increment):** the HTTP surface. `routes/agents.ts`
+is mounted under `/api/workspaces/:workspaceId/agents` and covers
+definitions (list, create, get, edit-as-new-version, lineage history,
+archive) and runs (start, list, get, approve, reject, cancel). Workspace
+scoping is enforced twice — by `requireWorkspaceAccess` and again in every
+registry/engine lookup — and cross-workspace resources answer 404, never
+403. Definitions and runs are written through to the store before the
+response is sent, so a 201 means durable rather than merely present.
+
+Two design points are worth naming. First, `agents/runtime.ts` is the only
+file in the agent path that imports the AI layer, exactly as
+`judge-wiring.ts` is for the judge; it resolves the planner per request
+(never cached, because the tool runner is bound to the requesting user and
+a cached runner would let one user's run inherit another's permissions),
+and it returns the MODE alongside the dependencies. Every run response
+therefore carries a `runtime` block stating `local` or `model`, a
+plain-language notice, and the plan's `origin` — there is no response shape
+that returns a run without saying what produced it, so a UI cannot render
+deterministic scaffolding as if it were intelligence. Second, a configured
+provider that fails at call time does NOT fall back to the local planner:
+that would convert a visible outage into invisible fake intelligence, so
+the failure propagates and the run fails honestly.
+
+Durable stores are attached at boot by `agents/boot.ts`, gated on
+`AGENT_STORE_DIR`, and hydration is AWAITED before the server accepts
+traffic — an unhydrated registry would answer 404 for agents that exist,
+which is a confident wrong answer. With the variable unset the stores stay
+in-memory and the server logs that agents will not survive a restart,
+rather than leaving durability to be assumed.
+
+**Missing, named:** UI (there is no agent screen — the API is reachable,
+the product surface is not); usage/cost metering into the billing ledger;
+agent memory integration; and no live model has ever produced a plan — the
+planner's parsing is fully tested, its intelligence is UNMEASURED —
+EXTERNAL PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
 ---
 
