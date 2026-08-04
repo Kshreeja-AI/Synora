@@ -19,6 +19,7 @@ import { MessageBubble } from '@/components/chat/MessageBubble';
 import { Composer } from '@/components/chat/Composer';
 import { ConversationFilesPanel } from '@/components/files/ConversationFilesPanel';
 import { ShareDialog } from '@/components/sharing/ShareDialog';
+import { FileIntoProject } from '@/components/projects/FileIntoProject';
 import { ConversationExport } from '@/components/history/ConversationExport';
 import { PresenceIndicator } from '@/components/collaboration/PresenceIndicator';
 import { TypingIndicator } from '@/components/collaboration/TypingIndicator';
@@ -271,6 +272,14 @@ export default function ConversationDetailPage() {
             )}
           </div>
           <div className="flex shrink-0 items-center gap-3">
+            {/* Where this conversation belongs, stated and changeable in
+                one control — so a thread of thinking can join the project
+                it is actually about. */}
+            <FileIntoProject
+              workspaceId={workspaceId}
+              conversationId={conversationId}
+              projectId={conversation.projectId}
+            />
             <PresenceIndicator workspaceId={workspaceId} conversationId={conversationId} />
             <ConversationExport workspaceId={workspaceId} conversationId={conversationId} />
             <Button

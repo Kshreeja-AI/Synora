@@ -8,6 +8,8 @@
 export interface Conversation {
   id: string;
   workspaceId: string;
+  /** The project this conversation is filed into, if any. */
+  projectId?: string | null;
   title: string;
   description?: string;
   provider: string;
@@ -42,4 +44,10 @@ export interface UpdateConversationInput {
   title?: string;
   description?: string;
   isArchived?: boolean;
+  /**
+   * Files this conversation into a project. Explicit `null` takes it out
+   * again; omitting the field leaves it where it is. The distinction
+   * matters — otherwise every rename would unfile the conversation.
+   */
+  projectId?: string | null;
 }

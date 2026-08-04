@@ -2,18 +2,16 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `2ed044b` + the project-workspace increment
-**Evidence basis**: 2,507 backend tests across 233 files and 580 frontend tests
-across 86 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `7fcfd80` + the file-into-project increment
+**Evidence basis**: 2,507 backend tests across 233 files and 585 frontend tests
+across 87 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
 `schema.prisma` exactly. One backend test —
 `mfa/monitoring.service` "calculates metrics for time window" — fails in
 the whole-suite run and passes in isolation (17/17). It is a known
 cross-file counter bleed in the test setup, not a product defect, and it is
-recorded here rather than reported as a clean sweep. (The frontend file count was previously recorded as
-86; 85 is what `find` and Vitest both report, so the higher figure was a stale
-count, not a deleted test.) Route mounts read
+recorded here rather than reported as a clean sweep. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
 
@@ -172,7 +170,7 @@ behaviour is covered by component and page tests instead.
 | Capability | Class | Evidence |
 |---|---|---|
 | Research workspace (multi-source gathering, citation, synthesis) | **F** | Does not exist as a distinct capability. Search and memory exist separately; nothing composes them into a research surface. |
-| Project as a place work lives (goal, gathered work, activity, resume) | **B** | `projectWorkspace.service.ts` + `GET /projects/:id/workspace` + `ProjectWorkspacePanel`, 6 route tests + 9 component tests. **The gap this closed**: a Project could hold files, folders and generated media and *nothing else* — the conversations where the thinking happened lived somewhere else entirely, so opening a project told you what had been produced but never how, why, or what was unfinished. People kept that in their heads and re-explained it to the AI on every return. A conversation can now be **filed into a project** (`PATCH conversation { projectId }`; explicit `null` takes it out), and one read returns the project's whole picture: a **goal** (what "done" looks like, in their words — offered, never required), counts by kind, a single **chronology** across conversations/files/documents/media, and `resumeConversationId` — the "continue where you left off" answer, named once so every surface agrees what continuing means. **The timeline is assembled, never stored**: every item already carries a timestamp, so it is a sort rather than a second source of truth that could drift from the things it describes. **It passes no judgement**: "last activity 3 days ago" is a fact the person interprets; "this project is stalled" would be the platform deciding something about their work it has no standing to decide, and would be wrong exactly during a deliberate pause. Filing is enforced same-workspace with a **404, not a 403**, so the accept/reject answer cannot be used to discover which project ids exist elsewhere. Deleting a project **SetNull**s its conversations rather than cascading — losing the grouping must never destroy the work. **Limit**: agents, workflows, runs and canvases cannot yet be filed into a project; only conversations and the already-project-aware file types. |
+| Project as a place work lives (goal, gathered work, activity, resume) | **B** | `projectWorkspace.service.ts` + `GET /projects/:id/workspace` + `ProjectWorkspacePanel`, 6 route tests + 9 component tests. **The gap this closed**: a Project could hold files, folders and generated media and *nothing else* — the conversations where the thinking happened lived somewhere else entirely, so opening a project told you what had been produced but never how, why, or what was unfinished. People kept that in their heads and re-explained it to the AI on every return. A conversation can now be **filed into a project** (`PATCH conversation { projectId }`; explicit `null` takes it out), and one read returns the project's whole picture: a **goal** (what "done" looks like, in their words — offered, never required), counts by kind, a single **chronology** across conversations/files/documents/media, and `resumeConversationId` — the "continue where you left off" answer, named once so every surface agrees what continuing means. **The timeline is assembled, never stored**: every item already carries a timestamp, so it is a sort rather than a second source of truth that could drift from the things it describes. **It passes no judgement**: "last activity 3 days ago" is a fact the person interprets; "this project is stalled" would be the platform deciding something about their work it has no standing to decide, and would be wrong exactly during a deliberate pause. Filing is enforced same-workspace with a **404, not a 403**, so the accept/reject answer cannot be used to discover which project ids exist elsewhere. Deleting a project **SetNull**s its conversations rather than cascading — losing the grouping must never destroy the work. Filing is reachable from the conversation page itself — a select that **states where the conversation currently sits and changes it in one control**, which is also what makes "take it out again" discoverable rather than hidden behind a different affordance. It sends an **explicit null** to unfile, never an omitted field, or choosing "No project" would appear to do nothing; and it disappears entirely when the workspace has no projects, because an empty dropdown invites a click that leads nowhere. **Limit**: agents, workflows, runs and canvases cannot yet be filed into a project; only conversations and the already-project-aware file types. |
 
 ## Family G — Content Creation (media)
 
