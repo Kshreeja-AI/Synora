@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `15b7ee8` + canvas increment
-**Evidence basis**: 2,322 backend tests across 224 files and 499 frontend tests
+**Verified at commit**: `204c786` + consolidation increment
+**Evidence basis**: 2,322 backend tests across 224 files and 501 frontend tests
 across 81 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -93,7 +93,7 @@ case, both are recorded.
 | Workflow engine (authored steps, executed exactly) | **B** | `workflows/` + `routes/workflows.ts` + `/workflows` page, 20 engine tests + 7 route tests + 8 page tests. A workflow is a human-authored sequence, versioned immutably like agents, run through the *same* engine — so approval gates, tool permissions, retry and tool-call budgets, deadlines and cancellation are inherited rather than reimplemented. Plans are stamped `origin: 'authored'`, distinct from both `model` and `local-deterministic`. **Limit**: no scheduling — a workflow must be started by a person. |
 | Workflow authoring-time validation | **A** | A sequence that could never run is refused with a 400 when saved, naming the offending step — rather than accepted and failed on first use. Re-validated on edit (narrowing tool permissions can invalidate saved steps) and again on load from disk. |
 | Workflow durability | **B** | Definitions persist via the same `KeyedStore` and hydrate at boot; the run store's orphan check knows about workflows as well as agents, so workflow runs are not destroyed on restart. **Limit**: shares the `AGENT_STORE_DIR` gate — unset means in-memory, which the server logs. |
-| Workflow UI / builder | **A** | `/workflows` page plus `StepBuilder`, 8 tests. Add, reorder and remove steps; ids renumber to stay sequential so the run record reads cleanly. Run inspection reuses `RunDetail` unchanged, because a workflow run *is* an engine run. The page states that the run note does not change what executes — the opposite of the agent page, and the difference a user must not get wrong. |
+| Workflow UI / builder | **A** | `/workflows` page plus `StepBuilder`, 10 tests. Steps can be edited, which creates version N+1 and says so before the save button. Add, reorder and remove steps; ids renumber to stay sequential so the run record reads cleanly. Run inspection reuses `RunDetail` unchanged, because a workflow run *is* an engine run. The page states that the run note does not change what executes — the opposite of the agent page, and the difference a user must not get wrong. |
 | Scheduled automation | **B** | `workflows/schedule.ts` + `scheduler-runner.ts` + routes, 16 scheduler tests + 5 route tests. Interval and daily-at-UTC-time schedules, strictly validated (anything else refused, not guessed). Durable; a schedule that came due during an outage is moved forward and its missed occurrences **counted, never replayed** — a backlog fired in a burst is how a scheduler turns an outage into an incident. A scheduled run executes as the person who created the schedule, never with ambient authority — pinned by a test on the actual firing path. The `/workflows` page adds, pauses and removes schedules, and renders missed occurrences as a warning, because a schedule silently not running looks identical to one running fine. **Limit**: UTC only, and resolution is the 30s tick, so "daily at 09:00" means at or shortly after — both stated on the page. |
 | Event-triggered automation | **F** | Does not exist. Only a clock can start a workflow; nothing reacts to a file arriving or a webhook firing. |
 

@@ -1,5 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { FileKeyedStore } from '../persistence/keyed-store.js';
 import type { GateMeasurement } from './launch-gates.js';
 
 /**
@@ -12,28 +11,26 @@ import type { GateMeasurement } from './launch-gates.js';
  * here, because this is the surface the founder reads. A readiness board
  * that forgets is not a readiness board.
  *
- * SECOND INSTANCE OF THIS SHAPE. `BaselineStore` is identical in structure:
- * a keyed record, replaced rather than appended, that must outlive the
- * process. Two instances is where duplication is a note rather than a
- * liability, so it stays duplicated and explicit. A third should trigger
- * extraction into one generic keyed store, and this comment is the marker
- * for whoever adds it.
+ * THE MARKER THIS FILE CARRIED HAS BEEN RESOLVED. It said that two
+ * instances of the keyed-record shape (here and `BaselineStore`) were
+ * tolerable duplication, and that a third should trigger extraction into
+ * one generic store. Agent definitions and runs became instances three and
+ * four, then workflows, schedules and canvases followed. The generic now
+ * lives in `persistence/keyed-store.ts`, and the file plumbing below
+ * delegates to it.
  *
- * STILL TWO, CHECKED 2026-08-04. The count was re-examined and the other
- * candidates are not instances of this shape:
+ * WHAT WAS AND WAS NOT SHARED. The file semantics are shared — missing
+ * file is empty, corrupt file raises, a write is read-modify-write. Those
+ * were argued for once and are now in one place, so a fix reaches every
+ * caller instead of leaving three copies to drift. The INTERFACE below is
+ * deliberately not collapsed: `save` takes a measurement and derives its
+ * own key, because that is the vocabulary this caller thinks in. Forcing
+ * a generic key/value shape on it would push plumbing into every call
+ * site to save a handful of lines.
  *
- *   - `EngineeringHistoryStore` is an append-only bounded log with query
- *     filters. Same motive — surviving the process — but a different data
- *     structure, and folding it in would produce an abstraction that fits
- *     neither.
- *   - The benchmark registry is a plain in-memory Map with no persistence
- *     seam at all, so there is nothing to consolidate. Giving it one is
- *     blocked on the evaluation datasets persisting too: a registry that
- *     outlives its datasets deadlocks, which was reachable and is now
- *     guarded in `benchmark-importer.ts`.
- *
- * So the trigger has not fired. Extracting a generic store for two callers
- * would be an abstraction built to satisfy a plan rather than a need.
+ * `EngineeringHistoryStore` remains outside this, correctly: it is an
+ * append-only bounded log with query filters, not a keyed record map, and
+ * folding it in would produce an abstraction fitting neither.
  */
 export interface GateStore {
   readonly kind: string;
@@ -61,35 +58,23 @@ export class InMemoryGateStore implements GateStore {
 
 export class FileGateStore implements GateStore {
   readonly kind = 'file';
+  private readonly store: FileKeyedStore<GateMeasurement>;
 
-  constructor(private readonly filePath: string) {}
-
-  private async readAll(): Promise<Record<string, GateMeasurement>> {
-    try {
-      return JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, GateMeasurement>;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      // A corrupt file must not read as empty. Doing so would silently
-      // discard every recorded measurement and reset the board to "nothing
-      // proven" while looking entirely normal.
-      throw err;
-    }
+  constructor(filePath: string) {
+    this.store = new FileKeyedStore<GateMeasurement>(filePath);
   }
 
+  /** The key is the gate id — derived here, not asked of the caller. */
   async save(measurement: GateMeasurement): Promise<void> {
-    const all = await this.readAll();
-    all[measurement.gateId] = measurement;
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(all, null, 2), 'utf8');
+    await this.store.save(measurement.gateId, measurement);
   }
 
   async loadAll(): Promise<GateMeasurement[]> {
-    return Object.values(await this.readAll());
+    return Object.values(await this.store.loadAll());
   }
 
   async clear(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, '{}', 'utf8');
+    await this.store.clear();
   }
 }
 

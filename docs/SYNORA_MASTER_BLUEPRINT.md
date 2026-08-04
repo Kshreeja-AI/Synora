@@ -462,8 +462,7 @@ after"), and that a scheduled run uses their own permissions.
 
 **Missing, named:** event triggers (only a clock can start a workflow —
 nothing reacts to a file arriving or a webhook firing); timezone support
-(UTC only); editing an existing workflow from the screen; and per-run cost
-metering. The scheduler is also tested only against an injected clock — it
+(UTC only); and per-run cost metering. The scheduler is also tested only against an injected clock — it
 has never been observed running over real elapsed time.
 
 ### 5.11 Canvas — Partially implemented (`apps/backend/src/canvas/`, `/canvas`)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, Loader2, Play, Plus, Workflow as WorkflowIcon } from 'lucide-react';
+import { Archive, Loader2, Pencil, Play, Plus, Workflow as WorkflowIcon } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -10,6 +10,7 @@ import {
   useArchiveWorkflow,
   useCreateWorkflow,
   useStartWorkflowRun,
+  useUpdateWorkflow,
   useWorkflows,
   type WorkflowDefinition,
 } from '@/lib/api/workflows';
@@ -36,6 +37,7 @@ export default function WorkflowsPage() {
   const [task, setTask] = useState('');
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [lastNotice, setLastNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PlannedStep[] | null>(null);
 
   const { data: workflows = [], isLoading, error } = useWorkflows(workspaceId);
   const { data: runs = [] } = useAgentRuns(workspaceId, {
@@ -45,6 +47,7 @@ export default function WorkflowsPage() {
   const create = useCreateWorkflow(workspaceId);
   const archive = useArchiveWorkflow(workspaceId);
   const startRun = useStartWorkflowRun(workspaceId);
+  const update = useUpdateWorkflow(workspaceId);
 
   function submitCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -169,6 +172,7 @@ export default function WorkflowsPage() {
                     setSelected(wf);
                     setOpenRunId(null);
                     setLastNotice(null);
+                    setEditing(null);
                   }}
                   aria-current={selected?.id === wf.id}
                   className={`w-full rounded-md border p-3 text-left text-sm transition ${
@@ -201,6 +205,15 @@ export default function WorkflowsPage() {
                 <section className="space-y-3 rounded-md border p-4">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h2 className="font-semibold">{selected.name}</h2>
+                    <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setEditing(editing ? null : selected.steps)}
+                    >
+                      <Pencil className="mr-1 h-4 w-4" />
+                      {editing ? 'Cancel edit' : 'Edit steps'}
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -218,7 +231,45 @@ export default function WorkflowsPage() {
                       <Archive className="mr-1 h-4 w-4" />
                       Archive
                     </Button>
+                    </div>
                   </div>
+
+                  {editing ? (
+                    <div className="space-y-3 rounded-md border p-3">
+                      {/* Same version warning as agents, for the same
+                          reason: a run history pointing at "old" step
+                          lists is confusing to someone who believed they
+                          edited in place. */}
+                      <p className="text-sm text-muted-foreground">
+                        Saving creates version {selected.version + 1}. Version {selected.version}{' '}
+                        is kept, because every past run refers to the exact version it ran under.
+                      </p>
+                      <StepBuilder steps={editing} onChange={setEditing} />
+                      <Button
+                        onClick={() =>
+                          update.mutate(
+                            { workflowId: selected.id, changes: { steps: editing } },
+                            {
+                              onSuccess: (next) => {
+                                toast.success(`Saved as version ${next.version}`);
+                                // Switch to the NEW version: the id held a
+                                // moment ago is now superseded.
+                                setSelected(next);
+                                setEditing(null);
+                              },
+                              // The server refuses a sequence that could
+                              // never run and names the offending step.
+                              onError: (e) => toast.error(e.message),
+                            },
+                          )
+                        }
+                        disabled={update.isPending || editing.length === 0}
+                      >
+                        {update.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Save as version {selected.version + 1}
+                      </Button>
+                    </div>
+                  ) : null}
 
                   <ol className="space-y-1 text-sm text-muted-foreground">
                     {selected.steps.map((s) => (

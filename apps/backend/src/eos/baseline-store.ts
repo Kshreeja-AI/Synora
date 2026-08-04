@@ -1,5 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { FileKeyedStore } from '../persistence/keyed-store.js';
 import type { RegressionRun } from './regression-suite.js';
 
 /**
@@ -54,39 +53,33 @@ export class InMemoryBaselineStore implements BaselineStore {
  */
 export class FileBaselineStore implements BaselineStore {
   readonly kind = 'file';
+  private readonly store: FileKeyedStore<RegressionRun>;
 
-  constructor(private readonly filePath: string) {}
-
-  private async readAll(): Promise<Record<string, RegressionRun>> {
-    try {
-      return JSON.parse(await readFile(this.filePath, 'utf8')) as Record<string, RegressionRun>;
-    } catch (err) {
-      // A missing file is an empty store. A corrupt one must not be
-      // silently treated as empty — that would discard every baseline and
-      // quietly reset the regression gate to "no reference".
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw err;
-    }
+  /**
+   * The file semantics — missing file is an empty store, a corrupt one
+   * raises rather than quietly resetting the regression gate to "no
+   * reference" — now live in the shared keyed store, so they are stated
+   * and fixed in one place rather than three.
+   */
+  constructor(filePath: string) {
+    this.store = new FileKeyedStore<RegressionRun>(filePath);
   }
 
+  /** Keyed by dataset: one baseline per dataset, replaced not appended. */
   async save(baseline: RegressionRun): Promise<void> {
-    const all = await this.readAll();
-    all[baseline.datasetId] = baseline;
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, JSON.stringify(all, null, 2), 'utf8');
+    await this.store.save(baseline.datasetId, baseline);
   }
 
   async load(datasetId: string): Promise<RegressionRun | null> {
-    return (await this.readAll())[datasetId] ?? null;
+    return (await this.store.loadAll())[datasetId] ?? null;
   }
 
   async list(): Promise<string[]> {
-    return Object.keys(await this.readAll()).sort();
+    return Object.keys(await this.store.loadAll()).sort();
   }
 
   async clear(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, '{}', 'utf8');
+    await this.store.clear();
   }
 }
 

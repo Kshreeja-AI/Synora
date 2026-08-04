@@ -31,6 +31,7 @@ vi.mock('@/lib/api/workflows', async () => {
     useCreateWorkflow: vi.fn(),
     useArchiveWorkflow: vi.fn(),
     useStartWorkflowRun: vi.fn(),
+    useUpdateWorkflow: vi.fn(),
   };
 });
 
@@ -86,6 +87,7 @@ beforeEach(() => {
   vi.mocked(workflowsApi.useCreateWorkflow).mockReturnValue(idle() as never);
   vi.mocked(workflowsApi.useArchiveWorkflow).mockReturnValue(idle() as never);
   vi.mocked(workflowsApi.useStartWorkflowRun).mockReturnValue(idle() as never);
+  vi.mocked(workflowsApi.useUpdateWorkflow).mockReturnValue(idle() as never);
   vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [] } as never);
 });
 
@@ -202,6 +204,34 @@ describe('workflows page', () => {
     await user.click(screen.getByRole('button', { name: /remove step s1/i }));
     expect(screen.getByLabelText('Description for step s1')).toHaveValue('Generate text');
     expect(screen.queryByLabelText('Description for step s2')).not.toBeInTheDocument();
+  });
+
+  it('warns that editing steps creates a new version', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await user.click(await screen.findByText('Nightly report'));
+    await user.click(screen.getByRole('button', { name: /edit steps/i }));
+
+    expect(screen.getByText(/Saving creates version 2/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /save as version 2/i })).toBeInTheDocument();
+  });
+
+  it('switches to the new version after saving edited steps', async () => {
+    const user = userEvent.setup();
+    const next = { ...workflow, id: 'wf_2', version: 2, previousVersionId: workflow.id };
+    vi.mocked(workflowsApi.useUpdateWorkflow).mockReturnValue(
+      idle({ mutate: vi.fn((_v, opts) => opts?.onSuccess?.(next)) }) as never,
+    );
+
+    renderPage();
+    await user.click(await screen.findByText('Nightly report'));
+    await user.click(screen.getByRole('button', { name: /edit steps/i }));
+    await user.click(screen.getByRole('button', { name: /save as version 2/i }));
+
+    // Re-opening must offer version 3, proving the page moved to the new
+    // id rather than holding the superseded one.
+    await user.click(screen.getByRole('button', { name: /edit steps/i }));
+    expect(screen.getByRole('button', { name: /save as version 3/i })).toBeInTheDocument();
   });
 
   it('shows an empty state before any workflow exists', async () => {
