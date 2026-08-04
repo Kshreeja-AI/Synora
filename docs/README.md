@@ -5,6 +5,20 @@ point for a new engineer, and `RELEASE_1_FINAL.md` is the authoritative
 snapshot of what Release 1 actually shipped. This folder holds the
 supporting reference material those two documents point into.
 
+## Canonical (the two documents everything else is checked against)
+
+- `SYNORA_MASTER_BLUEPRINT.md` — canonical architecture and capability
+  document. Every capability carries one of four labels: Implemented,
+  Partially implemented, Planned, Future vision. Reconstructed from the
+  repository on 2026-08-04; see its §0 for provenance and §13 for the
+  maintenance protocol. Nothing may be documented there that does not
+  exist, and nothing may be removed without a logged reason (§12).
+- `SYNORA_UI_SYSTEM.md` — canonical UI and design-system document: tokens,
+  components, route map, shell, shortcuts, accessibility and motion status.
+- Companion at the repo root: `FEATURE_INVENTORY.md`, per-feature
+  operational detail (credentials, dependencies, risks). Blueprint holds
+  architecture; inventory holds operations; keep them consistent.
+
 ## Current (living — kept accurate as the code changes)
 
 - `architecture.md`, `api.md`, `database.md`, `deployment.md`,

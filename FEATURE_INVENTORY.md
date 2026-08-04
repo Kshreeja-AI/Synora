@@ -29,19 +29,17 @@ path is exactly the kind of number this document exists to avoid.
 
 ---
 
-## ⚠️ Blueprint documents referenced but absent
+## Blueprint documents
 
-The founder directive treats `SYNORA_MASTER_BLUEPRINT.md` and
-`SYNORA_UI_SYSTEM.md` as living documents to verify features against.
-**Neither exists** — verified absent from the working tree and from every
-branch's git history (`git log --all --diff-filter=A`). They have never
-been committed to this repository.
-
-This matters because the directive's first verification step is "verify it
-belongs to the blueprint." Until those documents exist, that check cannot
-be performed, and this inventory is the closest available substitute: it
-records what *is*, from which a blueprint of what *should be* can be
-written. **Founder decision required** — see §Founder Decisions.
+`docs/SYNORA_MASTER_BLUEPRINT.md` and `docs/SYNORA_UI_SYSTEM.md` are the
+canonical architecture and UI documents. They were **reconstructed from
+the repository on 2026-08-04** under founder instruction, after
+verification that neither had ever been committed (absent from the working
+tree and from every branch's history). The blueprint holds architecture
+and intent with Implemented / Partially implemented / Planned / Future
+vision labels; this inventory holds per-feature operational detail
+(credentials, dependencies, risks). Keep the two consistent — a status
+change in one must land in the other in the same commit.
 
 ---
 
@@ -174,13 +172,10 @@ than a description, and it is the one that governs.
 
 ## Founder decisions required
 
-1. **The blueprint documents don't exist.** Options: (a) I draft
-   `SYNORA_MASTER_BLUEPRINT.md` from this inventory plus the existing
-   `PRODUCT_SPEC.md` / `RELEASE_*_PLAN.md`, for your review and
-   correction — *recommended*; (b) you supply them; (c) this inventory
-   serves as the blueprint. Without one of these, "verify it belongs to
-   the blueprint" cannot be performed and the directive's absent-feature
-   list (Agents, Canvas, Marketplace, MCP, Mobile…) cannot be
-   distinguished from scope that was never committed to.
-2. **GitHub Actions billing** remains blocked — no CI verdict on any
+1. **GitHub Actions billing** remains blocked — no CI verdict on any
    commit since ~17:30 UTC 2026-08-03.
+2. *(Resolved 2026-08-04)* The blueprint documents were generated per
+   founder instruction — see `docs/SYNORA_MASTER_BLUEPRINT.md` §0. Worth a
+   founder read-through: the **Future vision** list (blueprint §11) is
+   where I placed Agents, Canvas, Marketplace, MCP, Mobile, and the rest —
+   if any of those should be *Planned* instead, say so and they move.
