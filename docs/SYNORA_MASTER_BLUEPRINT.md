@@ -624,9 +624,29 @@ it, and hydration re-applies the same check — a line whose block did not
 survive the load is dropped and counted, because the no-dangling-edges
 invariant has to hold across a restart and not only across a live delete.
 
+**Also implemented: a viewport and undo.** Zoom (40–200%, level shown),
+four-direction pan, and one reset for both — as labelled buttons rather
+than wheel and drag gestures, for the same reason movement is by nudge:
+keyboard-reachable by default, and discoverable rather than hidden until
+someone happens to try. Lines and blocks share a single transformed
+layer, so a connection cannot drift away from the blocks it joins.
+
+Undo is a bounded stack of inverse operations over add, delete, move,
+connect and disconnect, and the button names what it will reverse instead
+of saying only "Undo". Undoing a delete restores the block **and the
+lines that touched it**, captured before the request because the server
+removes them with the block and they are unrecoverable afterwards. The
+restored block carries a new id, and that is genuinely fine rather than a
+compromise: nothing outside a canvas refers to a block id, so the
+restored state is functionally the one that existed. Text edits are
+deliberately excluded — typing already has the browser's undo inside the
+textarea, and an entry per keystroke would bury the structural changes
+people actually want back. The page says so rather than leaving someone
+to discover it.
+
 **Missing, named:** dragging (movement is by nudge button — the first
 version deliberately avoids committing to an interaction model before
-anyone has arranged a real canvas); zoom; grouping; and inline previews of
+anyone has arranged a real canvas); grouping; and inline previews of
 linked runs or conversations, which currently show their type and id only.
 
 ### 5.12 Plugins — Partially implemented (`apps/backend/src/plugins/`, `/plugins`)

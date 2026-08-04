@@ -1,7 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, LayoutGrid, Link2, Loader2, Plus, StickyNote, Trash2, X } from 'lucide-react';
+import {
+  Archive,
+  LayoutGrid,
+  Link2,
+  Loader2,
+  Maximize,
+  Plus,
+  StickyNote,
+  Trash2,
+  Undo2,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -17,6 +30,7 @@ import {
   useUpdateBlock,
   type BlockKind,
   type CanvasBlock,
+  type CanvasConnection,
 } from '@/lib/api/canvas';
 
 /**
@@ -29,10 +43,42 @@ import {
  * model is even the right one, and building the elaborate interaction
  * first would be committing to a design I cannot yet justify. Nudge
  * buttons are also keyboard-reachable by default, which drag is not
- * without extra work.
+ * without extra work. Zoom and pan follow the same reasoning: buttons
+ * with labels, reachable by keyboard, rather than wheel and drag gestures
+ * that are invisible until discovered.
+ *
+ * UNDO IS STRUCTURAL, NOT TEXTUAL. Typing already has an undo — the
+ * browser's, inside the textarea — and recording an entry per keystroke
+ * would bury the changes people actually want back. What the stack holds
+ * is: what exists, where it sits, and what connects to what.
  */
 
 const GRID = 20;
+const PAN = 80;
+const ZOOM_STEP = 0.2;
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 2;
+
+/**
+ * One reversal, described as data rather than as a closure, so the stack
+ * can be inspected and so undoing does not capture stale component state.
+ *
+ * TEXT EDITS ARE DELIBERATELY ABSENT. Typing already has an undo — the
+ * browser's, inside the textarea — and pushing an entry per keystroke
+ * would bury the structural changes people actually want back. This stack
+ * covers structure: what exists, where it sits, and what connects to what.
+ */
+type UndoEntry =
+  | { kind: 'removeBlock'; blockId: string; label: string }
+  | {
+      kind: 'restoreBlock';
+      block: CanvasBlock;
+      connections: CanvasConnection[];
+      label: string;
+    }
+  | { kind: 'moveBlock'; blockId: string; x: number; y: number; label: string }
+  | { kind: 'disconnect'; connectionId: string; label: string }
+  | { kind: 'connect'; from: string; to: string; label?: string; text: string };
 
 const BLOCK_STYLES: Record<BlockKind, string> = {
   text: 'bg-background',
@@ -48,6 +94,9 @@ export default function CanvasPage() {
   const [newTitle, setNewTitle] = useState('');
   /** The block a connection is being drawn FROM, once one is chosen. */
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
 
   const { data: canvases = [], isLoading } = useCanvases(workspaceId);
   const { data: canvas } = useCanvas(workspaceId, selectedId ?? '', { enabled: !!selectedId });
@@ -60,6 +109,102 @@ export default function CanvasPage() {
   const disconnect = useDisconnectBlocks(workspaceId);
 
   const connections = canvas?.connections ?? [];
+
+  function pushUndo(entry: UndoEntry) {
+    // Bounded, like everything else here: an unbounded history is a slow
+    // memory leak that only shows up in a long session.
+    setUndoStack((stack) => [...stack.slice(-49), entry]);
+  }
+
+  /**
+   * Reverses the last structural change.
+   *
+   * RESTORING A DELETED BLOCK GIVES IT A NEW ID, and that is genuinely
+   * fine rather than a compromise: nothing outside this canvas refers to a
+   * block id, so a restored block plus its restored connections is
+   * functionally the state that existed before. Link blocks point at
+   * conversations and runs by THEIR ids, which are untouched.
+   */
+  function undo() {
+    if (!canvas || undoStack.length === 0) return;
+    const entry = undoStack[undoStack.length - 1];
+    setUndoStack((stack) => stack.slice(0, -1));
+    const onError = (e: Error) => toast.error(e.message);
+
+    switch (entry.kind) {
+      case 'removeBlock':
+        removeBlock.mutate({ canvasId: canvas.id, blockId: entry.blockId }, { onError });
+        return;
+      case 'moveBlock':
+        updateBlock.mutate(
+          { canvasId: canvas.id, blockId: entry.blockId, changes: { x: entry.x, y: entry.y } },
+          { onError },
+        );
+        return;
+      case 'disconnect':
+        disconnect.mutate({ canvasId: canvas.id, connectionId: entry.connectionId }, { onError });
+        return;
+      case 'connect':
+        connect.mutate(
+          { canvasId: canvas.id, from: entry.from, to: entry.to, label: entry.label },
+          { onError },
+        );
+        return;
+      case 'restoreBlock':
+        addBlock.mutate(
+          {
+            canvasId: canvas.id,
+            input: {
+              kind: entry.block.kind,
+              content: entry.block.content,
+              target: entry.block.target,
+              targetId: entry.block.targetId,
+              x: entry.block.x,
+              y: entry.block.y,
+              width: entry.block.width,
+              height: entry.block.height,
+            },
+          },
+          {
+            onSuccess: (restored) => {
+              // The lines that died with it come back too, re-pointed at
+              // the new id. Without this, "undo" would return a lonely
+              // block and quietly lose the structure around it.
+              for (const c of entry.connections) {
+                connect.mutate({
+                  canvasId: canvas.id,
+                  from: c.from === entry.block.id ? restored.id : c.from,
+                  to: c.to === entry.block.id ? restored.id : c.to,
+                  label: c.label,
+                });
+              }
+            },
+            onError,
+          },
+        );
+        return;
+    }
+  }
+
+  function deleteBlock(block: CanvasBlock) {
+    if (!canvas) return;
+    // Captured BEFORE the request, because the server deletes the lines
+    // along with the block and they are unrecoverable afterwards.
+    const touching = connections.filter((c) => c.from === block.id || c.to === block.id);
+    removeBlock.mutate(
+      { canvasId: canvas.id, blockId: block.id },
+      {
+        onSuccess: () =>
+          pushUndo({
+            kind: 'restoreBlock',
+            block,
+            connections: touching,
+            label: `deleting the ${block.kind} block`,
+          }),
+        onError: (e) => toast.error(e.message),
+      },
+    );
+  }
 
   function blockCentre(block: CanvasBlock) {
     return { cx: block.x + 16 + block.width / 2, cy: block.y + 16 + block.height / 2 };
@@ -80,7 +225,14 @@ export default function CanvasPage() {
     connect.mutate(
       { canvasId: canvas.id, from: connectFrom, to: blockId },
       {
-        onSuccess: () => setConnectFrom(null),
+        onSuccess: (created) => {
+          setConnectFrom(null);
+          pushUndo({
+            kind: 'disconnect',
+            connectionId: created.id,
+            label: 'connecting two blocks',
+          });
+        },
         onError: (e) => {
           toast.error(e.message);
           setConnectFrom(null);
@@ -103,7 +255,11 @@ export default function CanvasPage() {
           y: Math.floor(count / 4) * 140,
         },
       },
-      { onError: (e) => toast.error(e.message) },
+      {
+        onSuccess: (created) =>
+          pushUndo({ kind: 'removeBlock', blockId: created.id, label: `adding a ${kind} block` }),
+        onError: (e) => toast.error(e.message),
+      },
     );
   }
 
@@ -115,9 +271,21 @@ export default function CanvasPage() {
         blockId: block.id,
         changes: { x: block.x + dx * GRID, y: block.y + dy * GRID },
       },
-      // The server refuses a move off the navigable surface and says so;
-      // surfacing that verbatim is more useful than a generic failure.
-      { onError: (e) => toast.error(e.message) },
+      {
+        onSuccess: () =>
+          // The position BEFORE the move — captured from the block the
+          // caller already had, so undo restores where it actually was.
+          pushUndo({
+            kind: 'moveBlock',
+            blockId: block.id,
+            x: block.x,
+            y: block.y,
+            label: `moving the ${block.kind} block`,
+          }),
+        // The server refuses a move off the navigable surface and says so;
+        // surfacing that verbatim is more useful than a generic failure.
+        onError: (e) => toast.error(e.message),
+      },
     );
   }
 
@@ -233,6 +401,80 @@ export default function CanvasPage() {
                   </Button>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2 rounded-md border p-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Zoom out"
+                    onClick={() => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)))}
+                    disabled={zoom <= MIN_ZOOM}
+                  >
+                    <ZoomOut className="h-3 w-3" />
+                  </Button>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Zoom in"
+                    onClick={() => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2)))}
+                    disabled={zoom >= MAX_ZOOM}
+                  >
+                    <ZoomIn className="h-3 w-3" />
+                  </Button>
+
+                  <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+
+                  {(
+                    [
+                      ['Pan left', -1, 0],
+                      ['Pan right', 1, 0],
+                      ['Pan up', 0, -1],
+                      ['Pan down', 0, 1],
+                    ] as const
+                  ).map(([label, dx, dy]) => (
+                    <Button
+                      key={label}
+                      variant="outline"
+                      size="sm"
+                      aria-label={label}
+                      onClick={() =>
+                        setPan((p) => ({ x: p.x - dx * PAN, y: p.y - dy * PAN }))
+                      }
+                    >
+                      {dx === -1 ? '←' : dx === 1 ? '→' : dy === -1 ? '↑' : '↓'}
+                    </Button>
+                  ))}
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label="Reset view"
+                    onClick={() => {
+                      setZoom(1);
+                      setPan({ x: 0, y: 0 });
+                    }}
+                  >
+                    <Maximize className="mr-1 h-3 w-3" />
+                    Reset view
+                  </Button>
+
+                  <span className="flex-1" />
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={undo}
+                    disabled={undoStack.length === 0}
+                  >
+                    <Undo2 className="mr-1 h-3 w-3" />
+                    {undoStack.length === 0
+                      ? 'Nothing to undo'
+                      : `Undo ${undoStack[undoStack.length - 1].kind === 'connect' ? (undoStack[undoStack.length - 1] as { text: string }).text : (undoStack[undoStack.length - 1] as { label: string }).label}`}
+                  </Button>
+                </div>
+
                 {canvas.blocks.length === 0 ? (
                   <p className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
                     Empty canvas. Add a text or note block to begin.
@@ -243,6 +485,15 @@ export default function CanvasPage() {
                     aria-label="Canvas blocks"
                     className="relative min-h-[24rem] overflow-auto rounded-md border bg-muted/30 p-4"
                   >
+                    {/* One transformed layer holds both the lines and the
+                        blocks, so a connection cannot drift away from the
+                        blocks it joins when the view changes. */}
+                    <div
+                      style={{
+                        transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                        transformOrigin: 'top left',
+                      }}
+                    >
                     {/* Lines sit behind the blocks and never intercept
                         clicks — a connection is deleted from the list
                         below, where it has a name and a label. */}
@@ -347,12 +598,7 @@ export default function CanvasPage() {
                           <button
                             type="button"
                             aria-label={`Remove ${block.kind} block`}
-                            onClick={() =>
-                              removeBlock.mutate(
-                                { canvasId: canvas.id, blockId: block.id },
-                                { onError: (e) => toast.error(e.message) },
-                              )
-                            }
+                            onClick={() => deleteBlock(block)}
                             className="ml-auto rounded border px-1 text-xs hover:bg-muted"
                           >
                             <Trash2 className="h-3 w-3" />
@@ -360,6 +606,7 @@ export default function CanvasPage() {
                         </div>
                       </div>
                     ))}
+                    </div>
                   </div>
                 )}
 
@@ -405,7 +652,17 @@ export default function CanvasPage() {
                               onClick={() =>
                                 disconnect.mutate(
                                   { canvasId: canvas.id, connectionId: c.id },
-                                  { onError: (e) => toast.error(e.message) },
+                                  {
+                                    onSuccess: () =>
+                                      pushUndo({
+                                        kind: 'connect',
+                                        from: c.from,
+                                        to: c.to,
+                                        label: c.label,
+                                        text: 'removing a connection',
+                                      }),
+                                    onError: (e) => toast.error(e.message),
+                                  },
                                 )
                               }
                               className="rounded border px-1 hover:bg-muted"
@@ -422,7 +679,10 @@ export default function CanvasPage() {
                 <p className="text-xs text-muted-foreground">
                   Blocks move in {GRID}px steps. Dragging is not built yet — this is the first
                   version of the surface, and how people actually arrange a canvas will decide
-                  what it should become. Deleting a block also deletes the lines that touched it.
+                  what it should become. Deleting a block also deletes the lines that touched
+                  it; undo brings both back. Undo covers structure — what exists, where it
+                  sits, and what connects to what — not typing, where your browser&rsquo;s own
+                  undo already works inside the text box.
                 </p>
               </>
             )}

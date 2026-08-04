@@ -177,6 +177,130 @@ describe('canvas page', () => {
     expect(screen.getByText(/Empty canvas/)).toBeInTheDocument();
   });
 
+  describe('the viewport', () => {
+    it('zooms in and out within bounds, and shows the level', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+      expect(screen.getByText('100%')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /zoom in/i }));
+      expect(screen.getByText('120%')).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /zoom out/i }));
+      await user.click(screen.getByRole('button', { name: /zoom out/i }));
+      expect(screen.getByText('80%')).toBeInTheDocument();
+    });
+
+    it('resets zoom and pan together', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /zoom in/i }));
+      await user.click(screen.getByRole('button', { name: /pan right/i }));
+      await user.click(screen.getByRole('button', { name: /reset view/i }));
+
+      expect(screen.getByText('100%')).toBeInTheDocument();
+    });
+
+    it('offers panning in four directions', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+      for (const label of [/pan left/i, /pan right/i, /pan up/i, /pan down/i]) {
+        expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+      }
+    });
+  });
+
+  describe('undo', () => {
+    it('says there is nothing to undo before anything happens', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+      expect(screen.getByRole('button', { name: /nothing to undo/i })).toBeDisabled();
+    });
+
+    it('names what it will undo, and reverses a move to where the block was', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn((_v, opts) => opts?.onSuccess?.());
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /move note block right/i }));
+
+      // Naming the action matters: "Undo" alone makes someone guess what
+      // is about to change.
+      const undoButton = await screen.findByRole('button', { name: /undo moving the note block/i });
+      await user.click(undoButton);
+
+      // Back to x=0, the position it actually held before the nudge.
+      expect(update).toHaveBeenLastCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 0, y: 0 } },
+        expect.anything(),
+      );
+    });
+
+    it('restores a deleted block together with the lines that touched it', async () => {
+      const user = userEvent.setup();
+      const withConnection = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', content: 'Other', x: 300 }],
+        connections: [{ id: 'c1', from: 'b1', to: 'b2', createdAt: 1 }],
+      };
+      const remove = vi.fn((_v, opts) => opts?.onSuccess?.());
+      const add = vi.fn((_v, opts) => opts?.onSuccess?.({ ...canvas.blocks[0], id: 'b1_new' }));
+      const connect = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: withConnection } as never);
+      vi.mocked(canvasApi.useRemoveBlock).mockReturnValue(idle({ mutate: remove }) as never);
+      vi.mocked(canvasApi.useAddBlock).mockReturnValue(idle({ mutate: add }) as never);
+      vi.mocked(canvasApi.useConnectBlocks).mockReturnValue(idle({ mutate: connect }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getAllByRole('button', { name: /remove note block/i })[0]);
+      await user.click(await screen.findByRole('button', { name: /undo deleting the note block/i }));
+
+      // The block comes back...
+      expect(add).toHaveBeenCalled();
+      // ...and so does the connection, re-pointed at its new id. Without
+      // this, undo would return a lonely block and quietly lose the
+      // structure around it.
+      expect(connect).toHaveBeenCalledWith(
+        expect.objectContaining({ from: 'b1_new', to: 'b2' }),
+      );
+    });
+
+    it('undoes an added block by removing it', async () => {
+      const user = userEvent.setup();
+      const add = vi.fn((_v, opts) => opts?.onSuccess?.({ ...canvas.blocks[0], id: 'b_new' }));
+      const remove = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useAddBlock).mockReturnValue(idle({ mutate: add }) as never);
+      vi.mocked(canvasApi.useRemoveBlock).mockReturnValue(idle({ mutate: remove }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /^note$/i }));
+      await user.click(await screen.findByRole('button', { name: /undo adding a note block/i }));
+
+      expect(remove).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b_new' },
+        expect.anything(),
+      );
+    });
+  });
+
   describe('connections', () => {
     const twoBlocks: CanvasDocument = {
       ...canvas,
