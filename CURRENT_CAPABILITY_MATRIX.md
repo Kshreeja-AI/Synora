@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `95e3727` + the follow-up-chips increment
-**Evidence basis**: 2,519 backend tests across 234 files and 613 frontend tests
-across 91 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `5d81dd1` + the save-as-document increment
+**Evidence basis**: 2,531 backend tests across 235 files and 630 frontend tests
+across 94 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
 `schema.prisma` exactly. The previously-recorded whole-suite flake in
@@ -106,6 +106,7 @@ behaviour is covered by component and page tests instead.
 | Conversation CRUD, folders, tags | **A** | `conversations.ts`, `conversationFolders.ts` routes mounted; `/conversations` and `/conversations/[id]` pages; folder tree wired to the real folder API. |
 | Message send / edit / pin / attachments | **A** | `messages.ts` mounted; `MessageBubble` carries attachment, edit and pin affordances against real endpoints. |
 | One-click follow-ups on the last reply | **A** | Three chips under the last completed assistant reply — Simpler / More detail / Shorter — each a plain-language sentence that **prefills the composer and never auto-sends**: the person sees exactly what will be asked, can edit or discard it, and sends it themselves. No hidden prompt layer is appended. 6 `MessageBubble` tests pin the prefill contract and the gating (last reply only, never while streaming, never on empty or user turns). |
+| Save a reply as a document | **A** | `SaveAsDocument` on every completed assistant reply + `/documents` list and `/documents/[id]` pages + sidebar entry; 12 route tests + 17 component/page tests. The reply text is saved **verbatim** — no rewriting, no summarising, no hidden additions — under a title shown and editable before anything happens. If the conversation is filed into a project, filing the document alongside it is a **visible pre-checked checkbox**, never silent; the server re-verifies the claim (`projectId` on `POST /api/documents` admits a personal project's owner or a workspace project's members, 404 otherwise — the same check now also guards image/audio/video generation, which previously stored any projectId **unchecked**, letting a caller plant media in a project timeline they could not see). Success is proven by a link to the new document, not a vanishing toast, and project timelines now link their documents. Documents are **user-scoped** — yours across workspaces — and the page says so. |
 | Message branching (alternative paths) | **A** | `branches.ts` + `MessageBranch` model; frontend rewritten onto the real tree API rather than a local mock. |
 | Token streaming (SSE) | **B** | `streaming.ts` and `streaming.service.ts` are mounted and tested. **Limit**: end-to-end token latency has never been measured against a real provider — it is *unmeasured*, not "sub-100ms". |
 | Conversation sharing via invite token | **A** | `sharing.ts` + `sharing-public.ts`; the public path is deliberately separated so the unauthenticated route cannot inherit authenticated helpers. `/share/[token]` page exists. |
@@ -182,7 +183,7 @@ behaviour is covered by component and page tests instead.
 | Video generation | **E** | Async job abstraction, provider registry, polling API. **ACTIVATION BLOCKED**: no credential. |
 | Audio / text-to-speech | **E** | `audio.ts`, `audioGeneration.service.ts`. **ACTIVATION BLOCKED**: no credential. |
 | Media Studio UI | **A** | `/studio` page with image, video and audio tabs; tab state lives in the URL so a studio is linkable. The UI correctly surfaces the 503 rather than pretending. |
-| Document editing | **B** | `documents.ts` and the `Document` model exist and are tested. **Limit**: there is no rich document editing surface in the web app. |
+| Document editing | **B** | `documents.ts` now has route tests (it previously had none) and a real UI: `/documents` lists yours, `/documents/[id]` renders one, and "Save as doc" on any assistant reply creates one. **Limit**: documents are create-and-read only — there is no update route and no editing surface, so changing a saved document today means saving a new one. |
 
 ## Family H — Personal AI Automation
 

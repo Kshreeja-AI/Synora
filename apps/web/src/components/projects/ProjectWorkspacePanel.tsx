@@ -70,9 +70,11 @@ function when(iso: string): string {
 }
 
 function href(entry: ProjectTimelineEntry): string | null {
-  // Only conversations have a page to open today. The rest are listed
-  // without a link rather than given one that goes nowhere.
-  return entry.kind === 'conversation' ? `/conversations/${entry.id}` : null;
+  // Only kinds with a page to open get a link. The rest are listed
+  // without one rather than given one that goes nowhere.
+  if (entry.kind === 'conversation') return `/conversations/${entry.id}`;
+  if (entry.kind === 'document') return `/documents/${entry.id}`;
+  return null;
 }
 
 export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {

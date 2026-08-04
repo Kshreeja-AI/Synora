@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { FeedbackControls } from './FeedbackControls';
+import { SaveAsDocument } from '@/components/documents/SaveAsDocument';
 import { MessageAttachments } from './MessageAttachments';
 import { MessageEditor } from './MessageEditor';
 import { ForkNavigator } from '@/components/branching/ForkNavigator';
@@ -66,6 +67,12 @@ interface MessageBubbleProps {
    * under an old reply would imply a precision it does not have.
    */
   onFollowUp?: (instruction: string) => void;
+  /**
+   * The project this conversation is filed into, if any — forwarded to
+   * the "Save as doc" affordance so a saved reply can be filed alongside
+   * the thinking it came from (visibly, and optionally).
+   */
+  conversationProjectId?: string | null;
 }
 
 /**
@@ -95,6 +102,7 @@ export function MessageBubble({
   onBranchCreated,
   onEdited,
   onFollowUp,
+  conversationProjectId,
 }: MessageBubbleProps) {
   const branchingEnabled = Boolean(workspaceId && conversationId);
   const showFork = branchingEnabled && (message.siblingCount ?? 1) > 1;
@@ -324,6 +332,11 @@ export function MessageBubble({
               {message.isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
               {message.isPinned ? 'Unpin' : 'Pin'}
             </button>
+          )}
+
+          {isAssistant && !isStreaming && !!message.content && (
+            // A good reply should not have to die in the transcript.
+            <SaveAsDocument content={message.content} projectId={conversationProjectId} />
           )}
 
           {showFeedback && (

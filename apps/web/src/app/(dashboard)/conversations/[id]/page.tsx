@@ -342,6 +342,7 @@ export default function ConversationDetailPage() {
               onBranchCreated={handleBranchCreated}
               onEdited={handleEdited}
               onFollowUp={message.id === lastAssistantId ? handleFollowUp : undefined}
+              conversationProjectId={conversation.projectId}
             />
           ))
         )}

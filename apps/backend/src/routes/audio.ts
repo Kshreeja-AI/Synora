@@ -5,6 +5,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException, ServiceUnavailableException } from '@synora/shared';
 import { NoProviderConfiguredError } from '../ai';
 import { audioGenerationService } from '../services/audioGeneration.service';
+import { getProjectForUser } from '../services/project.service';
 import { mediaGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
@@ -32,6 +33,12 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { text, voice, format, projectId } = generateAudioSchema.parse(req.body);
+
+    // Same rule as images: an unchecked projectId would plant media in a
+    // project the caller cannot see. 404 on inaccessible projects.
+    if (projectId) {
+      await getProjectForUser(req.userId!, projectId);
+    }
 
     const audio = await audioGenerationService.generate({
       userId: req.userId!,

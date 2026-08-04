@@ -5,6 +5,7 @@ import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { createApiResponse, NotFoundException, ServiceUnavailableException } from '@synora/shared';
 import { NoProviderConfiguredError } from '../ai';
 import { imageGenerationService } from '../services/imageGeneration.service';
+import { getProjectForUser } from '../services/project.service';
 import { mediaGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
@@ -37,6 +38,14 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { prompt, size, projectId } = generateImageSchema.parse(req.body);
+
+    // The project timeline is read by bare projectId, so an unchecked id
+    // here would let anyone plant generated media in a project — and
+    // therefore a workspace — they cannot see. 404 on any project the
+    // caller can't access.
+    if (projectId) {
+      await getProjectForUser(req.userId!, projectId);
+    }
 
     const image = await imageGenerationService.generate({
       userId: req.userId!,
