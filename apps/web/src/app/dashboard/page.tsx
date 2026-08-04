@@ -10,6 +10,7 @@ import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
 import { WaitingForYou } from '../../components/shell/WaitingForYou';
+import { RecentActivity } from '../../components/shell/RecentActivity';
 
 export default function DashboardPage(): React.JSX.Element {
   const router = useRouter();
@@ -85,6 +86,10 @@ export default function DashboardPage(): React.JSX.Element {
               else on the page. A paused run is a fact, not a guess about
               what might matter. */}
           <WaitingForYou workspaceId={currentWorkspace.id} />
+
+          {/* What merely happened, below what is blocked. History reads
+              when wanted; it never claims attention. */}
+          <RecentActivity workspaceId={currentWorkspace.id} />
 
           <Card>
           <CardContent className="space-y-6 p-6">

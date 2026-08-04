@@ -25,6 +25,7 @@ import imageRoutes from './routes/images';
 import audioRoutes from './routes/audio';
 import aiRoutes from './routes/ai';
 import workspaceRoutes from './routes/workspaces';
+import activityRoutes from './routes/activity';
 import notificationRoutes from './routes/notifications';
 import invitationRoutes from './routes/invitations';
 import folderRoutes from './routes/folders';
@@ -257,6 +258,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/videos', videoRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/workspaces', activityRoutes);
   app.use('/api/workspaces', billingRoutes);
   app.use('/api/workspaces', folderRoutes);
   app.use('/api/workspaces', assetRoutes);
