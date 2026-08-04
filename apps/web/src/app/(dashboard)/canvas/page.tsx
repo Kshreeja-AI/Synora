@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   Archive,
+  GripVertical,
   LayoutGrid,
   Link2,
   Loader2,
@@ -36,21 +37,30 @@ import {
 /**
  * A spatial surface for arranging work.
  *
- * MOVEMENT IS BY NUDGE, NOT DRAG, and that is a deliberate first version.
- * Drag-and-drop is what people expect and it is substantially more code —
- * pointer capture, scroll interaction, touch, accessibility. Until someone
- * has actually arranged a few canvases, I do not know whether the spatial
- * model is even the right one, and building the elaborate interaction
- * first would be committing to a design I cannot yet justify. Nudge
- * buttons are also keyboard-reachable by default, which drag is not
- * without extra work. Zoom and pan follow the same reasoning: buttons
- * with labels, reachable by keyboard, rather than wheel and drag gestures
- * that are invisible until discovered.
+ * THERE ARE TWO WAYS TO MOVE A BLOCK AND BOTH ARE PERMANENT. Dragging is
+ * what people reach for, and it is now here. The nudge buttons stay,
+ * because a drag is a pointer gesture and a pointer gesture is unreachable
+ * by keyboard: removing them would take the surface away from anyone
+ * navigating by tab and arrow keys, and an accessible path that only
+ * exists until the pretty one ships is not an accessible path. Zoom and
+ * pan follow the same reasoning — labelled buttons rather than wheel and
+ * space-drag gestures that are invisible until someone tells you.
+ *
+ * DRAGGING IS BY A HANDLE, NOT THE WHOLE BLOCK. Text blocks are edited in
+ * place, and if the body of the block started a drag then selecting a word
+ * with the mouse would fling the block across the canvas instead.
+ *
+ * ONE SERVER CALL PER DRAG, ISSUED ON RELEASE. The position under the
+ * pointer is local state until then. Writing every intermediate pixel
+ * would be hundreds of requests for one gesture, and each one could fail
+ * or arrive out of order — the block would end up wherever the slowest
+ * response said, which is not where the person let go.
  *
  * UNDO IS STRUCTURAL, NOT TEXTUAL. Typing already has an undo — the
  * browser's, inside the textarea — and recording an entry per keystroke
  * would bury the changes people actually want back. What the stack holds
- * is: what exists, where it sits, and what connects to what.
+ * is: what exists, where it sits, and what connects to what. A whole drag
+ * is one entry for the same reason it is one request.
  */
 
 const GRID = 20;
@@ -58,6 +68,42 @@ const PAN = 80;
 const ZOOM_STEP = 0.2;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 2;
+/**
+ * How far the pointer must travel before this counts as a drag rather than
+ * a click that wobbled. Below it, nothing is written and no undo entry is
+ * pushed, so a mis-click cannot fill the history with moves to nowhere.
+ */
+const DRAG_THRESHOLD = 3;
+
+/**
+ * A drag in progress. Held as state rather than a ref because the block
+ * has to render under the pointer while it moves, and the lines joining it
+ * have to follow.
+ */
+type DragState = {
+  blockId: string;
+  /**
+   * Carried rather than looked up on release, so the undo entry can name
+   * the block the same way the nudge buttons do even if the block itself
+   * has gone from the list by the time the pointer comes up.
+   */
+  kind: BlockKind;
+  /** Where the pointer went down, in client coordinates. */
+  pointerX: number;
+  pointerY: number;
+  /** Where the block sat before the gesture — what undo restores. */
+  originX: number;
+  originY: number;
+  /** Where it sits right now, unsnapped, in canvas coordinates. */
+  x: number;
+  y: number;
+  /** Whether the threshold has been crossed. */
+  moved: boolean;
+};
+
+function snap(value: number): number {
+  return Math.round(value / GRID) * GRID;
+}
 
 /**
  * One reversal, described as data rather than as a closure, so the stack
@@ -97,6 +143,7 @@ export default function CanvasPage() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+  const [drag, setDrag] = useState<DragState | null>(null);
 
   const { data: canvases = [], isLoading } = useCanvases(workspaceId);
   const { data: canvas } = useCanvas(workspaceId, selectedId ?? '', { enabled: !!selectedId });
@@ -206,8 +253,20 @@ export default function CanvasPage() {
     );
   }
 
+  /**
+   * Where a block should be drawn: under the pointer while it is being
+   * dragged, otherwise wherever the server says it is. Everything that
+   * draws a block — the block itself and the lines that reach it — goes
+   * through here, so a line can never come adrift from its block.
+   */
+  function positionOf(block: CanvasBlock): { x: number; y: number } {
+    if (drag && drag.blockId === block.id) return { x: drag.x, y: drag.y };
+    return { x: block.x, y: block.y };
+  }
+
   function blockCentre(block: CanvasBlock) {
-    return { cx: block.x + 16 + block.width / 2, cy: block.y + 16 + block.height / 2 };
+    const { x, y } = positionOf(block);
+    return { cx: x + 16 + block.width / 2, cy: y + 16 + block.height / 2 };
   }
 
   function onConnectClick(blockId: string) {
@@ -284,6 +343,78 @@ export default function CanvasPage() {
           }),
         // The server refuses a move off the navigable surface and says so;
         // surfacing that verbatim is more useful than a generic failure.
+        onError: (e) => toast.error(e.message),
+      },
+    );
+  }
+
+  function onBlockPointerDown(block: CanvasBlock, e: ReactPointerEvent<HTMLElement>) {
+    // Only the primary button starts a drag; a right-click should reach
+    // the context menu rather than pick the block up.
+    if (e.button !== 0) return;
+    e.preventDefault();
+    // jsdom has no pointer capture, and a browser that lacks it still
+    // works here — the move and release handlers live on the surface, so
+    // capture is an improvement (events keep arriving if the pointer
+    // outruns the handle) rather than a requirement.
+    (e.currentTarget as Element & { setPointerCapture?: (id: number) => void }).setPointerCapture?.(
+      e.pointerId,
+    );
+    setDrag({
+      blockId: block.id,
+      kind: block.kind,
+      pointerX: e.clientX,
+      pointerY: e.clientY,
+      originX: block.x,
+      originY: block.y,
+      x: block.x,
+      y: block.y,
+      moved: false,
+    });
+  }
+
+  function onSurfacePointerMove(e: ReactPointerEvent<HTMLElement>) {
+    if (!drag) return;
+    const dx = e.clientX - drag.pointerX;
+    const dy = e.clientY - drag.pointerY;
+    setDrag({
+      ...drag,
+      // Divided by the zoom because the pointer moves in screen pixels
+      // while the block lives in canvas pixels. Without this the block
+      // lags the pointer when zoomed out and outruns it when zoomed in.
+      x: drag.originX + dx / zoom,
+      y: drag.originY + dy / zoom,
+      moved: drag.moved || Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD,
+    });
+  }
+
+  function onSurfacePointerUp() {
+    if (!drag) return;
+    const current = drag;
+    setDrag(null);
+    if (!current.moved || !canvas) return;
+
+    const x = snap(current.x);
+    const y = snap(current.y);
+    // Snapping can land the block exactly where it started; writing that
+    // would be a request that changes nothing and an undo entry that
+    // undoes nothing.
+    if (x === current.originX && y === current.originY) return;
+
+    updateBlock.mutate(
+      { canvasId: canvas.id, blockId: current.blockId, changes: { x, y } },
+      {
+        onSuccess: () =>
+          pushUndo({
+            kind: 'moveBlock',
+            blockId: current.blockId,
+            x: current.originX,
+            y: current.originY,
+            // Worded exactly as the nudge buttons word it: someone who
+            // moved a block should not have to work out which input they
+            // used to read the undo button.
+            label: `moving the ${current.kind} block`,
+          }),
         onError: (e) => toast.error(e.message),
       },
     );
@@ -483,6 +614,19 @@ export default function CanvasPage() {
                   <div
                     role="list"
                     aria-label="Canvas blocks"
+                    // The move and release handlers live on the surface
+                    // rather than the handle so that a pointer which
+                    // outruns the handle — or a release outside it — is
+                    // still seen. Pointer capture usually makes that moot,
+                    // but not every environment implements it.
+                    onPointerMove={onSurfacePointerMove}
+                    onPointerUp={onSurfacePointerUp}
+                    // A cancelled pointer (the browser taking over for a
+                    // scroll, a phone call arriving) is a released one as
+                    // far as this is concerned; leaving `drag` set would
+                    // strand the block under a pointer that no longer
+                    // exists.
+                    onPointerCancel={onSurfacePointerUp}
                     className="relative min-h-[24rem] overflow-auto rounded-md border bg-muted/30 p-4"
                   >
                     {/* One transformed layer holds both the lines and the
@@ -522,19 +666,43 @@ export default function CanvasPage() {
                       })}
                     </svg>
 
-                    {canvas.blocks.map((block) => (
+                    {canvas.blocks.map((block) => {
+                      const dragging = drag?.blockId === block.id && drag.moved;
+                      const at = positionOf(block);
+                      return (
                       <div
                         key={block.id}
                         role="listitem"
                         aria-label={`${block.kind} block`}
                         style={{
                           position: 'absolute',
-                          left: block.x + 16,
-                          top: block.y + 16,
+                          left: at.x + 16,
+                          top: at.y + 16,
                           width: block.width,
                         }}
-                        className={`rounded-md border p-2 shadow-sm ${BLOCK_STYLES[block.kind]}`}
+                        className={`rounded-md border p-2 shadow-sm ${BLOCK_STYLES[block.kind]} ${
+                          dragging ? 'z-10 opacity-90 shadow-lg' : ''
+                        }`}
                       >
+                        <div className="mb-1 flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label={`Drag ${block.kind} block`}
+                            onPointerDown={(e) => onBlockPointerDown(block, e)}
+                            // Without this a touch drag scrolls the page
+                            // instead of moving the block.
+                            style={{ touchAction: 'none' }}
+                            className="cursor-grab rounded px-0.5 text-muted-foreground hover:bg-muted active:cursor-grabbing"
+                          >
+                            <GripVertical className="h-3 w-3" />
+                          </button>
+                          {dragging && (
+                            <span className="text-[10px] tabular-nums text-muted-foreground">
+                              {snap(at.x)}, {snap(at.y)}
+                            </span>
+                          )}
+                        </div>
+
                         {block.kind === 'link' ? (
                           <p className="text-sm">
                             <span className="font-medium">{block.content}</span>
@@ -605,7 +773,8 @@ export default function CanvasPage() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                     </div>
                   </div>
                 )}
@@ -677,12 +846,12 @@ export default function CanvasPage() {
                 )}
 
                 <p className="text-xs text-muted-foreground">
-                  Blocks move in {GRID}px steps. Dragging is not built yet — this is the first
-                  version of the surface, and how people actually arrange a canvas will decide
-                  what it should become. Deleting a block also deletes the lines that touched
-                  it; undo brings both back. Undo covers structure — what exists, where it
-                  sits, and what connects to what — not typing, where your browser&rsquo;s own
-                  undo already works inside the text box.
+                  Drag a block by its handle, or move it with the arrow buttons if you are
+                  working from the keyboard. Either way it lands on a {GRID}px grid, and the
+                  whole drag counts as one step to undo. Deleting a block also deletes the
+                  lines that touched it; undo brings both back. Undo covers structure — what
+                  exists, where it sits, and what connects to what — not typing, where your
+                  browser&rsquo;s own undo already works inside the text box.
                 </p>
               </>
             )}

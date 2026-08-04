@@ -2,10 +2,12 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `6bee28b` + schedule-timezone increment
-**Evidence basis**: 2,460 backend tests across 232 files and 547 frontend tests
-across 86 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
-packages; lint 0 errors. Route mounts read
+**Verified at commit**: `6bee28b` + schedule-timezone and canvas-drag increments
+**Evidence basis**: 2,460 backend tests across 232 files and 552 frontend tests
+across 85 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+packages; lint 0 errors. (The file count was previously recorded as 86; 85 is
+what `find` and Vitest both report, so the higher figure was a stale count, not
+a deleted test.) Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
 
@@ -137,8 +139,9 @@ behaviour is covered by component and page tests instead.
 
 | Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Canvas / spatial workspace | **B** | `canvas/` + `routes/canvas.ts` + `/canvas` page, 32 store tests + 11 route tests + 20 page tests. Text, note and link blocks positioned on a bounded surface; create, rename, archive; add, edit, move and remove blocks; durable across restart. Link blocks store **ids only**, resolved on read, so a canvas cannot become a stale copy of what it points at. Blocks are deliberately **mutable** — unlike agents and workflows, nothing references a canvas as a record of the past. **Limit**: movement is by nudge button, not drag; no grouping. |
-| Canvas viewport (zoom, pan, reset) | **A** | Zoom 40–200% with the level shown, four-direction pan, and one reset for both. Lines and blocks share a single transformed layer, so a connection cannot drift away from the blocks it joins. Buttons with labels rather than wheel/drag gestures — keyboard-reachable by default, and discoverable rather than hidden. |
+| Canvas / spatial workspace | **B** | `canvas/` + `routes/canvas.ts` + `/canvas` page, 32 store tests + 11 route tests + 25 page tests. Text, note and link blocks positioned on a bounded surface; create, rename, archive; add, edit, move and remove blocks; durable across restart. Link blocks store **ids only**, resolved on read, so a canvas cannot become a stale copy of what it points at. Blocks are deliberately **mutable** — unlike agents and workflows, nothing references a canvas as a record of the past. **Limit**: no grouping or multi-select — blocks move one at a time. |
+| Canvas block movement (drag and keyboard) | **A** | Drag by a handle — not the block body, so selecting a word in a text block does not fling it across the surface — with the pointer delta divided by the current zoom and the result snapped to the 20px grid on release. **One server call per drag, on release**, not one per pixel: intermediate writes could fail or land out of order and settle the block where the slowest response said rather than where the person let go. The whole gesture is **one** undo entry, labelled exactly as a nudge is. Under three pixels of travel writes nothing, so a mis-click cannot fill the history. The arrow-key nudge buttons **stay permanently** — a drag is unreachable without a pointer, and an accessible path that lasts only until the pleasant one ships was never one. |
+| Canvas viewport (zoom, pan, reset) | **A** | Zoom 40–200% with the level shown, four-direction pan, and one reset for both. Lines and blocks share a single transformed layer, so a connection cannot drift away from the blocks it joins. Buttons with labels rather than wheel/space-drag gestures — keyboard-reachable by default, and discoverable rather than hidden. |
 | Canvas undo | **A** | A bounded stack of inverse operations covering add, delete, move, connect and disconnect, with the button naming what it will reverse rather than saying only "Undo". **Undoing a delete restores the block AND the lines that touched it**, re-pointed at the new id — the connections are captured before the request, because the server deletes them with the block and they are unrecoverable after. The new id is not a compromise: nothing outside a canvas references a block id, so the restored state is functionally the one that existed. **Limit, stated on the page**: undo is structural, not textual — typing has the browser's own undo inside the text box, and an entry per keystroke would bury the changes people want back. |
 | Canvas connections between blocks | **A** | Directed lines with optional labels, drawn as SVG behind the blocks and listed with a delete control. Cycles are **allowed** — the workflow rule against them exists because steps execute in an order, and a canvas has no execution order, so enforcing it here would copy a constraint past its reason. What *is* enforced: no self-connection, no duplicate in the same direction (the reverse is a separate statement), both endpoints must exist on **this** canvas, and a bounded count. Deleting a block deletes every line touching it, and hydration re-checks the same invariant, so a line from nothing to nothing cannot survive a restart either. |
 | Canvas link resolution (rendering the linked run/conversation inline) | **F** | A link block shows its target type and id, not a preview of the thing. |

@@ -692,10 +692,35 @@ invariant has to hold across a restart and not only across a live delete.
 
 **Also implemented: a viewport and undo.** Zoom (40–200%, level shown),
 four-direction pan, and one reset for both — as labelled buttons rather
-than wheel and drag gestures, for the same reason movement is by nudge:
-keyboard-reachable by default, and discoverable rather than hidden until
-someone happens to try. Lines and blocks share a single transformed
-layer, so a connection cannot drift away from the blocks it joins.
+than wheel and space-drag gestures: keyboard-reachable by default, and
+discoverable rather than hidden until someone happens to try. Lines and
+blocks share a single transformed layer, so a connection cannot drift
+away from the blocks it joins.
+
+**Also implemented: dragging, alongside the nudge buttons rather than
+instead of them.** A block is dragged by a handle, not by its body, because
+text blocks are edited in place and a body-drag would fling the block
+across the surface when someone tried to select a word. The pointer delta
+is divided by the current zoom — the pointer moves in screen pixels while
+the block lives in canvas pixels — and the result snaps to the 20px grid
+on release.
+
+**One server call per drag, issued on release.** The position under the
+pointer is local state until the pointer comes up. Writing every
+intermediate pixel would be hundreds of requests for one gesture, each of
+which could fail or arrive out of order, and the block would settle
+wherever the slowest response said rather than where the person let go.
+For the same reason a whole drag is **one** undo entry, labelled
+identically to a nudge — which input moved the block is not something the
+undo button should make anyone think about. A gesture that travels under
+three pixels writes nothing at all, so a mis-click cannot fill the history
+with moves to nowhere.
+
+**The nudge buttons stay permanently.** A drag is a pointer gesture and a
+pointer gesture is unreachable by keyboard; deleting the arrow buttons once
+dragging existed would have taken the canvas away from anyone navigating by
+tab and arrow keys. An accessible path that survives only until the
+pleasant one ships was never an accessible path.
 
 Undo is a bounded stack of inverse operations over add, delete, move,
 connect and disconnect, and the button names what it will reverse instead
@@ -710,10 +735,9 @@ textarea, and an entry per keystroke would bury the structural changes
 people actually want back. The page says so rather than leaving someone
 to discover it.
 
-**Missing, named:** dragging (movement is by nudge button — the first
-version deliberately avoids committing to an interaction model before
-anyone has arranged a real canvas); grouping; and inline previews of
-linked runs or conversations, which currently show their type and id only.
+**Missing, named:** grouping (selecting several blocks and moving them
+together); multi-select of any kind; and inline previews of linked runs or
+conversations, which currently show their type and id only.
 
 ### 5.12 Plugins — Partially implemented (`apps/backend/src/plugins/`, `/plugins`)
 

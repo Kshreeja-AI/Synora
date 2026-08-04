@@ -1,15 +1,20 @@
 /**
  * Canvas page tests.
  *
- * The assertions worth having are the ones that keep the surface honest
- * about its own limits: a server refusal to move a block off the navigable
- * area reaches the user verbatim rather than as a generic failure, and the
- * page says plainly that dragging is not built yet rather than leaving
- * someone to discover it by trying.
+ * The assertions worth having are the ones that keep the surface honest: a
+ * server refusal to move a block off the navigable area reaches the user
+ * verbatim rather than as a generic failure, a drag writes once on release
+ * rather than per pixel, and the keyboard path keeps working alongside the
+ * pointer one.
+ *
+ * DRAGS ARE DRIVEN WITH MouseEvent, NOT PointerEvent, because jsdom does
+ * not implement the latter. React dispatches on the event's type string,
+ * so a MouseEvent named `pointermove` reaches `onPointerMove` carrying
+ * real clientX/clientY — which is the part these tests actually need.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CanvasPage from '../page';
@@ -70,6 +75,17 @@ function idle(overrides: Record<string, unknown> = {}) {
  */
 function openCanvas(user: ReturnType<typeof userEvent.setup>) {
   return user.click(screen.getByRole('button', { name: /Launch plan/ }));
+}
+
+function pointerEvent(type: string, clientX: number, clientY: number): MouseEvent {
+  return new MouseEvent(type, { bubbles: true, cancelable: true, clientX, clientY, button: 0 });
+}
+
+/** Press on the handle, travel, release. One gesture, as a user makes it. */
+function dragBy(handle: Element, dx: number, dy: number) {
+  fireEvent(handle, pointerEvent('pointerdown', 100, 100));
+  fireEvent(handle, pointerEvent('pointermove', 100 + dx, 100 + dy));
+  fireEvent(handle, pointerEvent('pointerup', 100 + dx, 100 + dy));
 }
 
 function renderPage() {
@@ -133,15 +149,128 @@ describe('canvas page', () => {
     );
   });
 
-  it('says plainly that dragging is not built yet', async () => {
-    const user = userEvent.setup();
-    vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+  describe('dragging', () => {
+    it('moves a block to where it was dropped, snapped to the grid, in one request', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
 
-    renderPage();
-    await openCanvas(user);
+      renderPage();
+      await openCanvas(user);
+      dragBy(screen.getByRole('button', { name: /drag note block/i }), 48, 7);
 
-    // Better said than discovered by trying.
-    expect(screen.getByText(/Dragging is not built yet/)).toBeInTheDocument();
+      // Once, on release — not once per pixel travelled. Writing every
+      // intermediate position would be a request storm whose responses
+      // could land out of order, leaving the block somewhere nobody
+      // dropped it.
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 40, y: 0 } },
+        expect.anything(),
+      );
+    });
+
+    it('writes nothing when the pointer only wobbles', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      dragBy(screen.getByRole('button', { name: /drag note block/i }), 2, 1);
+
+      // A click that shifted two pixels is a click, and it should not
+      // reach the server or fill the undo history.
+      expect(update).not.toHaveBeenCalled();
+      expect(screen.getByRole('button', { name: /nothing to undo/i })).toBeDisabled();
+    });
+
+    it('translates pointer distance through the zoom level', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('button', { name: /zoom out/i }));
+      expect(screen.getByText('80%')).toBeInTheDocument();
+
+      // At 80%, 60 screen pixels is 75 canvas pixels, which snaps to 80.
+      // Taking the raw 60 would leave the block trailing the pointer.
+      dragBy(screen.getByRole('button', { name: /drag note block/i }), 60, 0);
+
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 80, y: 0 } },
+        expect.anything(),
+      );
+    });
+
+    it('counts a whole drag as one undo step, back to where the block started', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn((_v, opts) => opts?.onSuccess?.());
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      dragBy(screen.getByRole('button', { name: /drag note block/i }), 120, 60);
+
+      // Named the same way a nudge is named: which input was used to move
+      // the block is not something the undo button should make you think
+      // about.
+      await user.click(
+        await screen.findByRole('button', { name: /undo moving the note block/i }),
+      );
+
+      expect(update).toHaveBeenLastCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 0, y: 0 } },
+        expect.anything(),
+      );
+    });
+
+    it('tells the user when the server refuses a dropped position', async () => {
+      const user = userEvent.setup();
+      const { toast } = await import('sonner');
+      const toastError = vi.spyOn(toast, 'error');
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(
+        idle({
+          mutate: vi.fn((_v, opts) =>
+            opts?.onError?.(
+              new Error(
+                'x must be within ±100000; a block outside the surface cannot be found again',
+              ),
+            ),
+          ),
+        }) as never,
+      );
+
+      renderPage();
+      await openCanvas(user);
+      dragBy(screen.getByRole('button', { name: /drag note block/i }), 90, 0);
+
+      expect(toastError).toHaveBeenCalledWith(expect.stringContaining('cannot be found again'));
+    });
+
+    it('keeps the keyboard path alongside the pointer one', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+
+      // A drag is unreachable without a pointer. Removing the arrow
+      // buttons once dragging existed would have taken the canvas away
+      // from anyone working by keyboard.
+      expect(screen.getByRole('button', { name: /drag note block/i })).toBeInTheDocument();
+      for (const dir of [/move note block left/i, /move note block right/i]) {
+        expect(screen.getByRole('button', { name: dir })).toBeInTheDocument();
+      }
+      expect(screen.getByText(/if you are working from the keyboard/i)).toBeInTheDocument();
+    });
   });
 
   it('tells the user when the server refuses a move', async () => {
