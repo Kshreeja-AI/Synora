@@ -238,6 +238,35 @@ maintenance, feedback processing, evaluation runs, dataset export, video
 generation, plus queue and manager infrastructure. Producers fail fast
 rather than hanging when Redis is absent.
 
+### 5.9 Agent engine — Partially implemented (`apps/backend/src/agents/`)
+
+Commissioned by the Local Product Completion directive (2026-08-04),
+which moved AI Agents out of Future vision. What exists, with tests:
+
+**Implemented:** versioned immutable agent definitions (editing creates
+version+1 linked to its predecessor, so runs always resolve the exact
+configuration they executed under); workspace-scoped registry with
+404-style lookups; the run engine with an explicit lifecycle
+(`pending → planning → awaiting_approval? → running → completed | failed
+| cancelled | timed_out` — every run reaches exactly one terminal state);
+plan validation that treats every planner as untrusted (forbidden tool →
+whole run refused; unknown step kinds, duplicate ids, and forward-only
+dependencies enforced, making cycles unrepresentable); fail-closed
+permissions (no declared tools means no tools; undeclared mutability
+means mutating); approval gates as a state, with named approvers recorded
+and no execute-first path; per-step retry budgets; tool-call, step-count,
+and wall-clock limits; cancellation at step boundaries; an append-only
+run log. A deterministic local runtime exists for orchestration testing —
+every plan it produces is stamped `origin: 'local-deterministic'` and its
+output is prefixed, so it can never be passed off as model intelligence.
+
+**Missing, named:** persistence (definitions and runs are in-memory,
+same stage as evaluation datasets); HTTP routes and UI; a model-backed
+planner (the seam exists; wiring follows the judge pattern); integration
+with the real tool engine (the `AgentToolRunner` seam exists, the
+adapter to `tool-engine.service` is not yet written); usage/cost
+metering into the billing ledger.
+
 ---
 
 ## 6. Frontend — see `SYNORA_UI_SYSTEM.md`
@@ -334,20 +363,27 @@ plans. These are commitments, not aspirations:
 | E2E Playwright suite | `RELEASE_2_PLAN.md` R2-h | CI job exists; suite thin |
 | Redis as an active cache | `25-redis-cache.md` | Provisioned and used for queues, not yet as a cache |
 
-## 11. Future vision — directional, not committed
+## 11. Commissioned by the Local Product Completion directive (2026-08-04)
 
-Named in founder directives but **absent from every specification and from
-the codebase**. Recorded here so nobody mistakes them for scope in flight:
+The founder directive of 2026-08-04 moved the former "Future vision" list
+into committed scope, to be built locally without external credentials.
+Status per capability, honestly:
 
-AI Agents (autonomous multi-step execution) · AI Canvas · Plugin system ·
-Marketplace · Extension system · Workflow and automation builder ·
-Public SDK · Developer platform beyond API keys · Mobile applications ·
-Desktop applications · Offline architecture · Sync engine.
+| Capability | Status |
+|---|---|
+| AI Agents | **Partially implemented** — see §5.9. Engine, registry, permissions, approvals, limits: built and tested. Routes, UI, persistence, model planner: missing. |
+| Workflow engine | Not started. Composes on the agent engine's step/validation model. |
+| Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
+| AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
+| Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |
+| Marketplace | Foundation only permitted; no fake catalog entries, ever. |
+| Public SDK | Not started. Domain-level contracts, never raw DB shapes. |
+| Offline / sync | Not started. Local draft persistence and change tracking first. |
+| Mobile / desktop | Explicitly gated: shared contracts before any shell. |
 
-**None of these has any implementation.** Every "agent" match in the
-backend is `user-agent` HTTP header parsing. Before any is built it needs a
-specification in `docs/release3/`-style form, at which point it moves to
-§10.
+Rule retained from the directive: a capability whose only remaining
+blocker is external infrastructure is marked "IMPLEMENTATION COMPLETE —
+ACTIVATION BLOCKED BY EXTERNAL DEPENDENCY", never called production-ready.
 
 ## 12. Removal log
 
