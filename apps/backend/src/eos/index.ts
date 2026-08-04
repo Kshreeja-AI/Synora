@@ -130,6 +130,14 @@ export {
 export type { EgressPath, PathResult, PrivacyCoverageResult } from './privacy-coverage.js';
 export { registerEgressPaths } from './egress-registry.js';
 export {
+  createModelJudge,
+  parseJudgeScore,
+  buildJudgePrompt,
+  JUDGE_SYSTEM_PROMPT,
+} from './model-judge.js';
+export type { ModelJudgeOptions } from './model-judge.js';
+export { wireJudgeIfProviderAvailable } from './judge-wiring.js';
+export {
   importBenchmark,
   parseBenchmarkRecords,
   listImportedBenchmarks,

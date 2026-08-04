@@ -18,6 +18,7 @@ import { startLatencyDrift } from './eos/latency-drift.js';
 import { startProviderDegradation } from './eos/provider-degradation.js';
 import { startProposalEngine } from './eos/proposal-engine.js';
 import { registerEgressPaths } from './eos/egress-registry.js';
+import { wireJudgeIfProviderAvailable } from './eos/judge-wiring.js';
 
 /**
  * Returns the underlying `http.Server`, not just a resolved Promise, so a
@@ -60,6 +61,10 @@ async function bootstrap() {
   // above raise. Without it running, alerts fire into nothing and the
   // founder's proposals list stays permanently empty.
   startProposalEngine();
+  // Not awaited: resolving a provider can involve a network probe, and boot
+  // must not block on it. The judge is absent until this settles, which the
+  // gates already report honestly as unmeasured.
+  void wireJudgeIfProviderAvailable();
   emitBootComplete();
 }
 
