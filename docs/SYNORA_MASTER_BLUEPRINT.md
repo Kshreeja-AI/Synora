@@ -273,11 +273,37 @@ apply to agents exactly as to humans; tool-level approval fails the step
 fast with the execution id rather than hanging a run on a human
 timescale.
 
-**Missing, named:** persistence (definitions and runs are in-memory,
-same stage as evaluation datasets); HTTP routes and UI; usage/cost
-metering into the billing ledger; and no live model has ever produced a
-plan — the planner's parsing is fully tested, its intelligence is
-UNMEASURED — EXTERNAL PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
+**Also implemented (third increment):** durability. Definitions and runs
+now write through to a keyed store (`agent-stores.ts`) and are restored
+at startup, with in-memory kept as the synchronous working set. Three
+properties are deliberate. Definitions are re-validated on the way in, so
+a record written by an earlier version that no longer satisfies today's
+rules is discarded rather than trusted because it is on disk — guessing
+at what a malformed definition meant would hand an executor a
+configuration nobody wrote. A run whose agent definition did not restore
+is refused and counted, never silently loaded: such a run cannot be
+resumed, explained, or approved, so restoring it would look like recovery
+and behave like corruption (this is the benchmark-registry deadlock
+generalised into a guard). And a run found mid-flight restores as
+`failed` with the reason recorded, because the process that owned its
+loop no longer exists — while a run parked at `awaiting_approval` is left
+untouched, since nothing was executing and the human is still the thing
+being waited on. A missing store file is an empty store; a corrupt one
+raises rather than reading empty.
+
+This store is also the third-instance extraction that `gate-store.ts`
+called for: gate measurements and regression baselines were two tolerable
+copies of the keyed-record shape, and agent definitions and runs are
+instances three and four, so the generic `KeyedStore<T>` now exists
+rather than a third copy. Migrating the two older stores onto it is
+named follow-up work.
+
+**Missing, named:** HTTP routes and UI (the registry, run engine and
+store are real, tested, and currently unreachable by any user — no route
+mounts them); usage/cost metering into the billing ledger; agent memory
+integration; and no live model has ever produced a plan — the planner's
+parsing is fully tested, its intelligence is UNMEASURED — EXTERNAL
+PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
 ---
 
@@ -383,7 +409,7 @@ Status per capability, honestly:
 
 | Capability | Status |
 |---|---|
-| AI Agents | **Partially implemented** — see §5.9. Engine, registry, permissions, approvals, limits: built and tested. Routes, UI, persistence, model planner: missing. |
+| AI Agents | **Partially implemented** — see §5.9. Engine, registry, permissions, approvals, limits, durability across restart: built and tested. Routes, UI, agent memory: missing. Model planner: parsed and tested, activation blocked on a model endpoint. See also `CURRENT_CAPABILITY_MATRIX.md`. |
 | Workflow engine | Not started. Composes on the agent engine's step/validation model. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
