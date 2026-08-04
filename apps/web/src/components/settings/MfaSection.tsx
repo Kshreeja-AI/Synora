@@ -12,6 +12,7 @@ import {
   toast,
 } from '@synora/design-system';
 import { PasswordInput } from '../auth/PasswordInput';
+import { QrCodeImage } from './QrCodeImage';
 import {
   confirmMfaSetup,
   disableMfa,
@@ -207,11 +208,12 @@ export function MfaSection(): React.JSX.Element {
             }}
           >
             <p className="text-sm text-foreground">
-              Add this secret to your authenticator app, then enter the 6-digit code it shows.
+              Scan this with your authenticator app, then enter the 6-digit code it shows.
             </p>
+            <QrCodeImage value={enroll.setup.qrCode} />
             <div className="rounded-md bg-muted p-3">
+              <p className="text-xs text-muted-foreground">Can&apos;t scan? Enter this key manually:</p>
               <p className="break-all font-mono text-sm text-foreground">{enroll.setup.secret}</p>
-              <p className="mt-1 break-all text-xs text-muted-foreground">{enroll.setup.qrCode}</p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="mfa-enroll-code">Verification code</Label>

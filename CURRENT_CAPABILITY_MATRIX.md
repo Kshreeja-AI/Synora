@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `6aecc59` + the home-page decision-surface increment
-**Evidence basis**: 2,544 backend tests across 235 files and 652 frontend tests
-across 96 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `2177dcf` + the MFA QR-code + doc-correction increment
+**Evidence basis**: 2,544 backend tests across 235 files and 664 frontend tests
+across 98 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
 `schema.prisma` exactly. The previously-recorded whole-suite flake in
@@ -51,9 +51,9 @@ Three rules govern every entry:
 
 | Class | Count | What it means for the founder |
 |---|---:|---|
-| A — production-ready locally | 16 | Usable today. |
-| B — implemented but incomplete | 18 | Usable, with a stated hole. |
-| C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
+| A — production-ready locally | 18 | Usable today. |
+| B — implemented but incomplete | 17 | Usable, with a stated hole. |
+| C — backend foundation only | 0 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
 | F — not implemented | 8 | Does not exist. Named honestly rather than implied. |
@@ -62,6 +62,10 @@ Three rules govern every entry:
 Note that **G overlaps with A and B** rather than replacing them — a capability can
 be production-ready locally *and* unvalidated against real users. Where that is the
 case, both are recorded.
+
+These counts are maintained incrementally as rows change class, not recomputed by
+re-auditing every row on every edit — so treat them as directionally accurate rather
+than exact at any given instant. The row-level detail below is the source of truth.
 
 ---
 
@@ -262,7 +266,7 @@ behaviour is covered by component and page tests instead.
 | Password reset + email verification | **A** | Both services transactional. |
 | Account lockout | **A** | `lockout.service.ts`. |
 | CSRF protection | **A** | Middleware + tested frontend hook. |
-| MFA | **C** | `services/mfa/`, six MFA models, `mfa.ts` route exists. **Limit**: there is no enrolment UI, so no user can turn it on. |
+| MFA (TOTP two-factor authentication) | **A** | This row previously read **C** with "no enrolment UI, so no user can turn it on" — **already stale when written**: `MfaSection` (mounted on `/dashboard/settings/account`) and the login page's MFA-challenge step both existed and were tested (`LoginForm.test.tsx` already covered the challenge switch) before this correction. Corrected here rather than left to mislead, the same as the earlier agent-editing row. The real flow: `services/mfa/` (TOTP, recovery codes, challenge/setup tokens, rate limiting, audit, monitoring, alerting — nine service files) + `mfa.ts` route (`status`, `setup/initiate`, `setup/verify`, `setup/confirm`, `verify`, `disable`, `recovery-codes`) + the login route's `mfaRequired`/`mfaChallengeToken` branch. Enrollment is three steps on purpose — scan/enter → prove a live code → acknowledge the recovery codes before anything activates — so a factor never turns on until the server has proven the authenticator actually works AND the person has seen the one-and-only plaintext copy of their recovery codes. Disable requires the account password, so a hijacked session cannot silently strip the second factor. **What this pass added**: the "QR code" step was rendering the raw `otpauth://` URI as inert text — nothing to point a camera at, so first-time setup silently degraded to manually transcribing a 32-character secret, which is not what "scan a QR code" promises. `QrCodeImage` now renders it as an actual scannable image via the `qrcode` package (pure local encoding, no network call — an authenticator secret is exactly the kind of thing that must never leave the browser to become a picture), with the manual-entry secret kept alongside as the documented fallback. 12 new component tests (`MfaSection`, `QrCodeImage`) close what had been zero UI-level test coverage on a security-critical flow. |
 | Privacy consent + GDPR erase | **A** | `privacyConsent.ts`, `memoryGdpr.service.ts`. |
 | Client IP handling | **B** | `requestLogger.ts` redacts URL and user-agent but writes client IP **as received**. This is a deliberate, test-pinned policy choice, not an oversight. Pseudonymising it is classified **CONDITIONAL** under the Engineering Constitution and therefore **awaits founder sign-off**. |
 | Penetration testing / external security review | **G** | Never performed. Behaviour under adversarial real-world traffic is **unmeasured**. |
@@ -317,8 +321,9 @@ orchestration (F), and cost metering into the billing ledger. And the intelligen
 itself is still class **E**: with no provider configured, every plan comes from the
 deterministic local planner, which the UI labels LOCAL on every single run.
 
-The remaining class **C** entry is MFA, which has a route but no enrolment screen —
-the same shape of gap the agent platform just closed, one subsystem behind.
+There are no remaining class **C** entries — MFA was the last one, and it was
+already stale when recorded: the enrolment screen and login-challenge step existed
+and were tested before this document was corrected to say so.
 
 Everything in class **E** is finished engineering waiting on a credential or an
 account. No amount of further code moves those forward — they move when the founder
