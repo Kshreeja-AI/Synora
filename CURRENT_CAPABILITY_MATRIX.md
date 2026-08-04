@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `ee66af0` + canvas-viewport increment
-**Evidence basis**: 2,436 backend tests across 231 files and 544 frontend tests
+**Verified at commit**: `3adf399` + user-journeys increment
+**Evidence basis**: 2,444 backend tests across 232 files and 544 frontend tests
 across 86 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -56,6 +56,38 @@ Three rules govern every entry:
 Note that **G overlaps with A and B** rather than replacing them — a capability can
 be production-ready locally *and* unvalidated against real users. Where that is the
 case, both are recorded.
+
+---
+
+## Verified user journeys
+
+Eight complete tasks, performed end to end over real HTTP against real
+PostgreSQL, in `routes/__tests__/journeys.test.ts`. These exist separately
+from per-route tests because a route test proves one endpoint behaves; it
+cannot prove the *sequence* a person performs works, and the interesting
+failures live in the seams between calls.
+
+| Journey | What it proves |
+|---|---|
+| Blank workspace → template → dry run → real run → history → ledger | The whole first-use path, including that the run is billed to the same ledger everything else uses. |
+| Dry run catches a broken workflow | A dangling `{{step}}` reference is reported before anything executes, and no run is created by looking. |
+| Wire an outside system, then turn it off | A webhook with no session starts a real run as the trigger's creator; disabling makes the same URL answer 404. |
+| Install a plugin, use its template, uninstall | A contributed template becomes a real agent — and uninstalling removes the template but **not** the agent someone already made. |
+| Arrange a canvas, connect, delete | A block's lines go with it rather than dangling. |
+| An agent pauses, a human declines | Fail-closed approval parks the run; declining ends it as `cancelled` (a human saying no is not a failure) with the reason on the record. |
+| A workspace out of credits | Refused before spending; the free dry run still works, which is the point of gating at the start rather than everywhere. |
+| Cross-workspace isolation | 404 not 403 at every surface, and the other workspace's lists are simply empty. |
+
+**Found by writing these**: `start` and `approve` wrap their result as
+`{ run, … }` because they carry a runtime notice; `reject` and `cancel`
+return the run directly. Both sides of the wire agree — the web client
+types them the same way — so this is a non-uniformity to know about when
+integrating, not a live defect, and it is recorded rather than silently
+changed.
+
+**Not covered**: there is no browser-level E2E suite (no Playwright), so
+these prove the API sequence rather than the rendered UI. Frontend
+behaviour is covered by component and page tests instead.
 
 ---
 
