@@ -31,7 +31,18 @@ export interface AgentLimits {
   maxSteps: number;
   /** Total tool invocations across the run, retries included. */
   maxToolCalls: number;
-  /** Wall-clock budget for the whole run. */
+  /**
+   * Wall-clock budget for the whole run.
+   *
+   * COUPLED TO THE HTTP REQUEST TIMEOUT, which nothing in the type system
+   * enforces. A run currently executes inside the request that started it
+   * (`await startRun(...)`), so a budget larger than
+   * `DEFAULT_TIMEOUT_MS` in `middleware/requestTimeout.ts` means the
+   * request dies while the run continues — spending budget nobody can
+   * observe, under an id the caller never received. The default below is
+   * already ten times that timeout; see the note in
+   * `docs/SYNORA_MASTER_BLUEPRINT.md` §5.9 before raising either number.
+   */
   maxDurationMs: number;
   /** Additional attempts per step after the first, for retryable failures. */
   maxRetriesPerStep: number;

@@ -5,6 +5,12 @@ interface RequestWithTimeout extends Request {
   timeoutHandle?: NodeJS.Timeout;
 }
 
+// COUPLED TO AGENT RUN BUDGETS. Agent and workflow runs execute inside the
+// request that starts them, and their default wall-clock budget
+// (`DEFAULT_AGENT_LIMITS.maxDurationMs`, 5 minutes) is already ten times
+// this. When that gap is exceeded the handler below returns 408 but does
+// NOT abort the work: the run carries on unobserved. Read the note in
+// `agents/types.ts` before changing either number.
 const DEFAULT_TIMEOUT_MS = 30000;
 const _STREAMING_TIMEOUT_MS = 5 * 60000;
 const WEBHOOK_TIMEOUT_MS = 10000;
