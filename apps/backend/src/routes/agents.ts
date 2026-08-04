@@ -21,7 +21,7 @@ import {
   rejectStep,
   startRun,
 } from '../agents/run-engine';
-import { resolveAgentRuntime } from '../agents/runtime';
+import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
 import type { AgentRun } from '../agents/types';
 
 /**
@@ -208,7 +208,10 @@ router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/approve', async (req
         stepId: req.params.stepId,
         approvedBy: req.userId!,
       },
-      runtime.deps,
+      // Either kind of definition: this endpoint resumes agent runs and
+      // workflow runs alike, and an agent-only resolver would fail every
+      // parked workflow with "definition disappeared during the run".
+      { ...runtime.deps, resolveDefinition: resolveAnyDefinition },
     );
     await persistRun(run.id);
     res.json(createApiResponse(runResponse(run, runtime)));

@@ -102,12 +102,42 @@ export interface PlannedStep {
 export interface AgentPlan {
   steps: PlannedStep[];
   /**
-   * `model` when a real model produced this plan; `local-deterministic`
-   * when the orchestration-test planner did. The two must never be
-   * conflated in any surface: a deterministic plan demonstrates the
-   * engine, not intelligence.
+   * Where these steps came from. Three genuinely different things, and
+   * conflating any two of them would misrepresent the system:
+   *
+   * - `model`: a real model produced this plan.
+   * - `local-deterministic`: the orchestration-test planner did. It
+   *   demonstrates the engine, not intelligence.
+   * - `authored`: a human wrote these steps down, and the system followed
+   *   them exactly. Nothing improvised. This is what a workflow is.
    */
-  origin: 'model' | 'local-deterministic';
+  origin: 'model' | 'local-deterministic' | 'authored';
+}
+
+/**
+ * What the run engine actually needs in order to execute something.
+ *
+ * WHY THIS EXISTS. The engine was written against `AgentDefinition`, but
+ * nothing in the execution loop is specific to agents: it needs to know
+ * the budgets, when to pause for a human, which tools are permitted, and
+ * enough identity to record what ran. A workflow — a human-authored
+ * sequence rather than an improvised one — needs exactly the same
+ * treatment, and would otherwise mean a second copy of the retry,
+ * approval, budget and cancellation logic. One executor, two ways of
+ * deciding what the steps should be.
+ */
+export interface ExecutableDefinition {
+  id: string;
+  workspaceId: string;
+  name: string;
+  /** Used as the system prompt for `generate` steps. */
+  instructions: string;
+  allowedTools: string[];
+  approvalPolicy: ApprovalPolicy;
+  limits: AgentLimits;
+  version: number;
+  lineageId: string;
+  archived: boolean;
 }
 
 export type RunState =

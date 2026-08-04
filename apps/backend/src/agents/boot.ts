@@ -1,6 +1,12 @@
 import { FileKeyedStore, setAgentDefinitionStore, setAgentRunStore } from './agent-stores.js';
-import { hydrateAgents } from './agent-registry.js';
+import { hydrateAgents, hasAgentDefinition } from './agent-registry.js';
 import { hydrateRuns } from './run-engine.js';
+import {
+  createFileWorkflowStore,
+  hasWorkflowDefinition,
+  hydrateWorkflows,
+  setWorkflowStore,
+} from '../workflows/workflow-registry.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
 
@@ -33,17 +39,26 @@ export async function bootAgentStores(): Promise<void> {
   const dir = process.env.AGENT_STORE_DIR;
   if (!dir) {
     logger.info(
-      'Agent stores are in-memory: AGENT_STORE_DIR is not set, so agents and runs will NOT survive a restart.',
+      'Agent and workflow stores are in-memory: AGENT_STORE_DIR is not set, so agents, workflows and runs will NOT survive a restart.',
     );
     return;
   }
 
   setAgentDefinitionStore(new FileKeyedStore<AgentDefinition>(`${dir}/agent-definitions.json`));
   setAgentRunStore(new FileKeyedStore<AgentRun>(`${dir}/agent-runs.json`));
+  setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
 
   try {
+    // Definitions before runs, always: a run whose definition has not
+    // loaded yet is indistinguishable from one whose definition is gone.
     const definitions = await hydrateAgents();
-    const { loaded, orphaned } = await hydrateRuns();
+    const workflows = await hydrateWorkflows();
+    // The run store holds agent runs and workflow runs alike, so the
+    // orphan check must know about both. Passing only the agent check
+    // would silently destroy every workflow run on each restart.
+    const { loaded, orphaned } = await hydrateRuns(
+      (id) => hasAgentDefinition(id) || hasWorkflowDefinition(id),
+    );
 
     // Orphans are surfaced, never swallowed. A run refused because its
     // definition did not restore is a real loss of history, and an operator
@@ -54,7 +69,12 @@ export async function bootAgentStores(): Promise<void> {
         orphaned,
       });
     }
-    logger.info('Agent stores hydrated.', { definitions, runs: loaded, orphaned });
+    logger.info('Agent and workflow stores hydrated.', {
+      definitions,
+      workflows,
+      runs: loaded,
+      orphaned,
+    });
   } catch (err) {
     // A corrupt store raises rather than reading empty, and that distinction
     // is the whole point — so it is reported loudly here instead of being

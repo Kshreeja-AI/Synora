@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `c3339f2` + agent UI increment
-**Evidence basis**: 2,224 backend tests across 217 files and 481 frontend tests
+**Verified at commit**: `5d5f265` + workflow increment
+**Evidence basis**: 2,251 backend tests across 219 files and 481 frontend tests
 across 79 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -45,8 +45,8 @@ Three rules govern every entry:
 
 | Class | Count | What it means for the founder |
 |---|---:|---|
-| A — production-ready locally | 14 | Usable today. |
-| B — implemented but incomplete | 13 | Usable, with a stated hole. |
+| A — production-ready locally | 15 | Usable today. |
+| B — implemented but incomplete | 15 | Usable, with a stated hole. |
 | C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
@@ -88,11 +88,13 @@ case, both are recorded.
 
 ## Family C — Workflow Automation
 
-| Capability | Class | Evidence |
+| Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Workflow engine | **F** | No file, directory, model, or route matches `workflow` anywhere in `apps/` or `packages/`. |
-| Workflow UI / builder | **F** | Does not exist. |
-| Scheduled / triggered automation | **F** | Does not exist. Background *workers* exist (`src/workers/`), which is a different thing: they run platform maintenance, not user-defined automation. |
+| Workflow engine (authored steps, executed exactly) | **B** | `workflows/` + `routes/workflows.ts`, 20 engine tests + 7 route tests. A workflow is a human-authored sequence, versioned immutably like agents, run through the *same* engine — so approval gates, tool permissions, retry and tool-call budgets, deadlines and cancellation are inherited rather than reimplemented. Plans are stamped `origin: 'authored'`, distinct from both `model` and `local-deterministic`. **Limit**: no UI. |
+| Workflow authoring-time validation | **A** | A sequence that could never run is refused with a 400 when saved, naming the offending step — rather than accepted and failed on first use. Re-validated on edit (narrowing tool permissions can invalidate saved steps) and again on load from disk. |
+| Workflow durability | **B** | Definitions persist via the same `KeyedStore` and hydrate at boot; the run store's orphan check knows about workflows as well as agents, so workflow runs are not destroyed on restart. **Limit**: shares the `AGENT_STORE_DIR` gate — unset means in-memory, which the server logs. |
+| Workflow UI / builder | **F** | Does not exist. Workflows are created and run over the API only. |
+| Scheduled / triggered automation | **F** | Does not exist. A workflow must be started by a request. Background *workers* exist (`src/workers/`), which is a different thing: they run platform maintenance, not user-defined automation. |
 
 ## Family D — Canvas
 

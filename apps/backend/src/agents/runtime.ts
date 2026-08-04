@@ -4,6 +4,9 @@ import { createModelPlanner } from './model-planner.js';
 import { createWorkspaceToolRunner } from './tool-runner-adapter.js';
 import { createDeterministicGenerate, createDeterministicPlanner } from './local-runtime.js';
 import type { RunEngineDeps } from './run-engine.js';
+import type { ExecutableDefinition } from './types.js';
+import { getAgent } from './agent-registry.js';
+import { getWorkflow } from '../workflows/workflow-registry.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -31,6 +34,22 @@ import { logger } from '../utils/logger.js';
  */
 
 export type AgentRuntimeMode = 'model' | 'local';
+
+/**
+ * Resolves a definition from either registry.
+ *
+ * WHY THIS IS NEEDED. Runs are approved, rejected and cancelled through
+ * one set of endpoints regardless of what produced them, because from a
+ * caller's point of view a parked run is a parked run. But `approveStep`
+ * must re-resolve the definition to continue executing, and a resolver
+ * that only knew agents would fail every parked WORKFLOW run with
+ * "definition disappeared during the run" — a confusing message for a
+ * workflow that is sitting right there. Same reasoning as the boot-time
+ * orphan check, which also has to know about both.
+ */
+export function resolveAnyDefinition(id: string, workspaceId: string): ExecutableDefinition | null {
+  return getAgent(id, workspaceId) ?? getWorkflow(id, workspaceId);
+}
 
 export interface ResolvedAgentRuntime {
   deps: RunEngineDeps;

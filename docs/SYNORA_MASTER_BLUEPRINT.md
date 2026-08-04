@@ -350,6 +350,53 @@ orchestration; and no live model has ever produced a plan — the planner's
 parsing is fully tested, its intelligence is UNMEASURED — EXTERNAL
 PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
+### 5.10 Workflow engine — Partially implemented (`apps/backend/src/workflows/`)
+
+A workflow is a sequence a **human wrote down**, executed exactly as
+written. That is the whole distinction from an agent: an agent is given a
+goal and improvises a plan; a workflow is given the plan. Nothing decides
+what the steps should be, because a person already did. When customers say
+"automation" they usually mean this one.
+
+**What is deliberately shared, and why.** Everything about *running* steps
+— permission checks, approval gates, retry budgets, tool-call budgets, the
+wall clock, cancellation and the append-only record — is the agent run
+engine, unchanged. A second execution loop would mean two implementations
+of properties that were hard to get right, and the day they diverged, one
+would be wrong in a way nobody notices until an agent and a workflow behave
+differently on the same tool. Worse, a divergence would let someone route
+around a control by choosing the other feature. So the engine gained one
+small seam — `ExecutableDefinition` plus an injectable `resolveDefinition`
+— and a workflow supplies its own steps and its own resolver. The engine
+never learns that workflows exist.
+
+**Implemented:** authored step sequences validated with the engine's own
+`validatePlan` (not a parallel copy, which would drift); immutable
+versioning identical to agents, so a run resolves the exact version it
+executed; workspace-scoped lookups answering 404 rather than 403; archive
+rather than delete; durability through the same `KeyedStore`, hydrated at
+boot; and HTTP routes under `/api/workspaces/:workspaceId/workflows`.
+
+**Three details worth recording.** First, validation happens at AUTHORING
+time as well as run time — an agent's plan cannot be checked until a
+planner produces it, but a workflow's steps exist the moment someone saves
+them, and letting a user save a sequence that can never run would build a
+trap that looks ready and fails when it matters. It is re-validated on
+edit, because narrowing `allowedTools` can invalidate steps that were fine
+a moment earlier. Second, plans are stamped `origin: 'authored'`, a third
+value distinct from `model` and `local-deterministic`, so no surface can
+imply that a human-written sequence was reasoning — and equally, cannot
+imply it was deterministic scaffolding. Third, the run store holds agent
+runs and workflow runs alike, so both the boot-time orphan check and the
+shared approve/reject/cancel endpoints resolve definitions from either
+registry; an agent-only check would have silently destroyed every workflow
+run on restart, turning a guard against corruption into a cause of data
+loss.
+
+**Missing, named:** UI (workflows are created and run over the API only);
+scheduling and triggers, so a workflow must be started by a request rather
+than by a clock or an event; and per-run cost metering.
+
 ---
 
 ## 6. Frontend — see `SYNORA_UI_SYSTEM.md`
@@ -455,7 +502,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | Not started. Composes on the agent engine's step/validation model. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability and HTTP routes: built and tested, executing through the agent run engine rather than a second copy of it. UI and scheduling: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |

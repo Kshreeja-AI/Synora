@@ -8,6 +8,7 @@ import {
   type AgentPlanner,
   type AgentRun,
   type AgentToolRunner,
+  type ExecutableDefinition,
   type PlannedStep,
   type RunState,
   type StepRecord,
@@ -38,8 +39,15 @@ import {
  *   did the agent actually do" must always be answerable from the record
  *   alone.
  *
- * PERSISTENCE HONESTY: runs live in memory. Stated, not hidden — the same
- * stage as evaluation datasets, and a named production blocker.
+ * WHAT IT EXECUTES. The engine deliberately knows nothing about agents
+ * beyond `ExecutableDefinition` — the budgets, the approval policy, the
+ * permitted tools, and enough identity to record what ran. Agents resolve
+ * through the default resolver; workflows supply their own. That is one
+ * executor with two ways of deciding what the steps should be, rather than
+ * a second copy of the retry, approval, budget and cancellation logic.
+ *
+ * DURABILITY: runs are held in memory as the working set and written
+ * through to a keyed store, hydrated at boot. See `agent-stores.ts`.
  */
 
 const runs = new Map<string, AgentRun>();
@@ -51,6 +59,17 @@ export interface RunEngineDeps {
   generate: AgentGenerate;
   /** Injectable clock so timeout behaviour is testable deterministically. */
   now?: () => number;
+  /**
+   * How a run resolves the definition it executes under. Defaults to the
+   * agent registry; workflows pass their own so the engine can execute an
+   * authored sequence without the registry knowing workflows exist.
+   * Workspace-scoped like every other lookup: elsewhere means nonexistent.
+   */
+  resolveDefinition?: (id: string, workspaceId: string) => ExecutableDefinition | null;
+}
+
+function definitionResolver(deps: RunEngineDeps) {
+  return deps.resolveDefinition ?? getAgent;
 }
 
 function log(run: AgentRun, event: string, detail?: string): void {
@@ -136,7 +155,7 @@ export async function startRun(
   params: { agentId: string; workspaceId: string; requestedBy: string; task: string },
   deps: RunEngineDeps,
 ): Promise<AgentRun> {
-  const agent = getAgent(params.agentId, params.workspaceId);
+  const agent = definitionResolver(deps)(params.agentId, params.workspaceId);
   if (!agent) {
     // Cross-workspace and nonexistent are deliberately the same answer.
     throw new Error('agent not found');
@@ -192,7 +211,7 @@ export async function startRun(
  */
 async function executeFrom(
   run: AgentRun,
-  agent: NonNullable<ReturnType<typeof getAgent>>,
+  agent: ExecutableDefinition,
   deps: RunEngineDeps,
 ): Promise<AgentRun> {
   const now = deps.now ?? Date.now;
@@ -317,7 +336,7 @@ export async function approveStep(
   run.state = 'running';
   log(run, 'step.approved', `${params.stepId} by ${params.approvedBy}`);
 
-  const agent = getAgent(run.agentId, run.workspaceId);
+  const agent = definitionResolver(deps)(run.agentId, run.workspaceId);
   if (!agent) return finish(run, 'failed', 'agent definition disappeared during the run');
   return executeFrom(run, agent, deps);
 }
@@ -394,15 +413,23 @@ export async function persistRun(runId: string): Promise<boolean> {
  * Definitions must therefore be hydrated FIRST. A run that still cannot
  * find its definition is skipped and counted, so the loss is visible
  * rather than silent.
+ *
+ * `isDefinitionKnown` exists because the run store holds every kind of
+ * run, and a workflow run's definition lives in the workflow registry
+ * rather than the agent registry. Defaulting to the agent registry alone
+ * would orphan every workflow run on restart — a guard against corruption
+ * turning into a cause of data loss. Boot passes a check that covers both.
  */
-export async function hydrateRuns(): Promise<{ loaded: number; orphaned: number }> {
+export async function hydrateRuns(
+  isDefinitionKnown: (definitionId: string) => boolean = hasAgentDefinition,
+): Promise<{ loaded: number; orphaned: number }> {
   const stored = await getAgentRunStore().loadAll();
   let loaded = 0;
   let orphaned = 0;
 
   for (const run of Object.values(stored)) {
     if (!run?.id || !run.workspaceId || !run.agentId) continue;
-    if (!hasAgentDefinition(run.agentId)) {
+    if (!isDefinitionKnown(run.agentId)) {
       orphaned += 1;
       continue;
     }
