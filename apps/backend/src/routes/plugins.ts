@@ -4,6 +4,7 @@ import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
 import {
+  contributedHosts,
   forgetPlugin,
   getPlugin,
   installPlugin,
@@ -11,7 +12,13 @@ import {
   persistPlugin,
   setPluginState,
   uninstallPlugin,
+  validateManifest,
 } from '../plugins/plugin-registry';
+import {
+  contributedToolName,
+  removePluginTools,
+  syncPluginTools,
+} from '../plugins/tool-contributions';
 import { EXECUTION_PERMISSIONS, GRANTABLE_PERMISSIONS } from '../plugins/types';
 import type { PluginManifest } from '../plugins/types';
 
@@ -48,7 +55,14 @@ function toHttpError(err: unknown): unknown {
     message.includes('could never run') ||
     message.includes('names a tool id') ||
     message.includes('unknown kind') ||
-    message.includes('must be a list')
+    message.includes('must be a list') ||
+    message.includes('is contributed twice') ||
+    message.includes('which the engine cannot execute') ||
+    message.includes('needs a "url"') ||
+    message.includes('not a valid URL') ||
+    message.includes('http or https url') ||
+    message.includes('workspace secret to be substituted') ||
+    message.includes('inputSchema that is not an object')
   ) {
     return new ValidationException(message);
   }
@@ -78,6 +92,51 @@ router.get('/:workspaceId/plugins', async (req: AuthRequest, res, next) => {
 // What zod does here is guarantee an object arrived at all.
 const installSchema = z.object({ manifest: z.record(z.unknown()) });
 
+/**
+ * What a manifest WOULD do, without doing it.
+ *
+ * This exists because disclosure after the fact is not consent. A
+ * contributed tool reaches a host the publisher chose, and being told
+ * which host once the tool already exists is being informed, not asked.
+ * Validation runs here in full, so a manifest that would be refused is
+ * refused at the preview with the same message rather than surprising
+ * someone who has already pressed install.
+ *
+ * Declared before `/:workspaceId/plugins/:pluginId` handlers for the usual
+ * reason: a literal segment that arrives after a parameter never matches.
+ */
+router.post('/:workspaceId/plugins/preview', async (req: AuthRequest, res, next) => {
+  try {
+    const { manifest } = installSchema.parse(req.body ?? {});
+    const candidate = manifest as unknown as PluginManifest;
+    validateManifest(candidate);
+    res.json(
+      createApiResponse({
+        id: candidate.id,
+        name: candidate.name,
+        version: candidate.version,
+        publisher: candidate.publisher,
+        permissions: candidate.permissions,
+        templates: (candidate.contributions?.templates ?? []).map((t) => ({
+          id: t.id,
+          name: t.name,
+          kind: t.kind,
+        })),
+        tools: (candidate.contributions?.tools ?? []).map((t) => ({
+          name: contributedToolName(candidate.id, t.name),
+          displayName: t.displayName,
+          description: t.description,
+          type: t.type,
+          url: (t.config as { url?: unknown })?.url ?? null,
+        })),
+        hosts: contributedHosts(candidate),
+      }),
+    );
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
 router.post('/:workspaceId/plugins', async (req: AuthRequest, res, next) => {
   try {
     const { manifest } = installSchema.parse(req.body ?? {});
@@ -86,8 +145,27 @@ router.post('/:workspaceId/plugins', async (req: AuthRequest, res, next) => {
       manifest: manifest as unknown as PluginManifest,
       installedBy: req.userId!,
     });
+    let tools;
+    try {
+      tools = await syncPluginTools(plugin, req.userId!);
+    } catch (error) {
+      // The install is rolled back rather than left half-done. A plugin
+      // recorded as installed whose tools were refused would show as
+      // working while contributing nothing, and the next enable would try
+      // the same failing thing again.
+      uninstallPlugin(plugin.manifest.id, req.params.workspaceId);
+      throw error;
+    }
     await persistPlugin(plugin.manifest.id, req.params.workspaceId);
-    res.status(201).json(createApiResponse(plugin));
+    res.status(201).json(
+      createApiResponse({
+        ...plugin,
+        tools,
+        // The destinations, said plainly. "Contributes 1 tool" is not
+        // something a person can consent to; a host name is.
+        hosts: contributedHosts(plugin.manifest),
+      }),
+    );
   } catch (error) {
     next(toHttpError(error));
   }
@@ -101,8 +179,11 @@ router.patch('/:workspaceId/plugins/:pluginId', async (req: AuthRequest, res, ne
       req.params.workspaceId,
       enabled ? 'enabled' : 'disabled',
     );
+    // Disabling has to reach the tools, or the switch is decorative for
+    // the one contribution kind that can call out of the platform.
+    const tools = await syncPluginTools(plugin, req.userId!);
     await persistPlugin(plugin.manifest.id, req.params.workspaceId);
-    res.json(createApiResponse(plugin));
+    res.json(createApiResponse({ ...plugin, tools }));
   } catch (error) {
     next(toHttpError(error));
   }
@@ -112,11 +193,20 @@ router.delete('/:workspaceId/plugins/:pluginId', async (req: AuthRequest, res, n
   try {
     const plugin = getPlugin(req.params.pluginId, req.params.workspaceId);
     if (!plugin) return next(new NotFoundException('Plugin'));
+    // Tools first. Uninstalling is the withdrawal of consent to reach the
+    // publisher's host, so it has to actually withdraw it — and doing this
+    // before the record disappears means a failure here leaves the plugin
+    // installed rather than leaving orphaned tools behind.
+    const removedTools = await removePluginTools(
+      req.params.workspaceId,
+      req.params.pluginId,
+      req.userId!,
+    );
     uninstallPlugin(req.params.pluginId, req.params.workspaceId);
     // Removed from the store too, or the plugin returns on the next
     // restart carrying permissions nobody re-granted.
     await forgetPlugin(req.params.pluginId, req.params.workspaceId);
-    res.json(createApiResponse({ uninstalled: true }));
+    res.json(createApiResponse({ uninstalled: true, removedTools }));
   } catch (error) {
     next(toHttpError(error));
   }

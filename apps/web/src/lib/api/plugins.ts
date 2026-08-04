@@ -21,9 +21,18 @@ import type { AgentTemplate } from './agentTemplates';
 
 export type PluginPermission =
   | 'templates:contribute'
+  | 'tools:contribute'
   | 'workspace:read'
   | 'code:execute'
   | 'network:outbound';
+
+export interface PluginToolContribution {
+  name: string;
+  displayName: string;
+  description: string;
+  type: 'HTTP' | 'Webhook';
+  config: Record<string, unknown>;
+}
 
 export interface PluginManifest {
   id: string;
@@ -32,8 +41,39 @@ export interface PluginManifest {
   description: string;
   publisher: string;
   permissions: PluginPermission[];
-  contributions: { templates?: AgentTemplate[] };
+  contributions: { templates?: AgentTemplate[]; tools?: PluginToolContribution[] };
   entryPoint?: string;
+}
+
+/**
+ * What a manifest would do, fetched BEFORE installing.
+ *
+ * The hosts matter more than anything else here. A contributed tool sends
+ * a request to a destination the publisher chose, and "contributes 1 tool"
+ * is not something anyone can meaningfully agree to — a host name is.
+ */
+export interface PluginPreview {
+  id: string;
+  name: string;
+  version: string;
+  publisher: string;
+  permissions: PluginPermission[];
+  templates: { id: string; name: string; kind: string }[];
+  tools: {
+    name: string;
+    displayName: string;
+    description: string;
+    type: string;
+    url: string | null;
+  }[];
+  hosts: string[];
+}
+
+/** The tool rows a lifecycle change created, removed, or could not add. */
+export interface PluginToolSync {
+  active: string[];
+  deactivated: string[];
+  skipped: { name: string; reason: string }[];
 }
 
 export interface InstalledPlugin {
@@ -68,17 +108,36 @@ export function usePlugins(
   });
 }
 
+/**
+ * Asks what a manifest would do without doing it. Validation runs server
+ * side here too, so a manifest that will be refused is refused now rather
+ * than after someone has agreed to install it.
+ */
+export function usePreviewPlugin(
+  workspaceId: string,
+): UseMutationResult<PluginPreview, Error, unknown> {
+  return useMutation({
+    mutationFn: (manifest) =>
+      api.post<PluginPreview>(`/api/workspaces/${workspaceId}/plugins/preview`, { manifest }),
+  });
+}
+
 export function useInstallPlugin(
   workspaceId: string,
-): UseMutationResult<InstalledPlugin, Error, unknown> {
+): UseMutationResult<InstalledPlugin & { tools?: PluginToolSync; hosts?: string[] }, Error, unknown> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (manifest) =>
-      api.post<InstalledPlugin>(`/api/workspaces/${workspaceId}/plugins`, { manifest }),
+      api.post<InstalledPlugin & { tools?: PluginToolSync; hosts?: string[] }>(
+        `/api/workspaces/${workspaceId}/plugins`,
+        { manifest },
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] });
       // A plugin can contribute templates, so that list is now stale too.
       queryClient.invalidateQueries({ queryKey: ['agent-templates', workspaceId] });
+      // ...and tools, which are real rows the tools page lists.
+      queryClient.invalidateQueries({ queryKey: ['tools', workspaceId] });
     },
   });
 }

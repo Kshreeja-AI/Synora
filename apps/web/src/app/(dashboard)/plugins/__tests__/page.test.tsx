@@ -3,9 +3,12 @@
  *
  * The assertions here are about expectation-setting. A user who believes
  * plugins run code will install something expecting behaviour it cannot
- * have, so the page says otherwise plainly. And a disabled plugin must not
+ * have, so the page says otherwise plainly. A disabled plugin must not
  * look like it still holds its permissions, because the switch would then
- * be decorative.
+ * be decorative. And because a plugin can now contribute a tool that
+ * contacts a host the publisher chose, the destinations have to be on
+ * screen BEFORE the install button exists — disclosure afterwards is
+ * being informed, not being asked.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -25,11 +28,32 @@ vi.mock('@/lib/api/plugins', async () => {
   return {
     ...actual,
     usePlugins: vi.fn(),
+    usePreviewPlugin: vi.fn(),
     useInstallPlugin: vi.fn(),
     useSetPluginEnabled: vi.fn(),
     useUninstallPlugin: vi.fn(),
   };
 });
+
+/** What the server reports a tool-contributing manifest would do. */
+const preview = {
+  id: 'acme.crm',
+  name: 'Acme CRM',
+  version: '2.1.0',
+  publisher: 'acme',
+  permissions: ['tools:contribute'],
+  templates: [],
+  tools: [
+    {
+      name: 'acme.crm/create-lead',
+      displayName: 'Create a lead',
+      description: 'Files a lead in Acme CRM.',
+      type: 'HTTP',
+      url: 'https://api.acme-crm.example/v1/leads',
+    },
+  ],
+  hosts: ['api.acme-crm.example'],
+};
 
 const plugin: InstalledPlugin = {
   id: 'ws_1::acme.summariser',
@@ -72,10 +96,24 @@ beforeEach(() => {
     },
     isLoading: false,
   } as never);
+  vi.mocked(pluginsApi.usePreviewPlugin).mockReturnValue(idle() as never);
   vi.mocked(pluginsApi.useInstallPlugin).mockReturnValue(idle() as never);
   vi.mocked(pluginsApi.useSetPluginEnabled).mockReturnValue(idle() as never);
   vi.mocked(pluginsApi.useUninstallPlugin).mockReturnValue(idle() as never);
 });
+
+/** Open the paste box and put a manifest in it. */
+async function paste(user: ReturnType<typeof userEvent.setup>, text = '{{"id":"a.b"}') {
+  await user.click(screen.getByRole('button', { name: /install from manifest/i }));
+  await user.type(screen.getByLabelText(/manifest \(json\)/i), text);
+}
+
+/** Mocks a preview that succeeds with the given report. */
+function previewReturns(report: unknown) {
+  vi.mocked(pluginsApi.usePreviewPlugin).mockReturnValue(
+    idle({ mutate: vi.fn((_v, opts) => opts?.onSuccess?.(report)) }) as never,
+  );
+}
 
 describe('plugins page', () => {
   it('says plainly that plugins do not run code, and why', () => {
@@ -138,24 +176,23 @@ describe('plugins page', () => {
     const user = userEvent.setup();
     const { toast } = await import('sonner');
     const toastError = vi.spyOn(toast, 'error');
-    const installFn = vi.fn();
-    vi.mocked(pluginsApi.useInstallPlugin).mockReturnValue(idle({ mutate: installFn }) as never);
+    const previewFn = vi.fn();
+    vi.mocked(pluginsApi.usePreviewPlugin).mockReturnValue(idle({ mutate: previewFn }) as never);
 
     renderPage();
-    await user.click(screen.getByRole('button', { name: /install from manifest/i }));
-    await user.type(screen.getByLabelText(/manifest \(json\)/i), 'not json');
-    await user.click(screen.getByRole('button', { name: /^install$/i }));
+    await paste(user, 'not json');
+    await user.click(screen.getByRole('button', { name: /review manifest/i }));
 
     // A different problem from a server refusal, and named as such.
     expect(toastError).toHaveBeenCalledWith('That is not valid JSON');
-    expect(installFn).not.toHaveBeenCalled();
+    expect(previewFn).not.toHaveBeenCalled();
   });
 
-  it('surfaces the server\'s refusal verbatim', async () => {
+  it('surfaces the server\'s refusal verbatim, at review rather than after installing', async () => {
     const user = userEvent.setup();
     const { toast } = await import('sonner');
     const toastError = vi.spyOn(toast, 'error');
-    vi.mocked(pluginsApi.useInstallPlugin).mockReturnValue(
+    vi.mocked(pluginsApi.usePreviewPlugin).mockReturnValue(
       idle({
         mutate: vi.fn((_v, opts) =>
           opts?.onError?.(
@@ -166,11 +203,86 @@ describe('plugins page', () => {
     );
 
     renderPage();
-    await user.click(screen.getByRole('button', { name: /install from manifest/i }));
-    await user.type(screen.getByLabelText(/manifest \(json\)/i), '{{"id":"a.b"}');
-    await user.click(screen.getByRole('button', { name: /^install$/i }));
+    await paste(user);
+    await user.click(screen.getByRole('button', { name: /review manifest/i }));
 
     expect(toastError).toHaveBeenCalledWith(expect.stringContaining('cannot do safely yet'));
+    // Refused before anyone agreed to anything, so there is nothing to
+    // press.
+    expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
+  });
+
+  describe('reviewing before installing', () => {
+    it('names the hosts a plugin will contact before offering to install it', async () => {
+      const user = userEvent.setup();
+      previewReturns(preview);
+
+      renderPage();
+      await paste(user);
+      await user.click(screen.getByRole('button', { name: /review manifest/i }));
+
+      // The host is the part a person can actually judge. "Contributes 1
+      // tool" is not something anyone can consent to. It appears twice on
+      // purpose — the exact URL on the tool, and the host in the summary.
+      expect(screen.getAllByText(/api\.acme-crm\.example/).length).toBeGreaterThan(1);
+      expect(screen.getByText(/Create a lead/)).toBeInTheDocument();
+      expect(screen.getByText(/send requests when used/)).toBeInTheDocument();
+      // And that the publisher cannot waive the approval on their own tool.
+      expect(screen.getByText(/a plugin cannot waive that/)).toBeInTheDocument();
+
+      // Only now is there something to press.
+      expect(screen.getByRole('button', { name: /^install$/i })).toBeInTheDocument();
+    });
+
+    it('makes an edited manifest be reviewed again', async () => {
+      const user = userEvent.setup();
+      previewReturns(preview);
+
+      renderPage();
+      await paste(user);
+      await user.click(screen.getByRole('button', { name: /review manifest/i }));
+      expect(screen.getByRole('button', { name: /^install$/i })).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText(/manifest \(json\)/i), ' ');
+
+      // Otherwise someone could agree to one manifest and install another.
+      expect(screen.queryByRole('button', { name: /^install$/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /review manifest/i })).toBeInTheDocument();
+    });
+
+    it('reports tools that could not be added instead of claiming a clean install', async () => {
+      const user = userEvent.setup();
+      const { toast } = await import('sonner');
+      const toastWarning = vi.spyOn(toast, 'warning');
+      previewReturns(preview);
+      vi.mocked(pluginsApi.useInstallPlugin).mockReturnValue(
+        idle({
+          mutate: vi.fn((_v, opts) =>
+            opts?.onSuccess?.({
+              tools: {
+                active: [],
+                deactivated: [],
+                skipped: [
+                  {
+                    name: 'acme.crm/create-lead',
+                    reason: 'a different tool already uses this name in this workspace',
+                  },
+                ],
+              },
+            }),
+          ),
+        }) as never,
+      );
+
+      renderPage();
+      await paste(user);
+      await user.click(screen.getByRole('button', { name: /review manifest/i }));
+      await user.click(screen.getByRole('button', { name: /^install$/i }));
+
+      // A plugin that contributed none of its tools must not report
+      // success as though it had.
+      expect(toastWarning).toHaveBeenCalledWith(expect.stringContaining('already uses this name'));
+    });
   });
 
   it('shows an empty state before anything is installed', () => {

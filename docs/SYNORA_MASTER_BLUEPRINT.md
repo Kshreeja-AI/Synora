@@ -785,10 +785,64 @@ required `delete`; a store that cannot delete makes every removal
 temporary, and an uninstalled plugin returning after a restart with its
 permissions intact is a resurrection nobody would think to look for.
 
-**Missing, named:** an execution isolate (above); tool contributions
-(templates are the only contribution kind); plugin signing or provenance
-verification; and a marketplace, which is deliberately downstream of this
-— a storefront for a runtime that does not exist would be a façade.
+**Tool contributions are real, and are held to a stricter standard than
+authored tools.** A plugin may contribute HTTP and Webhook tool
+definitions, which become ordinary `ToolDefinition` rows and run through
+the same engine, SSRF policy, rate limits, approval flow and execution
+records as anything written by hand. Keeping them virtual and merging at
+read time — the way contributed TEMPLATES work — was not available
+honestly: an execution record points at a tool row by foreign key, so a
+virtual tool could be listed and never run, which is the
+ready-looking-and-broken trap refused everywhere else.
+
+This is still not code execution, and the distinction is worth stating
+precisely: the plugin supplies **data describing a request**, and Synora's
+own engine makes the request. Nothing from the plugin is loaded or called.
+"The plugin can cause a network call" and "the plugin runs" remain
+different claims, and only the first is true. Only HTTP and Webhook are
+accepted because they are the only types the engine executes; a Database
+or Python contribution is refused rather than installed unrunnable.
+
+**A contributed tool may not name a workspace secret, though a tool you
+write yourself may.** A `{{secret:NAME}}` anywhere in a contributed
+config is refused. When you write that placeholder yourself you are
+choosing to send your own credential to a destination you typed; a
+manifest is written by someone else, and one declaring `Authorization:
+{{secret:OPENAI_API_KEY}}` against its own host would exfiltrate that key
+on the first execution while the install screen said only "contributes 1
+tool". Consent that specific needs a per-secret decision this version does
+not have, so the answer is no. Approval-before-execution is likewise
+forced on and **the publisher gets no say** — letting them set it false
+would let them waive the review of their own tool; a workspace admin can
+lower it afterwards, locally and audited.
+
+**Consent is asked, not announced.** `POST /plugins/preview` reports what
+a manifest would do — permissions, templates, tools, and the **hosts**
+those tools will contact — without installing anything, and the UI shows
+it before an install button exists. Editing the manifest text invalidates
+the review, so nobody can agree to one manifest and install another.
+
+**Uninstalling removes contributed tools; it does not remove contributed
+templates.** The asymmetry is the design, not an inconsistency. A template
+someone built an agent from is inert — they copied it, the copy is theirs,
+and taking it back would delete their work. A tool is not inert: it
+reaches a host the publisher chose, every time it runs, so uninstalling
+(the withdrawal of consent) has to actually withdraw it. Disabling does
+the same. Removal is a deactivation rather than a delete because
+executions point at the row and "what did this tool do while it was
+installed" is exactly the question asked afterwards. Provenance lives in
+the `ToolDefinition.pluginId` **column** rather than a naming convention,
+because uninstall must remove exactly the plugin's tools and a rename that
+broke a string convention would leave a third-party reach in place after
+the grant was withdrawn. A name already taken by another tool is
+**reported as skipped**, never overwritten.
+
+**Missing, named:** an execution isolate (above); plugin signing or
+provenance verification (a manifest is trusted as handed over, so nothing
+proves the publisher is who it claims); tool contributions of the types
+the engine cannot yet execute; and a marketplace, which is deliberately
+downstream of this — a storefront for a runtime that does not exist would
+be a façade.
 
 ---
 

@@ -29,6 +29,15 @@ import {
  * could never produce a runnable workflow is refused at INSTALL time
  * rather than discovered by whoever tries to use it — the same
  * authoring-time rule that stops a workflow being saved unrunnable.
+ *
+ * CONTRIBUTED TOOLS ARE HELD TO A STRICTER STANDARD THAN AUTHORED ONES,
+ * and the asymmetry is deliberate. A tool you write yourself may name a
+ * workspace secret, because you chose the destination it goes to. A tool
+ * that arrives in a manifest may not, because someone else chose the
+ * destination and "contributes 1 tool" is not enough information to
+ * consent to sending a credential there. Validation refuses it by name,
+ * and `contributedHosts` exists so an install screen can say which hosts
+ * will actually be contacted.
  */
 
 const installed = new Map<string, InstalledPlugin>();
@@ -136,6 +145,100 @@ export function validateManifest(manifest: PluginManifest): void {
       if (rejection) {
         throw new Error(`plugin template ${template.id} could never run: ${rejection}`);
       }
+    }
+  }
+
+  validateToolContributions(manifest);
+}
+
+/** Anything the engine would substitute a workspace secret into. */
+const SECRET_PLACEHOLDER = /\{\{secret:[A-Za-z0-9_.-]+\}\}/;
+
+/**
+ * The set of hosts a manifest's tools would contact, for the install
+ * screen. "Contributes 1 tool" is not consent; "will contact
+ * api.example.com" is something a person can actually judge.
+ */
+export function contributedHosts(manifest: PluginManifest): string[] {
+  const hosts = new Set<string>();
+  for (const tool of manifest.contributions?.tools ?? []) {
+    const url = (tool?.config as { url?: unknown } | undefined)?.url;
+    if (typeof url !== 'string') continue;
+    try {
+      hosts.add(new URL(url).host);
+    } catch {
+      // A URL that will not parse is refused by validation; nothing to
+      // disclose here, and throwing would make the disclosure helper
+      // second-guess the validator.
+    }
+  }
+  return [...hosts].sort();
+}
+
+function validateToolContributions(manifest: PluginManifest): void {
+  const tools = manifest.contributions?.tools ?? [];
+  if (!Array.isArray(tools)) throw new Error('plugin tool contributions must be a list');
+  if (tools.length > PLUGIN_LIMITS.maxToolsPerPlugin) {
+    throw new Error(`a plugin contributes at most ${PLUGIN_LIMITS.maxToolsPerPlugin} tools`);
+  }
+  if (tools.length > 0 && !manifest.permissions.includes('tools:contribute')) {
+    throw new Error(
+      'this plugin contributes tools without asking for the "tools:contribute" permission',
+    );
+  }
+
+  const seen = new Set<string>();
+  for (const tool of tools) {
+    const name = requireString(tool?.name, 'tool name', PLUGIN_LIMITS.maxNameLength);
+    requireString(tool?.displayName, 'tool display name', PLUGIN_LIMITS.maxNameLength);
+    requireString(tool?.description, 'tool description', PLUGIN_LIMITS.maxDescriptionLength);
+    requireString(tool?.category, 'tool category', PLUGIN_LIMITS.maxNameLength);
+
+    if (seen.has(name)) {
+      throw new Error(`plugin tool ${JSON.stringify(name)} is contributed twice`);
+    }
+    seen.add(name);
+
+    // Widened for the same reason template.kind is: a manifest arrives
+    // from outside the type system.
+    const type: string = tool?.type;
+    if (type !== 'HTTP' && type !== 'Webhook') {
+      throw new Error(
+        `plugin tool ${JSON.stringify(name)} has type ${JSON.stringify(String(type))}, which the ` +
+          'engine cannot execute — only HTTP and Webhook tools genuinely run, and installing ' +
+          'another kind would add a tool that can never do anything',
+      );
+    }
+
+    const url = (tool?.config as { url?: unknown } | undefined)?.url;
+    if (typeof url !== 'string' || url.trim().length === 0) {
+      throw new Error(`plugin tool ${JSON.stringify(name)} needs a "url" in its config`);
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`plugin tool ${JSON.stringify(name)} has a url that is not a valid URL`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`plugin tool ${JSON.stringify(name)} must use an http or https url`);
+    }
+
+    // The exfiltration refusal. Serialising the whole config catches a
+    // placeholder wherever it hides — url, headers, or a nested field a
+    // future config shape adds — rather than only the two places I
+    // happened to think of today.
+    if (SECRET_PLACEHOLDER.test(JSON.stringify(tool.config ?? {}))) {
+      throw new Error(
+        `plugin tool ${JSON.stringify(name)} asks for a workspace secret to be substituted into ` +
+          'its request. A tool you write yourself may do that, because you chose the destination; ' +
+          'a manifest written by someone else may not, since the first execution would send your ' +
+          'credential to their host and the install screen would only have said "contributes 1 tool"',
+      );
+    }
+
+    if (tool.inputSchema !== undefined && typeof tool.inputSchema !== 'object') {
+      throw new Error(`plugin tool ${JSON.stringify(name)} has an inputSchema that is not an object`);
     }
   }
 }

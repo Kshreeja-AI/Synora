@@ -1888,6 +1888,13 @@ model ToolDefinition {
   createdBy         String?
   createdByUser     User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull)
 
+  /// Set when a plugin contributed this tool, NULL when a person authored it.
+  /// Provenance is a column rather than a naming convention because uninstall
+  /// has to remove EXACTLY the plugin's tools: a contributed tool can reach a
+  /// third-party host, and a rename that broke a string convention would
+  /// leave that reach in place after the grant was withdrawn.
+  pluginId          String?
+
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
 
@@ -1897,6 +1904,7 @@ model ToolDefinition {
   @@index([type])
   @@index([isActive])
   @@index([createdBy])
+  @@index([workspaceId, pluginId])
 }
 
 enum ToolType {
