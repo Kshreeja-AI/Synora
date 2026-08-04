@@ -20,6 +20,7 @@ import { getAiPathCoverage } from './instrumentation.js';
 import { getRuntimeCheck } from './runtime-check.js';
 import { getLaunchReadiness } from './launch-gates.js';
 import { auditPrivacyCoverage, measurePrivacyGate } from './privacy-coverage.js';
+import { listImportedBenchmarks } from './benchmark-importer.js';
 import { listProposals, getProposal, decideProposal, type ProposalStatus } from './proposal-engine.js';
 
 const router: Router = Router();
@@ -167,6 +168,33 @@ router.post('/privacy-coverage/measure', async (_req: Request, res: Response) =>
     return;
   }
   res.json(createApiResponse(result));
+});
+
+/**
+ * Which benchmarks are imported, with the provenance needed to reproduce a
+ * score: pinned source version, content hash, declared licence, and the
+ * public/holdout split sizes.
+ *
+ * There is deliberately no import endpoint here. Importing is an act with
+ * provenance — it needs a manifest naming the source, version and licence —
+ * and exposing it as a click would invite an import with those fields
+ * guessed. It stays a deliberate operation.
+ */
+router.get('/benchmarks', (_req: Request, res: Response) => {
+  const benchmarks = listImportedBenchmarks();
+  res.json(
+    createApiResponse({
+      benchmarks,
+      totalPublicCases: benchmarks.reduce((sum, b) => sum + b.publicCases, 0),
+      totalHoldoutCases: benchmarks.reduce((sum, b) => sum + b.holdoutCases, 0),
+      // Stated rather than implied: an empty registry is why the benchmark
+      // gate reads unmeasured, and that is an absence of data, not a failure.
+      note:
+        benchmarks.length === 0
+          ? 'No benchmark has been imported yet. The benchmark gate is unmeasured for this reason — not because a run failed.'
+          : 'Gate measurement runs public splits only; holdout splits are preserved so overfitting stays detectable.',
+    }),
+  );
 });
 
 router.get('/proposals', (req: Request, res: Response) => {

@@ -38,6 +38,8 @@ vi.mock('../../middleware/requireAdminRole.js', () => ({
 // below is constructed against the stubbed gate, not the real one.
 import { eosRouter } from '../routes';
 import { startProposalEngine, stopProposalEngine, listProposals } from '../proposal-engine';
+import { importBenchmark, resetBenchmarks } from '../benchmark-importer';
+import { resetDatasets } from '../evaluation-datasets';
 import {
   startPromptIntelligence,
   stopPromptIntelligence,
@@ -67,6 +69,8 @@ describe('eos routes', () => {
     stopProposalEngine();
     stopPromptIntelligence();
     stopProviderObservatory();
+    resetBenchmarks();
+    resetDatasets();
   });
 
   describe('response envelope', () => {
@@ -89,6 +93,7 @@ describe('eos routes', () => {
       '/api/eos/evaluation/graders',
       '/api/eos/evaluation/runs',
       '/api/eos/evaluation/capture',
+      '/api/eos/benchmarks',
       '/api/eos/proposals',
     ];
 
@@ -245,6 +250,55 @@ describe('eos routes', () => {
       const res = await request(makeApp()).get('/api/eos/evaluation/datasets/nope').expect(404);
       expect(res.body.success).toBe(false);
       expect(res.body.error.message).toBe('Dataset not found');
+    });
+  });
+
+  describe('benchmark registry', () => {
+    it('explains an empty registry as an absence, not a failure', async () => {
+      const res = await request(makeApp()).get('/api/eos/benchmarks').expect(200);
+
+      expect(res.body.data.benchmarks).toEqual([]);
+      // The reader must not conclude a benchmark run failed. Nothing has
+      // been imported, which is why the gate reads unmeasured.
+      expect(res.body.data.note).toMatch(/no benchmark has been imported/i);
+      expect(res.body.data.note).toMatch(/not because a run failed/i);
+    });
+
+    it('reports provenance and both split sizes once a benchmark is imported', async () => {
+      importBenchmark(
+        {
+          benchmarkId: 'route-probe',
+          name: 'Route probe',
+          source: 'huggingface:example/probe',
+          sourceVersion: 'rev-1',
+          license: 'MIT',
+        },
+        Array.from({ length: 30 }, (_, i) => ({
+          id: `q${i}`,
+          question: `Q${i}?`,
+          choices: ['a', 'b'],
+          answer: 'A',
+        })),
+      );
+
+      const res = await request(makeApp()).get('/api/eos/benchmarks').expect(200);
+      const [bench] = res.body.data.benchmarks;
+
+      expect(bench.sourceVersion).toBe('rev-1');
+      expect(bench.license).toBe('MIT');
+      expect(bench.contentHash).toHaveLength(64);
+      expect(bench.publicCases + bench.holdoutCases).toBe(30);
+      expect(res.body.data.totalHoldoutCases).toBe(bench.holdoutCases);
+      // The holdout must be visible to the reader; a hidden reserve looks
+      // like missing cases rather than deliberate overfitting protection.
+      expect(res.body.data.note).toMatch(/holdout splits are preserved/i);
+    });
+
+    it('exposes no import endpoint', async () => {
+      // Importing carries provenance — source, pinned version, licence. A
+      // one-click import invites those fields being guessed, so the HTTP
+      // surface is deliberately read-only.
+      await request(makeApp()).post('/api/eos/benchmarks').expect(404);
     });
   });
 });

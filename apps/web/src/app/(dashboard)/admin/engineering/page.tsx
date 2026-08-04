@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Activity, AlertTriangle, Boxes, Cpu, Database, Gauge, Inbox, ShieldCheck } from 'lucide-react';
 import {
+  getBenchmarks,
   getCaptureStatus,
   getCostReport,
   getErrorRate,
@@ -211,6 +212,11 @@ export default function EngineeringDashboardPage() {
     queryFn: getLaunchReadiness,
     refetchInterval: REFRESH_MS,
   });
+  const benchmarks = useQuery({
+    queryKey: ['eos', 'benchmarks'],
+    queryFn: getBenchmarks,
+    refetchInterval: REFRESH_MS,
+  });
   const runtime = useQuery({
     queryKey: ['eos', 'runtime'],
     queryFn: getRuntimeCheck,
@@ -279,6 +285,74 @@ export default function EngineeringDashboardPage() {
                 </li>
               ))}
             </ul>
+          </>
+        )}
+      </Section>
+
+      {/*
+        Sits directly under the gates because it explains one of them. The
+        benchmark gate reads "not measured", and the honest reason is that
+        no benchmark has been imported — an absence of data, not a failed
+        run. Showing the registry next to the gate makes that legible
+        instead of leaving the reader to assume something broke.
+      */}
+      <Section
+        title="Benchmark registry"
+        description="Imported public benchmarks, with the provenance needed to reproduce a score"
+      >
+        {benchmarks.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !benchmarks.data ? (
+          <EmptyHint>Benchmark registry unavailable.</EmptyHint>
+        ) : benchmarks.data.benchmarks.length === 0 ? (
+          <EmptyHint>{benchmarks.data.note}</EmptyHint>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-4 text-sm">
+              <span>
+                <span className="font-semibold">{benchmarks.data.benchmarks.length}</span> imported
+              </span>
+              <span className="text-muted-foreground">
+                {benchmarks.data.totalPublicCases} public cases
+              </span>
+              <span className="text-muted-foreground">
+                {benchmarks.data.totalHoldoutCases} held out
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead className="text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="pb-2 pr-4 font-medium">Benchmark</th>
+                    <th className="pb-2 pr-4 font-medium">Pinned version</th>
+                    <th className="pb-2 pr-4 font-medium">Licence</th>
+                    <th className="pb-2 pr-4 font-medium">Public</th>
+                    <th className="pb-2 pr-4 font-medium">Holdout</th>
+                    <th className="pb-2 font-medium">Content hash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {benchmarks.data.benchmarks.map((b) => (
+                    <tr key={b.datasetId} className="border-t border-border/50">
+                      <td className="py-2 pr-4">
+                        {b.name}
+                        <span className="block text-xs text-muted-foreground">{b.source}</span>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs">{b.sourceVersion}</td>
+                      <td className="py-2 pr-4 text-xs">{b.license}</td>
+                      <td className="py-2 pr-4">{b.publicCases}</td>
+                      <td className="py-2 pr-4">{b.holdoutCases}</td>
+                      {/* Truncated: the full hash is an audit artefact, not a
+                          reading aid, and the prefix is enough to compare. */}
+                      <td className="py-2 font-mono text-xs text-muted-foreground">
+                        {b.contentHash.slice(0, 12)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">{benchmarks.data.note}</p>
           </>
         )}
       </Section>

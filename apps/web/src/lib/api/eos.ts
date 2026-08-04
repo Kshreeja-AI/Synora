@@ -264,6 +264,34 @@ export function getLaunchReadiness(): Promise<LaunchReadiness> {
   return api.get('/api/eos/launch-readiness');
 }
 
+export interface ImportedBenchmark {
+  benchmarkId: string;
+  name: string;
+  source: string;
+  /** The pinned upstream revision this content corresponds to. */
+  sourceVersion: string;
+  license: string;
+  datasetId: string;
+  holdoutDatasetId: string;
+  /** Fingerprint of exactly what was imported, so a score is reproducible. */
+  contentHash: string;
+  publicCases: number;
+  /** Reserved from routine measurement so overfitting stays detectable. */
+  holdoutCases: number;
+  importedAt: number;
+}
+
+export interface BenchmarkRegistry {
+  benchmarks: ImportedBenchmark[];
+  totalPublicCases: number;
+  totalHoldoutCases: number;
+  note: string;
+}
+
+export function getBenchmarks(): Promise<BenchmarkRegistry> {
+  return api.get('/api/eos/benchmarks');
+}
+
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
 
 export interface ProposalEvidence {

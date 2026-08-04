@@ -56,7 +56,36 @@ beforeEach(() => {
   vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({ report: [], recentAlerts: [] });
   vi.mocked(eosApi.getDegradation).mockResolvedValue({ report: [], recentAlerts: [] });
   vi.mocked(eosApi.getLaunchReadiness).mockResolvedValue(unmeasuredReadiness);
+  vi.mocked(eosApi.getBenchmarks).mockResolvedValue(emptyBenchmarks);
 });
+
+const emptyBenchmarks = {
+  benchmarks: [],
+  totalPublicCases: 0,
+  totalHoldoutCases: 0,
+  note: 'No benchmark has been imported yet. The benchmark gate is unmeasured for this reason — not because a run failed.',
+};
+
+const importedBenchmarks = {
+  benchmarks: [
+    {
+      benchmarkId: 'mini-mmlu',
+      name: 'Mini MMLU',
+      source: 'huggingface:cais/mmlu',
+      sourceVersion: 'rev-abc123',
+      license: 'MIT',
+      datasetId: 'bench_mini-mmlu_rev-abc123',
+      holdoutDatasetId: 'bench_mini-mmlu_rev-abc123_holdout',
+      contentHash: 'a'.repeat(64),
+      publicCases: 40,
+      holdoutCases: 10,
+      importedAt: Date.now(),
+    },
+  ],
+  totalPublicCases: 40,
+  totalHoldoutCases: 10,
+  note: 'Gate measurement runs public splits only; holdout splits are preserved so overfitting stays detectable.',
+};
 
 const unmeasuredReadiness = {
   gates: [
@@ -552,6 +581,7 @@ describe('EngineeringDashboardPage', () => {
     vi.mocked(eosApi.getLatencyDrift).mockRejectedValue(boom);
     vi.mocked(eosApi.getDegradation).mockRejectedValue(boom);
     vi.mocked(eosApi.getLaunchReadiness).mockRejectedValue(boom);
+    vi.mocked(eosApi.getBenchmarks).mockRejectedValue(boom);
 
     renderPage();
 
@@ -559,6 +589,46 @@ describe('EngineeringDashboardPage', () => {
     // down is useless precisely when it is needed.
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Engineering' })).toBeInTheDocument();
+    });
+  });
+
+  describe('benchmark registry', () => {
+    it('explains an empty registry rather than showing an empty table', async () => {
+      renderPage();
+
+      // The benchmark gate above reads "not measured". Without this text the
+      // reader is left to guess whether a run failed; the honest answer is
+      // that nothing has been imported.
+      expect(
+        await screen.findByText(/No benchmark has been imported yet/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/not because a run failed/i)).toBeInTheDocument();
+    });
+
+    it('shows provenance and both split sizes for an imported benchmark', async () => {
+      vi.mocked(eosApi.getBenchmarks).mockResolvedValue(importedBenchmarks);
+
+      renderPage();
+
+      expect(await screen.findByText('Mini MMLU')).toBeInTheDocument();
+      expect(screen.getByText('huggingface:cais/mmlu')).toBeInTheDocument();
+      // Pinned version, licence and hash prefix are what make a score
+      // reproducible by someone who does not trust the number.
+      expect(screen.getByText('rev-abc123')).toBeInTheDocument();
+      expect(screen.getByText('MIT')).toBeInTheDocument();
+      expect(screen.getByText('aaaaaaaaaaaa')).toBeInTheDocument();
+    });
+
+    it('surfaces the holdout count, never only the public one', async () => {
+      vi.mocked(eosApi.getBenchmarks).mockResolvedValue(importedBenchmarks);
+
+      renderPage();
+
+      expect(await screen.findByText(/40 public cases/i)).toBeInTheDocument();
+      // A hidden reserve reads as missing cases rather than as deliberate
+      // overfitting protection, so it is always shown.
+      expect(screen.getByText(/10 held out/i)).toBeInTheDocument();
+      expect(screen.getByText(/holdout splits are preserved/i)).toBeInTheDocument();
     });
   });
 });
