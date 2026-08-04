@@ -28,9 +28,9 @@ describe('egress-registry', () => {
     stopCaseCapture();
   });
 
-  it('declares both shipping paths', () => {
+  it('declares every shipping path', () => {
     registerEgressPaths();
-    expect(listEgressPaths()).toEqual(['case-capture', 'dataset-export']);
+    expect(listEgressPaths()).toEqual(['case-capture', 'dataset-export', 'request-log']);
   });
 
   it('every declared path demonstrably redacts the full probe input', async () => {
@@ -38,7 +38,7 @@ describe('egress-registry', () => {
 
     const result = await auditPrivacyCoverage();
 
-    expect(result.declaredPaths).toBe(2);
+    expect(result.declaredPaths).toBe(3);
     expect(result.coveragePercent).toBe(100);
     for (const path of result.paths) {
       expect(path.redacted).toBe(true);
@@ -71,7 +71,7 @@ describe('egress-registry', () => {
     expect(listDatasets()).toHaveLength(0);
   });
 
-  it('measures the privacy gate across both real paths', async () => {
+  it('measures the privacy gate across every real path', async () => {
     registerEgressPaths();
 
     await measurePrivacyGate();
@@ -79,9 +79,9 @@ describe('egress-registry', () => {
     const gate = getLaunchReadiness().gates.find((g) => g.id === 'privacy-tests')!;
     expect(gate.status).toBe('passed');
     expect(gate.value).toBe(100);
-    // Sample size 2, stated: a perfect score over two declared paths is
+    // Sample size stated: a perfect score over three declared paths is
     // reported as exactly that, not as system-wide proof.
-    expect(gate.sampleSize).toBe(2);
-    expect(gate.source).toMatch(/2 declared egress path/);
+    expect(gate.sampleSize).toBe(3);
+    expect(gate.source).toMatch(/3 declared egress path/);
   });
 });
