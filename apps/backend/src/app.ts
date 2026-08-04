@@ -61,6 +61,7 @@ import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
 import agentRoutes from './routes/agents';
 import workflowRoutes from './routes/workflows';
+import workflowHookRoutes from './routes/workflowHooks';
 import canvasRoutes from './routes/canvas';
 import { eosRouter } from './eos/index';
 import { eosApiCollector } from './eos/api-collector.js';
@@ -153,6 +154,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // Public shared conversation endpoint (before auth routes)
   app.use('/api/shared', sharingPublicRoutes)
+  // Public workflow trigger endpoint: no session, the URL secret IS the
+  // authorization, exactly like the shared-conversation route above.
+  app.use('/api/hooks', workflowHookRoutes)
 
   // Liveness: process is up and serving HTTP. Deliberately checks nothing
   // else — an orchestrator uses this to decide whether to restart the

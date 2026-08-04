@@ -21,6 +21,13 @@ import {
   persistSchedule,
   setScheduleEnabled,
 } from '../workflows/schedule';
+import {
+  createTrigger,
+  deleteTrigger,
+  listTriggers,
+  persistTrigger,
+  setTriggerEnabled,
+} from '../workflows/trigger';
 import { persistRun } from '../agents/run-engine';
 import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
@@ -93,6 +100,7 @@ function toHttpError(err: unknown): unknown {
     return new NotFoundException('Workflow');
   }
   if (message === 'schedule not found') return new NotFoundException('Schedule');
+  if (message === 'trigger not found') return new NotFoundException('Trigger');
   if (
     message.includes('schedule kind') ||
     message.includes('time of day') ||
@@ -121,6 +129,11 @@ router.use('/:workspaceId/workflows', authMiddleware, requireWorkspaceAccess());
 // on the same router is NOT protected by the first one's middleware, which
 // is exactly how an endpoint ends up unauthenticated by accident.
 router.use('/:workspaceId/schedules', authMiddleware, requireWorkspaceAccess());
+// Same reasoning as the schedules guard immediately above: a router.use
+// only covers the prefix it names, so trigger management — living at its
+// own /:workspaceId/triggers path — needs its own guard or it would be
+// reachable unauthenticated by accident.
+router.use('/:workspaceId/triggers', authMiddleware, requireWorkspaceAccess());
 
 router.get('/:workspaceId/workflows', async (req: AuthRequest, res, next) => {
   try {
@@ -306,6 +319,69 @@ router.delete('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, re
   try {
     const removed = deleteSchedule(req.params.scheduleId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Schedule'));
+    res.json(createApiResponse({ deleted: true }));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Triggers --------------------------------------------------------------
+//
+// A trigger starts a workflow from OUTSIDE Synora — the "reacts to a
+// webhook" half of event-triggered automation. The raw secret is returned
+// only from the create call, exactly once; every other endpoint here shows
+// nothing but the non-secret preview. Firing itself lives at a separate,
+// unauthenticated route (`workflowHooks.ts`) — the secret in that request
+// IS the authorization, so it does not go through this authenticated router.
+
+router.get('/:workspaceId/workflows/:workflowId/triggers', async (req: AuthRequest, res, next) => {
+  try {
+    const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
+    if (!workflow) return next(new NotFoundException('Workflow'));
+    res.json(createApiResponse(listTriggers(req.params.workspaceId, workflow.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:workspaceId/workflows/:workflowId/triggers', async (req: AuthRequest, res, next) => {
+  try {
+    const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
+    if (!workflow) return next(new NotFoundException('Workflow'));
+    if (workflow.archived) {
+      return next(new ValidationException('an archived workflow cannot be given a trigger'));
+    }
+
+    const { trigger, rawSecret } = createTrigger({
+      workspaceId: req.params.workspaceId,
+      workflowId: workflow.id,
+      createdBy: req.userId!,
+    });
+    await persistTrigger(trigger.id);
+    // The only response that ever carries the raw secret. Everywhere else
+    // — list, and every future read of this same trigger — sees only
+    // `secretPreview`.
+    res.status(201).json(createApiResponse({ trigger, secret: rawSecret }));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.patch('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res, next) => {
+  try {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    const trigger = setTriggerEnabled(req.params.triggerId, req.params.workspaceId, enabled);
+    await persistTrigger(trigger.id);
+    res.json(createApiResponse(trigger));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.delete('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res, next) => {
+  try {
+    const removed = deleteTrigger(req.params.triggerId, req.params.workspaceId);
+    if (!removed) return next(new NotFoundException('Trigger'));
     res.json(createApiResponse({ deleted: true }));
   } catch (error) {
     next(toHttpError(error));

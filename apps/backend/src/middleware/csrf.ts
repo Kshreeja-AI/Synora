@@ -43,6 +43,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
   const isMutatingRequest = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
   const isPublicEndpoint = req.path.startsWith('/api/shared') ||
                            req.path.startsWith('/api/billing/webhook') ||
+                           req.path.startsWith('/api/hooks') ||
                            req.path.startsWith('/api/auth');
 
   // Skip CSRF protection for public endpoints and webhook handlers

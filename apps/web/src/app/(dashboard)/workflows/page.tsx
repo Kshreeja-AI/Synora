@@ -27,6 +27,7 @@ import {
 import { StepBuilder } from '@/components/workflows/StepBuilder';
 import { RunDetail } from '@/components/agents/RunDetail';
 import { SchedulePanel } from '@/components/workflows/SchedulePanel';
+import { TriggerPanel } from '@/components/workflows/TriggerPanel';
 
 /**
  * The workflow workspace: author a sequence, run it, inspect what happened.
@@ -417,6 +418,7 @@ export default function WorkflowsPage() {
                 </section>
 
                 <SchedulePanel workspaceId={workspaceId} workflowId={selected.id} />
+                <TriggerPanel workspaceId={workspaceId} workflowId={selected.id} />
 
                 <section className="space-y-3">
                   <h3 className="font-semibold">

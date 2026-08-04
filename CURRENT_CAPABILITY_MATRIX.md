@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `10f412b` + workflow-dry-run increment
-**Evidence basis**: 2,354 backend tests across 226 files and 509 frontend tests
-across 82 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `b969c18` + workflow-trigger increment
+**Evidence basis**: 2,375 backend tests across 227 files and 516 frontend tests
+across 83 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
@@ -96,7 +96,7 @@ case, both are recorded.
 | Workflow UI / builder | **A** | `/workflows` page plus `StepBuilder`, 10 tests. Steps can be edited, which creates version N+1 and says so before the save button. Add, reorder and remove steps; ids renumber to stay sequential so the run record reads cleanly. Run inspection reuses `RunDetail` unchanged, because a workflow run *is* an engine run. The page states that the run note does not change what executes — the opposite of the agent page, and the difference a user must not get wrong. |
 | Workflow dry runs | **A** | `workflows/dry-run.ts`, 14 unit tests + 3 route tests. Executes nothing — no tool is called, no model is asked, no run record exists — and reports only what is knowable in advance: an authoring-time re-validation, per-step tool existence/active/supported-type/schema checks against the real tool layer, `{{stepId}}` references with no earlier producer, tool-level approval (which fails a step rather than pausing it, since the engine never waits on a human timescale), the requester's own `tool:execute` permission, projected tool-call usage against the workflow's budget, and which steps would pause under the approval policy — using the *same* `stepNeedsApproval`/`validatePlan` predicates the engine itself obeys, so the preview cannot silently drift from execution. An exhausted budget is reported as a blocker rather than refusing the (free) dry run itself. Every report also states its own blind spots (a generate step's output, a remote endpoint's actual response) rather than hiding them. Reachable from `/workflows` via a "Dry run" button next to Run. |
 | Scheduled automation | **B** | `workflows/schedule.ts` + `scheduler-runner.ts` + routes, 16 scheduler tests + 5 route tests. Interval and daily-at-UTC-time schedules, strictly validated (anything else refused, not guessed). Durable; a schedule that came due during an outage is moved forward and its missed occurrences **counted, never replayed** — a backlog fired in a burst is how a scheduler turns an outage into an incident. A scheduled run executes as the person who created the schedule, never with ambient authority — pinned by a test on the actual firing path. The `/workflows` page adds, pauses and removes schedules, and renders missed occurrences as a warning, because a schedule silently not running looks identical to one running fine. **Limit**: UTC only, and resolution is the 30s tick, so "daily at 09:00" means at or shortly after — both stated on the page. |
-| Event-triggered automation | **F** | Does not exist. Only a clock or a person can start a workflow; nothing reacts to a file arriving or a webhook firing. |
+| Event-triggered automation (webhooks) | **A** | `workflows/trigger.ts` + `routes/workflowHooks.ts` + `TriggerPanel`, 13 unit tests + 8 route tests + 7 component tests. A POST to `/api/hooks/workflows/:secret` starts a real run from outside Synora — no session, because the URL secret **is** the authorization, the same pattern as the existing `/api/shared/:shareToken` route. Only the SHA-256 hash of the secret is stored, as with API keys, because a trigger can spend real budget against real tools. The run executes **as the trigger's creator**, never with ambient authority — the identical rule the scheduler applies to a clock-started run. A disabled or deleted trigger answers exactly like one that never existed, so pausing does not leak state to whoever holds an old secret. Budget-gated and metered like every other run. **Limit**: webhook triggers only — nothing yet reacts to an internal event such as a file arriving. |
 
 ## Family D — Canvas
 

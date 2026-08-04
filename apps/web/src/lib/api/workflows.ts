@@ -131,8 +131,33 @@ export interface CreateScheduleInput {
   atMinuteUtc?: number;
 }
 
+/**
+ * A trigger starts a workflow from OUTSIDE Synora. The object here never
+ * carries the raw secret — only `secretPreview`, a non-secret display
+ * prefix. The raw secret exists exactly once, in `CreatedTrigger` below,
+ * returned only by the create call.
+ */
+export interface WorkflowTrigger {
+  id: string;
+  workspaceId: string;
+  workflowId: string;
+  secretPreview: string;
+  enabled: boolean;
+  createdBy: string;
+  createdAt: number;
+  lastFiredAt?: number;
+  firedCount: number;
+}
+
+export interface CreatedTrigger {
+  trigger: WorkflowTrigger;
+  /** Shown once. There is no endpoint that will ever return this again. */
+  secret: string;
+}
+
 const WORKFLOWS_KEY = 'workflows';
 const SCHEDULES_KEY = 'workflow-schedules';
+const TRIGGERS_KEY = 'workflow-triggers';
 const RUNS_KEY = 'agent-runs';
 
 export function useWorkflows(
@@ -267,6 +292,58 @@ export function useDeleteSchedule(
       api.delete<{ deleted: boolean }>(`/api/workspaces/${workspaceId}/schedules/${scheduleId}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useWorkflowTriggers(
+  workspaceId: string,
+  workflowId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<WorkflowTrigger[]> {
+  return useQuery({
+    queryKey: [TRIGGERS_KEY, workspaceId, workflowId],
+    queryFn: () =>
+      api.get<WorkflowTrigger[]>(`/api/workspaces/${workspaceId}/workflows/${workflowId}/triggers`),
+    enabled: !!workspaceId && !!workflowId && options?.enabled !== false,
+  });
+}
+
+export function useCreateTrigger(
+  workspaceId: string,
+): UseMutationResult<CreatedTrigger, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workflowId) =>
+      api.post<CreatedTrigger>(`/api/workspaces/${workspaceId}/workflows/${workflowId}/triggers`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [TRIGGERS_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useSetTriggerEnabled(
+  workspaceId: string,
+): UseMutationResult<WorkflowTrigger, Error, { triggerId: string; enabled: boolean }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ triggerId, enabled }) =>
+      api.patch<WorkflowTrigger>(`/api/workspaces/${workspaceId}/triggers/${triggerId}`, { enabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [TRIGGERS_KEY, workspaceId] });
+    },
+  });
+}
+
+export function useDeleteTrigger(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (triggerId) =>
+      api.delete<{ deleted: boolean }>(`/api/workspaces/${workspaceId}/triggers/${triggerId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [TRIGGERS_KEY, workspaceId] });
     },
   });
 }

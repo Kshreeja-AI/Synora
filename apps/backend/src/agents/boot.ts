@@ -8,6 +8,7 @@ import {
   setWorkflowStore,
 } from '../workflows/workflow-registry.js';
 import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
+import { createFileTriggerStore, hydrateTriggers, setTriggerStore } from '../workflows/trigger.js';
 import { createFileCanvasStore, hydrateCanvases, setCanvasStore } from '../canvas/canvas-store.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
@@ -50,6 +51,7 @@ export async function bootAgentStores(): Promise<void> {
   setAgentRunStore(new FileKeyedStore<AgentRun>(`${dir}/agent-runs.json`));
   setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
   setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
+  setTriggerStore(createFileTriggerStore(`${dir}/workflow-triggers.json`));
   setCanvasStore(createFileCanvasStore(`${dir}/canvases.json`));
 
   try {
@@ -61,6 +63,7 @@ export async function bootAgentStores(): Promise<void> {
     // process was down. They are counted, never replayed — a backlog fired
     // in a burst is how a scheduler turns an outage into an incident.
     const schedules = await hydrateSchedules();
+    const triggers = await hydrateTriggers();
     // Canvases keep their good blocks and drop only invalid ones, unlike
     // definitions which are discarded whole — losing one note is better
     // than losing the surface around it.
@@ -90,6 +93,7 @@ export async function bootAgentStores(): Promise<void> {
       definitions,
       workflows,
       schedules,
+      triggers,
       canvases: canvasResult.loaded,
       runs: loaded,
       orphaned,

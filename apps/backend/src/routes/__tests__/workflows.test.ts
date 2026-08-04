@@ -9,6 +9,7 @@ import { resetRuns } from '../../agents/run-engine';
 import { InMemoryKeyedStore, setAgentRunStore } from '../../agents/agent-stores';
 import { resetWorkflows, setWorkflowStore } from '../../workflows/workflow-registry';
 import { resetSchedules, setScheduleStore, type WorkflowSchedule } from '../../workflows/schedule';
+import { resetTriggers, setTriggerStore, type WorkflowTrigger } from '../../workflows/trigger';
 import type { AgentRun } from '../../agents/types';
 import type { WorkflowDefinition } from '../../workflows/types';
 
@@ -48,9 +49,11 @@ describe('workflow routes', () => {
     resetRuns();
     resetWorkflows();
     resetSchedules();
+    resetTriggers();
     setAgentRunStore(new InMemoryKeyedStore<AgentRun>());
     setWorkflowStore(new InMemoryKeyedStore<WorkflowDefinition>());
     setScheduleStore(new InMemoryKeyedStore<WorkflowSchedule>());
+    setTriggerStore(new InMemoryKeyedStore<WorkflowTrigger>());
   });
 
   afterEach(async () => {
@@ -411,5 +414,142 @@ describe('workflow routes', () => {
       .set('Cookie', owner.cookie)
       .send({ task: 't' });
     expect(run.status).toBe(400);
+  });
+
+  describe('workflow triggers', () => {
+    async function makeTrigger(cookie: string, workspaceId: string, workflowId: string) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows/${workflowId}/triggers`)
+        .set('Cookie', cookie)
+        .send({});
+    }
+
+    it('returns the raw secret once, and never again from list', async () => {
+      const owner = await register('wf-trig-create');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+      const created = await makeTrigger(owner.cookie, ws.id, wf.id);
+      expect(created.status).toBe(201);
+      expect(created.body.data.secret).toMatch(/^whk_/);
+      expect(created.body.data.trigger.secretPreview).toBe(
+        created.body.data.secret.slice(0, created.body.data.trigger.secretPreview.length),
+      );
+
+      const listed = await request(app)
+        .get(`/api/workspaces/${ws.id}/workflows/${wf.id}/triggers`)
+        .set('Cookie', owner.cookie);
+      expect(listed.body.data).toHaveLength(1);
+      expect(JSON.stringify(listed.body.data)).not.toContain(created.body.data.secret);
+    });
+
+    it('requires authentication and hides other workspaces', async () => {
+      const owner = await register('wf-trig-owner');
+      const stranger = await register('wf-trig-stranger');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+      expect((await request(app).post(`/api/workspaces/${ws.id}/workflows/${wf.id}/triggers`).send({})).status).toBe(
+        401,
+      );
+
+      const strangerWs = await createWorkspace(stranger.cookie, 'Other Co');
+      const cross = await makeTrigger(stranger.cookie, strangerWs.id, wf.id);
+      // Naming another workspace's workflow id from inside your own
+      // workspace resolves to nothing, same as everywhere else.
+      expect(cross.status).toBe(404);
+    });
+
+    it('refuses a trigger on an archived workflow', async () => {
+      const owner = await register('wf-trig-archived');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      await request(app).delete(`/api/workspaces/${ws.id}/workflows/${wf.id}`).set('Cookie', owner.cookie);
+
+      const created = await makeTrigger(owner.cookie, ws.id, wf.id);
+      expect(created.status).toBe(400);
+    });
+
+    it('fires the workflow from outside, with no session, as the trigger creator', async () => {
+      const owner = await register('wf-trig-fire');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id, { approvalPolicy: 'nothing' })).body.data;
+      const { secret } = (await makeTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      // No Cookie header at all: this caller has no session.
+      const fired = await request(app)
+        .post(`/api/hooks/workflows/${secret}`)
+        .send({ task: 'from the outside' });
+
+      expect(fired.status).toBe(201);
+      expect(fired.body.data.run.state).toBe('completed');
+      expect(fired.body.data.run.requestedBy).toBe(owner.userId);
+      expect(fired.body.data.run.task).toBe('from the outside');
+      expect(fired.body.data.runtime.mode).toBe('authored');
+
+      const listed = await request(app)
+        .get(`/api/workspaces/${ws.id}/workflows/${wf.id}/triggers`)
+        .set('Cookie', owner.cookie);
+      expect(listed.body.data[0].firedCount).toBe(1);
+      expect(listed.body.data[0].lastFiredAt).toBeGreaterThan(0);
+    });
+
+    it('refuses a wrong secret and a disabled trigger identically: 404', async () => {
+      const owner = await register('wf-trig-wrong');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const created = (await makeTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      const wrong = await request(app).post(`/api/hooks/workflows/whk_${'0'.repeat(64)}`).send({});
+      expect(wrong.status).toBe(404);
+
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/triggers/${created.trigger.id}`)
+        .set('Cookie', owner.cookie)
+        .send({ enabled: false });
+
+      const disabled = await request(app).post(`/api/hooks/workflows/${created.secret}`).send({});
+      expect(disabled.status).toBe(404);
+    });
+
+    it('deletes a trigger, after which its secret no longer fires anything', async () => {
+      const owner = await register('wf-trig-delete');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const created = (await makeTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      const deleted = await request(app)
+        .delete(`/api/workspaces/${ws.id}/triggers/${created.trigger.id}`)
+        .set('Cookie', owner.cookie);
+      expect(deleted.status).toBe(200);
+
+      const fired = await request(app).post(`/api/hooks/workflows/${created.secret}`).send({});
+      expect(fired.status).toBe(404);
+    });
+
+    it('refuses a webhook-started run when the workspace budget is exhausted', async () => {
+      const owner = await register('wf-trig-budget');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id, { approvalPolicy: 'nothing' })).body.data;
+      const { secret } = (await makeTrigger(owner.cookie, ws.id, wf.id)).body.data;
+      await prisma.workspaceCredits.create({ data: { workspaceId: ws.id, balance: 0 } });
+
+      const fired = await request(app).post(`/api/hooks/workflows/${secret}`).send({});
+      expect(fired.status).toBe(400);
+      expect(JSON.stringify(fired.body)).toMatch(/no remaining balance/);
+    });
+
+    it('guards the triggers management path with auth, not just the workflows path', async () => {
+      const owner = await register('wf-trig-guard');
+      const ws = await createWorkspace(owner.cookie, 'WF Co');
+      const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+      const created = (await makeTrigger(owner.cookie, ws.id, wf.id)).body.data;
+
+      expect(
+        (await request(app).patch(`/api/workspaces/${ws.id}/triggers/${created.trigger.id}`).send({ enabled: false }))
+          .status,
+      ).toBe(401);
+      expect((await request(app).delete(`/api/workspaces/${ws.id}/triggers/${created.trigger.id}`)).status).toBe(401);
+    });
   });
 });

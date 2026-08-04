@@ -506,10 +506,35 @@ step's output, a remote endpoint's real response — rather than letting
 silence imply a guarantee. Reachable from `/workflows` as a "Dry run"
 button beside Run.
 
-**Missing, named:** event triggers (only a clock or a person can start a
-workflow — nothing reacts to a file arriving or a webhook firing); and
-timezone support (UTC only). The scheduler is also tested only against an
-injected clock — it has never been observed running over real elapsed
+**Also implemented: webhook triggers** (`trigger.ts`,
+`routes/workflowHooks.ts`). A POST to `/api/hooks/workflows/:secret`
+starts a real run from outside Synora — the event-triggered half of
+automation, beside the clock-driven half above.
+
+Three decisions carry it. First, **the URL is the credential**: there is
+no session, no cookie and no CSRF check on that path, because the caller
+is never a browser holding Synora's own session, it is another system
+holding a secret. That is the same shape as the `/api/shared/:shareToken`
+route already in production, so it introduces a pattern the codebase
+already reasons about rather than a bespoke signature scheme. Second,
+**the secret is stored hashed**, as an API key is and unlike a read-only
+share token — a trigger can start real work against real tools and real
+budget, so it belongs in the higher risk class. Third, the run executes
+**as the trigger's creator**, exactly as a scheduled run does; a webhook
+must not become a way to run tools nobody is permitted to run. A disabled
+or deleted trigger answers identically to one that never existed, so
+pausing an automation does not leak its existence to whoever still holds
+the old URL. Budget gate and metering apply unchanged — an external
+caller is not a discount.
+
+The surface is `TriggerPanel` on `/workflows`. It shows the full URL
+exactly once, at creation, and says so; every later view shows only a
+non-secret prefix, because no endpoint will ever return the secret again.
+
+**Missing, named:** internal event triggers (nothing yet reacts to a file
+arriving or a document changing — only an external HTTP call or a clock);
+and timezone support (UTC only). The scheduler is also tested only against
+an injected clock — it has never been observed running over real elapsed
 time.
 
 ### 5.11 Canvas — Partially implemented (`apps/backend/src/canvas/`, `/canvas`)
@@ -665,7 +690,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Run cost metering and the pre-run budget gate: implemented. Multi-agent orchestration: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI, dry runs: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and timezones: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI, dry runs, webhook triggers: built and tested, executing through the agent run engine rather than a second copy of it. Internal event triggers and timezones: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |
