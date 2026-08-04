@@ -770,6 +770,35 @@ dragging existed would have taken the canvas away from anyone navigating by
 tab and arrow keys. An accessible path that survives only until the
 pleasant one ships was never an accessible path.
 
+**Also implemented: moving several blocks at once.** Ticking a block's
+checkbox selects it; dragging or nudging any selected block carries the
+whole selection.
+
+**Selection is by an explicit labelled checkbox, not by clicking the
+block.** The body of a text block is an editable field — making a click
+select would mean clicking into your own text selected something instead
+— and a modifier-click convention is invisible until somebody tells you it
+exists. A checkbox is also the only version a keyboard can reach.
+
+**One shared offset, snapped from the grabbed block.** Snapping each block
+to its own nearest grid point would quietly deform an arrangement somebody
+made deliberately: two blocks lined up would come out of line. So the
+grabbed block decides the offset and every block in the gesture moves by
+exactly that much.
+
+**Grabbing an unselected block moves only that block**, and leaves the
+selection alone. The alternative — a selection that captures every
+subsequent gesture — would make having some blocks selected turn every
+other block on the canvas unmovable, and would silently drag a selection
+someone had set up for a different purpose.
+
+**A group move is one undo entry**, because moving four blocks together is
+one thing the person did and undoing it four times would be four presses
+to reverse one action. The entry stores where each block *actually was*
+rather than the shared offset: the moves are separate requests, so if one
+had been refused, undoing by offset would put the survivors somewhere new
+rather than back.
+
 Undo is a bounded stack of inverse operations over add, delete, move,
 connect and disconnect, and the button names what it will reverse instead
 of saying only "Undo". Undoing a delete restores the block **and the
@@ -783,9 +812,11 @@ textarea, and an entry per keystroke would bury the structural changes
 people actually want back. The page says so rather than leaving someone
 to discover it.
 
-**Missing, named:** grouping (selecting several blocks and moving them
-together); multi-select of any kind; and inline previews of linked runs or
-conversations, which currently show their type and id only.
+**Missing, named:** multi-select covers movement only — several blocks
+cannot yet be deleted or connected in one action, and there is no
+rubber-band selection by dragging across the surface; and inline previews
+of linked runs or conversations, which currently show their type and id
+only.
 
 ### 5.12 Plugins — Partially implemented (`apps/backend/src/plugins/`, `/plugins`)
 

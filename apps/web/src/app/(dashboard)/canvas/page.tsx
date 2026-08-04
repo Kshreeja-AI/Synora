@@ -83,6 +83,12 @@ const DRAG_THRESHOLD = 3;
 type DragState = {
   blockId: string;
   /**
+   * Every block travelling with this gesture, including the grabbed one.
+   * Captured at pointer-down so that changing the selection while the
+   * pointer is down cannot change what is being moved underneath it.
+   */
+  movingIds: string[];
+  /**
    * Carried rather than looked up on release, so the undo entry can name
    * the block the same way the nudge buttons do even if the block itself
    * has gone from the list by the time the pointer comes up.
@@ -123,6 +129,13 @@ type UndoEntry =
       label: string;
     }
   | { kind: 'moveBlock'; blockId: string; x: number; y: number; label: string }
+  /**
+   * Several blocks moved as one gesture. A separate kind rather than a
+   * loop pushing several `moveBlock` entries: moving four blocks together
+   * is one thing the person did, and undoing it four times would be four
+   * presses to reverse one action.
+   */
+  | { kind: 'moveBlocks'; positions: { blockId: string; x: number; y: number }[]; label: string }
   | { kind: 'disconnect'; connectionId: string; label: string }
   | { kind: 'connect'; from: string; to: string; label?: string; text: string };
 
@@ -144,6 +157,17 @@ export default function CanvasPage() {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
   const [drag, setDrag] = useState<DragState | null>(null);
+  /**
+   * Blocks chosen to move together.
+   *
+   * SELECTION IS BY AN EXPLICIT TOGGLE, not by clicking the block. The
+   * body of a text block is an editable field — making a click select
+   * would mean clicking into your own text selected something instead, and
+   * a modifier-click convention is invisible until somebody tells you it
+   * exists. A labelled toggle is also the only version reachable from the
+   * keyboard.
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const { data: canvases = [], isLoading } = useCanvases(workspaceId);
   const { data: canvas } = useCanvas(workspaceId, selectedId ?? '', { enabled: !!selectedId });
@@ -187,6 +211,21 @@ export default function CanvasPage() {
           { canvasId: canvas.id, blockId: entry.blockId, changes: { x: entry.x, y: entry.y } },
           { onError },
         );
+        return;
+      case 'moveBlocks':
+        // Each block back to where it actually was, rather than a shared
+        // offset undone: if one request in the original move was refused,
+        // an offset would put the survivors somewhere new.
+        for (const position of entry.positions) {
+          updateBlock.mutate(
+            {
+              canvasId: canvas.id,
+              blockId: position.blockId,
+              changes: { x: position.x, y: position.y },
+            },
+            { onError },
+          );
+        }
         return;
       case 'disconnect':
         disconnect.mutate({ canvasId: canvas.id, connectionId: entry.connectionId }, { onError });
@@ -241,13 +280,22 @@ export default function CanvasPage() {
     removeBlock.mutate(
       { canvasId: canvas.id, blockId: block.id },
       {
-        onSuccess: () =>
+        onSuccess: () => {
+          // A selection holding an id that no longer exists would make the
+          // count say more blocks are selected than the canvas contains.
+          setSelected((current) => {
+            if (!current.has(block.id)) return current;
+            const next = new Set(current);
+            next.delete(block.id);
+            return next;
+          });
           pushUndo({
             kind: 'restoreBlock',
             block,
             connections: touching,
             label: `deleting the ${block.kind} block`,
-          }),
+          });
+        },
         onError: (e) => toast.error(e.message),
       },
     );
@@ -260,8 +308,11 @@ export default function CanvasPage() {
    * through here, so a line can never come adrift from its block.
    */
   function positionOf(block: CanvasBlock): { x: number; y: number } {
-    if (drag && drag.blockId === block.id) return { x: drag.x, y: drag.y };
-    return { x: block.x, y: block.y };
+    if (!drag || !drag.movingIds.includes(block.id)) return { x: block.x, y: block.y };
+    // Every block in the gesture shifts by the same offset, so a group
+    // keeps its shape while it travels rather than collapsing onto the one
+    // under the pointer.
+    return { x: block.x + (drag.x - drag.originX), y: block.y + (drag.y - drag.originY) };
   }
 
   function blockCentre(block: CanvasBlock) {
@@ -322,30 +373,65 @@ export default function CanvasPage() {
     );
   }
 
+  /**
+   * The blocks a gesture on `block` should move.
+   *
+   * Grabbing a SELECTED block moves the whole selection; grabbing an
+   * unselected one moves just it, and leaves the selection alone. That
+   * second rule matters: having some blocks selected must not make every
+   * other block on the canvas un-nudgeable, and it must not silently drag
+   * a selection somebody had set up for a different purpose.
+   */
+  function movingWith(block: CanvasBlock): CanvasBlock[] {
+    if (!canvas || !selected.has(block.id)) return [block];
+    return canvas.blocks.filter((b) => selected.has(b.id));
+  }
+
+  /** One label for both inputs and for one or many blocks. */
+  function moveLabel(blocks: CanvasBlock[]): string {
+    return blocks.length === 1
+      ? `moving the ${blocks[0].kind} block`
+      : `moving ${blocks.length} blocks`;
+  }
+
+  /**
+   * Applies one offset to a set of blocks.
+   *
+   * ONE UNDO ENTRY FOR THE WHOLE SET, pushed once after the requests go
+   * out rather than once per block: moving four blocks together is one
+   * thing the person did, and undoing it four times would be four presses
+   * to reverse one action. The requests themselves are per block because
+   * that is the API the server offers; if one is refused the others still
+   * land, and the refusal is shown.
+   */
+  function moveBy(blocks: CanvasBlock[], dx: number, dy: number) {
+    if (!canvas || blocks.length === 0) return;
+    const before = blocks.map((b) => ({ blockId: b.id, x: b.x, y: b.y }));
+    for (const b of blocks) {
+      updateBlock.mutate(
+        { canvasId: canvas.id, blockId: b.id, changes: { x: b.x + dx, y: b.y + dy } },
+        {
+          // The server refuses a move off the navigable surface and says
+          // so; surfacing that verbatim is more useful than a generic
+          // failure.
+          onError: (e) => toast.error(e.message),
+        },
+      );
+    }
+    pushUndo({ kind: 'moveBlocks', positions: before, label: moveLabel(blocks) });
+  }
+
   function nudge(block: CanvasBlock, dx: number, dy: number) {
-    if (!selectedId) return;
-    updateBlock.mutate(
-      {
-        canvasId: selectedId,
-        blockId: block.id,
-        changes: { x: block.x + dx * GRID, y: block.y + dy * GRID },
-      },
-      {
-        onSuccess: () =>
-          // The position BEFORE the move — captured from the block the
-          // caller already had, so undo restores where it actually was.
-          pushUndo({
-            kind: 'moveBlock',
-            blockId: block.id,
-            x: block.x,
-            y: block.y,
-            label: `moving the ${block.kind} block`,
-          }),
-        // The server refuses a move off the navigable surface and says so;
-        // surfacing that verbatim is more useful than a generic failure.
-        onError: (e) => toast.error(e.message),
-      },
-    );
+    moveBy(movingWith(block), dx * GRID, dy * GRID);
+  }
+
+  function toggleSelected(blockId: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(blockId)) next.delete(blockId);
+      else next.add(blockId);
+      return next;
+    });
   }
 
   function onBlockPointerDown(block: CanvasBlock, e: ReactPointerEvent<HTMLElement>) {
@@ -363,6 +449,9 @@ export default function CanvasPage() {
     setDrag({
       blockId: block.id,
       kind: block.kind,
+      // Captured at pointer-down, so changing the selection mid-drag
+      // cannot change what is under the pointer.
+      movingIds: movingWith(block).map((b) => b.id),
       pointerX: e.clientX,
       pointerY: e.clientY,
       originX: block.x,
@@ -394,30 +483,22 @@ export default function CanvasPage() {
     setDrag(null);
     if (!current.moved || !canvas) return;
 
-    const x = snap(current.x);
-    const y = snap(current.y);
+    // Snapped from the GRABBED block, and the resulting offset applied to
+    // everything travelling with it — so the group lands on the grid
+    // without its blocks being pulled onto grid points individually, which
+    // would deform an arrangement somebody had deliberately made.
+    const dx = snap(current.x) - current.originX;
+    const dy = snap(current.y) - current.originY;
     // Snapping can land the block exactly where it started; writing that
     // would be a request that changes nothing and an undo entry that
     // undoes nothing.
-    if (x === current.originX && y === current.originY) return;
+    if (dx === 0 && dy === 0) return;
 
-    updateBlock.mutate(
-      { canvasId: canvas.id, blockId: current.blockId, changes: { x, y } },
-      {
-        onSuccess: () =>
-          pushUndo({
-            kind: 'moveBlock',
-            blockId: current.blockId,
-            x: current.originX,
-            y: current.originY,
-            // Worded exactly as the nudge buttons word it: someone who
-            // moved a block should not have to work out which input they
-            // used to read the undo button.
-            label: `moving the ${current.kind} block`,
-          }),
-        onError: (e) => toast.error(e.message),
-      },
-    );
+    const moving = canvas.blocks.filter((b) => current.movingIds.includes(b.id));
+    // `moveBy` words the undo label the same way the nudge buttons do:
+    // which input moved the blocks is not something the undo button
+    // should make anyone think about.
+    moveBy(moving, dx, dy);
   }
 
   if (!workspaceId) {
@@ -593,6 +674,21 @@ export default function CanvasPage() {
 
                   <span className="flex-1" />
 
+                  {selected.size > 0 && (
+                    <>
+                      <span className="text-xs text-muted-foreground">
+                        {selected.size} selected — they move together
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelected(new Set())}
+                      >
+                        Clear selection
+                      </Button>
+                    </>
+                  )}
+
                   <Button
                     variant="outline"
                     size="sm"
@@ -682,9 +778,16 @@ export default function CanvasPage() {
                         }}
                         className={`rounded-md border p-2 shadow-sm ${BLOCK_STYLES[block.kind]} ${
                           dragging ? 'z-10 opacity-90 shadow-lg' : ''
-                        }`}
+                        } ${selected.has(block.id) ? 'ring-2 ring-primary' : ''}`}
                       >
                         <div className="mb-1 flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={selected.has(block.id)}
+                            onChange={() => toggleSelected(block.id)}
+                            aria-label={`Select ${block.kind} block`}
+                            className="h-3 w-3 accent-primary"
+                          />
                           <button
                             type="button"
                             aria-label={`Drag ${block.kind} block`}
@@ -848,10 +951,13 @@ export default function CanvasPage() {
                 <p className="text-xs text-muted-foreground">
                   Drag a block by its handle, or move it with the arrow buttons if you are
                   working from the keyboard. Either way it lands on a {GRID}px grid, and the
-                  whole drag counts as one step to undo. Deleting a block also deletes the
-                  lines that touched it; undo brings both back. Undo covers structure — what
-                  exists, where it sits, and what connects to what — not typing, where your
-                  browser&rsquo;s own undo already works inside the text box.
+                  whole move counts as one step to undo. Tick several blocks and they travel
+                  together, keeping their arrangement — moving an unticked block still moves
+                  only that one, so a selection you set up for something else is not dragged
+                  along by accident. Deleting a block also deletes the lines that touched it;
+                  undo brings both back. Undo covers structure — what exists, where it sits,
+                  and what connects to what — not typing, where your browser&rsquo;s own undo
+                  already works inside the text box.
                 </p>
               </>
             )}

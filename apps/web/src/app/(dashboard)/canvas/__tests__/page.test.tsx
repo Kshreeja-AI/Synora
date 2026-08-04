@@ -255,6 +255,130 @@ describe('canvas page', () => {
       expect(toastError).toHaveBeenCalledWith(expect.stringContaining('cannot be found again'));
     });
 
+    it('carries every selected block, keeping the arrangement', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      const twoBlocks = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', x: 100, y: 40 }],
+      };
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      for (const box of screen.getAllByRole('checkbox', { name: /select note block/i })) {
+        await user.click(box);
+      }
+      dragBy(screen.getAllByRole('button', { name: /drag note block/i })[0], 60, 0);
+
+      // The same offset for both, snapped from the grabbed block — pulling
+      // each onto its own grid point would deform an arrangement somebody
+      // deliberately made.
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 60, y: 0 } },
+        expect.anything(),
+      );
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b2', changes: { x: 160, y: 40 } },
+        expect.anything(),
+      );
+    });
+
+    it('moves only the grabbed block when it is not part of the selection', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      const twoBlocks = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', x: 100, y: 40 }],
+      };
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      // Only the second block is selected; the first is the one dragged.
+      await user.click(screen.getAllByRole('checkbox', { name: /select note block/i })[1]);
+      dragBy(screen.getAllByRole('button', { name: /drag note block/i })[0], 60, 0);
+
+      // Having a selection must not make every other block un-draggable,
+      // and must not drag along a selection set up for something else.
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 60, y: 0 } },
+        expect.anything(),
+      );
+    });
+
+    it('undoes a group move in one press, to where each block actually was', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      const twoBlocks = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', x: 100, y: 40 }],
+      };
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      for (const box of screen.getAllByRole('checkbox', { name: /select note block/i })) {
+        await user.click(box);
+      }
+      dragBy(screen.getAllByRole('button', { name: /drag note block/i })[0], 60, 0);
+      update.mockClear();
+
+      // One action, one press to reverse it — not one press per block.
+      await user.click(await screen.findByRole('button', { name: /undo moving 2 blocks/i }));
+
+      expect(update).toHaveBeenCalledTimes(2);
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b1', changes: { x: 0, y: 0 } },
+        expect.anything(),
+      );
+      expect(update).toHaveBeenCalledWith(
+        { canvasId: 'canvas_1', blockId: 'b2', changes: { x: 100, y: 40 } },
+        expect.anything(),
+      );
+    });
+
+    it('nudges the whole selection too, not just the drag path', async () => {
+      const user = userEvent.setup();
+      const update = vi.fn();
+      const twoBlocks = {
+        ...canvas,
+        blocks: [canvas.blocks[0], { ...canvas.blocks[0], id: 'b2', x: 100, y: 40 }],
+      };
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: twoBlocks } as never);
+      vi.mocked(canvasApi.useUpdateBlock).mockReturnValue(idle({ mutate: update }) as never);
+
+      renderPage();
+      await openCanvas(user);
+      for (const box of screen.getAllByRole('checkbox', { name: /select note block/i })) {
+        await user.click(box);
+      }
+      await user.click(screen.getAllByRole('button', { name: /move note block right/i })[0]);
+
+      // Grouping that only worked with a pointer would be grouping the
+      // keyboard path cannot reach.
+      expect(update).toHaveBeenCalledTimes(2);
+    });
+
+    it('says how many blocks are selected, and lets them be released', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
+
+      renderPage();
+      await openCanvas(user);
+      await user.click(screen.getByRole('checkbox', { name: /select note block/i }));
+
+      expect(screen.getByText(/1 selected — they move together/)).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /clear selection/i }));
+      expect(screen.queryByText(/selected — they move together/)).not.toBeInTheDocument();
+    });
+
     it('keeps the keyboard path alongside the pointer one', async () => {
       const user = userEvent.setup();
       vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: canvas } as never);
