@@ -22,6 +22,7 @@ import {
   startRun,
 } from '../agents/run-engine';
 import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
+import { canRecall, canRecord, recallForTask, recordRunOutcome, withRecalledContext } from '../agents/memory';
 import type { AgentRun } from '../agents/types';
 
 /**
@@ -75,6 +76,7 @@ const createAgentSchema = z.object({
   instructions: z.string().min(1).max(20_000),
   allowedTools: z.array(z.string()).optional(),
   approvalPolicy: z.enum(['nothing', 'mutations', 'everything']).optional(),
+  memoryAccess: z.enum(['none', 'recall', 'record', 'both']).optional(),
   limits: limitsSchema,
 });
 
@@ -84,6 +86,7 @@ const updateAgentSchema = z.object({
   instructions: z.string().min(1).max(20_000).optional(),
   allowedTools: z.array(z.string()).optional(),
   approvalPolicy: z.enum(['nothing', 'mutations', 'everything']).optional(),
+  memoryAccess: z.enum(['none', 'recall', 'record', 'both']).optional(),
   limits: limitsSchema,
 });
 
@@ -312,7 +315,18 @@ router.delete('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, nex
 router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, next) => {
   try {
     const { task } = startRunSchema.parse(req.body);
+    const agent = getAgent(req.params.agentId, req.params.workspaceId);
+    if (!agent) return next(new NotFoundException('Agent'));
+
     const runtime = await resolveAgentRuntime(req.userId!);
+
+    // Recall happens BEFORE the run and only if the agent declares it.
+    // Retrieval runs as the requesting user, so an agent can never surface
+    // a memory the person who started it could not read.
+    const recalled = canRecall(agent.memoryAccess)
+      ? await recallForTask({ task, workspaceId: req.params.workspaceId, requestedBy: req.userId! })
+      : '';
+
     const run = await startRun(
       {
         agentId: req.params.agentId,
@@ -320,10 +334,26 @@ router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, 
         requestedBy: req.userId!,
         task,
       },
-      runtime.deps,
+      { ...runtime.deps, generate: withRecalledContext(runtime.deps.generate, recalled) },
     );
     await persistRun(run.id);
-    res.status(201).json(createApiResponse(runResponse(run, runtime)));
+
+    // Recorded only on success, and only if declared. The memory carries
+    // the plan's origin in its text, so a deterministic run can never be
+    // recalled later as though it were something a model produced.
+    if (canRecord(agent.memoryAccess)) {
+      await recordRunOutcome({ agent, run, requestedBy: req.userId! });
+    }
+
+    res.status(201).json(
+      createApiResponse({
+        ...runResponse(run, runtime),
+        memory: {
+          recalled: recalled.length > 0,
+          recorded: canRecord(agent.memoryAccess) && run.state === 'completed',
+        },
+      }),
+    );
   } catch (error) {
     next(toHttpError(error));
   }

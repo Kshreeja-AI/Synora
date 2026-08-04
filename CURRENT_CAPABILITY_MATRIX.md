@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `ec2a117` + scheduling UI increment
-**Evidence basis**: 2,280 backend tests across 221 files and 489 frontend tests
+**Verified at commit**: `bdc4174` + agent memory increment
+**Evidence basis**: 2,296 backend tests across 222 files and 489 frontend tests
 across 80 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -46,11 +46,11 @@ Three rules govern every entry:
 | Class | Count | What it means for the founder |
 |---|---:|---|
 | A — production-ready locally | 16 | Usable today. |
-| B — implemented but incomplete | 16 | Usable, with a stated hole. |
+| B — implemented but incomplete | 17 | Usable, with a stated hole. |
 | C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
-| F — not implemented | 10 | Does not exist. Named honestly rather than implied. |
+| F — not implemented | 9 | Does not exist. Named honestly rather than implied. |
 | G — needs real-world validation | 5 | Works in tests; never met reality. |
 
 Note that **G overlaps with A and B** rather than replacing them — a capability can
@@ -84,7 +84,7 @@ case, both are recorded.
 | Deterministic local planner | **A (LOCAL)** | `agents/local-runtime.ts`. Stamped `origin: 'local-deterministic'` in the plan record so no consumer can mistake it for model output. This is orchestration scaffolding, **not intelligence**. |
 | Agent UI / testing console / run history view | **A** | `/agents` page plus `CreateAgentDialog`, `RunDetail` and `RuntimeNotice`, 8 tests. Define an agent, give it a task, watch every step, approve or reject what it pauses on, stop it mid-run, and read the full log. The LOCAL/REAL label is rendered on every run, and the fail-closed defaults are shown as they actually are ("no tools", "asks before changes") rather than softened. |
 | Agent editing UI (create new version from the screen) | **F** | The API supports it and the client hook exists; no screen calls it. Agents are created and archived from the UI, not edited. |
-| Agent memory integration | **F** | The memory subsystem and the agent subsystem have not been connected. |
+| Agent memory integration | **B** | `agents/memory.ts`, 16 tests. Opt-in per direction and fail-closed: an agent that does not declare `recall` reads nothing, one that does not declare `record` writes nothing. Recall runs as the requesting user, so an agent cannot surface a memory that person could not read. Written memories carry the plan's origin **in their text**, so a deterministic run can never be recalled later as though a model produced it. Only successful runs are recorded. **Limit**: no UI control for memory access, and recall quality is unmeasured — with no embedding provider, retrieval falls back to keyword search. |
 
 ## Family C — Workflow Automation
 

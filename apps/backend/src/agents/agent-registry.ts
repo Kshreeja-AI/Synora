@@ -34,6 +34,7 @@ export interface CreateAgentInput {
   instructions: string;
   allowedTools?: string[];
   approvalPolicy?: ApprovalPolicy;
+  memoryAccess?: AgentDefinition['memoryAccess'];
   limits?: Partial<AgentLimits>;
   createdBy: string;
 }
@@ -79,6 +80,8 @@ export function createAgent(input: CreateAgentInput): AgentDefinition {
     // Fail closed here too: unless the creator explicitly loosens it,
     // anything that mutates state pauses for a human.
     approvalPolicy: input.approvalPolicy ?? 'mutations',
+    // Fail closed again: unspecified means no memory access at all.
+    memoryAccess: input.memoryAccess ?? 'none',
     limits: { ...DEFAULT_AGENT_LIMITS, ...input.limits },
     version: 1,
     createdBy: input.createdBy,
@@ -95,6 +98,7 @@ export interface UpdateAgentInput {
   instructions?: string;
   allowedTools?: string[];
   approvalPolicy?: ApprovalPolicy;
+  memoryAccess?: AgentDefinition['memoryAccess'];
   limits?: Partial<AgentLimits>;
 }
 

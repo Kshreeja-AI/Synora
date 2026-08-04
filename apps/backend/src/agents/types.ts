@@ -65,6 +65,13 @@ export interface AgentDefinition {
    */
   allowedTools: string[];
   approvalPolicy: ApprovalPolicy;
+  /**
+   * Whether this agent may read the workspace's memory, write to it, both,
+   * or neither. Absent means NONE — memory is workspace data, and an agent
+   * that silently read all of it would be a privacy problem wearing a
+   * feature's clothes.
+   */
+  memoryAccess?: 'none' | 'recall' | 'record' | 'both';
   limits: AgentLimits;
   /** Monotonic per-lineage. Editing creates version+1; never mutates. */
   version: number;

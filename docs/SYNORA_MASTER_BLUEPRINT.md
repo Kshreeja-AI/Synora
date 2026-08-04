@@ -341,9 +341,29 @@ a step ends the run rather than skipping it, and that a plan naming a
 forbidden tool is refused whole rather than partially executed — both are
 behaviours that surprise people, so they are said rather than discovered.
 
+**Also implemented: memory** (`agents/memory.ts`). An agent may recall
+workspace memories before a run and record its outcome after one, both
+opt-in and fail-closed — undeclared means neither. Recall executes under
+the requesting user's identity, so an agent can never surface a memory the
+person who started it could not read.
+
+The load-bearing decision is provenance. A run's output becomes a memory,
+and a later run recalls that memory as context — so an unlabelled
+deterministic result would be read back as though it were knowledge, and
+the memory store would fill with fabricated experience. Every recorded
+memory therefore states in its own TEXT whether it came from a model, a
+deterministic script ("NOT by AI — this is scaffolding output, not
+knowledge"), or a human-authored workflow. The stamp is in the content
+rather than only a tag, because a consumer that reads only the text must
+still learn where it came from. Memories are filed EPISODIC — a record of
+something that happened, not a fact about the world — and only successful
+runs are recorded, so a broken run cannot poison future recall.
+
 **Missing, named:** editing an agent from the screen (the API and client
 hook exist; no UI calls them — agents are created and archived, not
-edited); live progress for a long run (the page shows the state the
+edited); no UI control for memory access; recall quality is UNMEASURED
+(with no embedding provider, retrieval falls back to keyword search);
+live progress for a long run (the page shows the state the
 request returned, so a run must be reopened to see movement); usage/cost
 metering into the billing ledger; agent memory integration; multi-agent
 orchestration; and no live model has ever produced a plan — the planner's
