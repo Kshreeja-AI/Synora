@@ -23,6 +23,7 @@ import {
   useAddBlock,
   useArchiveCanvas,
   useCanvas,
+  useCanvasLinks,
   useCanvases,
   useConnectBlocks,
   useCreateCanvas,
@@ -180,6 +181,15 @@ export default function CanvasPage() {
   const disconnect = useDisconnectBlocks(workspaceId);
 
   const connections = canvas?.connections ?? [];
+
+  // Only asked for once a canvas is open, and separately from the canvas
+  // itself so a canvas whose targets have been deleted still opens.
+  const { data: links = [] } = useCanvasLinks(workspaceId, selectedId ?? '', {
+    enabled: !!selectedId,
+  });
+  function linkFor(blockId: string) {
+    return links.find((l) => l.blockId === blockId);
+  }
 
   function pushUndo(entry: UndoEntry) {
     // Bounded, like everything else here: an unbounded history is a slow
@@ -807,12 +817,36 @@ export default function CanvasPage() {
                         </div>
 
                         {block.kind === 'link' ? (
-                          <p className="text-sm">
-                            <span className="font-medium">{block.content}</span>
-                            <span className="block text-xs text-muted-foreground">
-                              {block.target}: {block.targetId}
-                            </span>
-                          </p>
+                          (() => {
+                            const link = linkFor(block.id);
+                            return (
+                              <p className="text-sm">
+                                <span className="font-medium">{block.content}</span>
+                                {/* The target's own name, read now. Until
+                                    the lookup answers, the block says what
+                                    it points at rather than showing a
+                                    placeholder that could be mistaken for
+                                    a title. */}
+                                {link?.missing ? (
+                                  <span className="block text-xs text-destructive">
+                                    This {block.target} is gone, or is not in this workspace.
+                                  </span>
+                                ) : link?.title ? (
+                                  <>
+                                    <span className="block text-xs font-medium">{link.title}</span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      {block.target}
+                                      {link.detail ? ` · ${link.detail}` : ''}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <span className="block text-xs text-muted-foreground">
+                                    {block.target}: {block.targetId}
+                                  </span>
+                                )}
+                              </p>
+                            );
+                          })()
                         ) : (
                           <textarea
                             value={block.content}

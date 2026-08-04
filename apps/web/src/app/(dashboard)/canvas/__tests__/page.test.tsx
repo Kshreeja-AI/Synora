@@ -31,6 +31,7 @@ vi.mock('@/lib/api/canvas', async () => {
     ...actual,
     useCanvases: vi.fn(),
     useCanvas: vi.fn(),
+    useCanvasLinks: vi.fn(),
     useCreateCanvas: vi.fn(),
     useArchiveCanvas: vi.fn(),
     useAddBlock: vi.fn(),
@@ -100,6 +101,7 @@ function renderPage() {
 beforeEach(() => {
   vi.mocked(canvasApi.useCanvases).mockReturnValue({ data: [canvas], isLoading: false } as never);
   vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: undefined } as never);
+  vi.mocked(canvasApi.useCanvasLinks).mockReturnValue({ data: [] } as never);
   vi.mocked(canvasApi.useCreateCanvas).mockReturnValue(idle() as never);
   vi.mocked(canvasApi.useArchiveCanvas).mockReturnValue(idle() as never);
   vi.mocked(canvasApi.useAddBlock).mockReturnValue(idle() as never);
@@ -551,6 +553,77 @@ describe('canvas page', () => {
         { canvasId: 'canvas_1', blockId: 'b_new' },
         expect.anything(),
       );
+    });
+  });
+
+  /**
+   * A link block shows what it points at, read now.
+   *
+   * The old behaviour — "run: run_42" — was honest but useless. What must
+   * not creep in is the other direction: showing a title the canvas stored
+   * itself, which would slowly become a museum of names things used to
+   * have.
+   */
+  describe('link blocks', () => {
+    const linkCanvas = {
+      ...canvas,
+      blocks: [
+        {
+          ...canvas.blocks[0],
+          id: 'lb1',
+          kind: 'link' as const,
+          content: 'Last night',
+          target: 'workflow' as const,
+          targetId: 'wf_1',
+        },
+      ],
+    };
+
+    it('shows the target\'s real name and a useful second line', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: linkCanvas } as never);
+      vi.mocked(canvasApi.useCanvasLinks).mockReturnValue({
+        data: [{ blockId: 'lb1', title: 'Nightly report', detail: '3 steps' }],
+      } as never);
+
+      renderPage();
+      await openCanvas(user);
+
+      expect(screen.getByText('Nightly report')).toBeInTheDocument();
+      expect(screen.getByText(/workflow · 3 steps/)).toBeInTheDocument();
+      // The raw id is no longer the only thing on offer.
+      expect(screen.queryByText(/workflow: wf_1/)).not.toBeInTheDocument();
+    });
+
+    it('says plainly when the target is gone, without guessing why', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: linkCanvas } as never);
+      vi.mocked(canvasApi.useCanvasLinks).mockReturnValue({
+        data: [{ blockId: 'lb1', missing: true }],
+      } as never);
+
+      renderPage();
+      await openCanvas(user);
+
+      // Deleted and "belongs to another workspace" read the same, on
+      // purpose: telling them apart would tell an outsider which ids are
+      // real.
+      expect(
+        screen.getByText(/This workflow is gone, or is not in this workspace/),
+      ).toBeInTheDocument();
+    });
+
+    it('falls back to the id while the lookup is still out', async () => {
+      const user = userEvent.setup();
+      vi.mocked(canvasApi.useCanvas).mockReturnValue({ data: linkCanvas } as never);
+      vi.mocked(canvasApi.useCanvasLinks).mockReturnValue({ data: [] } as never);
+
+      renderPage();
+      await openCanvas(user);
+
+      // Honest about pointing at something, rather than showing a
+      // placeholder that could be mistaken for a title.
+      expect(screen.getByText(/workflow: wf_1/)).toBeInTheDocument();
     });
   });
 

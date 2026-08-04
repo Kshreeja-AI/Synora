@@ -812,11 +812,32 @@ textarea, and an entry per keystroke would bury the structural changes
 people actually want back. The page says so rather than leaving someone
 to discover it.
 
+**Also implemented: link blocks show what they point at.** A link resolves
+to the target's real current name and a useful second line — a run's
+state, a workflow's step count, a conversation's last-message date.
+
+The title is **read now and never stored**. Copying it when the link was
+made would turn a canvas into a museum of names things used to have:
+rename a workflow and the canvas would still show last month's name with
+nothing to indicate it is lying. Resolving costs a lookup and is always
+right.
+
+**Every lookup is workspace-scoped, and that is the point of the file
+rather than a detail of it.** A block stores a bare id, and nothing stops
+someone typing an id belonging to another workspace — without scoping, a
+link block would be a way to read other people's conversation titles one
+id at a time. An unresolvable target reports `missing` with **no reason**:
+deleted, archived, never existed, and belongs-to-someone-else all read
+alike, the same 404-not-403 discipline the routes use, and for the same
+reason — distinguishing them tells an outsider which ids are real.
+
+Resolution is a separate call from reading the canvas, so a canvas with no
+links does not pay for the feature and a canvas whose targets have been
+deleted still opens.
+
 **Missing, named:** multi-select covers movement only — several blocks
 cannot yet be deleted or connected in one action, and there is no
-rubber-band selection by dragging across the surface; and inline previews
-of linked runs or conversations, which currently show their type and id
-only.
+rubber-band selection by dragging across the surface.
 
 ### 5.12 Plugins — Partially implemented (`apps/backend/src/plugins/`, `/plugins`)
 

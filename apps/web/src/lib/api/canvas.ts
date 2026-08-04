@@ -90,6 +90,35 @@ export function useCanvas(
   });
 }
 
+/**
+ * What a canvas's link blocks point at, read now rather than copied when
+ * the link was made.
+ *
+ * A separate query from the canvas itself: resolving touches the database
+ * and three registries, so a canvas with no links should not pay for the
+ * feature, and a canvas whose targets have been deleted should still open.
+ */
+export interface ResolvedLink {
+  blockId: string;
+  title?: string;
+  detail?: string;
+  /** Carries no reason, deliberately — deleted and inaccessible look alike. */
+  missing?: boolean;
+}
+
+export function useCanvasLinks(
+  workspaceId: string,
+  canvasId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<ResolvedLink[]> {
+  return useQuery({
+    queryKey: [KEY, workspaceId, canvasId, 'links'],
+    queryFn: () =>
+      api.get<ResolvedLink[]>(`/api/workspaces/${workspaceId}/canvases/${canvasId}/links`),
+    enabled: !!workspaceId && !!canvasId && options?.enabled !== false,
+  });
+}
+
 export function useCreateCanvas(
   workspaceId: string,
 ): UseMutationResult<CanvasDocument, Error, string> {

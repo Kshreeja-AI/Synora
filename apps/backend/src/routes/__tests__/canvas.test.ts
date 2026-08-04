@@ -293,4 +293,136 @@ describe('canvas routes', () => {
       expect(cross.status).toBe(404);
     });
   });
+
+  /**
+   * Resolving what a link block points at.
+   *
+   * A block stores a bare id, and nothing stops someone typing an id
+   * belonging to another workspace — so the assertion that matters most
+   * here is that a foreign id resolves to `missing` rather than to
+   * somebody else's title. Without that, a link block would be a way to
+   * read other people's conversation names one id at a time.
+   */
+  describe('link resolution', () => {
+    async function addLink(
+      cookie: string,
+      workspaceId: string,
+      canvasId: string,
+      target: string,
+      targetId: string,
+    ) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/canvases/${canvasId}/blocks`)
+        .set('Cookie', cookie)
+        .send({ kind: 'link', content: 'a link', target, targetId, x: 0, y: 0 });
+      return res.body.data as { id: string };
+    }
+
+    async function resolve(cookie: string, workspaceId: string, canvasId: string) {
+      const res = await request(app)
+        .get(`/api/workspaces/${workspaceId}/canvases/${canvasId}/links`)
+        .set('Cookie', cookie);
+      return res;
+    }
+
+    it('resolves a workflow link to its real name, read now rather than copied', async () => {
+      const owner = await register('canvas-link-wf');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const canvas = (await makeCanvas(owner.cookie, ws.id)).body.data;
+
+      const workflow = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/workflows`)
+          .set('Cookie', owner.cookie)
+          .send({
+            name: 'Nightly report',
+            steps: [{ id: 's1', kind: 'generate', description: 'step', input: 'summarise' }],
+          })
+      ).body.data;
+      const block = await addLink(owner.cookie, ws.id, canvas.id, 'workflow', workflow.id);
+
+      const res = await resolve(owner.cookie, ws.id, canvas.id);
+      expect(res.status).toBe(200);
+      const link = (res.body.data as { blockId: string; title?: string; detail?: string }[]).find(
+        (l) => l.blockId === block.id,
+      );
+      // The name comes from the workflow, not from a copy taken when the
+      // link was made — so renaming it cannot leave the canvas showing an
+      // old name with nothing to say it is lying.
+      expect(link?.title).toBe('Nightly report');
+      expect(link?.detail).toContain('1 step');
+    });
+
+    it('reports a target that does not exist as missing, without saying why', async () => {
+      const owner = await register('canvas-link-gone');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const canvas = (await makeCanvas(owner.cookie, ws.id)).body.data;
+      const block = await addLink(owner.cookie, ws.id, canvas.id, 'run', 'run_that_never_was');
+
+      const res = await resolve(owner.cookie, ws.id, canvas.id);
+      const link = (res.body.data as { blockId: string; missing?: boolean; title?: string }[]).find(
+        (l) => l.blockId === block.id,
+      );
+      expect(link?.missing).toBe(true);
+      expect(link?.title).toBeUndefined();
+    });
+
+    it('will not resolve another workspace\'s id, even into a bare title', async () => {
+      const owner = await register('canvas-link-mine');
+      const stranger = await register('canvas-link-theirs');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const theirWs = await createWorkspace(stranger.cookie, 'Secret Co');
+      const canvas = (await makeCanvas(owner.cookie, ws.id)).body.data;
+
+      // A workflow that exists, but not here.
+      const theirWorkflow = (
+        await request(app)
+          .post(`/api/workspaces/${theirWs.id}/workflows`)
+          .set('Cookie', stranger.cookie)
+          .send({
+            name: 'Acquisition due diligence',
+            steps: [{ id: 's1', kind: 'generate', description: 'step', input: 'summarise' }],
+          })
+      ).body.data;
+      const block = await addLink(owner.cookie, ws.id, canvas.id, 'workflow', theirWorkflow.id);
+
+      const res = await resolve(owner.cookie, ws.id, canvas.id);
+      const link = (res.body.data as { blockId: string; missing?: boolean; title?: string }[]).find(
+        (l) => l.blockId === block.id,
+      );
+      // The name of somebody else's workflow is exactly the thing a link
+      // block must not become a way to read.
+      expect(link?.missing).toBe(true);
+      expect(JSON.stringify(res.body)).not.toContain('Acquisition due diligence');
+    });
+
+    it('returns nothing for a canvas with no link blocks, rather than failing', async () => {
+      const owner = await register('canvas-link-none');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const canvas = (await makeCanvas(owner.cookie, ws.id)).body.data;
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/canvases/${canvas.id}/blocks`)
+        .set('Cookie', owner.cookie)
+        .send({ kind: 'note', content: 'just a note', x: 0, y: 0 });
+
+      const res = await resolve(owner.cookie, ws.id, canvas.id);
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('guards the links path with auth and workspace access', async () => {
+      const owner = await register('canvas-link-guard');
+      const stranger = await register('canvas-link-guard-2');
+      const ws = await createWorkspace(owner.cookie, 'Canvas Co');
+      const canvas = (await makeCanvas(owner.cookie, ws.id)).body.data;
+
+      expect(
+        (await request(app).get(`/api/workspaces/${ws.id}/canvases/${canvas.id}/links`)).status,
+      ).toBe(401);
+
+      const theirWs = await createWorkspace(stranger.cookie, 'Other Co');
+      // 404, not 403: the same discipline as every other canvas route.
+      expect((await resolve(stranger.cookie, theirWs.id, canvas.id)).status).toBe(404);
+    });
+  });
 });

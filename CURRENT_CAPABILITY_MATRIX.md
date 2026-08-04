@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `a971f3f` + the canvas-multi-select increment
-**Evidence basis**: 2,496 backend tests across 233 files and 568 frontend tests
+**Verified at commit**: `915b9b8` + the canvas-link-resolution increment
+**Evidence basis**: 2,501 backend tests across 233 files and 571 frontend tests
 across 85 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
@@ -153,7 +153,7 @@ behaviour is covered by component and page tests instead.
 | Canvas viewport (zoom, pan, reset) | **A** | Zoom 40–200% with the level shown, four-direction pan, and one reset for both. Lines and blocks share a single transformed layer, so a connection cannot drift away from the blocks it joins. Buttons with labels rather than wheel/space-drag gestures — keyboard-reachable by default, and discoverable rather than hidden. |
 | Canvas undo | **A** | A bounded stack of inverse operations covering add, delete, move, connect and disconnect, with the button naming what it will reverse rather than saying only "Undo". **Undoing a delete restores the block AND the lines that touched it**, re-pointed at the new id — the connections are captured before the request, because the server deletes them with the block and they are unrecoverable after. The new id is not a compromise: nothing outside a canvas references a block id, so the restored state is functionally the one that existed. **Limit, stated on the page**: undo is structural, not textual — typing has the browser's own undo inside the text box, and an entry per keystroke would bury the changes people want back. |
 | Canvas connections between blocks | **A** | Directed lines with optional labels, drawn as SVG behind the blocks and listed with a delete control. Cycles are **allowed** — the workflow rule against them exists because steps execute in an order, and a canvas has no execution order, so enforcing it here would copy a constraint past its reason. What *is* enforced: no self-connection, no duplicate in the same direction (the reverse is a separate statement), both endpoints must exist on **this** canvas, and a bounded count. Deleting a block deletes every line touching it, and hydration re-checks the same invariant, so a line from nothing to nothing cannot survive a restart either. |
-| Canvas link resolution (rendering the linked run/conversation inline) | **F** | A link block shows its target type and id, not a preview of the thing. |
+| Canvas link resolution (showing what a link block points at) | **A** | `canvas/link-resolver.ts` + `GET /canvases/:id/links`, 5 route tests + 3 page tests. A link block resolves to the target's **real current name** plus a useful second line (a run's state, a workflow's step count, a conversation's last-message date). The title is **read now, never stored**: copying it when the link was made would turn a canvas into a museum of names things used to have, with nothing to indicate it is lying. **Every lookup is workspace-scoped** — a block holds a bare id, and nothing stops someone typing one belonging to another workspace, so without scoping a link block would be a way to read other people's conversation titles one id at a time. An unresolvable target reports `missing` **with no reason**: deleted, archived, never existed and belongs-to-someone-else all read alike, the same 404-not-403 discipline the routes use. Resolution is a **separate call** from the canvas, so a canvas with no links does not pay for the feature and a canvas whose targets are gone still opens. |
 
 ## Family E — Knowledge & File Intelligence
 

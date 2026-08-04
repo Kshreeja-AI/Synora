@@ -16,6 +16,7 @@ import {
   renameCanvas,
   updateBlock,
 } from '../canvas/canvas-store';
+import { resolveCanvasLinks } from '../canvas/link-resolver';
 import { CANVAS_LIMITS } from '../canvas/types';
 
 /**
@@ -105,6 +106,32 @@ router.get('/:workspaceId/canvases/:canvasId', async (req: AuthRequest, res, nex
     const canvas = getCanvas(req.params.canvasId, req.params.workspaceId);
     if (!canvas) return next(new NotFoundException('Canvas'));
     res.json(createApiResponse(canvas));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * What this canvas's link blocks point at, resolved now rather than copied
+ * when the link was made.
+ *
+ * A separate call from the canvas itself, deliberately. Resolving touches
+ * the database and three registries; folding it into every canvas read
+ * would make opening a canvas with no links pay for the feature. It is
+ * also the read that can partly fail — a target may have been deleted —
+ * and the canvas should still open when it has.
+ *
+ * Declared before `/:canvasId/blocks` etc. is irrelevant here (they are
+ * distinct literal segments), but it must come after the `router.use`
+ * guard above, which it does.
+ */
+router.get('/:workspaceId/canvases/:canvasId/links', async (req: AuthRequest, res, next) => {
+  try {
+    const canvas = getCanvas(req.params.canvasId, req.params.workspaceId);
+    if (!canvas) return next(new NotFoundException('Canvas'));
+    // Scoped to the workspace asking, so a block holding a foreign id
+    // resolves to `missing` rather than to somebody else's title.
+    res.json(createApiResponse(await resolveCanvasLinks(canvas.blocks, req.params.workspaceId)));
   } catch (error) {
     next(error);
   }
