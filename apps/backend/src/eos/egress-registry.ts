@@ -17,11 +17,31 @@ import { buildRequestLogEntry } from '../middleware/requestLogger.js';
  * verbatim, and the request logger wrote `req.url` — query string
  * included — straight to the log.
  *
- * Still undeclared: file downloads, share links, and notification emails,
- * which sit behind the database client and need the same treatment.
- * Until they get it this registry is short, which is why the audit
- * reports the declared count alongside the percentage rather than a bare
- * score.
+ * THE REMAINING PATHS ARE DELIBERATELY ABSENT, NOT PENDING. Earlier notes
+ * here listed file downloads, share links, and notification emails as gaps
+ * still to close. Auditing them showed that framing was wrong, and the
+ * distinction is worth stating because it decides what this registry is
+ * for:
+ *
+ *   DERIVED paths carry data to an audience the person never chose —
+ *   engineers reading logs, evaluation datasets, exports. The person had
+ *   no say, so redaction is the control, and those are the three declared
+ *   below.
+ *
+ *   DIRECTED paths carry data to an audience the person picked. A share
+ *   link publishes the conversation its owner chose to publish. An
+ *   invitation email tells the invitee who invited them and to what. A
+ *   download returns the file its owner uploaded. Redacting any of these
+ *   does not protect anyone — it breaks the feature while leaving the
+ *   privacy question untouched. Their real controls are authorization,
+ *   token scoping, expiry, and revocation, all of which exist.
+ *
+ * So the denominator is not "3 of many". It is close to complete for the
+ * paths where redaction is the right instrument. The risk that remains on
+ * a directed path is different in kind: leaking AMBIENT data the person
+ * did not choose to include — an owner's email riding along with a shared
+ * conversation, say. That is a payload-shape property, pinned by tests
+ * next to each path, not something a redaction probe can measure.
  *
  * ONE KNOWN, DELIBERATE EXCLUSION. The request-log path writes the client
  * IP as received. An IP is personal data, so this is a gap in the strict
