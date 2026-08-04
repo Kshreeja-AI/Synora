@@ -23,7 +23,7 @@ import {
 } from '../agents/run-engine';
 import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
 import { canRecall, canRecord, recallForTask, recordRunOutcome, withRecalledContext } from '../agents/memory';
-import { meterRun } from '../agents/metering';
+import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
 import type { AgentRun } from '../agents/types';
 
@@ -107,6 +107,7 @@ const rejectSchema = z.object({
  */
 function toHttpError(err: unknown): unknown {
   const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof BudgetExceededError) return new ValidationException(message);
   if (message === 'agent not found' || message === 'run not found') {
     return new NotFoundException(message === 'run not found' ? 'Run' : 'Agent');
   }
@@ -332,6 +333,10 @@ router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, 
     const { task } = startRunSchema.parse(req.body);
     const agent = getAgent(req.params.agentId, req.params.workspaceId);
     if (!agent) return next(new NotFoundException('Agent'));
+
+    // Refused BEFORE anything executes: at deduction time the work is
+    // already done, which is too late for a budget to mean anything.
+    await assertRunBudget(req.params.workspaceId);
 
     const runtime = await resolveAgentRuntime(req.userId!);
 

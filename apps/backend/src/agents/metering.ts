@@ -166,6 +166,35 @@ async function countOnly(
   }
 }
 
+export class BudgetExceededError extends Error {
+  constructor() {
+    super(
+      'this workspace has a credits account with no remaining balance — add credits before starting new runs',
+    );
+  }
+}
+
+/**
+ * Pre-run budget gate.
+ *
+ * THE POLICY, stated so nobody has to infer it from behaviour: a workspace
+ * WITHOUT a credits account runs freely — that is every local workspace,
+ * and it matches the metering rule above (count, don't deduct). A
+ * workspace WITH a credits account has opted into billing, and opting in
+ * means the budget binds: at zero balance, new runs are refused BEFORE
+ * anything executes, rather than discovered at deduction time after the
+ * work is already done.
+ *
+ * Checked at run start only. A run already in flight is never killed by
+ * the budget — killing mid-run would waste the very spend it is trying to
+ * protect, and the terminal deduction handles the overshoot honestly.
+ */
+export async function assertRunBudget(workspaceId: string): Promise<void> {
+  const credits = await prisma.workspaceCredits.findUnique({ where: { workspaceId } });
+  if (!credits) return;
+  if (credits.balance <= 0) throw new BudgetExceededError();
+}
+
 /** Test-only. */
 export function resetMetering(): void {
   metered.clear();

@@ -1,7 +1,7 @@
 import { collectDue, persistSchedule } from './schedule.js';
 import { startWorkflowRun } from './workflow-engine.js';
 import { persistRun } from '../agents/run-engine.js';
-import { meterRun } from '../agents/metering.js';
+import { assertRunBudget, meterRun } from '../agents/metering.js';
 import { TERMINAL_RUN_STATES } from '../agents/types.js';
 import { resolveAgentRuntime } from '../agents/runtime.js';
 import { logger } from '../utils/logger.js';
@@ -45,6 +45,10 @@ export async function fireDueSchedules(now = Date.now()): Promise<number> {
     }
 
     try {
+      // Same budget as a manual run. The schedule has already advanced, so
+      // a refused occurrence is skipped like any other failure — it does
+      // not queue up to fire the moment credits arrive.
+      await assertRunBudget(schedule.workspaceId);
       const runtime = await resolveAgentRuntime(schedule.createdBy);
       const run = await startWorkflowRun(
         {

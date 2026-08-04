@@ -375,12 +375,24 @@ because a history that loses records whenever billing hiccups lies by
 omission); and deterministic generate-steps cost zero, since no tokens
 were bought and charging would fabricate a cost, while tool calls are
 charged regardless of origin because a tool does real work either way.
-Metering never fails a run. Pre-run budget enforcement is missing and
-named below.
+Metering never fails a run.
 
-**Missing, named:** pre-run budget enforcement (a zero-balance workspace
-can still start runs — discovered at deduction, not blocked upfront);
-recall quality is UNMEASURED
+**Also implemented: a pre-run budget gate** (`assertRunBudget`). The
+policy is stated rather than left to be inferred: a workspace WITHOUT a
+credits account runs freely — that is every local workspace, and it
+matches the metering rule above (count, don't deduct). A workspace WITH a
+credits account has opted into billing, and opting in means the budget
+binds: at zero balance new runs are refused BEFORE anything executes,
+rather than discovered at deduction time once the work is already done.
+The gate sits at run start on both the agent and workflow routes and in
+the scheduler — a clock is not a discount — and the scheduler checks
+*after* advancing its cursor, so a refused occurrence is skipped like any
+other failure instead of queueing up to fire the moment credits arrive. It
+is a start-time check only: a run already in flight is never killed by the
+budget, because killing mid-run wastes the very spend it is protecting,
+and the terminal deduction records the overshoot honestly.
+
+**Missing, named:** recall quality is UNMEASURED
 (with no embedding provider, retrieval falls back to keyword search);
 live progress for a long run (the page shows the state the
 request returned, so a run must be reopened to see movement); usage/cost
@@ -631,7 +643,7 @@ Status per capability, honestly:
 
 | Capability | Status |
 |---|---|
-| AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
+| AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Run cost metering and the pre-run budget gate: implemented. Multi-agent orchestration: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
 | Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and timezones: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |

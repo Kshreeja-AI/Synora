@@ -21,7 +21,7 @@ import {
   setScheduleEnabled,
 } from '../workflows/schedule';
 import { persistRun } from '../agents/run-engine';
-import { meterRun } from '../agents/metering';
+import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
 import { resolveAgentRuntime } from '../agents/runtime';
 
@@ -87,6 +87,7 @@ const startSchema = z.object({ task: z.string().max(10_000).default('') });
 
 function toHttpError(err: unknown): unknown {
   const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof BudgetExceededError) return new ValidationException(message);
   if (message === 'workflow not found' || message === 'agent not found') {
     return new NotFoundException('Workflow');
   }
@@ -188,6 +189,7 @@ router.delete('/:workspaceId/workflows/:workflowId', async (req: AuthRequest, re
 router.post('/:workspaceId/workflows/:workflowId/runs', async (req: AuthRequest, res, next) => {
   try {
     const { task } = startSchema.parse(req.body ?? {});
+    await assertRunBudget(req.params.workspaceId);
     // Resolved for the tool runner and text generator only — the planner
     // this returns is discarded, because the steps are already written.
     const runtime = await resolveAgentRuntime(req.userId!);

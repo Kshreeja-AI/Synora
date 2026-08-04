@@ -265,6 +265,32 @@ describe('agent routes', () => {
     expect(res.body.data.run.steps).toHaveLength(0);
   });
 
+  it('refuses a run before execution when the workspace budget is exhausted', async () => {
+    const owner = await register('agent-budget');
+    const ws = await createWorkspace(owner.cookie, 'Broke Co');
+    const agent = (await makeAgent(owner.cookie, ws.id, { approvalPolicy: 'nothing' })).body.data;
+
+    // Opting into billing: a credits account exists and is empty. The
+    // budget must bind BEFORE anything executes — at deduction time the
+    // work is already done, which is too late for a budget to mean
+    // anything.
+    await prisma.workspaceCredits.create({ data: { workspaceId: ws.id, balance: 0 } });
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate hello' });
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toMatch(/no remaining balance/);
+
+    // Nothing ran and nothing was recorded: the refusal is pre-execution.
+    const runs = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs`)
+      .set('Cookie', owner.cookie);
+    expect(runs.body.data).toEqual([]);
+  });
+
   it('rejects a run with an empty task', async () => {
     const owner = await register('agent-empty-task');
     const ws = await createWorkspace(owner.cookie, 'Agent Co');

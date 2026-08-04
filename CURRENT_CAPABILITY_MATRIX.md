@@ -2,8 +2,8 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `204c786` + consolidation increment
-**Evidence basis**: 2,322 backend tests across 224 files and 501 frontend tests
+**Verified at commit**: `10b2eea` + run-budget increment
+**Evidence basis**: 2,337 backend tests across 225 files and 501 frontend tests
 across 81 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
@@ -179,7 +179,8 @@ case, both are recorded.
 |---|---|---|
 | Plans, subscriptions, invoices, refunds, payment methods | **B** | Five services and four routes, all tested, `/dashboard/billing` and `/dashboard/settings/billing` pages. **Limit**: no real payment processor is connected, so no money has ever moved through this code. |
 | Credits + usage ledger | **A** | `credit.service.ts`, `usage.ts`, real aggregation, `/dashboard/usage` page. |
-| Agent/workflow run metering | **B** | `agents/metering.ts`, 11 tests, wired into every terminal transition (start, approve, reject, scheduler). Usage is always counted even when deduction cannot happen — the record then says `deducted: false` and why. Deterministic generate-steps cost zero (no tokens were bought; charging would fabricate a cost); tool calls are charged regardless of plan origin. **Limit**: no pre-run budget enforcement — a workspace with zero balance can still start runs, discovered at deduction time rather than blocked upfront. |
+| Agent/workflow run metering | **A** | `agents/metering.ts`, 15 tests, wired into every terminal transition (start, approve, reject, scheduler). Usage is always counted even when deduction cannot happen — the record then says `deducted: false` and why. Deterministic generate-steps cost zero (no tokens were bought; charging would fabricate a cost); tool calls are charged regardless of plan origin. |
+| Pre-run budget enforcement | **A** | `assertRunBudget` in `agents/metering.ts`, checked at both run-start routes and in the scheduler. A workspace with no credits account runs freely (every local workspace); a workspace that has opted into billing is refused at zero balance **before** anything executes, with an end-to-end route test proving no run is created. A run already in flight is never killed by the budget. |
 | Webhook handling with replay protection | **A** | `billingWebhook.ts`, `ProcessedWebhookEvent` model, dedup race condition fixed. |
 | Live payment processing | **E** | **ACTIVATION BLOCKED**: requires a production payment account — a founder/business decision, not an engineering one. |
 

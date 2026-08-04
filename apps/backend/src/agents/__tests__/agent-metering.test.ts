@@ -13,16 +13,27 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const recordUsage = vi.hoisted(() => vi.fn());
 const usageRecordCreate = vi.hoisted(() => vi.fn());
+const creditsFindUnique = vi.hoisted(() => vi.fn());
 
 vi.mock('../../services/credit.service.js', () => ({
   recordUsage,
   InsufficientCreditsError: class InsufficientCreditsError extends Error {},
 }));
 vi.mock('@synora/database', () => ({
-  prisma: { usageRecord: { create: usageRecordCreate } },
+  prisma: {
+    usageRecord: { create: usageRecordCreate },
+    workspaceCredits: { findUnique: creditsFindUnique },
+  },
 }));
 
-import { computeRunUsage, meterRun, resetMetering, RUN_PRICING } from '../metering';
+import {
+  assertRunBudget,
+  BudgetExceededError,
+  computeRunUsage,
+  meterRun,
+  resetMetering,
+  RUN_PRICING,
+} from '../metering';
 import type { AgentRun, StepRecord } from '../types';
 
 function step(kind: 'generate' | 'tool', attempts = 1): StepRecord {
@@ -62,6 +73,28 @@ beforeEach(() => {
   resetMetering();
   recordUsage.mockReset().mockResolvedValue(undefined);
   usageRecordCreate.mockReset().mockResolvedValue({ id: 'ur_1' });
+  creditsFindUnique.mockReset().mockResolvedValue(null);
+});
+
+describe('the pre-run budget gate', () => {
+  it('lets a workspace with no credits account run freely', async () => {
+    // Every local workspace. Matches the metering rule: count, don't
+    // deduct — and here, don't block.
+    creditsFindUnique.mockResolvedValue(null);
+    await expect(assertRunBudget('ws_1')).resolves.toBeUndefined();
+  });
+
+  it('refuses a run when an opted-in workspace has no balance', async () => {
+    // Opting into billing means the budget binds — refused BEFORE
+    // anything executes, not discovered at deduction time.
+    creditsFindUnique.mockResolvedValue({ workspaceId: 'ws_1', balance: 0 });
+    await expect(assertRunBudget('ws_1')).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+
+  it('lets a positive balance through', async () => {
+    creditsFindUnique.mockResolvedValue({ workspaceId: 'ws_1', balance: 5 });
+    await expect(assertRunBudget('ws_1')).resolves.toBeUndefined();
+  });
 });
 
 describe('computing run usage', () => {
