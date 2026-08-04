@@ -61,6 +61,7 @@ import videoRoutes from './routes/videos';
 import { capabilityRoutes } from './routes/capabilities';
 import agentRoutes from './routes/agents';
 import workflowRoutes from './routes/workflows';
+import canvasRoutes from './routes/canvas';
 import { eosRouter } from './eos/index';
 import { eosApiCollector } from './eos/api-collector.js';
 
@@ -270,6 +271,7 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', toolSecretRoutes);
   app.use('/api/workspaces', agentRoutes);
   app.use('/api/workspaces', workflowRoutes);
+  app.use('/api/workspaces', canvasRoutes);
   app.use('/api/workspaces', fileRoutes);
   app.use('/api/workspaces', feedbackRoutes);
   app.use('/api/workspaces', privacyConsentRoutes);

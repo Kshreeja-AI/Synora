@@ -466,6 +466,47 @@ nothing reacts to a file arriving or a webhook firing); timezone support
 metering. The scheduler is also tested only against an injected clock — it
 has never been observed running over real elapsed time.
 
+### 5.11 Canvas — Partially implemented (`apps/backend/src/canvas/`, `/canvas`)
+
+A spatial surface holding text, note and link blocks, positioned on a
+bounded plane.
+
+**Why canvas blocks are MUTABLE when agent and workflow definitions are
+not.** This looks inconsistent and is deliberate. Definitions are immutable
+because historical run records point at them — "what was this configured to
+do when it did that?" must have an answer, so the referenced thing cannot
+change. A canvas is the opposite kind of object: a working surface, edited
+continuously, that nothing references as a record of the past. Versioning
+every text edit would produce thousands of dead versions answering a
+question nobody asks. The rule is "anything a historical record points at
+cannot change underneath it", not "nothing may ever be edited"; applying
+immutability everywhere would be cargo-culting the rule past its reason.
+
+**Bounded, like everything else here.** Blocks per canvas, content length,
+and coordinates are all capped. The coordinate cap earns its own note: a
+block placed at 10^9 is not "far away", it is lost, and refusing the
+placement is kinder than accepting it and letting someone wonder where
+their note went. Partial updates are validated as the block WOULD BE rather
+than as the change alone, so supplying one coordinate cannot move a block
+somewhere it could never have been placed.
+
+**Link blocks store ids, never snapshots**, resolved on read — so a canvas
+cannot drift out of date with the thing it points at, or become a second
+stale copy of it.
+
+**Hydration differs from the definition registries on purpose.** A stored
+canvas keeps its valid blocks and drops only the invalid ones, where a
+malformed agent definition is discarded whole. The reason is the
+consequence: a bad definition would hand an executor a configuration nobody
+wrote, whereas losing one bad note is better than losing the afternoon's
+work arranged around it.
+
+**Missing, named:** dragging (movement is by nudge button — the first
+version deliberately avoids committing to an interaction model before
+anyone has arranged a real canvas); zoom; grouping; connections between
+blocks; and inline previews of linked runs or conversations, which
+currently show their type and id only.
+
 ---
 
 ## 6. Frontend — see `SYNORA_UI_SYSTEM.md`

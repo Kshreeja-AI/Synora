@@ -16,6 +16,7 @@ import {
   Wand2,
   Bot,
   Workflow,
+  LayoutGrid,
 } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { href: '/studio', label: 'Studio', icon: Wand2 },
   { href: '/agents', label: 'Agents', icon: Bot },
   { href: '/workflows', label: 'Workflows', icon: Workflow },
+  { href: '/canvas', label: 'Canvas', icon: LayoutGrid },
   { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { href: '/dashboard/tools', label: 'Tools', icon: Wrench },

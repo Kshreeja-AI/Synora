@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `8490857` + agent UI increment
-**Evidence basis**: 2,296 backend tests across 222 files and 492 frontend tests
-across 80 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `15b7ee8` + canvas increment
+**Evidence basis**: 2,322 backend tests across 224 files and 499 frontend tests
+across 81 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
@@ -46,7 +46,7 @@ Three rules govern every entry:
 | Class | Count | What it means for the founder |
 |---|---:|---|
 | A — production-ready locally | 16 | Usable today. |
-| B — implemented but incomplete | 17 | Usable, with a stated hole. |
+| B — implemented but incomplete | 18 | Usable, with a stated hole. |
 | C — backend foundation only | 1 | Built and tested, but unreachable by a user. |
 | D — UI foundation only | 1 | Visible, but hollow behind. |
 | E — activation blocked | 7 | Finished. Waiting on a key or an account, not on engineering. |
@@ -99,9 +99,10 @@ case, both are recorded.
 
 ## Family D — Canvas
 
-| Capability | Class | Evidence |
+| Capability | Class | Evidence and honest limits |
 |---|---|---|
-| Canvas / spatial workspace | **F** | Zero matches for `canvas` across the repository. Previously implied by roadmap language; recorded here as absent. |
+| Canvas / spatial workspace | **B** | `canvas/` + `routes/canvas.ts` + `/canvas` page, 20 store tests + 6 route tests + 7 page tests. Text, note and link blocks positioned on a bounded surface; create, rename, archive; add, edit, move and remove blocks; durable across restart. Link blocks store **ids only**, resolved on read, so a canvas cannot become a stale copy of what it points at. Blocks are deliberately **mutable** — unlike agents and workflows, nothing references a canvas as a record of the past. **Limit**: movement is by nudge button, not drag; no zoom, no grouping, no connections between blocks. |
+| Canvas link resolution (rendering the linked run/conversation inline) | **F** | A link block shows its target type and id, not a preview of the thing. |
 
 ## Family E — Knowledge & File Intelligence
 

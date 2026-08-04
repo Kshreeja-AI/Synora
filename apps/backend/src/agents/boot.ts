@@ -8,6 +8,7 @@ import {
   setWorkflowStore,
 } from '../workflows/workflow-registry.js';
 import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
+import { createFileCanvasStore, hydrateCanvases, setCanvasStore } from '../canvas/canvas-store.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
 
@@ -49,6 +50,7 @@ export async function bootAgentStores(): Promise<void> {
   setAgentRunStore(new FileKeyedStore<AgentRun>(`${dir}/agent-runs.json`));
   setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
   setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
+  setCanvasStore(createFileCanvasStore(`${dir}/canvases.json`));
 
   try {
     // Definitions before runs, always: a run whose definition has not
@@ -59,6 +61,15 @@ export async function bootAgentStores(): Promise<void> {
     // process was down. They are counted, never replayed — a backlog fired
     // in a burst is how a scheduler turns an outage into an incident.
     const schedules = await hydrateSchedules();
+    // Canvases keep their good blocks and drop only invalid ones, unlike
+    // definitions which are discarded whole — losing one note is better
+    // than losing the surface around it.
+    const canvasResult = await hydrateCanvases();
+    if (canvasResult.droppedBlocks > 0) {
+      logger.warn('Some canvas blocks were dropped on load: they no longer validate.', {
+        droppedBlocks: canvasResult.droppedBlocks,
+      });
+    }
     // The run store holds agent runs and workflow runs alike, so the
     // orphan check must know about both. Passing only the agent check
     // would silently destroy every workflow run on each restart.
@@ -79,6 +90,7 @@ export async function bootAgentStores(): Promise<void> {
       definitions,
       workflows,
       schedules,
+      canvases: canvasResult.loaded,
       runs: loaded,
       orphaned,
     });
