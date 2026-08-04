@@ -328,11 +328,27 @@ which is a confident wrong answer. With the variable unset the stores stay
 in-memory and the server logs that agents will not survive a restart,
 rather than leaving durability to be assumed.
 
-**Missing, named:** UI (there is no agent screen — the API is reachable,
-the product surface is not); usage/cost metering into the billing ledger;
-agent memory integration; and no live model has ever produced a plan — the
-planner's parsing is fully tested, its intelligence is UNMEASURED —
-EXTERNAL PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
+**Also implemented (fifth increment):** the product surface. `/agents`
+lets a person define an agent, give it a task, watch every step it took,
+approve or refuse the steps it pauses on, stop a run mid-flight, and read
+the append-only log verbatim. `RuntimeNotice` renders the LOCAL/REAL
+label on every run using the server's own wording, so the client cannot
+soften it; the create form shows the server's fail-closed defaults
+exactly (no tools, pause before anything that mutates) rather than
+friendlier ones, because a form that disagreed with the engine would
+teach the wrong mental model. The run view states outright that rejecting
+a step ends the run rather than skipping it, and that a plan naming a
+forbidden tool is refused whole rather than partially executed — both are
+behaviours that surprise people, so they are said rather than discovered.
+
+**Missing, named:** editing an agent from the screen (the API and client
+hook exist; no UI calls them — agents are created and archived, not
+edited); live progress for a long run (the page shows the state the
+request returned, so a run must be reopened to see movement); usage/cost
+metering into the billing ledger; agent memory integration; multi-agent
+orchestration; and no live model has ever produced a plan — the planner's
+parsing is fully tested, its intelligence is UNMEASURED — EXTERNAL
+PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
 ---
 
@@ -438,7 +454,7 @@ Status per capability, honestly:
 
 | Capability | Status |
 |---|---|
-| AI Agents | **Partially implemented** — see §5.9. Engine, registry, permissions, approvals, limits, durability across restart: built and tested. Routes, UI, agent memory: missing. Model planner: parsed and tested, activation blocked on a model endpoint. See also `CURRENT_CAPABILITY_MATRIX.md`. |
+| AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
 | Workflow engine | Not started. Composes on the agent engine's step/validation model. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
