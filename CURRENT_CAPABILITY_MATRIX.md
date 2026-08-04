@@ -2,16 +2,16 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `d3656e1` + the workspace-activity increment
-**Evidence basis**: 2,519 backend tests across 234 files and 607 frontend tests
+**Verified at commit**: `95e3727` + the follow-up-chips increment
+**Evidence basis**: 2,519 backend tests across 234 files and 613 frontend tests
 across 91 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
-`schema.prisma` exactly. One backend test —
-`mfa/monitoring.service` "calculates metrics for time window" — fails in
-the whole-suite run and passes in isolation (17/17). It is a known
-cross-file counter bleed in the test setup, not a product defect, and it is
-recorded here rather than reported as a clean sweep. Route mounts read
+`schema.prisma` exactly. The previously-recorded whole-suite flake in
+`mfa/monitoring.service` ("calculates metrics for time window" — a
+cross-file counter bleed in test setup, not a product defect) did **not**
+reproduce in the latest whole-suite run; it is kept on record here because
+a flake that passed once is not a flake that is fixed. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
 
@@ -105,6 +105,7 @@ behaviour is covered by component and page tests instead.
 |---|---|---|
 | Conversation CRUD, folders, tags | **A** | `conversations.ts`, `conversationFolders.ts` routes mounted; `/conversations` and `/conversations/[id]` pages; folder tree wired to the real folder API. |
 | Message send / edit / pin / attachments | **A** | `messages.ts` mounted; `MessageBubble` carries attachment, edit and pin affordances against real endpoints. |
+| One-click follow-ups on the last reply | **A** | Three chips under the last completed assistant reply — Simpler / More detail / Shorter — each a plain-language sentence that **prefills the composer and never auto-sends**: the person sees exactly what will be asked, can edit or discard it, and sends it themselves. No hidden prompt layer is appended. 6 `MessageBubble` tests pin the prefill contract and the gating (last reply only, never while streaming, never on empty or user turns). |
 | Message branching (alternative paths) | **A** | `branches.ts` + `MessageBranch` model; frontend rewritten onto the real tree API rather than a local mock. |
 | Token streaming (SSE) | **B** | `streaming.ts` and `streaming.service.ts` are mounted and tested. **Limit**: end-to-end token latency has never been measured against a real provider — it is *unmeasured*, not "sub-100ms". |
 | Conversation sharing via invite token | **A** | `sharing.ts` + `sharing-public.ts`; the public path is deliberately separated so the unauthenticated route cannot inherit authenticated helpers. `/share/[token]` page exists. |

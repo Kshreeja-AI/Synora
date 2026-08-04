@@ -242,3 +242,63 @@ describe('MessageBubble edit and pin controls', () => {
     expect(screen.queryByLabelText('Pin message')).toBeNull();
   });
 });
+
+/**
+ * Follow-up chips — one-click transformations of the last reply.
+ *
+ * The contract under test is PREFILL, NEVER AUTO-SEND: a chip hands the
+ * container the exact plain-language instruction the person will see in
+ * the composer, and nothing else happens. Whether the chips exist at all
+ * is the container's decision (it passes onFollowUp only for the last
+ * assistant message), so the bubble's own job is to gate them off
+ * streaming, empty, and non-assistant turns.
+ */
+describe('MessageBubble follow-up chips', () => {
+  it('passes the exact visible instruction to onFollowUp — and only that', () => {
+    const onFollowUp = vi.fn();
+    renderBubble({ message: baseAssistant, onFollowUp });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simpler' }));
+
+    // The instruction is ordinary words the person could have typed.
+    // Anything appended beyond this would be a hidden prompt layer.
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
+    expect(onFollowUp).toHaveBeenCalledWith(
+      'Make that simpler — shorter sentences, no jargon.'
+    );
+  });
+
+  it('offers exactly three chips: Simpler, More detail, Shorter', () => {
+    renderBubble({ message: baseAssistant, onFollowUp: vi.fn() });
+    expect(screen.getByRole('button', { name: 'Simpler' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More detail' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Shorter' })).toBeInTheDocument();
+  });
+
+  it('shows no chips when the container did not pass onFollowUp', () => {
+    // The container passes the callback only for the LAST assistant
+    // message — so its absence is the normal state for older replies.
+    renderBubble({ message: baseAssistant });
+    expect(screen.queryByRole('button', { name: 'Simpler' })).toBeNull();
+  });
+
+  it('shows no chips on user turns', () => {
+    renderBubble({
+      message: { ...baseAssistant, id: 'u9', role: 'USER', parentId: null },
+      onFollowUp: vi.fn(),
+    });
+    expect(screen.queryByRole('button', { name: 'Simpler' })).toBeNull();
+  });
+
+  it('shows no chips while the reply is still streaming', () => {
+    // A follow-up to half a response would read as a verdict on words
+    // still arriving.
+    renderBubble({ message: baseAssistant, isStreaming: true, onFollowUp: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Simpler' })).toBeNull();
+  });
+
+  it('shows no chips on an empty (failed) reply', () => {
+    renderBubble({ message: { ...baseAssistant, content: '' }, onFollowUp: vi.fn() });
+    expect(screen.queryByRole('button', { name: 'Simpler' })).toBeNull();
+  });
+});

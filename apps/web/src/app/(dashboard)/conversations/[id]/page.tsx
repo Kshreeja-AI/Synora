@@ -231,6 +231,16 @@ export default function ConversationDetailPage() {
     };
   }, []);
 
+  // Follow-up chips live under the LAST assistant reply only — a
+  // follow-up speaks to the tail of the conversation. Clicking one
+  // prefills the composer (visible, editable, discardable); it never
+  // sends. Deliberately not routed through notifyTyping: the person
+  // hasn't typed anything yet.
+  const lastAssistantId = [...messages].reverse().find((m) => m.role === 'ASSISTANT')?.id;
+  const handleFollowUp = useCallback((instruction: string) => {
+    setInputValue(instruction);
+  }, []);
+
   if (!userQuery.isLoading && !userQuery.data) {
     router.push('/auth/login');
     return null;
@@ -331,6 +341,7 @@ export default function ConversationDetailPage() {
               conversationId={conversationId}
               onBranchCreated={handleBranchCreated}
               onEdited={handleEdited}
+              onFollowUp={message.id === lastAssistantId ? handleFollowUp : undefined}
             />
           ))
         )}

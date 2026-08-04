@@ -50,7 +50,34 @@ interface MessageBubbleProps {
    * assistant reply underneath, since the turn it answered has changed.
    */
   onEdited?: (messageId: string, content: string) => void;
+  /**
+   * Offered follow-up instructions ("Make that simpler", …). Clicking one
+   * calls this with the instruction TEXT — the container prefills the
+   * composer with it, visibly, and the person sends it themselves.
+   *
+   * PREFILL, NEVER AUTO-SEND, is the design. The instruction is ordinary
+   * words the person could have typed: putting them in the input box shows
+   * exactly what will be asked, lets it be edited or discarded, spends
+   * nothing until they press send — and quietly teaches that no magic was
+   * involved, which is how the prompt burden actually goes away.
+   *
+   * Passed only for the LAST assistant message, by the container: a
+   * follow-up speaks to the tail of the conversation, and offering it
+   * under an old reply would imply a precision it does not have.
+   */
+  onFollowUp?: (instruction: string) => void;
 }
+
+/**
+ * Three, not ten. Each is a complete sentence in plain words — visible
+ * proof there is no hidden layer — and a row of many chips is decision
+ * fatigue wearing a helpful face.
+ */
+const FOLLOW_UPS: { label: string; instruction: string }[] = [
+  { label: 'Simpler', instruction: 'Make that simpler — shorter sentences, no jargon.' },
+  { label: 'More detail', instruction: 'Go deeper on that — expand the key points.' },
+  { label: 'Shorter', instruction: 'Condense that to the essentials.' },
+];
 
 const ROLE_ICON = {
   USER: User,
@@ -67,6 +94,7 @@ export function MessageBubble({
   conversationId,
   onBranchCreated,
   onEdited,
+  onFollowUp,
 }: MessageBubbleProps) {
   const branchingEnabled = Boolean(workspaceId && conversationId);
   const showFork = branchingEnabled && (message.siblingCount ?? 1) > 1;
@@ -89,6 +117,12 @@ export function MessageBubble({
     message.role === 'ASSISTANT' &&
     !isStreaming &&
     !!message.content;
+  // Follow-up chips appear only where the container passed the callback —
+  // i.e. under the last assistant reply — and only once that reply is
+  // complete. A follow-up to half a response would read as a verdict on
+  // words still arriving.
+  const showFollowUps =
+    !!onFollowUp && message.role === 'ASSISTANT' && !isStreaming && !!message.content;
 
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -223,6 +257,25 @@ export function MessageBubble({
           <p role="alert" className="mt-1 text-xs text-destructive">
             {actionError}
           </p>
+        )}
+
+        {showFollowUps && (
+          // Always visible, unlike the hover action row below: these exist
+          // to be discovered by people who would never think to hover.
+          // Clicking one PREFILLS the composer — nothing is sent.
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {FOLLOW_UPS.map(({ label, instruction }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => onFollowUp!(instruction)}
+                title={instruction}
+                className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         )}
 
         <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
