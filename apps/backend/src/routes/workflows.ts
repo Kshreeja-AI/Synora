@@ -13,6 +13,13 @@ import {
   updateWorkflow,
 } from '../workflows/workflow-registry';
 import { startWorkflowRun } from '../workflows/workflow-engine';
+import {
+  createSchedule,
+  deleteSchedule,
+  listSchedules,
+  persistSchedule,
+  setScheduleEnabled,
+} from '../workflows/schedule';
 import { persistRun } from '../agents/run-engine';
 import { resolveAgentRuntime } from '../agents/runtime';
 
@@ -81,6 +88,16 @@ function toHttpError(err: unknown): unknown {
   if (message === 'workflow not found' || message === 'agent not found') {
     return new NotFoundException('Workflow');
   }
+  if (message === 'schedule not found') return new NotFoundException('Schedule');
+  if (
+    message.includes('schedule kind') ||
+    message.includes('time of day') ||
+    message.includes('specify an interval') ||
+    message.includes('atMinuteUtc') ||
+    message.includes('intervalMs')
+  ) {
+    return new ValidationException(message);
+  }
   if (
     message.includes('cannot run as written') ||
     message.includes('archived') ||
@@ -95,6 +112,11 @@ function toHttpError(err: unknown): unknown {
 }
 
 router.use('/:workspaceId/workflows', authMiddleware, requireWorkspaceAccess());
+// Schedules live at their own path, so they need their own guard. A
+// `router.use` only covers the prefix it names — a second resource mounted
+// on the same router is NOT protected by the first one's middleware, which
+// is exactly how an endpoint ends up unauthenticated by accident.
+router.use('/:workspaceId/schedules', authMiddleware, requireWorkspaceAccess());
 
 router.get('/:workspaceId/workflows', async (req: AuthRequest, res, next) => {
   try {
@@ -191,6 +213,74 @@ router.post('/:workspaceId/workflows/:workflowId/runs', async (req: AuthRequest,
         },
       }),
     );
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// --- Schedules -----------------------------------------------------------
+//
+// A schedule starts runs as the person who CREATED it, never with ambient
+// authority — see scheduler-runner.ts. Creating one is therefore an act of
+// lending your own permissions to a clock, which is why it is scoped and
+// audited like everything else.
+
+const scheduleSchema = z.object({
+  kind: z.enum(['interval', 'daily']),
+  intervalMs: z.number().int().positive().optional(),
+  atMinuteUtc: z.number().int().min(0).max(1439).optional(),
+});
+
+router.get('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthRequest, res, next) => {
+  try {
+    const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
+    if (!workflow) return next(new NotFoundException('Workflow'));
+    res.json(createApiResponse(listSchedules(req.params.workspaceId, workflow.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthRequest, res, next) => {
+  try {
+    const body = scheduleSchema.parse(req.body);
+    // Resolved first so a schedule can never point at a workflow the
+    // caller cannot see.
+    const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
+    if (!workflow) return next(new NotFoundException('Workflow'));
+    if (workflow.archived) {
+      return next(new ValidationException('an archived workflow cannot be scheduled'));
+    }
+
+    const schedule = createSchedule({
+      ...body,
+      workspaceId: req.params.workspaceId,
+      workflowId: workflow.id,
+      createdBy: req.userId!,
+    });
+    await persistSchedule(schedule.id);
+    res.status(201).json(createApiResponse(schedule));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.patch('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, res, next) => {
+  try {
+    const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
+    const schedule = setScheduleEnabled(req.params.scheduleId, req.params.workspaceId, enabled);
+    await persistSchedule(schedule.id);
+    res.json(createApiResponse(schedule));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+router.delete('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, res, next) => {
+  try {
+    const removed = deleteSchedule(req.params.scheduleId, req.params.workspaceId);
+    if (!removed) return next(new NotFoundException('Schedule'));
+    res.json(createApiResponse({ deleted: true }));
   } catch (error) {
     next(toHttpError(error));
   }

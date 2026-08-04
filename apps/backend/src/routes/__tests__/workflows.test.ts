@@ -8,6 +8,7 @@ import { resetAgents } from '../../agents/agent-registry';
 import { resetRuns } from '../../agents/run-engine';
 import { InMemoryKeyedStore, setAgentRunStore } from '../../agents/agent-stores';
 import { resetWorkflows, setWorkflowStore } from '../../workflows/workflow-registry';
+import { resetSchedules, setScheduleStore, type WorkflowSchedule } from '../../workflows/schedule';
 import type { AgentRun } from '../../agents/types';
 import type { WorkflowDefinition } from '../../workflows/types';
 
@@ -46,8 +47,10 @@ describe('workflow routes', () => {
     resetAgents();
     resetRuns();
     resetWorkflows();
+    resetSchedules();
     setAgentRunStore(new InMemoryKeyedStore<AgentRun>());
     setWorkflowStore(new InMemoryKeyedStore<WorkflowDefinition>());
+    setScheduleStore(new InMemoryKeyedStore<WorkflowSchedule>());
   });
 
   afterEach(async () => {
@@ -206,6 +209,107 @@ describe('workflow routes', () => {
 
     expect(approved.status).toBe(200);
     expect(approved.body.data.run.steps[0].approvedBy).toBe(owner.userId);
+  });
+
+  it('schedules a workflow and lists the schedule', async () => {
+    const owner = await register('wf-sched');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+    const created = await request(app)
+      .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+      .set('Cookie', owner.cookie)
+      .send({ kind: 'daily', atMinuteUtc: 540 });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data.enabled).toBe(true);
+    expect(created.body.data.missedOccurrences).toBe(0);
+    // The creator is recorded because a scheduled run executes as them —
+    // a clock must not confer authority nobody has.
+    expect(created.body.data.createdBy).toBe(owner.userId);
+
+    const listed = await request(app)
+      .get(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+      .set('Cookie', owner.cookie);
+    expect(listed.body.data).toHaveLength(1);
+  });
+
+  it('refuses a schedule shape it does not fully understand', async () => {
+    const owner = await register('wf-sched-bad');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+      .set('Cookie', owner.cookie)
+      .send({ kind: 'interval', intervalMs: 60_000, atMinuteUtc: 540 });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('will not schedule an archived workflow', async () => {
+    const owner = await register('wf-sched-archived');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+    await request(app)
+      .delete(`/api/workspaces/${ws.id}/workflows/${wf.id}`)
+      .set('Cookie', owner.cookie);
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+      .set('Cookie', owner.cookie)
+      .send({ kind: 'daily', atMinuteUtc: 540 });
+    expect(res.status).toBe(400);
+  });
+
+  it('guards the schedules path with auth, not just the workflows path', async () => {
+    const owner = await register('wf-sched-auth');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+    const sched = (
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+        .set('Cookie', owner.cookie)
+        .send({ kind: 'daily', atMinuteUtc: 540 })
+    ).body.data;
+
+    // Schedules sit at their own path. A router.use only covers the prefix
+    // it names, so this endpoint needs its own guard — pinned because an
+    // unauthenticated mutation endpoint is exactly the kind of gap that
+    // appears silently when a second resource joins a router.
+    expect(
+      (await request(app).patch(`/api/workspaces/${ws.id}/schedules/${sched.id}`).send({ enabled: false }))
+        .status,
+    ).toBe(401);
+    expect(
+      (await request(app).delete(`/api/workspaces/${ws.id}/schedules/${sched.id}`)).status,
+    ).toBe(401);
+  });
+
+  it('pauses and deletes a schedule', async () => {
+    const owner = await register('wf-sched-pause');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+    const sched = (
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/schedules`)
+        .set('Cookie', owner.cookie)
+        .send({ kind: 'interval', intervalMs: 3_600_000 })
+    ).body.data;
+
+    const paused = await request(app)
+      .patch(`/api/workspaces/${ws.id}/schedules/${sched.id}`)
+      .set('Cookie', owner.cookie)
+      .send({ enabled: false });
+    expect(paused.body.data.enabled).toBe(false);
+
+    expect(
+      (
+        await request(app)
+          .delete(`/api/workspaces/${ws.id}/schedules/${sched.id}`)
+          .set('Cookie', owner.cookie)
+      ).status,
+    ).toBe(200);
   });
 
   it('archives rather than deletes, and an archived workflow starts no runs', async () => {

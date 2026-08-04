@@ -406,10 +406,30 @@ author is making rather than a convenience toggle, because getting it wrong
 in the permissive direction is how an automation quietly changes data
 nobody approved.
 
-**Missing, named:** scheduling and triggers, so a workflow must be started
-by a person rather than by a clock or an event; editing an existing
-workflow from the screen (create, run and archive only); and per-run cost
-metering.
+**Also implemented: scheduling** (`schedule.ts`, `scheduler-runner.ts`).
+Interval and daily-at-UTC-time, both strictly validated — a cron parser
+that handles most expressions and silently misreads the rest is worse than
+none, because the failure is invisible until the wrong thing runs at the
+wrong time, so anything outside the two supported shapes is refused rather
+than guessed at.
+
+Two decisions carry the weight here. First, occurrences that came due while
+nothing was running are **skipped and counted, never replayed**: an hourly
+workflow after a two-day outage would otherwise fire 48 times in a burst
+against real tools and real budget, which is how a scheduler turns an
+outage into an incident — but silently skipping would leave the owner
+believing it ran. The count is recorded on the schedule and logged when
+discovered, the same rule as a run interrupted by a restart. Second, a
+scheduled run executes **as the person who created the schedule**, never
+with ambient or elevated authority; otherwise a schedule would be a way to
+run tools you are not permitted to run, a privilege escalation dressed as
+a convenience. Schedules are also advanced before anything is started, so a
+workflow that throws every time cannot wedge the scheduler into retrying
+one occurrence forever.
+
+**Missing, named:** event triggers (only a clock can start a workflow —
+nothing reacts to a file arriving or a webhook firing); a scheduling UI;
+editing an existing workflow from the screen; and per-run cost metering.
 
 ---
 
@@ -516,7 +536,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Agent memory, multi-agent orchestration, cost metering: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes and UI: built and tested, executing through the agent run engine rather than a second copy of it. Scheduling: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI and clock-based scheduling: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and a scheduling UI: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |

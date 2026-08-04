@@ -7,6 +7,7 @@ import {
   hydrateWorkflows,
   setWorkflowStore,
 } from '../workflows/workflow-registry.js';
+import { createFileScheduleStore, hydrateSchedules, setScheduleStore } from '../workflows/schedule.js';
 import type { AgentDefinition, AgentRun } from './types.js';
 import { logger } from '../utils/logger.js';
 
@@ -47,12 +48,17 @@ export async function bootAgentStores(): Promise<void> {
   setAgentDefinitionStore(new FileKeyedStore<AgentDefinition>(`${dir}/agent-definitions.json`));
   setAgentRunStore(new FileKeyedStore<AgentRun>(`${dir}/agent-runs.json`));
   setWorkflowStore(createFileWorkflowStore(`${dir}/workflow-definitions.json`));
+  setScheduleStore(createFileScheduleStore(`${dir}/workflow-schedules.json`));
 
   try {
     // Definitions before runs, always: a run whose definition has not
     // loaded yet is indistinguishable from one whose definition is gone.
     const definitions = await hydrateAgents();
     const workflows = await hydrateWorkflows();
+    // Hydrating schedules records any occurrences that came due while the
+    // process was down. They are counted, never replayed — a backlog fired
+    // in a burst is how a scheduler turns an outage into an incident.
+    const schedules = await hydrateSchedules();
     // The run store holds agent runs and workflow runs alike, so the
     // orphan check must know about both. Passing only the agent check
     // would silently destroy every workflow run on each restart.
@@ -72,6 +78,7 @@ export async function bootAgentStores(): Promise<void> {
     logger.info('Agent and workflow stores hydrated.', {
       definitions,
       workflows,
+      schedules,
       runs: loaded,
       orphaned,
     });
