@@ -182,6 +182,90 @@ describe('workflow routes', () => {
     expect(res.body.data.runtime.notice).toMatch(/^AUTHORED:/);
   });
 
+  it('dry-runs a workflow end to end without creating a run or touching the tool', async () => {
+    const owner = await register('wf-dry');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const tool = await prisma.toolDefinition.create({
+      data: {
+        workspaceId: ws.id,
+        name: 'echo',
+        displayName: 'Echo',
+        description: 'echoes input',
+        category: 'http',
+        type: 'HTTP',
+        inputSchema: {},
+        config: { url: 'https://example.com/echo' },
+      },
+    });
+    const wf = (
+      await makeWorkflow(owner.cookie, ws.id, {
+        allowedTools: [tool.id],
+        approvalPolicy: 'mutations',
+        // Undeclared mutability defaults to mutating, so this pauses.
+        steps: [{ id: 's1', kind: 'tool', description: 'call echo', toolId: tool.id, input: 'x' }],
+      })
+    ).body.data;
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/dry-run`)
+      .set('Cookie', owner.cookie)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.executed).toBe(false);
+    expect(res.body.data.wouldStart).toBe(true);
+    expect(res.body.data.blockers).toEqual([]);
+    expect(res.body.data.steps[0].pausesForApproval).toBe(true);
+    expect(res.body.data.steps[0].problems).toEqual([]);
+
+    // Nothing ran: no run exists for this workflow, and the tool was never
+    // actually invoked (no execution record was created for it).
+    const runs = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs`)
+      .set('Cookie', owner.cookie);
+    expect(runs.body.data).toEqual([]);
+    const executionCount = await prisma.toolExecution.count({ where: { toolId: tool.id } });
+    expect(executionCount).toBe(0);
+  });
+
+  it('reports a tool that does not exist as a blocker, not a 500', async () => {
+    const owner = await register('wf-dry-ghost');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (
+      await makeWorkflow(owner.cookie, ws.id, {
+        allowedTools: ['ghost-tool'],
+        steps: [{ id: 's1', kind: 'tool', description: 'call it', toolId: 'ghost-tool', input: 'x', mutating: false }],
+      })
+    ).body.data;
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/workflows/${wf.id}/dry-run`)
+      .set('Cookie', owner.cookie)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.wouldStart).toBe(false);
+    expect(res.body.data.steps[0].problems.join(' ')).toMatch(/does not exist/);
+  });
+
+  it('requires authentication and hides other workspaces on the dry-run endpoint', async () => {
+    const owner = await register('wf-dry-auth');
+    const stranger = await register('wf-dry-stranger');
+    const ws = await createWorkspace(owner.cookie, 'WF Co');
+    const wf = (await makeWorkflow(owner.cookie, ws.id)).body.data;
+
+    expect(
+      (await request(app).post(`/api/workspaces/${ws.id}/workflows/${wf.id}/dry-run`).send({})).status,
+    ).toBe(401);
+
+    const strangerWs = await createWorkspace(stranger.cookie, 'Other Co');
+    const cross = await request(app)
+      .post(`/api/workspaces/${strangerWs.id}/workflows/${wf.id}/dry-run`)
+      .set('Cookie', stranger.cookie)
+      .send({});
+    expect(cross.status).toBe(404);
+  });
+
   it('parks for approval and resumes through the shared run endpoint', async () => {
     const owner = await register('wf-approve');
     const ws = await createWorkspace(owner.cookie, 'WF Co');

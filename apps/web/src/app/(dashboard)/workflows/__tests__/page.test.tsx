@@ -16,7 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import WorkflowsPage from '../page';
 import * as workflowsApi from '@/lib/api/workflows';
 import * as agentsApi from '@/lib/api/agents';
-import type { WorkflowDefinition, WorkflowRunResult } from '@/lib/api/workflows';
+import type { DryRunReport, WorkflowDefinition, WorkflowRunResult } from '@/lib/api/workflows';
 import type { AgentRun } from '@/lib/api/agents';
 
 vi.mock('@/hooks/useCurrentWorkspace', () => ({
@@ -32,6 +32,7 @@ vi.mock('@/lib/api/workflows', async () => {
     useArchiveWorkflow: vi.fn(),
     useStartWorkflowRun: vi.fn(),
     useUpdateWorkflow: vi.fn(),
+    useDryRunWorkflow: vi.fn(),
   };
 });
 
@@ -88,6 +89,7 @@ beforeEach(() => {
   vi.mocked(workflowsApi.useArchiveWorkflow).mockReturnValue(idle() as never);
   vi.mocked(workflowsApi.useStartWorkflowRun).mockReturnValue(idle() as never);
   vi.mocked(workflowsApi.useUpdateWorkflow).mockReturnValue(idle() as never);
+  vi.mocked(workflowsApi.useDryRunWorkflow).mockReturnValue(idle() as never);
   vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [] } as never);
 });
 
@@ -232,6 +234,98 @@ describe('workflows page', () => {
     // id rather than holding the superseded one.
     await user.click(screen.getByRole('button', { name: /edit steps/i }));
     expect(screen.getByRole('button', { name: /save as version 3/i })).toBeInTheDocument();
+  });
+
+  it('reports a dry run as would-start without creating a run', async () => {
+    const user = userEvent.setup();
+    const report: DryRunReport = {
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      workflowVersion: workflow.version,
+      executed: false,
+      wouldStart: true,
+      blockers: [],
+      steps: [
+        {
+          stepId: 's1',
+          kind: 'generate',
+          description: 'Summarise the day',
+          pausesForApproval: false,
+          treatedAsMutating: false,
+          unresolvedReferences: [],
+          problems: [],
+          unknowns: ['the generated text is only knowable by running the step'],
+        },
+      ],
+      projected: {
+        steps: 1,
+        toolCalls: 0,
+        approvalPauses: 0,
+        maxSteps: 20,
+        maxToolCalls: 30,
+        maxDurationMs: 300000,
+      },
+      caveats: ['Nothing was executed: no tool ran, no model was called, and no run record exists.'],
+    };
+    const startRun = vi.fn();
+    vi.mocked(workflowsApi.useDryRunWorkflow).mockReturnValue(
+      idle({ mutate: vi.fn((_id, opts) => opts?.onSuccess?.(report)) }) as never,
+    );
+    vi.mocked(workflowsApi.useStartWorkflowRun).mockReturnValue(idle({ mutate: startRun }) as never);
+
+    renderPage();
+    await user.click(await screen.findByText('Nightly report'));
+    await user.click(screen.getByRole('button', { name: /dry run/i }));
+
+    expect(await screen.findByText(/Would start — nothing was executed/)).toBeInTheDocument();
+    expect(screen.getByText(/0 tool calls projected of 30 allowed/)).toBeInTheDocument();
+    // A dry run must never start a real run itself.
+    expect(startRun).not.toHaveBeenCalled();
+  });
+
+  it('shows why a dry run would not start, naming the failing step', async () => {
+    const user = userEvent.setup();
+    const report: DryRunReport = {
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      workflowVersion: workflow.version,
+      executed: false,
+      wouldStart: false,
+      blockers: ['1 step(s) would fail: s2'],
+      steps: [
+        {
+          stepId: 's2',
+          kind: 'tool',
+          description: 'Send it',
+          toolId: 'mailer',
+          pausesForApproval: true,
+          treatedAsMutating: true,
+          unresolvedReferences: [],
+          problems: ['tool "Mailer" is not active'],
+          unknowns: [],
+        },
+      ],
+      projected: {
+        steps: 1,
+        toolCalls: 1,
+        approvalPauses: 1,
+        maxSteps: 20,
+        maxToolCalls: 30,
+        maxDurationMs: 300000,
+      },
+      caveats: ['Nothing was executed: no tool ran, no model was called, and no run record exists.'],
+    };
+    vi.mocked(workflowsApi.useDryRunWorkflow).mockReturnValue(
+      idle({ mutate: vi.fn((_id, opts) => opts?.onSuccess?.(report)) }) as never,
+    );
+
+    renderPage();
+    await user.click(await screen.findByText('Nightly report'));
+    await user.click(screen.getByRole('button', { name: /dry run/i }));
+
+    expect(await screen.findByText(/Would not start — nothing was executed/)).toBeInTheDocument();
+    expect(screen.getByText(/1 step\(s\) would fail: s2/)).toBeInTheDocument();
+    expect(screen.getByText(/not active/)).toBeInTheDocument();
   });
 
   it('shows an empty state before any workflow exists', async () => {

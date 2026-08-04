@@ -130,7 +130,13 @@ export function validatePlan(
   return null;
 }
 
-function stepNeedsApproval(step: PlannedStep, policy: string): boolean {
+/**
+ * Exported so a dry run can answer "would this pause for a human?" from
+ * the same predicate the engine obeys. A second copy of this rule would
+ * eventually disagree with the engine, and a preview that disagrees with
+ * execution is worse than no preview.
+ */
+export function stepNeedsApproval(step: PlannedStep, policy: string): boolean {
   if (step.kind !== 'tool') return false;
   if (policy === 'everything') return true;
   if (policy === 'nothing') return false;

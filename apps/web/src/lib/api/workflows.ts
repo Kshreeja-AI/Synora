@@ -53,6 +53,43 @@ export interface WorkflowRunResult {
   runtime: WorkflowRunRuntime;
 }
 
+/**
+ * A dry run's report: what the system can determine WITHOUT executing the
+ * workflow. `executed` is always `false` here — it exists on the type so a
+ * dry-run report and a real run result can never be mistaken for each
+ * other by shape alone.
+ */
+export interface DryRunStepCheck {
+  stepId: string;
+  kind: 'generate' | 'tool';
+  description: string;
+  toolId?: string;
+  pausesForApproval: boolean;
+  treatedAsMutating: boolean;
+  unresolvedReferences: string[];
+  problems: string[];
+  unknowns: string[];
+}
+
+export interface DryRunReport {
+  workflowId: string;
+  workflowName: string;
+  workflowVersion: number;
+  executed: false;
+  wouldStart: boolean;
+  blockers: string[];
+  steps: DryRunStepCheck[];
+  projected: {
+    steps: number;
+    toolCalls: number;
+    approvalPauses: number;
+    maxSteps: number;
+    maxToolCalls: number;
+    maxDurationMs: number;
+  };
+  caveats: string[];
+}
+
 export interface CreateWorkflowInput {
   name: string;
   description?: string;
@@ -231,6 +268,22 @@ export function useDeleteSchedule(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [SCHEDULES_KEY, workspaceId] });
     },
+  });
+}
+
+/**
+ * Runs nothing. Reports what a real run would do: which steps would pause
+ * for approval, whether the workspace's tools and budget would let it
+ * start, and every problem discoverable in advance — without spending
+ * anything or touching a tool. See `DryRunReport` for what "discoverable
+ * in advance" excludes (a generate step's output, a remote call's result).
+ */
+export function useDryRunWorkflow(
+  workspaceId: string,
+): UseMutationResult<DryRunReport, Error, string> {
+  return useMutation({
+    mutationFn: (workflowId) =>
+      api.post<DryRunReport>(`/api/workspaces/${workspaceId}/workflows/${workflowId}/dry-run`, {}),
   });
 }
 

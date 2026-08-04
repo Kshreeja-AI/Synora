@@ -486,10 +486,31 @@ panel also states the two things a user would otherwise have to guess:
 that the clock is checked every 30 seconds (so a time is "at or shortly
 after"), and that a scheduled run uses their own permissions.
 
-**Missing, named:** event triggers (only a clock can start a workflow —
-nothing reacts to a file arriving or a webhook firing); timezone support
-(UTC only); and per-run cost metering. The scheduler is also tested only against an injected clock — it
-has never been observed running over real elapsed time.
+**Also implemented: dry runs** (`dry-run.ts`). The founder directive was
+explicit that a visual or preview surface must not fake execution, so a
+dry run here executes literally nothing — no tool is called, no model is
+asked, no run record is created — and reports only what can be known in
+advance. It runs the same authoring-time `validatePlan`; walks each tool
+step through the real tool layer to check existence, active status,
+whether the platform can execute that type at all, and whether the step's
+input satisfies the tool's schema; flags a tool marked `requiresApproval`
+as a step FAILURE rather than a pause, matching what the tool-runner
+adapter actually does (an agent run never waits on a human timescale); and
+predicts which steps would pause under the workflow's own approval policy
+using the engine's own `stepNeedsApproval`, not a second copy of that
+rule that could quietly drift from it. An exhausted budget is reported as
+a blocker rather than refusing the dry run itself, because the dry run
+costs nothing and withholding it is exactly wrong for someone in that
+position. Every report also states what it cannot know — a generate
+step's output, a remote endpoint's real response — rather than letting
+silence imply a guarantee. Reachable from `/workflows` as a "Dry run"
+button beside Run.
+
+**Missing, named:** event triggers (only a clock or a person can start a
+workflow — nothing reacts to a file arriving or a webhook firing); and
+timezone support (UTC only). The scheduler is also tested only against an
+injected clock — it has never been observed running over real elapsed
+time.
 
 ### 5.11 Canvas — Partially implemented (`apps/backend/src/canvas/`, `/canvas`)
 
@@ -644,7 +665,7 @@ Status per capability, honestly:
 | Capability | Status |
 |---|---|
 | AI Agents | **Implemented end to end, locally** — see §5.9. Engine, registry, permissions, approvals, limits, durability, HTTP routes and UI: built and tested; a person can define an agent and run it today. Run cost metering and the pre-run budget gate: implemented. Multi-agent orchestration: missing. Model planner: parsed and tested, activation blocked on a model endpoint — every plan today is deterministic and labelled LOCAL. See also `CURRENT_CAPABILITY_MATRIX.md`. |
-| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and timezones: missing. |
+| Workflow engine | **Partially implemented** — see §5.10. Authored steps, immutable versioning, authoring-time validation, durability, HTTP routes, UI, clock-based scheduling and its UI, dry runs: built and tested, executing through the agent run engine rather than a second copy of it. Event triggers and timezones: missing. |
 | Automation engine | Not started. Reuses BullMQ; idempotency strategy required per directive. |
 | AI Canvas | Not started. Block/document model to be designed collaboration-ready. |
 | Plugin system | Not started. Contract-first; tool engine is the adjacent substrate. |

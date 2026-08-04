@@ -1,7 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { Archive, Loader2, Pencil, Play, Plus, Workflow as WorkflowIcon } from 'lucide-react';
+import {
+  Archive,
+  FlaskConical,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Workflow as WorkflowIcon,
+} from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -9,9 +17,11 @@ import { useAgentRuns, type PlannedStep } from '@/lib/api/agents';
 import {
   useArchiveWorkflow,
   useCreateWorkflow,
+  useDryRunWorkflow,
   useStartWorkflowRun,
   useUpdateWorkflow,
   useWorkflows,
+  type DryRunReport,
   type WorkflowDefinition,
 } from '@/lib/api/workflows';
 import { StepBuilder } from '@/components/workflows/StepBuilder';
@@ -38,6 +48,7 @@ export default function WorkflowsPage() {
   const [openRunId, setOpenRunId] = useState<string | null>(null);
   const [lastNotice, setLastNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<PlannedStep[] | null>(null);
+  const [dryRunReport, setDryRunReport] = useState<DryRunReport | null>(null);
 
   const { data: workflows = [], isLoading, error } = useWorkflows(workspaceId);
   const { data: runs = [] } = useAgentRuns(workspaceId, {
@@ -48,6 +59,7 @@ export default function WorkflowsPage() {
   const archive = useArchiveWorkflow(workspaceId);
   const startRun = useStartWorkflowRun(workspaceId);
   const update = useUpdateWorkflow(workspaceId);
+  const dryRun = useDryRunWorkflow(workspaceId);
 
   function submitCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -173,6 +185,7 @@ export default function WorkflowsPage() {
                     setOpenRunId(null);
                     setLastNotice(null);
                     setEditing(null);
+                    setDryRunReport(null);
                   }}
                   aria-current={selected?.id === wf.id}
                   className={`w-full rounded-md border p-3 text-left text-sm transition ${
@@ -302,30 +315,95 @@ export default function WorkflowsPage() {
                       This is recorded with the run for your own reference. It does not change
                       what runs — the steps above do, every time.
                     </p>
-                    <Button
-                      onClick={() =>
-                        startRun.mutate(
-                          { workflowId: selected.id, task },
-                          {
-                            onSuccess: (result) => {
-                              setLastNotice(result.runtime.notice);
-                              setOpenRunId(result.run.id);
-                              setTask('');
-                            },
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          dryRun.mutate(selected.id, {
+                            onSuccess: setDryRunReport,
                             onError: (e) => toast.error(e.message),
-                          },
-                        )
-                      }
-                      disabled={startRun.isPending}
-                    >
-                      {startRun.isPending ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Play className="mr-2 h-4 w-4" />
-                      )}
-                      Run
-                    </Button>
+                          })
+                        }
+                        disabled={dryRun.isPending}
+                      >
+                        {dryRun.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <FlaskConical className="mr-2 h-4 w-4" />
+                        )}
+                        Dry run
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          startRun.mutate(
+                            { workflowId: selected.id, task },
+                            {
+                              onSuccess: (result) => {
+                                setLastNotice(result.runtime.notice);
+                                setOpenRunId(result.run.id);
+                                setDryRunReport(null);
+                                setTask('');
+                              },
+                              onError: (e) => toast.error(e.message),
+                            },
+                          )
+                        }
+                        disabled={startRun.isPending}
+                      >
+                        {startRun.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Play className="mr-2 h-4 w-4" />
+                        )}
+                        Run
+                      </Button>
+                    </div>
                   </div>
+
+                  {dryRunReport && (
+                    <div
+                      role="note"
+                      className={`space-y-2 rounded-md border p-3 text-sm ${
+                        dryRunReport.wouldStart
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
+                          : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
+                      }`}
+                    >
+                      <p className="font-semibold">
+                        {dryRunReport.wouldStart
+                          ? 'Would start — nothing was executed'
+                          : 'Would not start — nothing was executed'}
+                      </p>
+                      {dryRunReport.blockers.length > 0 && (
+                        <ul className="list-inside list-disc">
+                          {dryRunReport.blockers.map((b, i) => (
+                            <li key={i}>{b}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-xs">
+                        {dryRunReport.projected.toolCalls} tool call
+                        {dryRunReport.projected.toolCalls === 1 ? '' : 's'} projected of{' '}
+                        {dryRunReport.projected.maxToolCalls} allowed ·{' '}
+                        {dryRunReport.projected.approvalPauses} step
+                        {dryRunReport.projected.approvalPauses === 1 ? '' : 's'} would pause for
+                        approval
+                      </p>
+                      {dryRunReport.steps.some((s) => s.problems.length > 0) && (
+                        <ul className="space-y-1 text-xs">
+                          {dryRunReport.steps
+                            .filter((s) => s.problems.length > 0)
+                            .map((s) => (
+                              <li key={s.stepId}>
+                                <span className="font-mono">{s.stepId}</span>:{' '}
+                                {s.problems.join('; ')}
+                              </li>
+                            ))}
+                        </ul>
+                      )}
+                      <p className="text-xs italic opacity-80">{dryRunReport.caveats[0]}</p>
+                    </div>
+                  )}
 
                   {lastNotice && (
                     <div

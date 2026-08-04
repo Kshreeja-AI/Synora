@@ -13,6 +13,7 @@ import {
   updateWorkflow,
 } from '../workflows/workflow-registry';
 import { startWorkflowRun } from '../workflows/workflow-engine';
+import { dryRunWorkflow } from '../workflows/dry-run';
 import {
   createSchedule,
   deleteSchedule,
@@ -181,6 +182,24 @@ router.delete('/:workspaceId/workflows/:workflowId', async (req: AuthRequest, re
     const archived = archiveWorkflow(req.params.workflowId, req.params.workspaceId);
     await persistWorkflow(archived.id);
     res.json(createApiResponse(archived));
+  } catch (error) {
+    next(toHttpError(error));
+  }
+});
+
+// A dry run is a read: it reports what a run would do and executes
+// nothing. It is deliberately still reachable when the budget is
+// exhausted — that is precisely when someone needs to inspect a workflow
+// without spending on it — and the exhausted budget appears as a blocker
+// on the report instead.
+router.post('/:workspaceId/workflows/:workflowId/dry-run', async (req: AuthRequest, res, next) => {
+  try {
+    const report = await dryRunWorkflow({
+      workflowId: req.params.workflowId,
+      workspaceId: req.params.workspaceId,
+      requestedBy: req.userId!,
+    });
+    res.json(createApiResponse(report));
   } catch (error) {
     next(toHttpError(error));
   }
