@@ -260,12 +260,24 @@ run log. A deterministic local runtime exists for orchestration testing —
 every plan it produces is stamped `origin: 'local-deterministic'` and its
 output is prefixed, so it can never be passed off as model intelligence.
 
+**Also implemented (second increment):** the model-backed planner
+(`model-planner.ts`) — same injected-generate seam and same strict-parse
+honesty as the evaluation judge: a fenced or bare JSON array is accepted,
+prose and buried JSON are refused, `UNPLANNABLE:` is an explicit refusal
+path, and whatever the model emits is re-validated by the engine before
+a step runs. And the workspace tool-runner adapter
+(`tool-runner-adapter.ts`) — agents call tools through the full
+`toolService.executeTool` path as the requesting user, so membership,
+`tool:execute` permission, rate limits, schema validation, and audit all
+apply to agents exactly as to humans; tool-level approval fails the step
+fast with the execution id rather than hanging a run on a human
+timescale.
+
 **Missing, named:** persistence (definitions and runs are in-memory,
-same stage as evaluation datasets); HTTP routes and UI; a model-backed
-planner (the seam exists; wiring follows the judge pattern); integration
-with the real tool engine (the `AgentToolRunner` seam exists, the
-adapter to `tool-engine.service` is not yet written); usage/cost
-metering into the billing ledger.
+same stage as evaluation datasets); HTTP routes and UI; usage/cost
+metering into the billing ledger; and no live model has ever produced a
+plan — the planner's parsing is fully tested, its intelligence is
+UNMEASURED — EXTERNAL PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
 ---
 
