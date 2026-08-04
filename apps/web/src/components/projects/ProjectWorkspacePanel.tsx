@@ -4,6 +4,7 @@ import Link from 'next/link';
 import {
   FileText,
   Image as ImageIcon,
+  LayoutGrid,
   MessageSquare,
   Music,
   Paperclip,
@@ -36,6 +37,7 @@ import {
 
 const ICONS: Record<ProjectItemKind, typeof MessageSquare> = {
   conversation: MessageSquare,
+  canvas: LayoutGrid,
   file: Paperclip,
   document: FileText,
   image: ImageIcon,
@@ -45,6 +47,7 @@ const ICONS: Record<ProjectItemKind, typeof MessageSquare> = {
 
 const LABELS: Record<ProjectItemKind, string> = {
   conversation: 'conversation',
+  canvas: 'canvas',
   file: 'file',
   document: 'document',
   image: 'image',

@@ -3,6 +3,7 @@ import { NotFoundException, ValidationException } from '@synora/shared';
 import { requireMembership } from './workspace.service';
 import { requirePermission } from './permissions';
 import { recordAuditEvent } from './audit.service';
+import { listCanvasesForProject } from '../canvas/canvas-store';
 
 /**
  * A project, seen as the work inside it rather than as a row.
@@ -33,6 +34,7 @@ import { recordAuditEvent } from './audit.service';
 
 export type ProjectItemKind =
   | 'conversation'
+  | 'canvas'
   | 'file'
   | 'document'
   | 'image'
@@ -130,7 +132,22 @@ export async function getProjectWorkspace(
     }),
   ]);
 
+  // Canvases live in a file-backed store rather than the database, so
+  // they are read separately and merged into the same chronology. The
+  // timeline is a view over several sources by design — which is exactly
+  // why it is assembled rather than stored.
+  const canvases = listCanvasesForProject(project.workspaceId, projectId).filter(
+    (c) => !c.archived,
+  );
+
   const entries: ProjectTimelineEntry[] = [
+    ...canvases.map((c) => ({
+      kind: 'canvas' as const,
+      id: c.id,
+      title: c.title,
+      at: new Date(c.updatedAt).toISOString(),
+      detail: `${c.blocks.length} block${c.blocks.length === 1 ? '' : 's'}`,
+    })),
     ...conversations.map((c) => ({
       kind: 'conversation' as const,
       id: c.id,
@@ -191,6 +208,7 @@ export async function getProjectWorkspace(
     },
     counts: {
       conversation: conversations.length,
+      canvas: canvases.length,
       file: assets.length,
       document: documents.length,
       image: images.length,

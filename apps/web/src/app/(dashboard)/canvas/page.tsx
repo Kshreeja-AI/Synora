@@ -19,6 +19,7 @@ import {
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
+import { CanvasProjectSelect } from '@/components/projects/CanvasProjectSelect';
 import {
   useAddBlock,
   useArchiveCanvas,
@@ -605,6 +606,15 @@ export default function CanvasPage() {
                     <StickyNote className="mr-1 h-3 w-3" />
                     Note
                   </Button>
+                  {/* Which project this arrangement belongs to. A canvas
+                      is where the spatial half of thinking happens, so a
+                      project holding the conversations but not this would
+                      still be missing part of the work. */}
+                  <CanvasProjectSelect
+                    workspaceId={workspaceId}
+                    canvasId={canvas.id}
+                    projectId={canvas.projectId}
+                  />
                   <Button
                     variant="outline"
                     size="sm"

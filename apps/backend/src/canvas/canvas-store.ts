@@ -146,6 +146,36 @@ export function renameCanvas(canvasId: string, workspaceId: string, title: strin
   return canvas;
 }
 
+/**
+ * Files a canvas into a project, or takes it out when `projectId` is null.
+ *
+ * The project id is NOT validated here. This store knows about canvases,
+ * not about projects, and reaching into the database from it would put a
+ * Prisma dependency inside a subsystem that deliberately has none. The
+ * route checks the project belongs to the same workspace before calling —
+ * the same division the rest of this file keeps.
+ */
+export function setCanvasProject(
+  canvasId: string,
+  workspaceId: string,
+  projectId: string | null,
+): CanvasDocument {
+  const canvas = getCanvas(canvasId, workspaceId);
+  if (!canvas) throw new Error('canvas not found');
+  if (projectId === null) delete canvas.projectId;
+  else canvas.projectId = projectId;
+  canvas.updatedAt = Date.now();
+  return canvas;
+}
+
+/** Canvases filed into one project. Workspace-scoped, like every read here. */
+export function listCanvasesForProject(
+  workspaceId: string,
+  projectId: string,
+): CanvasDocument[] {
+  return listCanvases(workspaceId).filter((c) => c.projectId === projectId);
+}
+
 export function addBlock(
   canvasId: string,
   workspaceId: string,

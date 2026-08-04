@@ -30,7 +30,7 @@ function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    counts: { conversation: 2, file: 1, document: 0, image: 0, video: 0, audio: 0 },
+    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0 },
     timeline: [
       {
         kind: 'conversation',
@@ -136,7 +136,7 @@ describe('ProjectWorkspacePanel', () => {
     vi.mocked(api.useProjectWorkspace).mockReturnValue({
       data: workspace({
         timeline: [],
-        counts: { conversation: 0, file: 0, document: 0, image: 0, video: 0, audio: 0 },
+        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0 },
         resumeConversationId: null,
         lastActivityAt: null,
       }),

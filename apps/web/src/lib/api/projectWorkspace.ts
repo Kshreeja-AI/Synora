@@ -14,6 +14,7 @@ import { api } from './client';
 
 export type ProjectItemKind =
   | 'conversation'
+  | 'canvas'
   | 'file'
   | 'document'
   | 'image'

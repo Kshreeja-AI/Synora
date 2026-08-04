@@ -42,6 +42,8 @@ export interface CanvasConnection {
 export interface CanvasDocument {
   id: string;
   workspaceId: string;
+  /** The project this canvas belongs to, if any. */
+  projectId?: string;
   title: string;
   blocks: CanvasBlock[];
   /** Absent on canvases stored before connections existed. */
@@ -138,6 +140,28 @@ export function useArchiveCanvas(
     mutationFn: (canvasId) =>
       api.delete<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases/${canvasId}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+/**
+ * Files a canvas into a project, or takes it out with an explicit null.
+ * Shares the canvas PATCH with renaming, so an omitted field means "leave
+ * it alone" — otherwise renaming would evict the canvas from its project.
+ */
+export function useSetCanvasProject(
+  workspaceId: string,
+): UseMutationResult<CanvasDocument, Error, { canvasId: string; projectId: string | null }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, projectId }) =>
+      api.patch<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases/${canvasId}`, {
+        projectId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] });
+      // The project page shows canvases now, so its view is stale too.
+      queryClient.invalidateQueries({ queryKey: ['project-workspace'] });
+    },
   });
 }
 

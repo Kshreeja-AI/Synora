@@ -391,6 +391,112 @@ describe('projects routes (M5)', () => {
       expect([403, 404]).toContain(promoted.status);
     });
 
+    it('gathers a canvas into the project alongside the conversations', async () => {
+      const user = await register('proj-canvas');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Market map' })
+      ).body.data as { id: string };
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      expect(filed.status).toBe(200);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      // A canvas is where arranging happens; a project holding the
+      // conversations but not the canvas would still be missing part of
+      // the work.
+      expect(view.body.data.counts.canvas).toBe(1);
+      expect(
+        (view.body.data.timeline as { kind: string; title: string }[]).some(
+          (e) => e.kind === 'canvas' && e.title === 'Market map',
+        ),
+      ).toBe(true);
+    });
+
+    it('refuses to file a canvas into another workspace\'s project', async () => {
+      const owner = await register('proj-canvas-mine');
+      const stranger = await register('proj-canvas-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'Canvas Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'Canvas Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', owner.accessToken)
+          .send({ title: 'Mine' })
+      ).body.data as { id: string };
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', owner.accessToken)
+        .send({ projectId: theirProject.id });
+
+      expect(filed.status).toBe(404);
+    });
+
+    it('takes a canvas back out again when filed to null', async () => {
+      const user = await register('proj-canvas-unfile');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Unfile Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Stray' })
+      ).body.data as { id: string };
+
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      const removed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: null });
+      expect(removed.body.data.projectId).toBeUndefined();
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      expect(view.body.data.counts.canvas).toBe(0);
+    });
+
+    it('renames a canvas without unfiling it', async () => {
+      const user = await register('proj-canvas-rename');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Rename Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Before' })
+      ).body.data as { id: string };
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+
+      const renamed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ title: 'After' });
+
+      // An omitted projectId means "leave it alone" — otherwise every
+      // rename would quietly evict the canvas from its project.
+      expect(renamed.body.data.title).toBe('After');
+      expect(renamed.body.data.projectId).toBe(project.id);
+    });
+
     it('reports an empty project honestly rather than failing', async () => {
       const user = await register('proj-empty');
       const ws = await createWorkspace(user.accessToken, 'Empty Co');

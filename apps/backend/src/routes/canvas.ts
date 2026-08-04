@@ -14,8 +14,10 @@ import {
   persistCanvas,
   removeBlock,
   renameCanvas,
+  setCanvasProject,
   updateBlock,
 } from '../canvas/canvas-store';
+import { prisma } from '@synora/database';
 import { resolveCanvasLinks } from '../canvas/link-resolver';
 import { CANVAS_LIMITS } from '../canvas/types';
 
@@ -139,8 +141,36 @@ router.get('/:workspaceId/canvases/:canvasId/links', async (req: AuthRequest, re
 
 router.patch('/:workspaceId/canvases/:canvasId', async (req: AuthRequest, res, next) => {
   try {
-    const { title } = z.object({ title: z.string().min(1).max(CANVAS_LIMITS.maxTitleLength) }).parse(req.body);
-    const canvas = renameCanvas(req.params.canvasId, req.params.workspaceId, title);
+    const body = z
+      .object({
+        title: z.string().min(1).max(CANVAS_LIMITS.maxTitleLength).optional(),
+        // Nullable on purpose: null means "take it out of the project",
+        // which is different from omitting the field ("leave it alone").
+        projectId: z.string().nullable().optional(),
+      })
+      .parse(req.body ?? {});
+
+    let canvas = getCanvas(req.params.canvasId, req.params.workspaceId);
+    if (!canvas) return next(new NotFoundException('Canvas'));
+
+    if (body.title !== undefined) {
+      canvas = renameCanvas(req.params.canvasId, req.params.workspaceId, body.title);
+    }
+    if (body.projectId !== undefined) {
+      if (body.projectId !== null) {
+        // Checked HERE rather than in the store, which deliberately knows
+        // nothing about projects. Same-workspace only, and absent reads as
+        // 404 so the answer cannot be used to discover project ids
+        // belonging to somebody else.
+        const project = await prisma.project.findFirst({
+          where: { id: body.projectId, workspaceId: req.params.workspaceId },
+          select: { id: true },
+        });
+        if (!project) return next(new NotFoundException('Project'));
+      }
+      canvas = setCanvasProject(req.params.canvasId, req.params.workspaceId, body.projectId);
+    }
+
     await persistCanvas(canvas.id);
     res.json(createApiResponse(canvas));
   } catch (error) {

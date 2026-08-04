@@ -73,6 +73,16 @@ export interface CanvasConnection {
 export interface CanvasDocument {
   id: string;
   workspaceId: string;
+  /**
+   * The project this canvas belongs to, if any.
+   *
+   * A canvas is where arranging happens — the spatial half of thinking a
+   * project does — so a project that could hold the conversations but not
+   * the canvas would still be missing part of the work. Absent on
+   * documents stored before projects could hold canvases, which is why it
+   * is optional rather than nullable.
+   */
+  projectId?: string;
   title: string;
   blocks: CanvasBlock[];
   /** Absent on documents stored before connections existed. */
