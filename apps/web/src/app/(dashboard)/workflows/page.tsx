@@ -24,6 +24,7 @@ import {
   type DryRunReport,
   type WorkflowDefinition,
 } from '@/lib/api/workflows';
+import { TemplateGallery } from '@/components/agents/TemplateGallery';
 import { StepBuilder } from '@/components/workflows/StepBuilder';
 import { RunDetail } from '@/components/agents/RunDetail';
 import { SchedulePanel } from '@/components/workflows/SchedulePanel';
@@ -168,12 +169,15 @@ export default function WorkflowsPage() {
       {isLoading ? (
         <Spinner />
       ) : workflows.length === 0 && !creating ? (
-        <EmptyState
-          icon={<WorkflowIcon className="h-8 w-8" />}
-          title="No workflows yet"
-          description="A workflow runs the steps you write, in order, every time. Choose one when you want the same result rather than a fresh decision."
-          action={<Button onClick={() => setCreating(true)}>Create your first workflow</Button>}
-        />
+        <div className="space-y-6">
+          <EmptyState
+            icon={<WorkflowIcon className="h-8 w-8" />}
+            title="No workflows yet"
+            description="A workflow runs the steps you write, in order, every time. Choose one when you want the same result rather than a fresh decision."
+            action={<Button onClick={() => setCreating(true)}>Create your first workflow</Button>}
+          />
+          <TemplateGallery workspaceId={workspaceId} kind="workflow" />
+        </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
           <ul className="space-y-2">

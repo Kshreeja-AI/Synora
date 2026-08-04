@@ -13,6 +13,7 @@ import {
   type Agent,
   type RunRuntime,
 } from '@/lib/api/agents';
+import { TemplateGallery } from '@/components/agents/TemplateGallery';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { RunDetail } from '@/components/agents/RunDetail';
 import { RuntimeNotice } from '@/components/agents/RuntimeNotice';
@@ -94,12 +95,17 @@ export default function AgentsPage() {
       {isLoading ? (
         <Spinner />
       ) : agents.length === 0 ? (
-        <EmptyState
-          icon={<Bot className="h-8 w-8" />}
-          title="No agents yet"
-          description="An agent turns a task into a plan and runs it under limits you choose — which tools it may use, and when it must stop and ask you."
-          action={<Button onClick={() => setCreateOpen(true)}>Create your first agent</Button>}
-        />
+        <div className="space-y-6">
+          <EmptyState
+            icon={<Bot className="h-8 w-8" />}
+            title="No agents yet"
+            description="An agent turns a task into a plan and runs it under limits you choose — which tools it may use, and when it must stop and ask you."
+            action={<Button onClick={() => setCreateOpen(true)}>Create your first agent</Button>}
+          />
+          {/* Offered where the blank page actually is. Once someone has
+              agents, this stops being the most useful thing on screen. */}
+          <TemplateGallery workspaceId={workspaceId} kind="agent" />
+        </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[20rem_1fr]">
           <ul className="space-y-2">

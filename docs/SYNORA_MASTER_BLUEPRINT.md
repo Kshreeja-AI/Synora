@@ -401,6 +401,37 @@ orchestration; and no live model has ever produced a plan — the planner's
 parsing is fully tested, its intelligence is UNMEASURED — EXTERNAL
 PROVIDER REQUIRED (or a local OLLAMA_BASE_URL).
 
+**Also implemented: templates** (`agents/templates.ts`). Seven starting
+configurations spanning writing, research, analysis, operations and code,
+each written for this platform and each described by the **user outcome**
+it serves rather than by a feature list — "I wrote something and I want it
+tightened, not rewritten" tells someone whether to pick it in a way a
+capability list does not.
+
+Instantiating one goes through the ordinary registry and produces an
+ordinary agent or workflow: same validation, same immutable versioning,
+same fail-closed defaults, and nothing on the created definition records
+that a template was involved, because that relationship would imply an
+ongoing link the system does not maintain.
+
+**A template can never name a tool id.** Tool ids are per-workspace
+database rows, so a template naming one would create a definition pointing
+at a tool that may not exist in the workspace it was used in — ready-
+looking and broken on first run, exactly the trap authoring-time
+validation exists to prevent. Templates therefore create generate-only
+definitions, and list the tools they would benefit from as plain
+capability names. The gallery presents those as things to connect, never
+as things already connected.
+
+They live at `agent-templates` on the wire rather than `templates`
+because conversation templates already own that path on the same mount —
+a second router claiming it would be silently shadowed, the same failure
+that once hid `/agents/runs` behind `/agents/:agentId`.
+
+**Missing, named:** workspace-authored templates. "Save this agent as a
+template" does not exist; the catalogue is fixed and ships with the
+platform.
+
 ### 5.10 Workflow engine — Partially implemented (`apps/backend/src/workflows/`)
 
 A workflow is a sequence a **human wrote down**, executed exactly as

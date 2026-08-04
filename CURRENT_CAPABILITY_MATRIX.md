@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `93121b1` + canvas-connections increment
-**Evidence basis**: 2,392 backend tests across 227 files and 522 frontend tests
-across 83 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `abac495` + agent-templates increment
+**Evidence basis**: 2,407 backend tests across 229 files and 529 frontend tests
+across 85 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors. Route mounts read
 from `apps/backend/src/app.ts`. Pages enumerated from `apps/web/src/app`. Models
 counted from `packages/database/prisma/schema.prisma` (111 models).
@@ -85,6 +85,8 @@ case, both are recorded.
 | Agent UI / testing console / run history view | **A** | `/agents` page plus `CreateAgentDialog`, `RunDetail` and `RuntimeNotice`, 8 tests. Define an agent, give it a task, watch every step, approve or reject what it pauses on, stop it mid-run, and read the full log. The LOCAL/REAL label is rendered on every run, and the fail-closed defaults are shown as they actually are ("no tools", "asks before changes") rather than softened. |
 | Agent editing UI (create new version from the screen) | **A** | `EditAgentDialog`, 2 tests. States before you press save that it creates version N+1 and keeps version N — because a user who thinks they edited in place will be confused later by a run history pointing at "old" configurations. The page switches to the new version's id on save. |
 | Agent memory integration | **B** | `agents/memory.ts`, 16 tests. Opt-in per direction and fail-closed: an agent that does not declare `recall` reads nothing, one that does not declare `record` writes nothing. Recall runs as the requesting user, so an agent cannot surface a memory that person could not read. Written memories carry the plan's origin **in their text**, so a deterministic run can never be recalled later as though a model produced it. Only successful runs are recorded. Memory access is set from the agent create and edit screens, and shown in the agent summary only when granted. **Limit**: recall quality is UNMEASURED — with no embedding provider, retrieval falls back to keyword search. |
+
+| Agent & workflow templates | **A** | `agents/templates.ts` + `routes/templates.ts` + `TemplateGallery`, 8 catalogue tests + 7 route tests + 7 component tests. Seven starting configurations across writing, research, analysis, operations and code, each written for this platform and each stated by the **user outcome** it serves. Instantiating produces an ordinary agent or workflow through the normal registry — same validation, same immutable versioning, same fail-closed defaults — and a route test proves an instantiated workflow actually runs. **A template can never name a tool id**: ids are per-workspace rows, so a template naming one would create a ready-looking definition pointing at a tool that may not exist there. What ships instead is generate-only, with tools listed as plain-language suggestions the UI presents as things to connect, never as already connected. Reachable from the `/agents` and `/workflows` empty states. **Limit**: the catalogue is fixed — "save this agent as a template" does not exist. |
 
 ## Family C — Workflow Automation
 
