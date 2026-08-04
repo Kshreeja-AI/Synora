@@ -9,6 +9,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
+import { WaitingForYou } from '../../components/shell/WaitingForYou';
 
 export default function DashboardPage(): React.JSX.Element {
   const router = useRouter();
@@ -79,7 +80,13 @@ export default function DashboardPage(): React.JSX.Element {
           action={<Button onClick={openCreateWorkspace}>Create workspace</Button>}
         />
       ) : (
-        <Card>
+        <div className="space-y-6">
+          {/* What is actually blocked on this person, before anything
+              else on the page. A paused run is a fact, not a guess about
+              what might matter. */}
+          <WaitingForYou workspaceId={currentWorkspace.id} />
+
+          <Card>
           <CardContent className="space-y-6 p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg font-semibold text-primary">
@@ -126,7 +133,8 @@ export default function DashboardPage(): React.JSX.Element {
               </Button>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       )}
     </div>
   );

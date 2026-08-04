@@ -1,7 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, fireEvent, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DashboardPage from './page';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
+
+/**
+ * The page now hosts the "Waiting for you" panel, which reads runs through
+ * a real query — so every render needs a QueryClient. Queries resolve to
+ * nothing in these tests (no fetch is mocked), which renders the panel's
+ * honest empty state and leaves the page assertions untouched.
+ */
+function render(ui: React.ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+}
 
 const routerReplaceMock = vi.fn();
 vi.mock('next/navigation', () => ({

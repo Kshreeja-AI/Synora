@@ -2,9 +2,9 @@
 
 **Generated**: 2026-08-04
 **Branch**: `claude/synora-ai-platform-h5q0k2`
-**Verified at commit**: `79b1b4f` + the canvas-into-project increment
-**Evidence basis**: 2,514 backend tests across 233 files and 591 frontend tests
-across 88 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
+**Verified at commit**: `b219b81` + the waiting-for-you increment
+**Evidence basis**: 2,514 backend tests across 233 files and 596 frontend tests
+across 89 files, passing against real PostgreSQL 16 and Redis; typecheck 8/8
 packages; lint 0 errors; the CI migration-drift check run locally reports
 "This is an empty migration", so the migration history still reproduces
 `schema.prisma` exactly. One backend test —
