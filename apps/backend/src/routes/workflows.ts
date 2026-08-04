@@ -1,5 +1,6 @@
 import { Router, type Router as ExpressRouter } from 'express';
 import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
@@ -103,7 +104,10 @@ const updateSchema = z.object({
   limits: limitsSchema,
 });
 
-const startSchema = z.object({ task: z.string().max(10_000).default('') });
+const startSchema = z.object({
+  task: z.string().max(10_000).default(''),
+  projectId: z.string().min(1).optional(),
+});
 
 function toHttpError(err: unknown): unknown {
   const message = err instanceof Error ? err.message : String(err);
@@ -235,7 +239,21 @@ router.post('/:workspaceId/workflows/:workflowId/dry-run', async (req: AuthReque
 
 router.post('/:workspaceId/workflows/:workflowId/runs', async (req: AuthRequest, res, next) => {
   try {
-    const { task } = startSchema.parse(req.body ?? {});
+    const { task, projectId } = startSchema.parse(req.body ?? {});
+
+    // The project must belong to the SAME workspace as the run — same
+    // rule, same shape as the identical check on agent runs: the project
+    // timeline reads runs by bare projectId, so filing into a project of
+    // another workspace would plant a run somewhere this workspace's
+    // membership says nothing about.
+    if (projectId) {
+      const project = await prisma.project.findFirst({
+        where: { id: projectId, workspaceId: req.params.workspaceId },
+        select: { id: true },
+      });
+      if (!project) return next(new NotFoundException('Project'));
+    }
+
     await assertRunBudget(req.params.workspaceId);
     // Resolved for the tool runner and text generator only — the planner
     // this returns is discarded, because the steps are already written.
@@ -246,6 +264,7 @@ router.post('/:workspaceId/workflows/:workflowId/runs', async (req: AuthRequest,
         workspaceId: req.params.workspaceId,
         requestedBy: req.userId!,
         task,
+        projectId,
       },
       {
         toolRunner: runtime.deps.toolRunner,

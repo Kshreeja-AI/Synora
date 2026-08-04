@@ -41,7 +41,14 @@ export function createAuthoredPlanner(steps: AgentPlan['steps']): AgentPlanner {
  * "what was this run for".
  */
 export async function startWorkflowRun(
-  params: { workflowId: string; workspaceId: string; requestedBy: string; task: string },
+  params: {
+    workflowId: string;
+    workspaceId: string;
+    requestedBy: string;
+    task: string;
+    /** Same-workspace project access is verified by the caller (route). */
+    projectId?: string;
+  },
   deps: Omit<RunEngineDeps, 'planner'>,
 ): Promise<AgentRun> {
   const workflow = getWorkflow(params.workflowId, params.workspaceId);
@@ -54,6 +61,7 @@ export async function startWorkflowRun(
       workspaceId: params.workspaceId,
       requestedBy: params.requestedBy,
       task: params.task,
+      projectId: params.projectId,
     },
     {
       ...deps,

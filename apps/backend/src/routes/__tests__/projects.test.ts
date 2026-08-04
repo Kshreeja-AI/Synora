@@ -588,6 +588,74 @@ describe('projects routes (M5)', () => {
       expect(started.body.data.run.projectId).toBeUndefined();
     });
 
+    async function makeWorkflow(cookie: string, workspaceId: string, name: string) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows`)
+        .set('Cookie', cookie)
+        .send({
+          name,
+          steps: [{ id: 's1', kind: 'generate', description: 'step s1', input: 'summarise' }],
+        });
+      return res.body.data as { id: string };
+    }
+
+    async function startWorkflowRun(
+      cookie: string,
+      workspaceId: string,
+      workflowId: string,
+      body: object,
+    ) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows/${workflowId}/runs`)
+        .set('Cookie', cookie)
+        .send(body);
+    }
+
+    it('gathers a workflow run into the project, named by the workflow, alongside agent runs', async () => {
+      const user = await register('proj-wfrun');
+      const ws = await createWorkspace(user.accessToken, 'WF Run Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const workflow = await makeWorkflow(user.accessToken, ws.id, 'Nightly report');
+
+      const started = await startWorkflowRun(user.accessToken, ws.id, workflow.id, {
+        task: 'Run the nightly numbers',
+        projectId: project.id,
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBe(project.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Agent runs and workflow runs execute through the same run record,
+      // so both are gathered under the one 'agentRun' kind — but a
+      // workflow run must be named by the WORKFLOW, not left generic,
+      // since getAgent() alone would never resolve it.
+      expect(view.body.data.counts.agentRun).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'agentRun');
+      expect(entry?.title).toBe('Run the nightly numbers');
+      expect(entry?.detail).toContain('Nightly report');
+    });
+
+    it("refuses to file a workflow run into another workspace's project", async () => {
+      const owner = await register('proj-wfrun-mine');
+      const stranger = await register('proj-wfrun-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'WF Run Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'WF Run Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const workflow = await makeWorkflow(owner.accessToken, ws.id, 'Nightly report');
+
+      const started = await startWorkflowRun(owner.accessToken, ws.id, workflow.id, {
+        task: 'Do the thing',
+        projectId: theirProject.id,
+      });
+
+      expect(started.status).toBe(404);
+    });
+
     it('reports an empty project honestly rather than failing', async () => {
       const user = await register('proj-empty');
       const ws = await createWorkspace(user.accessToken, 'Empty Co');

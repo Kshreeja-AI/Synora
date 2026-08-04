@@ -6,6 +6,7 @@ import { recordAuditEvent } from './audit.service';
 import { listCanvasesForProject } from '../canvas/canvas-store';
 import { listRuns } from '../agents/run-engine';
 import { getAgent } from '../agents/agent-registry';
+import { getWorkflow } from '../workflows/workflow-registry';
 
 /**
  * A project, seen as the work inside it rather than as a row.
@@ -201,15 +202,21 @@ export async function getProjectWorkspace(
       detail: a.status,
     })),
     // Task is what the person actually typed, so it — not the agent's
-    // name — is the title; the agent is context, in the detail line.
+    // name — is the title; the agent (or workflow) is context, in the
+    // detail line. Agents and workflows execute through the same run
+    // record, and `r.agentId` names whichever definition actually ran —
+    // an agent's own id space (`agent_...`) never collides with a
+    // workflow's (`wf_...`), so trying both lookups is safe and correct
+    // rather than assuming every run in this store came from an agent.
     ...runs.map((r) => {
       const agent = getAgent(r.agentId, r.workspaceId);
+      const workflow = agent ? null : getWorkflow(r.agentId, r.workspaceId);
       return {
         kind: 'agentRun' as const,
         id: r.id,
         title: r.task.slice(0, 80),
         at: iso(new Date(r.finishedAt ?? r.createdAt)),
-        detail: `${agent?.name ?? 'agent'} · ${r.state.replace('_', ' ')}`,
+        detail: `${agent?.name ?? workflow?.name ?? 'agent'} · ${r.state.replace('_', ' ')}`,
       };
     }),
   ].sort((a, b) => b.at.localeCompare(a.at));
