@@ -19,6 +19,10 @@ const ROUTE_LABELS: Record<string, string> = {
   account: 'Account',
   sessions: 'Sessions',
   workspace: 'Workspace',
+  // The URL segment is `command`; the thing people click is called "Ask
+  // Synora". Without this the sidebar and the breadcrumb name the same page
+  // differently, which quietly teaches that the two are different places.
+  command: 'Ask Synora',
 };
 
 function labelFor(segment: string): string {
