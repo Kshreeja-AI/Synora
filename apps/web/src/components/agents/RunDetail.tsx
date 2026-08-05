@@ -71,6 +71,7 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
   const { data: agents = [] } = useAgents(workspaceId);
 
   const pending = run.pendingApproval;
+  const facts = run.pendingStepFacts;
   const terminal = isTerminalRun(run.state);
 
   /**
@@ -177,6 +178,29 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
               {/* Nothing has run yet. There is no execute-first path, so a
                   rejection here means the step never happens at all. */}
               <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">{pending.reason}</p>
+              {/* The person approving is often not the person who asked,
+                  and arrives with less context, not more. These are the
+                  same facts a preview would have shown — computed by the
+                  same checker, so the two can never disagree. */}
+              {facts && (
+                <div className="mt-2 space-y-1 text-sm text-amber-900 dark:text-amber-200">
+                  <p>{facts.description}</p>
+                  <p className="text-xs">
+                    {facts.kind === 'tool' ? `Calls tool ${facts.toolId}` : 'Generates text'}
+                    {facts.treatedAsMutating ? ' · may change things outside the run' : ''}
+                  </p>
+                  {facts.problems.map((problem) => (
+                    <p key={problem} className="text-xs font-medium">
+                      Would fail: {problem}
+                    </p>
+                  ))}
+                  {facts.unknowns.map((unknown) => (
+                    <p key={unknown} className="text-xs">
+                      Unknown until it runs: {unknown}
+                    </p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">

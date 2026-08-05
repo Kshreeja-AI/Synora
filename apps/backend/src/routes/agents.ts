@@ -24,6 +24,7 @@ import {
 } from '../agents/run-engine';
 import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
 import { previewAgentPlan } from '../agents/plan-preview';
+import { checkPlannedSteps, type PlannedStepCheck } from '../agents/step-checks';
 import { canRecall, canRecord, recallForTask, recordRunOutcome, withRecalledContext } from '../agents/memory';
 import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
@@ -223,7 +224,29 @@ router.get('/:workspaceId/agents/runs/:runId', async (req: AuthRequest, res, nex
     const run = getRun(req.params.runId, req.params.workspaceId);
     if (!run) return next(new NotFoundException('Run'));
     const [enriched] = await withRequesterNames([run]);
-    res.json(createApiResponse(enriched));
+
+    // A paused run is usually decided by someone other than whoever
+    // started it, and that person arrives with less context, not more.
+    // The consequences of the exact step they are being asked to approve
+    // are computed here with the SAME shared checker the previews use —
+    // so an approver sees what a previewer would have seen, rather than
+    // being asked to say yes to a step id and a one-line reason.
+    let pendingStepFacts: PlannedStepCheck | null = null;
+    const pendingStep = run.pendingApproval
+      ? run.steps.find((record) => record.step.id === run.pendingApproval?.stepId)?.step
+      : undefined;
+    if (pendingStep) {
+      const agent = resolveAnyDefinition(run.agentId, run.workspaceId);
+      const [check] = await checkPlannedSteps({
+        steps: [pendingStep],
+        workspaceId: run.workspaceId,
+        requestedBy: req.userId!,
+        approvalPolicy: agent?.approvalPolicy ?? 'everything',
+      });
+      pendingStepFacts = check ?? null;
+    }
+
+    res.json(createApiResponse({ ...enriched, pendingStepFacts }));
   } catch (error) {
     next(error);
   }

@@ -124,8 +124,12 @@ any part of it becomes real.
    sending. Facts, never a safety verdict: nothing grades a tool "safe"
    or "risky", because Synora has no system that can judge that. **All
    three execution paths now have a preview** (agent runs, workflows,
-   tools). Still missing: the single unifying surface that shows them as
-   one pipeline, and risk-classification language.
+   tools). Slice 3 shipped 2026-08-05: **the approval moment inherits
+   the preview's facts** — the single-run read attaches the paused
+   step's consequences (same shared checker), because whoever approves
+   is usually not whoever asked and was previously shown only a step id
+   and a one-line reason. Still missing: the single unifying surface
+   that shows them as one pipeline, and risk-classification language.
 3. **Human Decision Center, full form** — partially advanced 2026-08-05:
    the home page's waiting surface now covers three item kinds — paused
    runs, tool executions stopped on `requiresApproval` (workspace-scoped,

@@ -159,4 +159,44 @@ describe('RunDetail — run again', () => {
     renderDetail(run({ state: 'completed' }));
     expect(screen.getByRole('button', { name: /run again/i })).toBeInTheDocument();
   });
+
+  it('shows an approver what the paused step actually does', () => {
+    renderDetail(
+      run({
+        state: 'awaiting_approval',
+        pendingApproval: { stepId: 's2', reason: 'this step may change state outside the run' },
+        pendingStepFacts: {
+          stepId: 's2',
+          kind: 'tool',
+          toolId: 'send-invoice',
+          description: 'Email the invoice to the customer',
+          pausesForApproval: true,
+          treatedAsMutating: true,
+          unresolvedReferences: [],
+          problems: [],
+          unknowns: ['the remote endpoint is not contacted by a dry run'],
+        },
+      }),
+    );
+
+    // Approving a step id and a one-line reason is deciding blind. The
+    // approver is often not the requester and arrives with less context.
+    expect(screen.getByText('Email the invoice to the customer')).toBeInTheDocument();
+    expect(screen.getByText(/Calls tool send-invoice/)).toBeInTheDocument();
+    expect(screen.getByText(/may change things outside the run/)).toBeInTheDocument();
+    expect(screen.getByText(/Unknown until it runs:/)).toBeInTheDocument();
+  });
+
+  it('says nothing extra when the backend supplied no step facts', () => {
+    renderDetail(
+      run({
+        state: 'awaiting_approval',
+        pendingApproval: { stepId: 's2', reason: 'needs a person' },
+      }),
+    );
+    // Absent, not invented: the reason still shows, and no placeholder
+    // pretends to describe a step nobody looked up.
+    expect(screen.getByText(/needs a person/)).toBeInTheDocument();
+    expect(screen.queryByText(/Unknown until it runs:/)).not.toBeInTheDocument();
+  });
 });

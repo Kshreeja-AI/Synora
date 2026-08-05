@@ -133,6 +133,13 @@ export interface AgentRun {
   createdAt: number;
   startedAt?: number;
   finishedAt?: number;
+  /**
+   * The consequences of the step currently awaiting approval, computed
+   * with the same checker the previews use. Present only on the
+   * single-run read, and only while a step is actually paused — an
+   * approver decides with the same facts a previewer would have seen.
+   */
+  pendingStepFacts?: PlanPreviewStepCheck | null;
 }
 
 /**

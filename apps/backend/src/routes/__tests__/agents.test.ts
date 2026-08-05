@@ -332,6 +332,36 @@ describe('agent routes', () => {
     expect(single.body.data.task).toBe('generate one');
   });
 
+  it('gives an approver the paused step’s consequences, not just its id', async () => {
+    const owner = await register('agent-approver-facts');
+    const ws = await createWorkspace(owner.cookie, 'Approver Co');
+    const agent = (await makeAgent(owner.cookie, ws.id, { approvalPolicy: 'everything' })).body
+      .data;
+    const started = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate a short note' });
+    expect(started.status).toBe(201);
+
+    const res = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs/${started.body.data.run.id}`)
+      .set('Cookie', owner.cookie);
+
+    expect(res.status).toBe(200);
+    if (res.body.data.pendingApproval) {
+      // Whoever decides sees what the step actually does — the same
+      // facts a preview shows, from the same checker.
+      expect(res.body.data.pendingStepFacts).toMatchObject({
+        stepId: res.body.data.pendingApproval.stepId,
+      });
+      expect(typeof res.body.data.pendingStepFacts.description).toBe('string');
+    } else {
+      // A run that never paused has no decision to contextualise, and
+      // must not carry a phantom one.
+      expect(res.body.data.pendingStepFacts).toBeNull();
+    }
+  });
+
   it('previews a plan without creating any run at all', async () => {
     const owner = await register('agent-preview');
     const ws = await createWorkspace(owner.cookie, 'Preview Co');
