@@ -1,6 +1,12 @@
 'use client';
 
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
 import { api } from './client';
 
 /**
@@ -20,7 +26,8 @@ export type ProjectItemKind =
   | 'image'
   | 'video'
   | 'audio'
-  | 'agentRun';
+  | 'agentRun'
+  | 'note';
 
 export interface ProjectTimelineEntry {
   kind: ProjectItemKind;
@@ -72,5 +79,20 @@ export function useProjectWorkspace(
     queryKey: [PROJECT_WORKSPACE_KEY, projectId],
     queryFn: () => api.get<ProjectWorkspace>(`/api/projects/${projectId}/workspace`),
     enabled: !!projectId && options?.enabled !== false,
+  });
+}
+
+export function useAddProjectNote(
+  projectId: string,
+): UseMutationResult<{ id: string; createdAt: string }, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (content: string) =>
+      api.post<{ id: string; createdAt: string }>(`/api/projects/${projectId}/notes`, {
+        content,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [PROJECT_WORKSPACE_KEY, projectId] });
+    },
   });
 }

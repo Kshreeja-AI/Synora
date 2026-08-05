@@ -12,7 +12,7 @@ import {
   updateProject,
   deleteProject,
 } from '../services/project.service';
-import { getProjectWorkspace } from '../services/projectWorkspace.service';
+import { getProjectWorkspace, addProjectNote } from '../services/projectWorkspace.service';
 
 const router: Router = Router();
 
@@ -30,6 +30,10 @@ const updateProjectSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   goal: z.string().trim().max(2000).optional(),
   status: z.enum(['ACTIVE', 'ARCHIVED', 'DELETED']).optional(),
+});
+
+const addNoteSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
 });
 
 router.get('/', authMiddleware, validateIdQuery, async (req: AuthRequest, res, next) => {
@@ -100,6 +104,21 @@ router.get(
   async (req: AuthRequest, res, next) => {
     try {
       res.json(createApiResponse(await getProjectWorkspace(req.userId!, req.params.projectId)));
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+router.post(
+  '/:projectId/notes',
+  authMiddleware,
+  requireProjectAccess(),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { content } = addNoteSchema.parse(req.body);
+      const note = await addProjectNote(req.userId!, req.params.projectId, content);
+      res.status(201).json(createApiResponse(note));
     } catch (error) {
       next(error);
     }

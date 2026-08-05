@@ -348,6 +348,59 @@ describe('projects routes (M5)', () => {
       expect(teammateView.body.data.newSinceLastVisit).toBeNull();
     });
 
+    it('adds a decision note, shown verbatim in the timeline with its author', async () => {
+      const user = await register('proj-note-author');
+      const ws = await createWorkspace(user.accessToken, 'Note Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const created = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Went with vendor B: 20% cheaper, better support SLA.' });
+      expect(created.status).toBe(201);
+      expect(typeof created.body.data.id).toBe('string');
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      expect(view.body.data.counts.note).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'note');
+      // Verbatim, not summarised — a note is the person's own record of
+      // their own reasoning, and rewording it would make it someone else's.
+      expect(entry?.title).toBe('Went with vendor B: 20% cheaper, better support SLA.');
+      expect(entry?.detail).toBeTruthy();
+    });
+
+    it('refuses an empty note rather than filing a blank record', async () => {
+      const user = await register('proj-note-empty');
+      const ws = await createWorkspace(user.accessToken, 'Empty Note Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const res = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: '   ' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("refuses to add a note to a project the caller can't reach", async () => {
+      const owner = await register('proj-note-owner');
+      const stranger = await register('proj-note-stranger');
+      const ws = await createWorkspace(owner.accessToken, 'Private Note Co');
+      const project = await makeProject(owner.accessToken, ws.id);
+
+      const res = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', stranger.accessToken)
+        .send({ content: 'Should not be allowed.' });
+
+      expect(res.status).toBe(404);
+    });
+
     it('takes a conversation back out again when filed to null', async () => {
       const user = await register('proj-unfile');
       const ws = await createWorkspace(user.accessToken, 'Unfile Co');

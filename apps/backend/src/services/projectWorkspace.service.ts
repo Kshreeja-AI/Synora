@@ -43,7 +43,8 @@ export type ProjectItemKind =
   | 'image'
   | 'video'
   | 'audio'
-  | 'agentRun';
+  | 'agentRun'
+  | 'note';
 
 export interface ProjectTimelineEntry {
   kind: ProjectItemKind;
@@ -114,7 +115,7 @@ export async function getProjectWorkspace(
   if (!project.workspaceId) throw new NotFoundException('Project');
   await requireMembership(userId, project.workspaceId);
 
-  const [conversations, assets, documents, images, videos, audios, previousVisit] =
+  const [conversations, assets, documents, images, videos, audios, previousVisit, notes] =
     await Promise.all([
       prisma.conversation.findMany({
         where: { projectId, status: { not: 'DELETED' } },
@@ -159,7 +160,24 @@ export async function getProjectWorkspace(
         where: { projectId_userId: { projectId, userId } },
         select: { lastViewedAt: true },
       }),
+      prisma.projectNote.findMany({
+        where: { projectId },
+        select: { id: true, userId: true, content: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
     ]);
+
+  // A note's author is resolved by a separate lookup rather than a Prisma
+  // relation on ProjectNote — the same choice made for agent/workflow names
+  // on run entries below: one batched query, not one join per note.
+  const noteAuthors = notes.length
+    ? await prisma.user.findMany({
+        where: { id: { in: [...new Set(notes.map((n) => n.userId))] } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const authorNameById = new Map(noteAuthors.map((u) => [u.id, u.name ?? u.email]));
 
   // Canvases live in a file-backed store rather than the database, so
   // they are read separately and merged into the same chronology. The
@@ -244,6 +262,16 @@ export async function getProjectWorkspace(
         detail: `${agent?.name ?? workflow?.name ?? 'agent'} · ${r.state.replace('_', ' ')}`,
       };
     }),
+    // A person's own record of why a decision was made — content shown
+    // exactly as written, never summarised or reworded, so the timeline
+    // never implies an AI produced a rationale nobody actually stated.
+    ...notes.map((n) => ({
+      kind: 'note' as const,
+      id: n.id,
+      title: n.content.slice(0, 80),
+      at: iso(n.createdAt),
+      detail: authorNameById.get(n.userId),
+    })),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   const timeline = entries.slice(0, PROJECT_TIMELINE_LIMIT);
@@ -292,6 +320,7 @@ export async function getProjectWorkspace(
       video: videos.length,
       audio: audios.length,
       agentRun: runs.length,
+      note: notes.length,
     },
     timeline,
     // The newest non-archived conversation. Archived ones are excluded
@@ -301,6 +330,41 @@ export async function getProjectWorkspace(
     lastActivityAt: timeline[0]?.at ?? null,
     newSinceLastVisit,
   };
+}
+
+/**
+ * Adding a decision note to a project.
+ *
+ * WHY THIS IS DELIBERATELY MINIMAL. Recording why a decision was made is
+ * only useful if it costs almost nothing to do in the moment — a form
+ * with fields for context, alternatives considered and a category would
+ * be filled in accurately only in retrospect, by which point the
+ * reasoning is already half-forgotten. One text field, timestamped and
+ * attributed automatically, is the version a person will actually use.
+ *
+ * CONTENT IS NEVER REWRITTEN. What is stored is exactly what was typed,
+ * shown later exactly as written — never summarised, corrected, or
+ * reinterpreted by anything. A note is someone's own record of their own
+ * reasoning; changing its wording would quietly make it someone else's.
+ */
+export async function addProjectNote(
+  userId: string,
+  projectId: string,
+  content: string,
+): Promise<{ id: string; createdAt: string }> {
+  const project = await prisma.project.findUnique({ where: { id: projectId } });
+  if (!project) throw new NotFoundException('Project');
+  if (!project.workspaceId) throw new NotFoundException('Project');
+  await requireMembership(userId, project.workspaceId);
+
+  const trimmed = content.trim();
+  if (!trimmed) throw new ValidationException('note content cannot be empty');
+
+  const note = await prisma.projectNote.create({
+    data: { projectId, userId, content: trimmed },
+    select: { id: true, createdAt: true },
+  });
+  return { id: note.id, createdAt: iso(note.createdAt) };
 }
 
 /**

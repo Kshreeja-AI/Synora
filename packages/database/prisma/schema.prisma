@@ -398,6 +398,9 @@ model Project {
   /// each with their own sense of what's new since they were last here.
   visits        ProjectVisit[]
 
+  /// Decision notes — see ProjectNote below.
+  notes         ProjectNote[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -425,6 +428,31 @@ model ProjectVisit {
   lastViewedAt DateTime @default(now())
 
   @@unique([projectId, userId])
+  @@index([projectId])
+}
+
+/// A person's own record of why a decision was made — "I want Synora to
+/// remember why we made a decision," answered the honest way: by giving
+/// someone a place to write it down themselves, rather than an AI
+/// summarizing or inferring a rationale nobody actually stated. Content is
+/// exactly what was typed, shown verbatim in the project's timeline
+/// alongside everything else that happened — never rewritten, condensed,
+/// or interpreted.
+///
+/// `userId` is a plain column, not an owning relation, mirroring
+/// ProjectVisit and ConversationCollaborator above — the author's display
+/// name is resolved by a separate lookup when the timeline is built, the
+/// same way agent and workflow names are resolved for run entries.
+model ProjectNote {
+  id        String   @id @default(cuid())
+  projectId String
+  userId    String
+  content   String
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
   @@index([projectId])
 }
 

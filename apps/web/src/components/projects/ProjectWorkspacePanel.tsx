@@ -1,20 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import {
   Bot,
   FileText,
   Image as ImageIcon,
   LayoutGrid,
+  Loader2,
   MessageSquare,
   Music,
   Paperclip,
   PlayCircle,
   Sparkles,
+  StickyNote,
   Video,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@synora/design-system';
 import {
+  useAddProjectNote,
   useProjectWorkspace,
   type ProjectItemKind,
   type ProjectTimelineEntry,
@@ -46,6 +51,7 @@ const ICONS: Record<ProjectItemKind, typeof MessageSquare> = {
   video: Video,
   audio: Music,
   agentRun: Bot,
+  note: StickyNote,
 };
 
 const LABELS: Record<ProjectItemKind, string> = {
@@ -57,6 +63,7 @@ const LABELS: Record<ProjectItemKind, string> = {
   video: 'video',
   audio: 'audio',
   agentRun: 'agent run',
+  note: 'note',
 };
 
 /** Relative where it helps, absolute where precision matters more. */
@@ -84,8 +91,19 @@ function href(entry: ProjectTimelineEntry): string | null {
 
 export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
   const { data, isLoading } = useProjectWorkspace(projectId);
+  const addNote = useAddProjectNote(projectId);
+  const [noteText, setNoteText] = useState('');
 
   if (isLoading || !data) return null;
+
+  function submitNote() {
+    const content = noteText.trim();
+    if (!content) return;
+    addNote.mutate(content, {
+      onSuccess: () => setNoteText(''),
+      onError: (e) => toast.error(e.message),
+    });
+  }
 
   const { counts, timeline, resumeConversationId, project, lastActivityAt, newSinceLastVisit } =
     data;
@@ -168,6 +186,40 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
           })}
         </ul>
       )}
+
+      {/*
+        One field, no category, no dialog — "why we decided this" is
+        recorded accurately only when writing it down costs almost
+        nothing. A richer form would be filled in honestly only in
+        hindsight, by which point the reasoning is already half-forgotten.
+      */}
+      <div className="flex items-start gap-2">
+        <StickyNote className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        <div className="flex-1 space-y-1.5">
+          <label htmlFor="project-note-input" className="sr-only">
+            Add a note about why a decision was made
+          </label>
+          <textarea
+            id="project-note-input"
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Note why a decision was made, for later…"
+            rows={2}
+            className="w-full resize-none rounded-md border border-input bg-background p-2 text-sm"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={submitNote}
+            disabled={!noteText.trim() || addNote.isPending}
+          >
+            {addNote.isPending ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" aria-hidden />
+            ) : null}
+            Add note
+          </Button>
+        </div>
+      </div>
 
       {timeline.length === 0 ? (
         <p className="text-sm text-muted-foreground">

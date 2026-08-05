@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProjectWorkspacePanel } from '../ProjectWorkspacePanel';
 import * as api from '@/lib/api/projectWorkspace';
@@ -16,7 +16,7 @@ import type { ProjectWorkspace } from '@/lib/api/projectWorkspace';
 
 vi.mock('@/lib/api/projectWorkspace', async () => {
   const actual = await vi.importActual<typeof api>('@/lib/api/projectWorkspace');
-  return { ...actual, useProjectWorkspace: vi.fn() };
+  return { ...actual, useProjectWorkspace: vi.fn(), useAddProjectNote: vi.fn() };
 });
 
 function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace {
@@ -30,7 +30,7 @@ function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace 
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     },
-    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0, agentRun: 0 },
+    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0, agentRun: 0, note: 0 },
     timeline: [
       {
         kind: 'conversation',
@@ -66,6 +66,10 @@ beforeEach(() => {
   vi.mocked(api.useProjectWorkspace).mockReturnValue({
     data: workspace(),
     isLoading: false,
+  } as never);
+  vi.mocked(api.useAddProjectNote).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
   } as never);
 });
 
@@ -150,6 +154,51 @@ describe('ProjectWorkspacePanel', () => {
     ).toHaveAttribute('href', '/agents/runs/run1');
   });
 
+  it('shows a decision note in the chronology, exactly as written and attributed to its author', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 1 },
+        timeline: [
+          ...workspace().timeline,
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B: cheaper, and a better support SLA.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(
+      screen.getByText('Went with vendor B: cheaper, and a better support SLA.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Priya/)).toBeInTheDocument();
+  });
+
+  it('adds a note and clears the field once it is saved', () => {
+    const mutate = vi.fn((_content, opts) => opts?.onSuccess?.());
+    vi.mocked(api.useAddProjectNote).mockReturnValue({ mutate, isPending: false } as never);
+
+    renderPanel();
+    const input = screen.getByLabelText(/add a note/i);
+    fireEvent.change(input, { target: { value: 'Chose vendor B for pricing.' } });
+    fireEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(mutate).toHaveBeenCalledWith('Chose vendor B for pricing.', expect.anything());
+    expect(input).toHaveValue('');
+  });
+
+  it('will not add an empty note', () => {
+    renderPanel();
+    // Nothing to type into means nothing worth sending — disabled rather
+    // than reachable and then refused.
+    expect(screen.getByRole('button', { name: /add note/i })).toBeDisabled();
+  });
+
   it('states last activity as a fact, and passes no judgement on the project', () => {
     renderPanel();
     expect(screen.getByText(/Last activity/)).toBeInTheDocument();
@@ -163,7 +212,7 @@ describe('ProjectWorkspacePanel', () => {
     vi.mocked(api.useProjectWorkspace).mockReturnValue({
       data: workspace({
         timeline: [],
-        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0, agentRun: 0 },
+        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0, agentRun: 0, note: 0 },
         resumeConversationId: null,
         lastActivityAt: null,
       }),
