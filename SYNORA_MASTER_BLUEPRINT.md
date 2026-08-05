@@ -229,6 +229,64 @@ the descriptor contract answers "is this key actually accepted", separate
 from `isConfigured()`'s "is a key present", with `unreachable` never
 collapsed into `rejected`.
 
+## 5c. The Universal Command Layer — begun 2026-08-05
+
+Directive: the founder's Human Comfort / Universal AI Era brief. Its core
+demand is one thing Synora did not have — **a single place where a person
+says what they want in plain language and Synora resolves it to real
+capabilities**, without first choosing between "agent", "workflow", "tool"
+and "chat". The person should express an outcome; Synora carries the
+complexity.
+
+**Slice 1 shipped: understanding, routing, and refusal.** `src/command/`
+plus `POST /api/command/understand`. One sentence in; a statement of what
+Synora believes was asked, which REAL capability would serve it, what it
+could not determine, and security observations about the text.
+
+Four design decisions that the rest of this layer must not undo:
+
+1. **Deterministic, not a model call.** Understanding is a fixed grammar
+   running locally with zero credentials. Three reasons, in priority order:
+   a model asked to interpret a hostile sentence can be *argued into*
+   interpreting it favourably (that is what prompt injection is), and the
+   first thing between hostile text and Synora's capabilities must not be
+   persuadable; understanding "what needs my decision" has to work when
+   every provider is down, because this layer is *how a person reaches
+   Synora*; and a deterministic classifier that fails says so, whereas a
+   model always produces something shaped exactly like a correct answer.
+   A model may later RANK or EXTEND this. It must never become required.
+2. **The command text is data, never instructions.** Structurally, this
+   module has no mechanism to obey anything — it classifies action shapes
+   and returns a description. Authority-override phrasing ("ignore your
+   rules", "you are now admin", "without approval") is detected, reported,
+   and grants nothing. The payload is deliberately NOT echoed back into
+   observations: repeating attacker-controlled text into logs and
+   dashboards is its own delivery mechanism.
+3. **It never executes.** `executed: false` is an explicit field, not an
+   assumption, so no caller can read an interpretation as evidence that
+   something ran. Acting goes through the surfaces that already exist,
+   each with its own permission checks, previews and approval gates. The
+   command layer shortcuts none of them and therefore grants no authority:
+   understanding a sentence about deleting a database is not permission to
+   delete one.
+4. **The catalogue may only name capabilities that exist.** A routing
+   layer's characteristic failure is confidently routing to a capability
+   that was only ever a plan. Every entry names a real surface, and
+   `availability` separates "Synora implements this" from "this deployment
+   can do it right now" — a person told the first when they needed the
+   second has been misled.
+
+Also honest about the opposite case: requests Synora genuinely cannot serve
+(phone calls, SMS, social publishing, payments, device control, travel
+booking) return `not-yet-capable` **naming the missing capability**, rather
+than "I don't understand". Synora understood perfectly and simply cannot do
+it, which is what the person needs to hear.
+
+**Not yet built** (slice 1 is understanding only): no execution binding, no
+voice or accessibility input path, no learned personalization, no
+multi-step decomposition, no UI. Those are later slices and must each
+preserve the four decisions above.
+
 ## 6. Standing engineering law (unchanged by any roadmap)
 
 - Security fails closed. 404, not 403, where existence is the secret.
