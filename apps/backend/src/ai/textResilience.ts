@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { getConfig, ConfigNotInitializedError } from '../config';
 import { CircuitBreakerRegistry } from '../resilience/circuitBreaker';
 import { InMemoryRateLimiter, RedisRateLimiter, type RateLimiter } from '../resilience/rateLimiter';
+import { ProviderMetricsCollector } from '../resilience/providerMetrics';
 import { withRetry, type RetryPolicyConfig } from '../resilience/retry';
 import { withTimeout } from '../resilience/timeout';
 import { AIProviderError, AIRateLimitedError } from './types';
@@ -62,6 +63,16 @@ let breakers = new CircuitBreakerRegistry({
 let rateLimiter: RateLimiter | null = null;
 
 /**
+ * Records what happened to every text call, per provider — including the
+ * ones this module refuses to send. Read by `GET /api/ai/provider-metrics`.
+ */
+let metrics = new ProviderMetricsCollector();
+
+export function getTextProviderMetrics(): Record<string, ReturnType<ProviderMetricsCollector['get']>> {
+  return metrics.snapshot();
+}
+
+/**
  * Lazily built from config on first use (module load must stay side-effect
  * free — tests import this file before any config exists). The instance is
  * the TEXT stack's own; the embeddings stack keeps its separate singleton
@@ -107,6 +118,7 @@ export function resetTextResilienceForTests(): void {
     halfOpenSuccessThreshold: 2,
   });
   rateLimiter = null;
+  metrics = new ProviderMetricsCollector();
 }
 
 export async function generateWithResilience(
@@ -119,6 +131,7 @@ export async function generateWithResilience(
     // Failing fast is the honest response to a provider that has failed
     // repeatedly: the alternative is every request waiting out the full
     // timeout+retry cycle against an upstream that is known to be down.
+    metrics.record({ providerId: provider.id, outcome: 'refused-circuit-open' });
     throw new AIProviderError(
       `Provider "${provider.id}" is temporarily unavailable after repeated failures. ` +
         'Calls resume automatically once it recovers.',
@@ -131,9 +144,11 @@ export async function generateWithResilience(
   // own pacing, not a provider failure — so it must never trip the
   // breaker, and it's thrown before the try block below to guarantee that.
   if (!(await getTextRateLimiter().tryAcquire(provider.id))) {
+    metrics.record({ providerId: provider.id, outcome: 'refused-rate-limit' });
     throw new AIRateLimitedError(provider.id);
   }
 
+  const startedAt = Date.now();
   try {
     const result = await withRetry(
       () => withTimeout(provider.generateText(request), TEXT_TIMEOUT_MS, provider.id),
@@ -141,9 +156,23 @@ export async function generateWithResilience(
       { providerId: provider.id, operation: 'generateText' },
     );
     breaker.recordSuccess();
+    metrics.record({
+      providerId: provider.id,
+      outcome: 'success',
+      // Wall-clock across all retries — what the person actually waited,
+      // not the duration of the one attempt that happened to succeed.
+      latencyMs: Date.now() - startedAt,
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+    });
     return result;
   } catch (error) {
     breaker.recordFailure();
+    metrics.record({
+      providerId: provider.id,
+      outcome: 'failure',
+      latencyMs: Date.now() - startedAt,
+    });
     throw error;
   }
 }

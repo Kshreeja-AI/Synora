@@ -288,8 +288,7 @@ business logic changes.
   this audit's build phase, see §2 and §10
 - Per-workspace rate-limit fairness in the text path (the limiter keys by
   provider only; the facade deliberately hides caller identity)
-- Metrics, tracing and caching in the text path (the embeddings stack has all
-  three)
+- Tracing and caching in the text path (metrics closed 2026-08-05, §13)
 - Model-level capability discovery and negotiation
 
 ### F. Blocked by a founder decision
@@ -443,3 +442,33 @@ a test asserts both stay empty, so the class of bug cannot return unnoticed.
 Status: **IMPLEMENTED** (local, no credentials needed). 8 unit tests.
 Remaining: capabilities come from a hand-maintained catalog, not live provider
 discovery — a model shipped today is invisible until the catalog is updated.
+
+---
+
+## 13. Provider call metrics (built 2026-08-05)
+
+`resilience/providerMetrics.ts`, wired into `ai/textResilience.ts` and exposed
+at `GET /api/ai/provider-metrics` (authenticated — deployment information, not
+workspace information).
+
+Deliberately NOT a copy of `embeddings/metrics.ts`, which is shaped around
+embeddings (cache hit rate, one token count). The text path has to make a
+distinction embeddings never needed: **a call that FAILED versus a call Synora
+REFUSED TO SEND.**
+
+> "80% of calls to Anthropic failed" and "80% of calls to Anthropic were never
+> sent, because our own rate limit refused them" are identical in a plain error
+> count, lead to opposite diagnoses, and cost very different amounts of money.
+
+Four outcomes: `success`, `failure`, `refused-rate-limit`,
+`refused-circuit-open`. Refusals count as attempts but never as sent calls, so
+`errorRateOfSent` and `avgLatencyMs` are computed over calls that actually
+reached the provider — averaging refusals in would understate a struggling
+provider's error rate and drag its latency toward zero.
+
+Status: **IMPLEMENTED** (local, no credentials needed). 6 unit tests.
+Limits, stated: in-process and reset on restart, not shared across instances —
+this answers "what is happening in this process right now", which is what an
+operator needs during a live incident. Durable cross-instance aggregation is a
+metrics backend's job and this collector does not pretend to be one. Tracing
+and response caching remain the last unported embeddings-standard items.

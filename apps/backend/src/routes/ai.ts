@@ -4,6 +4,7 @@ import { createApiResponse, TooManyRequestsException } from '@synora/shared';
 import { generateText, AIRateLimitedError } from '../ai';
 import { listAvailableModels } from '../ai/models';
 import { checkProviderReadiness } from '../ai/verification';
+import { getTextProviderMetrics } from '../ai/textResilience';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { aiGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
@@ -44,6 +45,37 @@ router.get(
   async (_req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       return res.json(createApiResponse({ providers: await checkProviderReadiness() }));
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
+
+/**
+ * GET /api/ai/provider-metrics — what has actually been happening to
+ * provider calls in this process.
+ *
+ * Reports refusals SEPARATELY from failures. "80% of calls failed" and "80%
+ * of calls were never sent because our own rate limit refused them" look
+ * identical in a plain error count, lead to opposite diagnoses, and cost
+ * very different amounts of money.
+ *
+ * Authenticated for the same reason as `/provider-readiness`: this is
+ * infrastructure information about the deployment, not about a workspace.
+ * Counts are per-process and reset on restart — stated here so nobody reads
+ * them as durable billing figures.
+ */
+router.get(
+  '/provider-metrics',
+  authMiddleware,
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      return res.json(
+        createApiResponse({
+          providers: getTextProviderMetrics(),
+          scope: 'this process since it started; resets on restart',
+        })
+      );
     } catch (err) {
       return next(err);
     }

@@ -215,7 +215,10 @@ facts that change how the rest of this blueprint should be read:
    `rateLimiter.ts` moved to `src/resilience/` the same way, wired between
    the breaker and retry, config-driven (`AI_RATE_LIMIT_*`), refusing a
    call BEFORE it is sent (standard 429 envelope, never counted as a
-   provider failure). Remaining from the embeddings standard: metrics,
+   provider failure). Provider call metrics followed, with a
+   distinction embeddings never needed — a call that FAILED versus one
+   Synora REFUSED TO SEND, since those look identical in an error count
+   and lead to opposite diagnoses. Remaining from the embeddings standard:
    tracing, cache — plus true request cancellation (the timeout bounds
    waiting, not the underlying HTTP call) and per-workspace fairness
    keying (the text facade deliberately hides caller identity from the
