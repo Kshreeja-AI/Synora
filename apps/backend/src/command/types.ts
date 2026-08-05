@@ -62,6 +62,17 @@ export interface CommandRoute {
   summary: string;
   availability: CapabilityAvailability;
   /**
+   * The workspace permission acting on this requires, or `null` when it
+   * needs only workspace membership (reading, previewing).
+   *
+   * Declared HERE, next to the capability, rather than recomputed by any
+   * surface that wants to know: a permission answer that lives in two
+   * places eventually disagrees with itself, and the disagreement is
+   * always discovered by someone getting access they should not have.
+   * The authoritative check still runs server-side at execution.
+   */
+  requiredPermission: string | null;
+  /**
    * The real surface that performs it, for operators and for tests that
    * assert this layer never names a surface that does not exist.
    */

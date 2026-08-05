@@ -18,6 +18,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   find: [
     {
       capabilityId: 'search.workspace',
+      requiredPermission: null,
       summary: 'Search everything in a workspace — conversations and their messages.',
       availability: 'available',
       surface: 'GET /api/workspaces/:workspaceId/search',
@@ -28,6 +29,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   ask: [
     {
       capabilityId: 'ai.generate',
+      requiredPermission: null,
       summary: 'Answer a question or write something using a configured AI provider.',
       // Honest: the deterministic local planner can plan an agent run with no
       // credentials, but answering a question genuinely requires a model.
@@ -40,6 +42,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   create: [
     {
       capabilityId: 'conversation.create',
+      requiredPermission: 'conversation:create',
       summary: 'Start a new conversation to work in.',
       availability: 'available',
       surface: 'POST /api/workspaces/:workspaceId/conversations',
@@ -47,6 +50,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'image.generate',
+      requiredPermission: null,
       summary: 'Generate an image from a description.',
       availability: 'needs-credentials',
       surface: 'POST /api/images/generate',
@@ -57,6 +61,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   automate: [
     {
       capabilityId: 'workflow.author',
+      requiredPermission: 'tool:manage',
       summary: 'Build a repeatable sequence of steps that Synora can run for you.',
       availability: 'available',
       surface: 'POST /api/workspaces/:workspaceId/workflows',
@@ -64,6 +69,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'workflow.schedule',
+      requiredPermission: 'tool:manage',
       summary: 'Run something automatically on a schedule.',
       availability: 'available',
       surface: 'POST /api/workspaces/:workspaceId/workflows/:workflowId/schedules',
@@ -74,6 +80,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   plan: [
     {
       capabilityId: 'agent.preview',
+      requiredPermission: null,
       summary: 'Show the plan an agent would follow, without running any of it.',
       // Works with zero credentials: the deterministic local planner produces
       // a real, honestly-labelled plan (`agents/local-runtime.ts`).
@@ -86,6 +93,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   decide: [
     {
       capabilityId: 'approvals.waiting',
+      requiredPermission: null,
       summary: 'Show everything that is waiting for your decision, and why.',
       availability: 'available',
       surface: 'GET /api/workspaces/:workspaceId/agents/runs/waiting',
@@ -96,6 +104,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   monitor: [
     {
       capabilityId: 'providers.metrics',
+      requiredPermission: null,
       summary: 'Show how AI provider calls have been going — successes, failures, refusals.',
       availability: 'available',
       surface: 'GET /api/ai/provider-metrics',
@@ -103,6 +112,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'activity.recent',
+      requiredPermission: 'audit:view',
       summary: 'Show what has recently happened in a workspace.',
       availability: 'available',
       surface: 'GET /api/workspaces/:workspaceId/activity',
@@ -113,6 +123,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   communicate: [
     {
       capabilityId: 'workspace.invite',
+      requiredPermission: 'member:invite',
       summary: 'Invite someone to a workspace.',
       // The mail transport defaults to console; a real invitation email
       // needs SMTP configured. Saying "available" would promise a message
@@ -126,6 +137,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   control: [
     {
       capabilityId: 'tool.execute',
+      requiredPermission: 'tool:execute',
       summary: 'Run a configured tool — which may contact a system outside Synora.',
       availability: 'available',
       // The one route here that acts outside Synora. Flagged so a command

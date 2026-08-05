@@ -2,7 +2,10 @@ import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { understandCommand } from '../command/understand';
+import { prepareCommand } from '../command/prepare';
+import { requireMembership } from '../services/checks';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
+import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
 import { searchLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
@@ -43,6 +46,40 @@ router.post(
     try {
       const { command } = understandRequestSchema.parse(req.body);
       return res.json(createApiResponse(understandCommand(command)));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/command/:workspaceId/prepare — "and am I allowed to do this,
+ * here?"
+ *
+ * Understanding is identity-free: the same sentence means the same thing to
+ * everyone. Whether a PARTICULAR person may act on it is a different
+ * question, answered here against their real workspace role.
+ *
+ * Still executes nothing. This is a courtesy answer so a person is not
+ * offered a button that will reject them — NOT a substitute for the
+ * authoritative check, which runs again inside whichever surface actually
+ * performs the work. Nothing here can grant anything: a `permitted: true`
+ * is re-verified at execution.
+ *
+ * `requireWorkspaceAccess()` first, so a non-member gets the platform's
+ * standard 404 (never 403) and learns nothing about whether the workspace
+ * exists — the same rule every other workspace-scoped route follows.
+ */
+router.post(
+  '/:workspaceId/prepare',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { command } = understandRequestSchema.parse(req.body);
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      return res.json(createApiResponse(prepareCommand(command, membership.role)));
     } catch (error) {
       return next(error);
     }

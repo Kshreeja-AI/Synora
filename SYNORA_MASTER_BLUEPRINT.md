@@ -282,10 +282,30 @@ booking) return `not-yet-capable` **naming the missing capability**, rather
 than "I don't understand". Synora understood perfectly and simply cannot do
 it, which is what the person needs to hear.
 
-**Not yet built** (slice 1 is understanding only): no execution binding, no
-voice or accessibility input path, no learned personalization, no
-multi-step decomposition, no UI. Those are later slices and must each
-preserve the four decisions above.
+**Slice 2 shipped: "and am I allowed to do this, here?"** `command/prepare.ts`
+plus `POST /api/command/:workspaceId/prepare`. Understanding is deliberately
+identity-free — the same sentence means the same thing to everyone — so
+whether a PARTICULAR person may act on it is answered separately, against
+their real workspace role. Two axes, kept independent because they fail for
+different reasons and neither can substitute for the other:
+
+- **Permission is about the person.** A VIEWER asking to invite someone is
+  refused, and told the missing permission BY NAME (`member:invite`) so they
+  can ask for the right thing rather than guess.
+- **Availability is about the deployment.** A workspace OWNER still cannot
+  generate an image with no provider configured. Reporting that as
+  actionable would send the most privileged person to a button that fails
+  for a reason no permission change can fix.
+
+`recommended` is null when nothing is both permitted and available — offering
+a capability someone cannot use is worse than saying there is nothing to
+offer. Still executes nothing, and the permission answer here is a courtesy
+so nobody is offered a button that will reject them, NOT a substitute for the
+authoritative check that runs again inside whichever surface does the work.
+
+**Not yet built**: no execution binding, no voice or accessibility input
+path, no learned personalization, no multi-step decomposition, no UI. Those
+are later slices and must each preserve the decisions above.
 
 ## 6. Standing engineering law (unchanged by any roadmap)
 
