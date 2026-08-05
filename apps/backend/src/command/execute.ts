@@ -88,6 +88,13 @@ export interface CommandExecutionResult {
   result?: unknown;
   /** True only when a real capability was invoked. Never true for a refusal. */
   executed: boolean;
+  /**
+   * Where the person can do this themselves, when Synora knows. Present on
+   * ANY outcome, not only refusals: a completed search is still worth being
+   * able to open properly, and a capability that needs a credential is
+   * still worth finding.
+   */
+  appPath?: string;
 }
 
 /**
@@ -219,7 +226,14 @@ export function messageFor(
     case 'not-implemented':
       return detail ?? 'Synora cannot do this yet.';
     case 'not-bound':
-      return 'Synora can do this, but not yet by being asked in plain language. It is available in the app itself.';
+      // Names the page when there is one. "Available in the app itself" is
+      // true and useless — it leaves a person who asked for help holding a
+      // refusal and no next step. Silent about the destination when the
+      // catalogue has none, because a wrong page costs a click, a wait, and
+      // the belief that Synora knows its own product.
+      return route?.appPath
+        ? `Synora can do this, but not yet by being asked in plain language. You can do it yourself on the ${route.appPath} page.`
+        : 'Synora can do this, but not yet by being asked in plain language. It is available in the app itself.';
     case 'waiting-approval':
       return 'I can do this, and it needs your approval first because it changes something outside Synora or affects other people.';
     case 'rejected':
@@ -403,5 +417,6 @@ export async function executeCommand(
     ...(state === 'completed' ? { result } : {}),
     // True ONLY when a real capability actually ran.
     executed: state === 'completed',
+    ...(route?.appPath ? { appPath: route.appPath } : {}),
   };
 }

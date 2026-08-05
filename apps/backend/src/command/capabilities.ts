@@ -18,6 +18,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   find: [
     {
       capabilityId: 'search.workspace',
+      appPath: '/search',
       riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Search everything in a workspace — conversations and their messages.',
@@ -30,6 +31,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   ask: [
     {
       capabilityId: 'ai.generate',
+      appPath: '/conversations',
       riskClass: 'reversible',
       requiredPermission: null,
       summary: 'Answer a question or write something using a configured AI provider.',
@@ -44,6 +46,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   create: [
     {
       capabilityId: 'conversation.create',
+      appPath: '/conversations',
       riskClass: 'reversible',
       requiredPermission: 'conversation:create',
       summary: 'Start a new conversation to work in.',
@@ -53,6 +56,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'image.generate',
+      appPath: '/studio',
       riskClass: 'reversible',
       requiredPermission: null,
       summary: 'Generate an image from a description.',
@@ -65,6 +69,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   automate: [
     {
       capabilityId: 'workflow.author',
+      appPath: '/workflows',
       riskClass: 'reversible',
       requiredPermission: 'tool:manage',
       summary: 'Build a repeatable sequence of steps that Synora can run for you.',
@@ -74,6 +79,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'workflow.schedule',
+      appPath: '/workflows',
       riskClass: 'reversible',
       requiredPermission: 'tool:manage',
       summary: 'Run something automatically on a schedule.',
@@ -86,6 +92,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   plan: [
     {
       capabilityId: 'agent.preview',
+      appPath: '/agents',
       riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Show the plan an agent would follow, without running any of it.',
@@ -100,6 +107,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   decide: [
     {
       capabilityId: 'approvals.waiting',
+      appPath: '/agents',
       riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Show everything that is waiting for your decision, and why.',
@@ -131,6 +139,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'activity.recent',
+      appPath: '/dashboard',
       riskClass: 'read-only',
       // CORRECTED from `audit:view`. The activity feed is deliberately
       // membership-only: it shows a curated ALLOWLIST of work events whose
@@ -167,6 +176,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   control: [
     {
       capabilityId: 'tool.execute',
+      appPath: '/dashboard/tools',
       riskClass: 'sensitive',
       requiredPermission: 'tool:execute',
       summary: 'Run a configured tool — which may contact a system outside Synora.',

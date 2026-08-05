@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { CommandOutcome, CommandState } from '@/lib/api/command';
 
 /**
@@ -90,6 +91,18 @@ export function CommandOutcomeCard({ outcome }: { outcome: CommandOutcome }) {
           ? 'This ran, and the result above is real.'
           : 'Nothing was done. Synora did not run anything for this.'}
       </p>
+
+      {/* A refusal with nowhere to go is a dead end. When Synora knows the
+          page, it is a link — offered on refusals, where it is the next
+          step, and NOT on a completed action, where it would invite
+          someone to go and redo work that just happened. */}
+      {outcome.appPath && !outcome.executed && (
+        <p className="text-sm">
+          <Link href={outcome.appPath} className="underline underline-offset-2">
+            Do this yourself in the app
+          </Link>
+        </p>
+      )}
 
       {outcome.executed && outcome.result !== undefined && (
         <details className="text-xs">

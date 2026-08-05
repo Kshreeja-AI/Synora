@@ -477,10 +477,43 @@ everyone would otherwise satisfy the main assertion by accident).
 because only those have an execution path a test can drive. The 7 unbound
 ones remain unverified.
 
+**Slice 9: why the remaining seven cannot be bound, and what to do about
+it.** This began as "bind the rest" and changed once the code was read:
+
+- `workflow.author` needs a full `steps` array — id, kind, description and
+  input per step. A sentence does not contain that.
+- `workflow.schedule` needs a workflowId; `agent.preview` needs an agentId.
+- `tool.execute` needs input matching each tool's own JSON schema. Entity
+  resolution would not fix this; the input is the blocker.
+- `ai.generate` and `image.generate` need credentials this deployment lacks.
+
+So all seven are unbindable for PRINCIPLED reasons. Forcing one would mean
+inventing structure the sentence never contained — which is the fabrication
+this codebase has spent weeks auditing out. The previous increment called
+the workflow pair "the most mechanical remaining"; that was wrong, and
+reading the schema is what corrected it.
+
+**What shipped instead is the consequence, addressed.** `not-bound` was an
+honest dead end: "Synora can do this, but not by being asked in plain
+language" is true and leaves a person who asked for help with nowhere to
+go. Every capability now names the page where they can do it themselves,
+and the refusal carries a link.
+
+**The destination is verified to exist.** A test walks the real Next app
+router on disk, strips route groups exactly as Next does, and asserts every
+claimed `appPath` is a page a person can open — confirmed to fail on a
+deliberately broken path. It reads the frontend from the backend's suite,
+which is deliberate: the claim is cross-boundary, and a check confined to
+the side that makes the claim could never detect it being wrong. `appPath`
+is null where no single page serves the capability, because a wrong
+destination costs a click, a wait, and the belief that Synora knows its own
+product.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound capabilities
 are search, conversation-create, provider-metrics, approvals-waiting and
-activity-recent; everything else honestly reports `not-bound`. The
+activity-recent; everything else honestly reports `not-bound` — and now
+says where to go. The
 approvals answer states what it counted (`agent runs and commands; not tool
 executions`) rather than implying it covers everything. Self-approval is
 permitted — the gate is a deliberate pause and a record, NOT four-eyes

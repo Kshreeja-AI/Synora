@@ -39,6 +39,8 @@ export interface CommandOutcome {
   message: string;
   result?: unknown;
   executed: boolean;
+  /** Where the person can do this themselves, when Synora knows. */
+  appPath?: string;
 }
 
 /** A decision that was not carried out, and why. */

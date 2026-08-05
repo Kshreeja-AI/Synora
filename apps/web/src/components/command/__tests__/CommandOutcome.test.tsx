@@ -85,6 +85,25 @@ describe('CommandOutcomeCard', () => {
     expect(screen.getByText(/This ran, and the result above is real/i)).toBeInTheDocument();
   });
 
+  it('offers a way forward on a refusal, and only on a refusal', () => {
+    const { unmount } = render(
+      <CommandOutcomeCard
+        outcome={outcome({ state: 'not-bound', executed: false, appPath: '/agents' })}
+      />,
+    );
+    // A refusal with nowhere to go is a dead end.
+    expect(screen.getByRole('link', { name: /do this yourself/i })).toHaveAttribute(
+      'href',
+      '/agents',
+    );
+    unmount();
+
+    render(<CommandOutcomeCard outcome={outcome({ appPath: '/search' })} />);
+    // Not after something ran: that would invite someone to go redo work
+    // that just happened.
+    expect(screen.queryByRole('link', { name: /do this yourself/i })).not.toBeInTheDocument();
+  });
+
   it('states no verdict about whether an outcome was good', () => {
     render(<CommandOutcomeCard outcome={outcome({ state: 'failed', executed: false })} />);
     const text = screen.getByTestId('command-outcome').textContent ?? '';

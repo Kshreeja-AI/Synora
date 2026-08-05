@@ -98,6 +98,19 @@ export interface CommandRoute {
    */
   hint?: RegExp;
   /**
+   * Where in the app a person can do this themselves.
+   *
+   * Exists because `not-bound` was an honest dead end: "Synora can do this,
+   * but not by being asked in plain language" is true and leaves the person
+   * with nowhere to go. Naming the page turns a refusal into a next step.
+   *
+   * A UI path, deliberately NOT `surface` — that is an API route, which is
+   * meaningless to a person. Null where no single page serves the
+   * capability, because a wrong destination is worse than none: it costs a
+   * click, a wait, and the trust that Synora knows its own product.
+   */
+  appPath?: string;
+  /**
    * The real surface that performs it, for operators and for tests that
    * assert this layer never names a surface that does not exist.
    */

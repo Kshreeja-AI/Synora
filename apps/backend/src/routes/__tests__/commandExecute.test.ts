@@ -194,7 +194,11 @@ describe('POST /api/command/:workspaceId/execute', () => {
       // queue, which is now bound — the distinction is what is under test,
       // not the particular capability that illustrates it.)
       expect(notBound.body.data.state).toBe('not-bound');
-      expect(notBound.body.data.message).toMatch(/available in the app itself/i);
+      // And it says WHERE. A refusal with nowhere to go is a dead end, so
+      // the message names the page and the response carries it as a field
+      // the UI can turn into a link.
+      expect(notBound.body.data.message).toMatch(/you can do it yourself on the \/agents page/i);
+      expect(notBound.body.data.appPath).toBe('/agents');
     });
 
     it('records refusals too, not only successes', async () => {
