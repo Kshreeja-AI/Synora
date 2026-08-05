@@ -187,9 +187,13 @@ facts that change how the rest of this blueprint should be read:
    own planner + tool runner, which is orchestration-level tool use, not
    provider-native function calling.
 3. **The embeddings stack is the standard the text stack should meet.**
-   `embeddings/` has retry, circuit breaker, rate limiter, metrics, tracing,
-   cache, usage and security modules. The text path has none of them.
-   Transplanting the proven in-repo pattern is the top resilience item.
+   ~~The text path has none of them.~~ CLOSED same day: retry + circuit
+   breaker moved to shared `src/resilience/` (embeddings files re-export;
+   one definition, two consumers) plus a new timeout module; every
+   `generateText()` call now runs under timeout → retry → per-provider
+   breaker. Remaining from the embeddings standard: rate limiter,
+   metrics, tracing, cache — and true request cancellation (the timeout
+   bounds waiting, not the underlying HTTP call).
 
 Closed by that audit: **credential verification** — `verifyCredential()` on
 the descriptor contract answers "is this key actually accepted", separate

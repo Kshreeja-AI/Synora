@@ -1,4 +1,5 @@
 import { resolveTextGenerationProvider } from './resolver';
+import { generateWithResilience } from './textResilience';
 import { TextGenerationRequest, TextGenerationResult } from './types';
 
 export type {
@@ -53,5 +54,8 @@ export {
  */
 export async function generateText(request: TextGenerationRequest): Promise<TextGenerationResult> {
   const provider = await resolveTextGenerationProvider();
-  return provider.generateText(request);
+  // Timeout, retry-with-backoff and per-provider circuit breaking — the
+  // same resilience rules the embeddings stack has always had, applied
+  // from one shared module so the two stacks can never drift apart.
+  return generateWithResilience(provider, request);
 }
