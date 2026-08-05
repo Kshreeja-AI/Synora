@@ -14,6 +14,7 @@ import { WaitingForYou } from '../WaitingForYou';
 import * as agentsApi from '@/lib/api/agents';
 import * as toolsApi from '@/lib/api/tools';
 import * as invitationsApi from '@/lib/api/invitations';
+import * as commandApi from '@/lib/api/command';
 
 vi.mock('@/lib/api/agents', async () => {
   const actual = await vi.importActual<typeof agentsApi>('@/lib/api/agents');
@@ -28,6 +29,11 @@ vi.mock('@/lib/api/tools', async () => {
 vi.mock('@/lib/api/invitations', async () => {
   const actual = await vi.importActual<typeof invitationsApi>('@/lib/api/invitations');
   return { ...actual, useMyInvitations: vi.fn() };
+});
+
+vi.mock('@/lib/api/command', async () => {
+  const actual = await vi.importActual<typeof commandApi>('@/lib/api/command');
+  return { ...actual, useCommandExecutions: vi.fn() };
 });
 
 vi.mock('@/hooks/useWaitingElsewhere', () => ({ useWaitingElsewhere: vi.fn() }));
@@ -82,6 +88,9 @@ beforeEach(() => {
   vi.mocked(invitationsApi.useMyInvitations).mockReturnValue({
     data: { emailVerified: true, invitations: [] },
   } as never);
+  vi.mocked(commandApi.useCommandExecutions).mockReturnValue({
+    data: { items: [], total: 0 },
+  } as never);
   vi.mocked(useWaitingElsewhere).mockReturnValue({ data: [] } as never);
 });
 
@@ -93,6 +102,41 @@ describe('WaitingForYou', () => {
     // WHO asked is part of the decision's context: approving unblocks a
     // specific colleague, not an anonymous id.
     expect(screen.getByText(/Requested by Asha/)).toBeInTheDocument();
+  });
+
+  it('surfaces a command stopped at the approval gate, and sends the decision elsewhere', () => {
+    vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [], isLoading: false } as never);
+    vi.mocked(commandApi.useCommandExecutions).mockReturnValue({
+      data: {
+        items: [
+          {
+            id: 'exec_1',
+            commandText: 'Run the deployment tool',
+            capabilityId: 'tool.execute',
+            riskClass: 'sensitive',
+            state: 'waiting-approval',
+            approvalState: 'pending',
+            approvalExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            requestedBy: 'u1',
+            createdAt: new Date().toISOString(),
+            message: null,
+          },
+        ],
+        total: 1,
+      },
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText('Run the deployment tool')).toBeInTheDocument();
+    expect(screen.getByText(/Nothing has run/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Run the deployment tool' })).toHaveAttribute(
+      'href',
+      '/command',
+    );
+    // The decision itself is deliberately NOT offered here. Approving from
+    // a summary card would be a yes given without the sentence, the risk
+    // and the deadline in view — the same rule the tool approvals follow.
+    expect(screen.queryByRole('button', { name: /approve/i })).not.toBeInTheDocument();
   });
 
   it('shows only runs that are actually blocked on a person', () => {

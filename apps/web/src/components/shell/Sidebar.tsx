@@ -19,6 +19,7 @@ import {
   LayoutGrid,
   Plug,
   FileText,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
@@ -35,6 +36,10 @@ export interface SidebarProps {
 // /dashboard child. Both trees render inside the same AppShell.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  // Directly under Dashboard: asking for an outcome in a sentence is meant
+  // to be the way in for someone who does not yet know which of the
+  // surfaces below they need.
+  { href: '/command', label: 'Ask Synora', icon: Sparkles },
   { href: '/conversations', label: 'Conversations', icon: MessageSquare },
   { href: '/search', label: 'Search', icon: Search },
   { href: '/studio', label: 'Studio', icon: Wand2 },

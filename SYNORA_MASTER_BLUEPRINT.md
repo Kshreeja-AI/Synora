@@ -384,12 +384,48 @@ runs" leg shares one code path (`runBound`) with direct execution, which
 slice 3 proves against a real database row. It is not separately proven
 end-to-end and will not be until a sensitive capability is bound.
 
+**Slice 5 shipped: a person can actually reach it.** `/command` ("Ask
+Synora"), `lib/api/command.ts`, `CommandOutcomeCard`, `PendingApprovals`, a
+sidebar entry directly under Dashboard, and a row in `WaitingForYou`.
+Slices 1–4 built a complete engine with no steering wheel; the approval
+gate in particular was a state the system could enter and no person could
+leave.
+
+**The nine states are never collapsed in the UI either.** The backend went
+to real trouble keeping "not connected", "not allowed", "nobody wired it
+up", "a person must approve" and "it broke" apart. A green tick and a red
+cross would throw all of it away at the very last step, leaving the person
+back where they started — guessing whether anything happened. A test
+renders all nine states and asserts nine DISTINCT headings; another asserts
+every non-completed state says plainly that nothing was done.
+
+**Server wording, rendered verbatim.** The server is the only thing that
+knows why it refused. A second wording of the same rule in the client is a
+second thing to keep in sync, and it eventually disagrees in front of a
+user.
+
+**Consequences before the click, and the decision where its context lives.**
+Each pending row states the plain-language risk, what it would use, and the
+deadline BEFORE either button is reachable — not in a confirmation dialog
+afterwards. `WaitingForYou` says a command is waiting and links to
+`/command`; it deliberately offers no yes/no, because approving from a
+summary card is a yes given without the sentence, the risk or the deadline
+in view. Same rule the tool-approval flow already follows.
+
+**No preview before running.** Read-only and reversible commands simply run.
+Asking "are you sure?" before a search is how people learn to click through
+prompts unread, and the prompt that finally matters gets the same reflex.
+
+**Examples are drawn from capabilities that are actually bound.** A hint
+suggesting "email the team a summary" would teach a capability that does
+not exist and be discovered as a lie on first use.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no multi-step decomposition, no UI, no undo. Bound
-capabilities so far are search, conversation-create and provider-metrics;
-everything else honestly reports `not-bound`. Self-approval is permitted —
-the gate is a deliberate pause and a record, NOT four-eyes separation of
-duties, and requiring a second person would break single-owner workspaces.
+personalization, no multi-step decomposition, no undo. Bound capabilities
+so far are search, conversation-create and provider-metrics; everything
+else honestly reports `not-bound`. Self-approval is permitted — the gate is
+a deliberate pause and a record, NOT four-eyes separation of duties, and
+requiring a second person would break single-owner workspaces.
 
 ## 6. Standing engineering law (unchanged by any roadmap)
 

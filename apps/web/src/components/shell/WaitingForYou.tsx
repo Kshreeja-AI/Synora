@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { PauseCircle } from 'lucide-react';
 import { useAgentRuns } from '@/lib/api/agents';
 import { useWorkspacePendingExecutions } from '@/lib/api/tools';
+import { useCommandExecutions } from '@/lib/api/command';
 import { useMyInvitations } from '@/lib/api/invitations';
 import { useWaitingElsewhere } from '@/hooks/useWaitingElsewhere';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -35,6 +36,17 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
   const { data: pendingExecutions = [] } = useWorkspacePendingExecutions(workspaceId, {
     enabled: !!workspaceId,
   });
+  // A command stopped at the approval gate is the same kind of fact as a
+  // paused run: the work has halted and will not move until a person
+  // decides. Same rule as the tool executions below — this says WHAT is
+  // waiting and links to where the decision is made, because approving
+  // from a summary card would be a yes given without the sentence, the
+  // risk, or the deadline in front of you.
+  const { data: pendingCommands } = useCommandExecutions(workspaceId, {
+    pendingOnly: true,
+    enabled: !!workspaceId,
+  });
+  const commands = pendingCommands?.items ?? [];
   // Invitations are addressed to the PERSON, not to a workspace, so this
   // one list is account-scoped while everything else here is
   // workspace-scoped. A decision waiting on you follows you.
@@ -51,7 +63,10 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
 
   const waiting = runs.filter((run) => run.state === 'awaiting_approval');
   const nothingWaiting =
-    waiting.length === 0 && pendingExecutions.length === 0 && invitations.length === 0;
+    waiting.length === 0 &&
+    pendingExecutions.length === 0 &&
+    invitations.length === 0 &&
+    commands.length === 0;
 
   return (
     <section className="space-y-3 rounded-md border p-4" aria-labelledby="waiting-heading">
@@ -105,6 +120,23 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               <p className="mt-1 text-xs text-muted-foreground">
                 Requested by {execution.user?.name ?? execution.user?.email ?? 'someone'} ·{' '}
                 {new Date(execution.createdAt).toLocaleString()}
+              </p>
+            </li>
+          ))}
+          {commands.map((command) => (
+            <li key={command.id} className="rounded-md border p-3 text-sm">
+              <Link href="/command" className="font-medium hover:underline">
+                {command.commandText}
+              </Link>
+              <p className="mt-1 text-xs text-muted-foreground">
+                You asked for this and it stopped for your approval. Nothing has run. Decide it on
+                the Ask Synora page, where what it would do is shown in full.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Asked on {new Date(command.createdAt).toLocaleString()}
+                {command.approvalExpiresAt
+                  ? ` · answerable until ${new Date(command.approvalExpiresAt).toLocaleString()}`
+                  : ''}
               </p>
             </li>
           ))}
