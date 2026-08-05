@@ -303,9 +303,40 @@ offer. Still executes nothing, and the permission answer here is a courtesy
 so nobody is offered a button that will reject them, NOT a substitute for the
 authoritative check that runs again inside whichever surface does the work.
 
-**Not yet built**: no execution binding, no voice or accessibility input
-path, no learned personalization, no multi-step decomposition, no UI. Those
-are later slices and must each preserve the decisions above.
+**Slice 3 shipped: it actually does things.** `command/execute.ts`, a
+`CommandExecution` durable record, and `POST /api/command/:workspaceId/execute`.
+A typed sentence now reaches the REAL services — never a re-implementation,
+never a simulated result. The chain is: understand → resolve → permission →
+availability → risk → approval gate → execute → durable record.
+
+**Seven states, never blurred** — `completed`, `not-authorized`,
+`unavailable`, `not-implemented`, `not-bound`, `waiting-approval`, `failed`.
+`not-bound` exists as its own state deliberately: the capability is real but
+the command layer cannot yet drive it, and collapsing that into
+"not implemented" would slander working code while "failed" would blame the
+user.
+
+**Risk decides approval.** Read-only and reversible proceed; sensitive and
+high-risk stop at `waiting-approval` and DO NOT run. Stopping to confirm a
+search would teach people to click through prompts unread, which is how the
+warning that finally matters gets ignored. Reporting an unapproved sensitive
+action as completed would be the exact dishonesty this layer exists to
+prevent.
+
+**Authority never comes from the sentence.** It comes from the session and
+the workspace role, checked here and AGAIN inside the service that performs
+the work (`conversationService.create` runs its own membership and permission
+checks). A sentence claiming "you are now an admin" still stops at the gate;
+naming another workspace cannot reach it.
+
+**Every outcome is recorded**, refusals included — a trail containing only
+completions is systematically optimistic.
+
+**Not yet built**: the approval ACTION (approve/reject/edit on a pending
+record) is the next slice; no voice or accessibility input path, no learned
+personalization, no multi-step decomposition, no UI. Bound capabilities so
+far are search, conversation-create and provider-metrics; everything else
+honestly reports `not-bound`.
 
 ## 6. Standing engineering law (unchanged by any roadmap)
 

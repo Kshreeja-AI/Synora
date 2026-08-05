@@ -73,6 +73,16 @@ export interface CommandRoute {
    */
   requiredPermission: string | null;
   /**
+   * How much is at stake if this runs. Drives whether a person must
+   * approve first — see `RISK_POLICY` in `./execute.ts`.
+   *
+   * `read-only`  — informational; changes nothing.
+   * `reversible` — changes something Synora can undo or that is additive.
+   * `sensitive`  — leaves Synora, spends money, or changes who can do what.
+   * `high-risk`  — never runs without the strongest approval available.
+   */
+  riskClass: 'read-only' | 'reversible' | 'sensitive' | 'high-risk';
+  /**
    * The real surface that performs it, for operators and for tests that
    * assert this layer never names a surface that does not exist.
    */

@@ -18,6 +18,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   find: [
     {
       capabilityId: 'search.workspace',
+      riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Search everything in a workspace — conversations and their messages.',
       availability: 'available',
@@ -29,6 +30,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   ask: [
     {
       capabilityId: 'ai.generate',
+      riskClass: 'reversible',
       requiredPermission: null,
       summary: 'Answer a question or write something using a configured AI provider.',
       // Honest: the deterministic local planner can plan an agent run with no
@@ -42,6 +44,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   create: [
     {
       capabilityId: 'conversation.create',
+      riskClass: 'reversible',
       requiredPermission: 'conversation:create',
       summary: 'Start a new conversation to work in.',
       availability: 'available',
@@ -50,6 +53,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'image.generate',
+      riskClass: 'reversible',
       requiredPermission: null,
       summary: 'Generate an image from a description.',
       availability: 'needs-credentials',
@@ -61,6 +65,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   automate: [
     {
       capabilityId: 'workflow.author',
+      riskClass: 'reversible',
       requiredPermission: 'tool:manage',
       summary: 'Build a repeatable sequence of steps that Synora can run for you.',
       availability: 'available',
@@ -69,6 +74,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'workflow.schedule',
+      riskClass: 'reversible',
       requiredPermission: 'tool:manage',
       summary: 'Run something automatically on a schedule.',
       availability: 'available',
@@ -80,6 +86,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   plan: [
     {
       capabilityId: 'agent.preview',
+      riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Show the plan an agent would follow, without running any of it.',
       // Works with zero credentials: the deterministic local planner produces
@@ -93,6 +100,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   decide: [
     {
       capabilityId: 'approvals.waiting',
+      riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Show everything that is waiting for your decision, and why.',
       availability: 'available',
@@ -104,6 +112,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   monitor: [
     {
       capabilityId: 'providers.metrics',
+      riskClass: 'read-only',
       requiredPermission: null,
       summary: 'Show how AI provider calls have been going — successes, failures, refusals.',
       availability: 'available',
@@ -112,6 +121,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     },
     {
       capabilityId: 'activity.recent',
+      riskClass: 'read-only',
       requiredPermission: 'audit:view',
       summary: 'Show what has recently happened in a workspace.',
       availability: 'available',
@@ -123,6 +133,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   communicate: [
     {
       capabilityId: 'workspace.invite',
+      riskClass: 'sensitive',
       requiredPermission: 'member:invite',
       summary: 'Invite someone to a workspace.',
       // The mail transport defaults to console; a real invitation email
@@ -137,6 +148,7 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
   control: [
     {
       capabilityId: 'tool.execute',
+      riskClass: 'sensitive',
       requiredPermission: 'tool:execute',
       summary: 'Run a configured tool — which may contact a system outside Synora.',
       availability: 'available',

@@ -118,6 +118,7 @@ model User {
   mfaMethods     MFAMethod[]
   mfaChallenges  MFAChallengeToken[]
   mfaSetupTokens MFASetupToken[]
+  commandExecutions CommandExecution[]
 
   // Timestamps
   createdAt     DateTime    @default(now())
@@ -222,6 +223,7 @@ model Workspace {
   folders       Folder[]
   assets        Asset[]
   auditLogs     AuditLog[]
+  commandExecutions CommandExecution[]
   visits        WorkspaceVisit[]
 
   // Billing relations (M6)
@@ -3645,3 +3647,59 @@ model FeedbackAnalytics {
 
 // Add feedback relations to Message model
 // (Already done in Message model above)
+
+/// A durable record of one command passing through the Universal Command
+/// Layer: what was asked, what Synora resolved it to, whether the person was
+/// allowed, how risky it was, whether approval was needed, and what happened.
+///
+/// Written for EVERY outcome — refused, unauthorized, unavailable and
+/// completed alike. A record written only on success would make the audit
+/// trail systematically optimistic, and the refusals are exactly what an
+/// operator investigating an incident needs to see.
+///
+/// Deliberately stores NO secrets and no raw credentials. `commandText` is
+/// the person's own sentence; `resultSummary` is a short human description,
+/// never a full payload.
+model CommandExecution {
+  id             String   @id @default(cuid())
+
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The person's original sentence, stored verbatim so an investigation can
+  /// see what was actually typed rather than Synora's paraphrase of it.
+  commandText    String
+  /// Normalized intent from the deterministic understander, e.g. "find".
+  intent         String
+  /// Resolved capability id, e.g. "search.workspace". Null when nothing matched.
+  capabilityId   String?
+
+  /// read-only | reversible | sensitive | high-risk
+  riskClass      String
+  /// Whether the caller's role permitted the resolved capability.
+  permitted      Boolean
+  /// Whether this deployment can actually run it (credentials present).
+  available      Boolean
+  approvalRequired Boolean  @default(false)
+  /// none | pending | approved | rejected
+  approvalState  String   @default("none")
+  approvedBy     String?
+  approvedAt     DateTime?
+
+  /// completed | not-authorized | unavailable | not-implemented | not-bound |
+  /// waiting-approval | failed
+  state          String
+  /// Short human-readable outcome. Never a raw payload or stack trace.
+  resultSummary  String?
+  /// Human-language reason a command did not complete, for the person to act on.
+  failureReason  String?
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([state])
+}

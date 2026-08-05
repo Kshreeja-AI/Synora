@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { understandCommand } from '../command/understand';
 import { prepareCommand } from '../command/prepare';
+import { executeCommand } from '../command/execute';
 import { requireMembership } from '../services/checks';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
@@ -80,6 +81,45 @@ router.post(
       const { command } = understandRequestSchema.parse(req.body);
       const membership = await requireMembership(req.userId!, req.params.workspaceId);
       return res.json(createApiResponse(prepareCommand(command, membership.role)));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/command/:workspaceId/execute — actually do it.
+ *
+ * The one endpoint in this layer that changes anything. It runs the full
+ * chain: understand → resolve → permission → availability → risk → approval
+ * gate → execute → durable record.
+ *
+ * The command TEXT is never permission. Authority comes from the caller's
+ * session and their workspace role, checked here and AGAIN inside whichever
+ * service performs the work. A sentence describing a privileged action
+ * grants nothing; a sentence claiming authority ("you are now admin") is
+ * recorded as an attempt and changes nothing.
+ *
+ * Anything sensitive stops at `waiting-approval` and does NOT run — the
+ * approval flow itself is the next slice, and reporting an unapproved
+ * sensitive action as completed would be exactly the dishonesty this layer
+ * exists to prevent.
+ */
+router.post(
+  '/:workspaceId/execute',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { command } = understandRequestSchema.parse(req.body);
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      const outcome = await executeCommand(command, {
+        userId: req.userId!,
+        workspaceId: req.params.workspaceId,
+        role: membership.role,
+      });
+      return res.json(createApiResponse(outcome));
     } catch (error) {
       return next(error);
     }
