@@ -447,6 +447,36 @@ claiming phrasings within their intent. Hints only PROMOTE: a sentence no
 hint claims still resolves in catalogue order, so adding one can never make
 a capability unreachable. Both properties are test-pinned.
 
+**Slice 7: the declaration is now checked against reality, not against
+itself.** Slice 6 fixed one wrong `requiredPermission` BY HAND and left the
+same class of defect possible everywhere else — so this closes it.
+
+**The circularity that hid it for four slices**: the command layer derives
+its permission answer FROM the declaration. Asking the layer whether the
+declaration is correct is asking it to agree with itself, and it always
+will, however wrong the declaration is. Every test that touched
+`activity.recent` did exactly that.
+
+So the check probes the REAL services directly as a VIEWER — the least
+privileged role — and compares what actually happens against what the
+catalogue claims: declared `null` means a VIEWER must succeed; declared `P`
+means a VIEWER must be refused. The probe table is a deliberate SECOND,
+INDEPENDENT derivation of which service backs which capability. That looks
+like duplication and is the opposite: a check that shares its source with
+the thing it checks cannot detect that source being wrong. Two derivations
+that must agree is the whole mechanism — the reason double-entry
+bookkeeping has two columns.
+
+Confirmed to fail on the real historical bug before the fix was restored.
+Two vacuity guards, because this codebase's own lesson is that a green test
+can prove the opposite of its claim: every bound capability must HAVE a
+probe, and the probes must succeed for an OWNER (a probe that refused
+everyone would otherwise satisfy the main assertion by accident).
+
+**Scope stated, not implied**: only the 5 bound capabilities are probed,
+because only those have an execution path a test can drive. The 7 unbound
+ones remain unverified.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound capabilities
 are search, conversation-create, provider-metrics, approvals-waiting and
