@@ -332,6 +332,85 @@ describe('agent routes', () => {
     expect(single.body.data.task).toBe('generate one');
   });
 
+  it('previews a plan without creating any run at all', async () => {
+    const owner = await register('agent-preview');
+    const ws = await createWorkspace(owner.cookie, 'Preview Co');
+    const agent = (await makeAgent(owner.cookie, ws.id, { approvalPolicy: 'everything' })).body
+      .data;
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate a summary of the quarter' });
+
+    expect(res.status).toBe(200);
+    // Literal, not inferred: the report SAYS nothing executed…
+    expect(res.body.data.executed).toBe(false);
+    expect(res.body.data.steps.length).toBeGreaterThan(0);
+    // …and provenance is never collapsed: with no provider configured the
+    // plan is the deterministic local planner's, labeled as exactly that.
+    expect(res.body.data.planOrigin).toBe('local-deterministic');
+    expect(res.body.data.runtime.mode).toBe('local');
+    expect(res.body.data.runtime.notice).toMatch(/^LOCAL:/);
+    expect(res.body.data.caveats.join(' ')).toMatch(/no run record exists/);
+
+    // The whole point of the feature: the run list is untouched.
+    const runs = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs`)
+      .set('Cookie', owner.cookie);
+    expect(runs.body.data).toEqual([]);
+  });
+
+  it('reports an exhausted budget as a blocker instead of refusing the preview', async () => {
+    const owner = await register('agent-preview-broke');
+    const ws = await createWorkspace(owner.cookie, 'Broke Preview Co');
+    const agent = (await makeAgent(owner.cookie, ws.id)).body.data;
+    await prisma.workspaceCredits.create({ data: { workspaceId: ws.id, balance: 0 } });
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate anything' });
+
+    // Starting a run with this balance is refused with a 400. The preview
+    // is a read and costs the workspace nothing to see — someone out of
+    // credits needs this information most, so the empty budget arrives as
+    // a stated blocker, not as a closed door.
+    expect(res.status).toBe(200);
+    expect(res.body.data.wouldStart).toBe(false);
+    expect(res.body.data.blockers.join(' ')).toMatch(/balance/i);
+  });
+
+  it('refuses to preview on an archived agent', async () => {
+    const owner = await register('agent-preview-archived');
+    const ws = await createWorkspace(owner.cookie, 'Archived Preview Co');
+    const agent = (await makeAgent(owner.cookie, ws.id)).body.data;
+    await request(app)
+      .delete(`/api/workspaces/${ws.id}/agents/${agent.id}`)
+      .set('Cookie', owner.cookie);
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate anything' });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('hides the preview from someone outside the workspace', async () => {
+    const owner = await register('agent-preview-owner');
+    const stranger = await register('agent-preview-stranger');
+    const ws = await createWorkspace(owner.cookie, 'Private Preview Co');
+    const agent = (await makeAgent(owner.cookie, ws.id)).body.data;
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs/preview`)
+      .set('Cookie', stranger.cookie)
+      .send({ task: 'generate anything' });
+
+    expect([403, 404]).toContain(res.status);
+  });
+
   it('resolves WHO asked for a run to a person on the read surfaces', async () => {
     const owner = await register('agent-who');
     const ws = await createWorkspace(owner.cookie, 'Who Co');

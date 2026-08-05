@@ -103,7 +103,20 @@ any part of it becomes real.
    class → permission check → preview → approval → execution →
    verification → result → audit, as one pipeline. Foundations exist
    (agent engine's plan/approve/execute, EOS proposals, tool permission
-   layer); the unifying surface does not.
+   layer). Slice 1 shipped 2026-08-05: **agent-run plan preview** —
+   POST `/agents/:agentId/runs/preview` plans through the SAME planner,
+   validation and per-step preflight a real run uses, then stops; no run
+   record is created. The per-step checks were factored into
+   `agents/step-checks.ts`, SHARED with the workflow dry run — one
+   checker, so the two previews can never disagree. The report states
+   provenance (plan origin + runtime mode/notice), which steps would
+   pause for a person, what would fail, what is unknowable, and — for
+   model planners — that starting the run plans again and may differ.
+   Budget exhaustion is reported as a blocker, never used to refuse the
+   preview. UI: "Preview plan" beside Run on the agents page, rendering
+   the report through the same RuntimeNotice provenance component every
+   run uses. Still missing: the single unifying surface across agent
+   runs / workflows / tools, and risk-classification language.
 3. **Human Decision Center, full form** — partially advanced 2026-08-05:
    the home page's waiting surface now covers three item kinds — paused
    runs, tool executions stopped on `requiresApproval` (workspace-scoped,

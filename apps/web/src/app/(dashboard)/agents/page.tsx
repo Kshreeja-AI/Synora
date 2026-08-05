@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Archive, Bookmark, Bot, FolderKanban, Loader2, Pencil, Play, Plus } from 'lucide-react';
+import { Archive, Bookmark, Bot, Eye, FolderKanban, Loader2, Pencil, Play, Plus } from 'lucide-react';
 import { Button, EmptyState, Spinner } from '@synora/design-system';
 import { toast } from 'sonner';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
@@ -11,10 +11,13 @@ import {
   useAgentRuns,
   useAgents,
   useArchiveAgent,
+  usePreviewPlan,
   useStartRun,
   type Agent,
+  type PlanPreviewReport,
   type RunRuntime,
 } from '@/lib/api/agents';
+import { PlanPreviewPanel } from '@/components/agents/PlanPreviewPanel';
 import { TemplateGallery } from '@/components/agents/TemplateGallery';
 import { useSaveAsTemplate } from '@/lib/api/agentTemplates';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
@@ -52,6 +55,8 @@ export default function AgentsPage() {
     enabled: !!workspaceId,
   });
   const startRun = useStartRun(workspaceId);
+  const previewPlan = usePreviewPlan(workspaceId);
+  const [preview, setPreview] = useState<PlanPreviewReport | null>(null);
   const archive = useArchiveAgent(workspaceId);
   const saveAsTemplate = useSaveAsTemplate(workspaceId);
 
@@ -66,7 +71,21 @@ export default function AgentsPage() {
           setLastRuntime(result.runtime);
           setOpenRunId(result.run.id);
           setTask('');
+          // The previewed plan belongs to the task that just started; a
+          // stale preview beside a live run would read as its status.
+          setPreview(null);
         },
+        onError: (err) => toast.error(err.message),
+      },
+    );
+  }
+
+  function previewNow() {
+    if (!selectedAgent || !task.trim()) return;
+    previewPlan.mutate(
+      { agentId: selectedAgent.id, task: task.trim() },
+      {
+        onSuccess: setPreview,
         onError: (err) => toast.error(err.message),
       },
     );
@@ -246,6 +265,20 @@ export default function AgentsPage() {
                         )}
                         Run
                       </Button>
+                      {/* Offered, never demanded: previewing costs one
+                          planning call and commits to nothing. */}
+                      <Button
+                        variant="outline"
+                        onClick={previewNow}
+                        disabled={previewPlan.isPending || !task.trim()}
+                      >
+                        {previewPlan.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Eye className="mr-2 h-4 w-4" />
+                        )}
+                        Preview plan
+                      </Button>
                       {projects.length > 0 && (
                         // What happened lives in the project it served, the
                         // same way a filed conversation or document does —
@@ -271,6 +304,8 @@ export default function AgentsPage() {
                       )}
                     </div>
                   </div>
+
+                  {preview && <PlanPreviewPanel report={preview} />}
 
                   {lastRuntime && <RuntimeNotice runtime={lastRuntime} />}
                 </section>

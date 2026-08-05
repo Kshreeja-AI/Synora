@@ -23,6 +23,7 @@ import {
   startRun,
 } from '../agents/run-engine';
 import { resolveAgentRuntime, resolveAnyDefinition } from '../agents/runtime';
+import { previewAgentPlan } from '../agents/plan-preview';
 import { canRecall, canRecord, recallForTask, recordRunOutcome, withRecalledContext } from '../agents/memory';
 import { assertRunBudget, BudgetExceededError, meterRun } from '../agents/metering';
 import { TERMINAL_RUN_STATES } from '../agents/types';
@@ -350,6 +351,42 @@ router.delete('/:workspaceId/agents/:agentId', async (req: AuthRequest, res, nex
     res.json(createApiResponse(archived));
   } catch (error) {
     next(toHttpError(error));
+  }
+});
+
+// --- Runs: previewing the plan without starting anything ------------------
+//
+// The first stage of the command pipeline as its own read: the SAME
+// planner, validation and per-step preflight a real run would use, and
+// then a full stop. No run record is created and nothing executes. The
+// runtime mode and notice ride along so the UI can label a local plan as
+// local and a model plan as a model's — provenance is never collapsed.
+
+router.post('/:workspaceId/agents/:agentId/runs/preview', async (req: AuthRequest, res, next) => {
+  try {
+    const { task } = z.object({ task: z.string().min(1).max(4000) }).parse(req.body);
+    const agent = getAgent(req.params.agentId, req.params.workspaceId);
+    if (!agent) return next(new NotFoundException('Agent'));
+
+    const runtime = await resolveAgentRuntime(req.userId!);
+    const report = await previewAgentPlan(
+      {
+        agent,
+        workspaceId: req.params.workspaceId,
+        requestedBy: req.userId!,
+        task,
+      },
+      runtime.deps,
+    );
+
+    res.json(
+      createApiResponse({
+        ...report,
+        runtime: { mode: runtime.mode, notice: runtime.notice },
+      }),
+    );
+  } catch (error) {
+    next(error);
   }
 });
 

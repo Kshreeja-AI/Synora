@@ -151,6 +151,45 @@ export interface RunWithRuntime {
   runtime: RunRuntime;
 }
 
+export interface PlanPreviewStepCheck {
+  stepId: string;
+  kind: 'tool' | 'generate';
+  description: string;
+  toolId?: string;
+  pausesForApproval: boolean;
+  treatedAsMutating: boolean;
+  unresolvedReferences: string[];
+  problems: string[];
+  unknowns: string[];
+}
+
+/**
+ * "Plan first, run second": the same planner, validation and per-step
+ * preflight a real run would use — then a full stop. `executed` is
+ * literally false: no run record exists and nothing ran.
+ */
+export interface PlanPreviewReport {
+  agentId: string;
+  agentName: string;
+  agentVersion: number;
+  task: string;
+  executed: false;
+  planOrigin: 'model' | 'local-deterministic' | 'authored';
+  wouldStart: boolean;
+  blockers: string[];
+  steps: PlanPreviewStepCheck[];
+  projected: {
+    steps: number;
+    toolCalls: number;
+    approvalPauses: number;
+    maxSteps: number;
+    maxToolCalls: number;
+    maxDurationMs: number;
+  };
+  caveats: string[];
+  runtime: RunRuntime;
+}
+
 export interface CreateAgentInput {
   name: string;
   description?: string;
@@ -310,6 +349,23 @@ export function useStartRun(
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [RUNS_KEY, workspaceId] });
     },
+  });
+}
+
+/**
+ * Preview without commitment. Deliberately NOT invalidating the runs
+ * query: a preview creates no run, so there is nothing to refresh — an
+ * invalidation here would imply otherwise.
+ */
+export function usePreviewPlan(
+  workspaceId: string,
+): UseMutationResult<PlanPreviewReport, Error, { agentId: string; task: string }> {
+  return useMutation({
+    mutationFn: ({ agentId, task }) =>
+      api.post<PlanPreviewReport>(
+        `/api/workspaces/${workspaceId}/agents/${agentId}/runs/preview`,
+        { task },
+      ),
   });
 }
 

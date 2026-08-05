@@ -44,6 +44,7 @@ vi.mock('@/lib/api/agents', async () => {
     useAgents: vi.fn(),
     useAgentRuns: vi.fn(),
     useStartRun: vi.fn(),
+    usePreviewPlan: vi.fn(),
     useArchiveAgent: vi.fn(),
     useApproveStep: vi.fn(),
     useRejectStep: vi.fn(),
@@ -106,6 +107,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [] } as never);
   vi.mocked(agentsApi.useStartRun).mockReturnValue(idleMutation() as never);
+  vi.mocked(agentsApi.usePreviewPlan).mockReturnValue(idleMutation() as never);
   vi.mocked(agentsApi.useArchiveAgent).mockReturnValue(idleMutation() as never);
   vi.mocked(agentsApi.useApproveStep).mockReturnValue(idleMutation() as never);
   vi.mocked(agentsApi.useRejectStep).mockReturnValue(idleMutation() as never);
