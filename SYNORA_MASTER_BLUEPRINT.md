@@ -111,9 +111,12 @@ any part of it becomes real.
    invitations addressed to the signed-in person (the first
    account-scoped, cross-workspace item; verified-email-gated so the
    in-app surface is never weaker than the emailed token it stands in
-   for). Still missing from the defined standard: remaining non-run work
-   kinds (documents, generated media), cross-workspace runs/executions,
-   and per-item WHO/WHY/RECOMMENDATION/consequences detail.
+   for). Per-item WHO/WHEN shipped 2026-08-05: every waiting row names
+   the person who asked and when (batched name resolution on the read
+   surfaces; email fallback; never a raw id). Still missing from the
+   defined standard: remaining non-run work kinds (documents, generated
+   media), cross-workspace runs/executions, and per-item
+   RECOMMENDATION/consequences detail.
 4. **Operations visualization (office view)** — role-scoped layers
    (EXECUTIVE / OPERATIONS / ENGINEERING / SECURITY / AI / AUDIT) over the
    EOS event bus. Founder-only data stays founder-only.

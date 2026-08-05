@@ -280,19 +280,29 @@ export class ToolService {
     workspaceId: string,
     toolId?: string,
     status?: ExecutionStatus,
-  ): Promise<(ToolExecution & { tool?: { name: string } })[]> {
+  ): Promise<
+    (ToolExecution & {
+      tool?: { name: string };
+      user?: { name: string | null; email: string };
+    })[]
+  > {
     await requireMembership(userId, workspaceId);
 
-    // The tool's name rides along so a list of executions can say WHICH
-    // tool is waiting without a lookup per row — the same batched-name
-    // principle the project timeline uses for runs and notes.
+    // The tool's name and the requester ride along so a list of
+    // executions can say WHICH tool is waiting and WHO asked for it
+    // without a lookup per row — the same batched-name principle the
+    // project timeline uses for runs and notes. WHO is part of a
+    // decision's context: approving means unblocking a specific person.
     return prisma.toolExecution.findMany({
       where: {
         workspaceId,
         ...(toolId && { toolId }),
         ...(status && { status }),
       },
-      include: { tool: { select: { name: true } } },
+      include: {
+        tool: { select: { name: true } },
+        user: { select: { name: true, email: true } },
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });

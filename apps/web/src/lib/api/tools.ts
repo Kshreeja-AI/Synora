@@ -91,6 +91,8 @@ export interface ToolExecution {
   completedAt?: string | null;
   /** Rides along on list reads so a row can say WHICH tool is waiting. */
   tool?: { name: string };
+  /** Rides along on list reads so a row can say WHO asked for the execution. */
+  user?: { name: string | null; email: string };
 }
 
 export interface CreateToolInput {

@@ -38,6 +38,7 @@ function run(overrides: Record<string, unknown> = {}) {
     lineageId: 'l1',
     workspaceId: 'ws_1',
     requestedBy: 'u1',
+    requestedByName: 'Asha',
     task: 'Email the supplier about the delay',
     state: 'awaiting_approval',
     steps: [],
@@ -76,6 +77,9 @@ describe('WaitingForYou', () => {
     renderPanel();
     expect(screen.getByText('Email the supplier about the delay')).toBeInTheDocument();
     expect(screen.getByText(/sends an email on your behalf/)).toBeInTheDocument();
+    // WHO asked is part of the decision's context: approving unblocks a
+    // specific colleague, not an anonymous id.
+    expect(screen.getByText(/Requested by Asha/)).toBeInTheDocument();
   });
 
   it('shows only runs that are actually blocked on a person', () => {
@@ -127,6 +131,7 @@ describe('WaitingForYou', () => {
           status: 'PENDING',
           createdAt: new Date().toISOString(),
           tool: { name: 'Send invoice email' },
+          user: { name: 'Ravi', email: 'ravi@example.com' },
         },
       ],
     } as never);
@@ -137,6 +142,7 @@ describe('WaitingForYou', () => {
     // is visible — a yes/no here would be a decision without its context.
     expect(link).toHaveAttribute('href', '/dashboard/tools');
     expect(screen.getByText(/requires approval before it executes/)).toBeInTheDocument();
+    expect(screen.getByText(/Requested by Ravi/)).toBeInTheDocument();
     expect(screen.queryByText(/Nothing is paused for a decision/)).not.toBeInTheDocument();
   });
 

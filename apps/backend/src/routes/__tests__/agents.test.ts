@@ -84,7 +84,11 @@ describe('agent routes', () => {
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    return { cookie: cookieHeader(res.headers['set-cookie']), userId: res.body.data.user.id as string };
+    return {
+      cookie: cookieHeader(res.headers['set-cookie']),
+      userId: res.body.data.user.id as string,
+      email,
+    };
   }
 
   async function createWorkspace(cookie: string, name: string) {
@@ -326,6 +330,30 @@ describe('agent routes', () => {
       .set('Cookie', owner.cookie);
     expect(single.status).toBe(200);
     expect(single.body.data.task).toBe('generate one');
+  });
+
+  it('resolves WHO asked for a run to a person on the read surfaces', async () => {
+    const owner = await register('agent-who');
+    const ws = await createWorkspace(owner.cookie, 'Who Co');
+    const agent = (await makeAgent(owner.cookie, ws.id, { approvalPolicy: 'nothing' })).body.data;
+    await request(app)
+      .post(`/api/workspaces/${ws.id}/agents/${agent.id}/runs`)
+      .set('Cookie', owner.cookie)
+      .send({ task: 'generate whoami' });
+
+    const listed = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs`)
+      .set('Cookie', owner.cookie);
+    expect(listed.status).toBe(200);
+    // With no display name set the resolver falls back to the email — an
+    // identifiable person either way, never a raw internal id. WHO asked
+    // is part of the context a decision surface owes its reader.
+    expect(listed.body.data[0].requestedByName).toBe(owner.email);
+
+    const single = await request(app)
+      .get(`/api/workspaces/${ws.id}/agents/runs/${listed.body.data[0].id}`)
+      .set('Cookie', owner.cookie);
+    expect(single.body.data.requestedByName).toBe(owner.email);
   });
 
   it('parks a run for approval, records the approver, and resumes', async () => {

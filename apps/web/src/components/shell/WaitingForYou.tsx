@@ -72,6 +72,12 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
                 Paused before a step that needs approval
                 {run.pendingApproval?.reason ? `: ${run.pendingApproval.reason}` : '.'}
               </p>
+              {/* WHO asked is part of the decision's context: approving
+                  unblocks a specific colleague, not an anonymous id. */}
+              <p className="mt-1 text-xs text-muted-foreground">
+                Requested by {run.requestedByName ?? 'someone'} ·{' '}
+                {new Date(run.createdAt).toLocaleString()}
+              </p>
             </li>
           ))}
           {/* Tool executions stopped on requiresApproval are the same
@@ -87,6 +93,10 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               </Link>
               <p className="mt-1 text-xs text-muted-foreground">
                 This tool requires approval before it executes. Review it on the tools page.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Requested by {execution.user?.name ?? execution.user?.email ?? 'someone'} ·{' '}
+                {new Date(execution.createdAt).toLocaleString()}
               </p>
             </li>
           ))}

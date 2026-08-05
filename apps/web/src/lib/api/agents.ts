@@ -117,6 +117,8 @@ export interface AgentRun {
   lineageId: string;
   workspaceId: string;
   requestedBy: string;
+  /** Resolved by the backend read routes in one batched lookup — WHO asked, as a name, not an id. */
+  requestedByName?: string | null;
   task: string;
   /** The project this run is filed into, if any. */
   projectId?: string;

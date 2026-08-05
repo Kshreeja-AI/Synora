@@ -180,11 +180,38 @@ function runResponse(run: AgentRun, runtime: { mode: string; provider?: string; 
   };
 }
 
+/**
+ * Runs store the requester's id; the read surfaces resolve it to a name
+ * in one batched lookup. WHO asked for a run is part of the context a
+ * decision needs — a person approving a paused step is unblocking a
+ * specific colleague, not an anonymous id. The in-memory run is never
+ * mutated; the name is attached to the serialized copy only.
+ */
+async function withRequesterNames(
+  runList: AgentRun[],
+): Promise<(AgentRun & { requestedByName: string | null })[]> {
+  const ids = [...new Set(runList.map((run) => run.requestedBy))];
+  const users = ids.length
+    ? await prisma.user.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const nameById = new Map(users.map((u) => [u.id, u.name ?? u.email]));
+  return runList.map((run) => ({
+    ...run,
+    requestedByName: nameById.get(run.requestedBy) ?? null,
+  }));
+}
+
 router.get('/:workspaceId/agents/runs', async (req: AuthRequest, res, next) => {
   try {
     const agentLineageId =
       typeof req.query.lineageId === 'string' ? req.query.lineageId : undefined;
-    res.json(createApiResponse(listRuns(req.params.workspaceId, { agentLineageId })));
+    const enriched = await withRequesterNames(
+      listRuns(req.params.workspaceId, { agentLineageId }),
+    );
+    res.json(createApiResponse(enriched));
   } catch (error) {
     next(error);
   }
@@ -194,7 +221,8 @@ router.get('/:workspaceId/agents/runs/:runId', async (req: AuthRequest, res, nex
   try {
     const run = getRun(req.params.runId, req.params.workspaceId);
     if (!run) return next(new NotFoundException('Run'));
-    res.json(createApiResponse(run));
+    const [enriched] = await withRequesterNames([run]);
+    res.json(createApiResponse(enriched));
   } catch (error) {
     next(error);
   }

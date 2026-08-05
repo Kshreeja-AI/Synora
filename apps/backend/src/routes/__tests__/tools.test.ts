@@ -55,6 +55,7 @@ describe('tool execution routes', () => {
     return {
       cookie: cookieHeader(res.headers['set-cookie']),
       userId: res.body.data.user.id as string,
+      email,
     };
   }
 
@@ -116,12 +117,18 @@ describe('tool execution routes', () => {
       .set('Cookie', owner.cookie);
 
     expect(res.status).toBe(200);
-    const executions = res.body.data as { status: string; tool?: { name: string } }[];
+    const executions = res.body.data as {
+      status: string;
+      tool?: { name: string };
+      user?: { name: string | null; email: string };
+    }[];
     expect(executions).toHaveLength(1);
     expect(executions[0].status).toBe('PENDING');
     // The name rides along so the waiting surface can say WHICH tool is
     // stopped, without a second request per row.
     expect(executions[0].tool?.name).toBe('send-invoice-email');
+    // And WHO asked — approving means unblocking a specific person.
+    expect(executions[0].user?.email).toBe(owner.email);
   });
 
   it('returns every status when no filter is asked for', async () => {
