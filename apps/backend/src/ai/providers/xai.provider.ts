@@ -13,7 +13,7 @@ const XAI_BASE_URL = 'https://api.x.ai/v1';
 export const xaiDescriptor: AIProviderDescriptor = {
   id: 'xai',
   displayName: 'xAI Grok',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     return (await secretsManager.tryGet('XAI_API_KEY', 'ai:xai')) !== undefined;
   },

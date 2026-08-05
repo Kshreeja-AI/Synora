@@ -13,7 +13,7 @@ const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 export const openrouterDescriptor: AIProviderDescriptor = {
   id: 'openrouter',
   displayName: 'OpenRouter',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     return (await secretsManager.tryGet('OPENROUTER_API_KEY', 'ai:openrouter')) !== undefined;
   },

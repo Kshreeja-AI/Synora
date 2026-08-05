@@ -13,7 +13,7 @@ const TOGETHER_BASE_URL = 'https://api.together.xyz/v1';
 export const togetherDescriptor: AIProviderDescriptor = {
   id: 'together',
   displayName: 'Together AI',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     return (await secretsManager.tryGet('TOGETHER_API_KEY', 'ai:together')) !== undefined;
   },

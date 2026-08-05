@@ -36,10 +36,19 @@ export const DEFAULT_MAX_TOKENS = 4096;
  * request.prompt }]` — byte-identical to what every provider constructed
  * inline before conversation history existed, so single-shot callers are
  * unaffected.
+ *
+ * An EMPTY `prompt` appends no final turn. That is what a tool-result
+ * continuation looks like: the caller has tool output to send back and no
+ * new human input, and inventing an empty user turn would either be
+ * rejected by the provider or read to the model as the person going silent.
+ * Any `toolCalls`/`toolResults` carried on a history turn pass through
+ * untouched here — mapping them to a vendor's wire format is each adapter's
+ * job, not this function's.
  */
 export function resolveConversationTurns(
   request: TextGenerationRequest
 ): ConversationMessage[] {
   const history = (request.messages ?? []).filter((message) => message.role !== 'system');
+  if (request.prompt === '') return [...history];
   return [...history, { role: 'user', content: request.prompt }];
 }

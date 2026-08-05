@@ -52,7 +52,7 @@ Searched the entire repository, not only UI-exposed features.
 | Image generation | `ai/imageRegistry.ts` + OpenAI adapter | **IMPLEMENTED-UNTESTED-LIVE** |
 | Text-to-speech | `ai/ttsRegistry.ts` + OpenAI adapter | **IMPLEMENTED-UNTESTED-LIVE** |
 | Video generation | `ai/videoRegistry.ts` + Replicate adapter | **IMPLEMENTED-UNTESTED-LIVE** |
-| Tool / function calling | **only in the orphaned `ai/core` types** | **NOT-IMPLEMENTED** in the live path |
+| Tool / function calling | live contract (`AIToolDefinition`/`AIToolCall`/`AIToolResult`) + Anthropic and OpenAI-compatible adapters | **IMPLEMENTED-UNTESTED-LIVE** for 7 of 10 providers — closed 2026-08-05, see §11 |
 | Structured output / JSON mode | **only in the orphaned `ai/core` types** | **NOT-IMPLEMENTED** in the live path |
 | Vision / multimodal input | declared in orphaned `ModelCapability` only | **NOT-IMPLEMENTED** |
 | Reasoning-effort control | declared in orphaned `ModelCapability` only | **NOT-IMPLEMENTED** |
@@ -68,22 +68,33 @@ Searched the entire repository, not only UI-exposed features.
 ### Critical distinction (directive §7)
 
 Anthropic, OpenAI and Gemini **all support tool calling, vision and structured
-output.** Synora's live `TextGenerationRequest` is:
+output.** At audit time Synora's live `TextGenerationRequest` was:
 
 ```ts
 { prompt, messages?, mode?, systemPrompt?, maxTokens?, temperature?, model? }
 ```
 
-There is no field capable of expressing a tool, an image, a JSON schema, a
-stop sequence, a timeout or a cancellation signal. Therefore:
+No field could express a tool, an image, a JSON schema, a stop sequence, a
+timeout or a cancellation signal. The finding, as recorded that morning:
 
 - **Provider supports tool calling**: YES (Anthropic, OpenAI, Gemini, others)
 - **Synora supports tool calling through that provider**: **NO**
 
-Agent tool use works by a *different* mechanism entirely — Synora's own
-planner produces steps, and `tool-runner-adapter.ts` executes them. That is
+**Updated 2026-08-05 (same day, build phase).** The contract now carries
+`tools`/`toolChoice` in and `toolCalls` out, and `ConversationMessage` carries
+`toolCalls`/`toolResults` so a full round trip can be replayed. The second
+line above is now **YES for the 7 providers whose adapters implement the
+mapping** (Anthropic, OpenAI, xAI, DeepSeek, Together, OpenRouter, Azure
+OpenAI) and remains **NO** for Gemini, Bedrock and Ollama, whose adapters do
+not — and which therefore do not declare the `tool-calling` capability. Vision,
+structured output, stop sequences and cancellation remain NOT-IMPLEMENTED.
+
+Agent tool use *also* works by a different mechanism — Synora's own planner
+produces steps, and `tool-runner-adapter.ts` executes them. That is
 orchestration-level tool use, not provider-native function calling. Both are
-legitimate; conflating them would be false.
+legitimate and both now exist; conflating them would still be false. **The
+agent runtime has not been switched over** and still uses its own planner —
+provider-native calling is available to callers, not yet adopted internally.
 
 ---
 
@@ -247,6 +258,8 @@ business logic changes.
 
 ### B. Ready for real credentials — set a key and it runs
 - Anthropic, OpenAI, Gemini, xAI, OpenRouter, DeepSeek, Together text generation
+- Provider-native tool calling through Anthropic, OpenAI, xAI, DeepSeek,
+  Together, OpenRouter and Azure OpenAI (contract + adapters; §11)
 - OpenAI embeddings, Cohere, Voyage, Gemini embeddings
 - OpenAI image generation, OpenAI TTS, Replicate video
 - Streaming for Anthropic/OpenAI/Gemini/OpenRouter/Groq/DeepSeek
@@ -262,8 +275,12 @@ business logic changes.
 - Pinecone / Qdrant / Weaviate / Milvus (running services)
 
 ### E. Not yet implemented
-- Tool/function calling, structured output, vision, reasoning control **through
-  a provider** (Synora's contract cannot express them)
+- Structured output, vision, reasoning control **through a provider**
+  (Synora's contract cannot express them). Tool calling moved out of this
+  list on 2026-08-05 — see §11; it now sits in class B for 7 providers and
+  stays here for Gemini, Bedrock and Ollama
+- Provider-native tool calling **inside the agent runtime** — the capability
+  exists at the provider layer; the runtime still plans with its own planner
 - Reranking, moderation, speech-to-text, realtime voice, web search,
   browser/computer use, fine-tuning
 - True cancellation (AbortSignal through the SDKs) and health checks **in the
@@ -346,6 +363,45 @@ objective and is, on the evidence above, met for the providers in list B.
 2. **Resolve the orphaned stack** — either wire `ai/core` in or delete it.
    Leaving 250+ lines of unreachable OpenAI adapter is an active trap for the
    next reader.
-3. **Tool calling through providers** — the largest genuine capability gap.
-4. **Model-level capability negotiation** — needs 3 first.
+3. ~~**Tool calling through providers**~~ — **CLOSED 2026-08-05**, see §11.
+4. **Model-level capability negotiation** — now unblocked (3 is done).
+   Capabilities are still declared per PROVIDER, not per MODEL, so a
+   provider whose newest model supports tools and whose oldest does not is
+   described by one flag for both.
 5. **Pricing coverage** — needs published rates.
+
+---
+
+## 11. Provider-native tool calling (built 2026-08-05)
+
+The contract gained four provider-agnostic shapes — `AIToolDefinition`,
+`AIToolCall`, `AIToolResult`, `ToolChoice` — plus `tools`/`toolChoice` on the
+request, `toolCalls` on the result, and `toolCalls`/`toolResults` on
+`ConversationMessage` so a completed round trip can be replayed to the model.
+
+Two adapters implement the mapping, covering **7 of 10 providers**:
+
+| Adapter | Providers served | Wire shape |
+|---|---|---|
+| `AnthropicTextProvider` | Anthropic | tool_use / tool_result **blocks inside** a turn |
+| `OpenAICompatibleTextProvider` | OpenAI, xAI, DeepSeek, Together, OpenRouter, Azure OpenAI | `tool_calls` on an assistant message; each result its **own `role:'tool'` message** |
+
+The two vendors differ structurally, and the adapters absorb that difference
+so no caller ever sees it: Anthropic keeps one turn per turn, OpenAI expands
+one Synora turn into several messages. OpenAI also sends tool arguments as a
+JSON **string** rather than an object; an unparseable blob raises a named
+error rather than a guessed-at call — running a tool on half-understood
+arguments is how an automation does the wrong thing confidently.
+
+`tool-calling` is declared as an `AICapability` **only** by the descriptors
+whose adapter actually implements it, so `providersForCapability('tool-calling')`
+is a truthful answer rather than a restatement of vendor marketing. Gemini,
+Bedrock and Ollama do not declare it.
+
+Status: **IMPLEMENTED-UNTESTED-LIVE.** 15 unit tests pin both directions of
+both wire formats against mocked SDK clients; no provider has been contacted.
+
+Not done, deliberately: the agent runtime still plans with its own planner
+(adopting provider-native calling there is an orchestration change, not a
+provider change); Gemini/Bedrock/Ollama adapters; streaming tool-call events;
+parallel-call fan-out policy above the provider layer.

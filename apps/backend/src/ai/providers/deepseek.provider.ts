@@ -13,7 +13,7 @@ const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 export const deepseekDescriptor: AIProviderDescriptor = {
   id: 'deepseek',
   displayName: 'DeepSeek',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     return (await secretsManager.tryGet('DEEPSEEK_API_KEY', 'ai:deepseek')) !== undefined;
   },

@@ -4,6 +4,8 @@ import { getConfig } from '../../config';
 import {
   AICapability,
   AIProviderError,
+  AIToolCall,
+  ConversationMessage,
   TextGenerationProvider,
   TextGenerationRequest,
   TextGenerationResult,
@@ -19,7 +21,11 @@ import type { AIProviderDescriptor } from '../types/descriptor';
  */
 export class AnthropicTextProvider implements TextGenerationProvider {
   readonly id = 'anthropic';
-  readonly capabilities: readonly AICapability[] = ['text-generation', 'code-generation'];
+  readonly capabilities: readonly AICapability[] = [
+    'text-generation',
+    'code-generation',
+    'tool-calling',
+  ];
 
   constructor(
     private readonly client: Anthropic,
@@ -35,16 +41,22 @@ export class AnthropicTextProvider implements TextGenerationProvider {
         max_tokens: request.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: request.temperature,
         system: resolveSystemPrompt(request),
-        messages: resolveConversationTurns(request).map((turn) => ({
-          role: turn.role as 'user' | 'assistant',
-          content: turn.content,
-        })),
+        messages: resolveConversationTurns(request).map(toAnthropicMessage),
+        ...toolParams(request),
       });
 
       const text = response.content
         .filter((block): block is Anthropic.TextBlock => block.type === 'text')
         .map((block) => block.text)
         .join('');
+
+      const toolCalls: AIToolCall[] = response.content
+        .filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use')
+        .map((block) => ({
+          id: block.id,
+          name: block.name,
+          input: (block.input ?? {}) as Record<string, unknown>,
+        }));
 
       return {
         text,
@@ -55,6 +67,9 @@ export class AnthropicTextProvider implements TextGenerationProvider {
           outputTokens: response.usage?.output_tokens,
         },
         finishReason: response.stop_reason ?? undefined,
+        // Absent rather than empty when the model chose prose — see the
+        // contract note on TextGenerationResult.toolCalls.
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
       };
     } catch (error) {
       throw new AIProviderError(
@@ -66,10 +81,78 @@ export class AnthropicTextProvider implements TextGenerationProvider {
   }
 }
 
+/**
+ * Tool parameters in Anthropic's spelling. `none` is expressed by sending no
+ * tools at all rather than `tool_choice: {type: 'none'}`: the observable
+ * outcome (the model cannot call a tool this turn) is identical, and it works
+ * on every API version rather than only those that added the `none` variant.
+ */
+function toolParams(request: TextGenerationRequest): {
+  tools?: Anthropic.Tool[];
+  tool_choice?: Anthropic.ToolChoice;
+} {
+  if (!request.tools?.length || request.toolChoice === 'none') return {};
+
+  return {
+    tools: request.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.inputSchema as Anthropic.Tool.InputSchema,
+    })),
+    ...(request.toolChoice === 'required'
+      ? { tool_choice: { type: 'any' as const } }
+      : {}),
+  };
+}
+
+/**
+ * One Synora turn becomes one Anthropic message. Anthropic carries both tool
+ * calls and tool results as content BLOCKS inside a normal turn (assistant
+ * and user respectively), so the turn count never changes — unlike OpenAI,
+ * where each tool result is its own message.
+ */
+function toAnthropicMessage(turn: ConversationMessage): Anthropic.MessageParam {
+  const role = turn.role as 'user' | 'assistant';
+
+  if (turn.toolCalls?.length) {
+    return {
+      role,
+      content: [
+        ...(turn.content ? [{ type: 'text' as const, text: turn.content }] : []),
+        ...turn.toolCalls.map((call) => ({
+          type: 'tool_use' as const,
+          id: call.id,
+          name: call.name,
+          input: call.input,
+        })),
+      ],
+    };
+  }
+
+  if (turn.toolResults?.length) {
+    return {
+      role,
+      content: [
+        // Results first: they answer the previous turn, so anything the
+        // caller adds is commentary on top of them, not before them.
+        ...turn.toolResults.map((result) => ({
+          type: 'tool_result' as const,
+          tool_use_id: result.toolCallId,
+          content: result.content,
+          ...(result.isError ? { is_error: true } : {}),
+        })),
+        ...(turn.content ? [{ type: 'text' as const, text: turn.content }] : []),
+      ],
+    };
+  }
+
+  return { role, content: turn.content };
+}
+
 export const anthropicDescriptor: AIProviderDescriptor = {
   id: 'anthropic',
   displayName: 'Anthropic Claude',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     return (await secretsManager.tryGet('ANTHROPIC_API_KEY', 'ai:anthropic')) !== undefined;
   },

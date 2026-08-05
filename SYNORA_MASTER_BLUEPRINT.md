@@ -186,6 +186,20 @@ facts that change how the rest of this blueprint should be read:
    this blueprint must never conflate them. Agent tool use works by Synora's
    own planner + tool runner, which is orchestration-level tool use, not
    provider-native function calling.
+   **Tool calling CLOSED 2026-08-05**: the contract now carries
+   `tools`/`toolChoice` in, `toolCalls` out, and `toolCalls`/`toolResults` on
+   history turns so a full round trip replays. Two adapters implement it,
+   covering 7 of 10 providers (Anthropic; and the OpenAI-compatible family —
+   OpenAI, xAI, DeepSeek, Together, OpenRouter, Azure). `tool-calling` is
+   declared as a capability ONLY where implemented, so
+   `providersForCapability('tool-calling')` stays a truthful answer.
+   **Still true and still must not be conflated**: structured output and
+   vision remain unexpressible; Gemini/Bedrock/Ollama have no tool mapping;
+   and the agent runtime still plans with its own planner — the capability is
+   available to callers, not yet adopted internally. Adopting it is an
+   orchestration decision (it moves step selection from Synora's planner to
+   the model), not a provider change, and belongs in the Command Center
+   thinking rather than in this list.
 3. **The embeddings stack is the standard the text stack should meet.**
    ~~The text path has none of them.~~ CLOSED same day: retry + circuit
    breaker moved to shared `src/resilience/` (embeddings files re-export;

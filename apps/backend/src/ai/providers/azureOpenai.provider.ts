@@ -19,7 +19,7 @@ import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
 export const azureOpenAIDescriptor: AIProviderDescriptor = {
   id: 'azure-openai',
   displayName: 'Azure OpenAI',
-  capabilities: ['text-generation', 'code-generation'],
+  capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
     const apiKey = await secretsManager.tryGet('AZURE_OPENAI_API_KEY', 'ai:azure-openai');
     const { azureOpenAIEndpoint, azureOpenAIDeployment } = getConfig().ai;
