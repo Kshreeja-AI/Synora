@@ -288,7 +288,7 @@ business logic changes.
   this audit's build phase, see §2 and §10
 - Per-workspace rate-limit fairness in the text path (the limiter keys by
   provider only; the facade deliberately hides caller identity)
-- Tracing and caching in the text path (metrics closed 2026-08-05, §13)
+- Response caching in the text path (metrics closed 2026-08-05, §13; tracing closed 2026-08-05, §15)
 - Model-level capability discovery and negotiation
 
 ### F. Blocked by a founder decision
@@ -533,3 +533,46 @@ error). All four wiring points verified against the existing eos/agents/ai
 suites (742 tests, 64 files) with zero regressions — the coverage test's own
 `toHaveLength(KNOWN_AI_PATHS.length)` assertion is self-referential, so
 adding entries could not silently break it, and did not.
+
+---
+
+## 15. Text-path tracing (built 2026-08-05)
+
+`resilience/tracing.ts`, MOVED (not copied) from `embeddings/tracing.ts`
+exactly like the retry/circuit-breaker/rate-limiter modules earlier in this
+document — unlike those, this module needed no reshaping, because it was
+already fully generic (span id, name, start time, attributes; nothing
+embeddings-specific anywhere in it). The embeddings file is now a re-export;
+its behavior is unchanged (log tag moved from `[EmbeddingTrace]` to `[Trace]`,
+verified no test asserted the old string).
+
+Wired into `ai/textResilience.ts` as a single `withSpan('ai.generateText',
+{providerId, model}, ...)` around the ENTIRE layered call — breaker check,
+rate limiter, retry, timeout — so every outcome produces exactly one span:
+a success ends normally, a provider failure or a REFUSAL (rate-limited,
+circuit open) both end the span with an error, immediately, at near-zero
+duration. A refusal is not silently un-traced just because the provider was
+never reached — the trace log is exactly where an operator would go looking
+to answer "why didn't this call happen".
+
+No external APM dependency: spans are structured Winston debug logs with a
+generated span id, the same "structured logging is the trace" approach
+already used elsewhere in this codebase (`queue/audit.ts`,
+`middleware/requestLogger.ts`). A deployment wanting these in
+Jaeger/Honeycomb/Datadog ships the resulting log lines to one, keyed by
+`spanId`, with no code change here.
+
+Status: **IMPLEMENTED** (local, no credentials needed). 6 new unit tests on
+the tracing module itself, plus 1 integration test asserting the text path
+produces exactly one span per call across all three outcome shapes
+(success/failure/refusal). Full backend suite green with zero regressions
+in the moved module's consumers (embeddings' own tests unchanged).
+
+This closes the LAST item on the embeddings-standard checklist from
+blueprint §5b except response caching, which is deliberately not a
+transplant candidate: embeddings are cached because the same (provider,
+model, text) input is genuinely deterministic; text/chat generation is not
+— caching it would mean returning a stale answer to a fresh question, which
+is a correctness bug wearing a performance feature's name. If text-path
+caching is ever built, it will need its own design (e.g. caching by exact
+conversation state for idempotent retries), not this module.

@@ -3,6 +3,7 @@ import { getConfig, ConfigNotInitializedError } from '../config';
 import { CircuitBreakerRegistry } from '../resilience/circuitBreaker';
 import { InMemoryRateLimiter, RedisRateLimiter, type RateLimiter } from '../resilience/rateLimiter';
 import { ProviderMetricsCollector } from '../resilience/providerMetrics';
+import { withSpan } from '../resilience/tracing';
 import { withRetry, type RetryPolicyConfig } from '../resilience/retry';
 import { withTimeout } from '../resilience/timeout';
 import { AIProviderError, AIRateLimitedError } from './types';
@@ -121,7 +122,25 @@ export function resetTextResilienceForTests(): void {
   metrics = new ProviderMetricsCollector();
 }
 
+/**
+ * Every outcome — success, provider failure, or a refusal that never
+ * reaches the provider — is wrapped in ONE span per call, attributes
+ * included, so a trace shows not just "it failed" but which layer decided
+ * that: a refusal ends the span with an error immediately (duration ~0),
+ * exactly as it should read.
+ */
 export async function generateWithResilience(
+  provider: TextGenerationProvider,
+  request: TextGenerationRequest,
+): Promise<TextGenerationResult> {
+  return withSpan(
+    'ai.generateText',
+    { providerId: provider.id, model: request.model },
+    () => generateWithResilienceInner(provider, request),
+  );
+}
+
+async function generateWithResilienceInner(
   provider: TextGenerationProvider,
   request: TextGenerationRequest,
 ): Promise<TextGenerationResult> {

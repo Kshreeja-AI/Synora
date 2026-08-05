@@ -16,6 +16,7 @@ import {
 } from '../textResilience';
 import { AIProviderError, AIRateLimitedError } from '../types';
 import type { TextGenerationProvider, TextGenerationResult } from '../types';
+import { logger } from '../../utils/logger';
 
 const okResult: TextGenerationResult = {
   text: 'hello',
@@ -156,6 +157,42 @@ describe('generateWithResilience', () => {
       setTextRateLimiterForTests({ tryAcquire: async () => true });
       const result = await generateWithResilience(provider, { prompt: 'hi' });
       expect(result.text).toBe('hello');
+    });
+
+    it('wraps every outcome — success, failure, and a refusal — in exactly one span', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => logger);
+      try {
+        const ok = providerWith(async () => okResult);
+        await generateWithResilience(ok, { prompt: 'hi', model: 'test-model' });
+        expect(debugSpy).toHaveBeenCalledWith(
+          '[Trace] span started',
+          expect.objectContaining({ providerId: 'fake', model: 'test-model' }),
+        );
+        expect(debugSpy).toHaveBeenCalledWith('[Trace] span ended', expect.anything());
+        const spansAfterSuccess = debugSpy.mock.calls.filter((call) => (call[0] as unknown) === '[Trace] span started').length;
+        expect(spansAfterSuccess).toBe(1);
+
+        debugSpy.mockClear();
+        const failing = providerWith(async () => {
+          throw new Error('401 invalid api key');
+        });
+        await expect(generateWithResilience(failing, { prompt: 'hi' })).rejects.toThrow();
+        expect(debugSpy).toHaveBeenCalledWith('[Trace] span ended with error', expect.anything());
+
+        debugSpy.mockClear();
+        setTextRateLimiterForTests({ tryAcquire: async () => false });
+        await expect(
+          generateWithResilience(providerWith(async () => okResult), { prompt: 'hi' }),
+        ).rejects.toThrow(AIRateLimitedError);
+        // A refusal is still exactly one span, ended with an error — never
+        // silently un-traced just because the provider was never reached.
+        expect(
+          debugSpy.mock.calls.filter((call) => (call[0] as unknown) === '[Trace] span started').length,
+        ).toBe(1);
+        expect(debugSpy).toHaveBeenCalledWith('[Trace] span ended with error', expect.anything());
+      } finally {
+        debugSpy.mockRestore();
+      }
     });
 
     it('acquires one token per logical call, not per retry attempt', async () => {
