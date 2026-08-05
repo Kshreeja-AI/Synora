@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ProjectWorkspacePanel } from '../ProjectWorkspacePanel';
 import * as api from '@/lib/api/projectWorkspace';
@@ -48,6 +48,7 @@ function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace 
     ],
     resumeConversationId: 'c1',
     lastActivityAt: new Date(Date.now() - 3_600_000).toISOString(),
+    newSinceLastVisit: null,
     ...overrides,
   };
 }
@@ -172,6 +173,61 @@ describe('ProjectWorkspacePanel', () => {
     renderPanel();
     expect(screen.getByText(/Nothing here yet/)).toBeInTheDocument();
     expect(screen.queryByText(/Last activity/)).not.toBeInTheDocument();
+  });
+
+  it('shows what changed since the last visit, broken down by kind', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        newSinceLastVisit: {
+          previousVisitAt: new Date(Date.now() - 604_800_000).toISOString(),
+          count: 3,
+          byKind: { conversation: 2, document: 1 },
+        },
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    const heading = screen.getByText(/3 new since you were last here/);
+    expect(heading).toBeInTheDocument();
+    // Scoped to the banner: the "held" summary lower on the page can
+    // legitimately show the same numbers for an unrelated reason (this
+    // fixture's total counts), so an unscoped query would be ambiguous
+    // about which claim it's actually checking.
+    const banner = within(heading.closest('div')!);
+    expect(banner.getByText(/2 conversations/)).toBeInTheDocument();
+    expect(banner.getByText(/1 document/)).toBeInTheDocument();
+  });
+
+  it('says nothing about "since last visit" on a first-ever visit', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({ newSinceLastVisit: null }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // Everything in a brand-new project is trivially "new" — not an
+    // informative claim, so the banner is absent rather than always
+    // reading "100% new."
+    expect(screen.queryByText(/since you were last here/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing when a returning visit found no new activity, rather than a banner about zero', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        newSinceLastVisit: {
+          previousVisitAt: new Date(Date.now() - 3_600_000).toISOString(),
+          count: 0,
+          byKind: {},
+        },
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // A real fact ("nothing changed") that still isn't worth a banner —
+    // announcing zero new things would be noise dressed as information.
+    expect(screen.queryByText(/since you were last here/)).not.toBeInTheDocument();
   });
 
   it('renders nothing while the work is still loading', () => {

@@ -264,6 +264,90 @@ describe('projects routes (M5)', () => {
       expect(view.body.data.resumeConversationId).toBe(conversation.id);
     });
 
+    it('says nothing about "since last visit" on a first-ever view', async () => {
+      const user = await register('proj-visit-first');
+      const ws = await createWorkspace(user.accessToken, 'First Visit Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Everything in a brand-new project is trivially "new" — that isn't
+      // an informative claim, so a first-ever visit gets no digest at all
+      // rather than one that always says "100% new."
+      expect(view.body.data.newSinceLastVisit).toBeNull();
+    });
+
+    it('reports what changed since the last time this person opened it', async () => {
+      const user = await register('proj-visit-digest');
+      const ws = await createWorkspace(user.accessToken, 'Digest Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      // Baseline: this visit becomes "last time."
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Filed after baseline');
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+
+      const second = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      expect(second.body.data.newSinceLastVisit).not.toBeNull();
+      expect(second.body.data.newSinceLastVisit.count).toBe(1);
+      expect(second.body.data.newSinceLastVisit.byKind).toEqual({ conversation: 1 });
+      expect(typeof second.body.data.newSinceLastVisit.previousVisitAt).toBe('string');
+    });
+
+    it('reports zero new items, not nothing, when nothing changed since the last visit', async () => {
+      const user = await register('proj-visit-quiet');
+      const ws = await createWorkspace(user.accessToken, 'Quiet Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      const second = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Distinct from the first-visit case: there WAS a last time, and
+      // nothing happened since — a real, statable fact, not the absence
+      // of one.
+      expect(second.body.data.newSinceLastVisit).not.toBeNull();
+      expect(second.body.data.newSinceLastVisit.count).toBe(0);
+    });
+
+    it("tracks each person's own last-visit time, not a shared one", async () => {
+      const owner = await register('proj-visit-owner');
+      const teammate = await register('proj-visit-teammate');
+      const ws = await createWorkspace(owner.accessToken, 'Shared Visit Co');
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: teammate.userId, role: 'MEMBER' },
+      });
+      const project = await makeProject(owner.accessToken, ws.id);
+
+      // Owner visits and leaves a baseline; teammate has never visited.
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', owner.accessToken);
+
+      const teammateView = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', teammate.accessToken);
+
+      // The teammate's first visit, independent of the owner's history —
+      // inheriting the owner's baseline would either hide activity from
+      // the teammate or falsely claim they'd been here before.
+      expect(teammateView.body.data.newSinceLastVisit).toBeNull();
+    });
+
     it('takes a conversation back out again when filed to null', async () => {
       const user = await register('proj-unfile');
       const ws = await createWorkspace(user.accessToken, 'Unfile Co');

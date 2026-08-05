@@ -10,6 +10,7 @@ import {
   Music,
   Paperclip,
   PlayCircle,
+  Sparkles,
   Video,
 } from 'lucide-react';
 import { Button } from '@synora/design-system';
@@ -86,7 +87,8 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
 
   if (isLoading || !data) return null;
 
-  const { counts, timeline, resumeConversationId, project, lastActivityAt } = data;
+  const { counts, timeline, resumeConversationId, project, lastActivityAt, newSinceLastVisit } =
+    data;
   const held = (Object.keys(counts) as ProjectItemKind[]).filter((k) => counts[k] > 0);
 
   return (
@@ -123,6 +125,34 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
           </Button>
         )}
       </div>
+
+      {/*
+        Absent on a first-ever visit (nothing to measure "since" yet) and
+        absent when nothing changed — a banner announcing zero new things
+        would be noise dressed as information. Shown only when it says
+        something a returning person actually needs: what happened here
+        while they were away, so picking work back up after months does
+        not mean starting from zero.
+      */}
+      {newSinceLastVisit && newSinceLastVisit.count > 0 && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Sparkles className="h-4 w-4 text-primary" aria-hidden />
+            {newSinceLastVisit.count} new since you were last here
+          </p>
+          <ul className="mt-1.5 flex flex-wrap gap-3 text-xs text-muted-foreground">
+            {(Object.keys(newSinceLastVisit.byKind) as ProjectItemKind[]).map((kind) => {
+              const n = newSinceLastVisit.byKind[kind] ?? 0;
+              return (
+                <li key={kind} className="flex items-center gap-1">
+                  {n} {LABELS[kind]}
+                  {n === 1 ? '' : 's'}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {held.length > 0 && (
         <ul className="flex flex-wrap gap-3 text-xs text-muted-foreground">

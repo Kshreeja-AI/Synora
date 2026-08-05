@@ -76,6 +76,23 @@ export interface ProjectWorkspace {
   resumeConversationId: string | null;
   /** Facts, not judgements. */
   lastActivityAt: string | null;
+  /**
+   * What's new since this person was last here — the "continue months
+   * later without starting from zero" answer. Null on a first-ever visit,
+   * since there is no previous timestamp to compare against; a returning
+   * visit always gets one, even when its count is zero, because "nothing
+   * changed since you were last here" is itself a fact worth being able
+   * to state plainly rather than a case indistinguishable from "never
+   * been here before."
+   */
+  newSinceLastVisit: ProjectVisitDigest | null;
+}
+
+export interface ProjectVisitDigest {
+  /** The visit this is measured since — not the one just recorded. */
+  previousVisitAt: string;
+  count: number;
+  byKind: Partial<Record<ProjectItemKind, number>>;
 }
 
 /** How many entries a timeline returns. Bounded like every other list. */
@@ -97,44 +114,52 @@ export async function getProjectWorkspace(
   if (!project.workspaceId) throw new NotFoundException('Project');
   await requireMembership(userId, project.workspaceId);
 
-  const [conversations, assets, documents, images, videos, audios] = await Promise.all([
-    prisma.conversation.findMany({
-      where: { projectId, status: { not: 'DELETED' } },
-      select: { id: true, title: true, updatedAt: true, lastMessageAt: true, isArchived: true },
-      orderBy: { updatedAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-    prisma.asset.findMany({
-      where: { projectId },
-      select: { id: true, name: true, createdAt: true, mimeType: true, size: true },
-      orderBy: { createdAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-    prisma.document.findMany({
-      where: { projectId },
-      select: { id: true, title: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-    prisma.generatedImage.findMany({
-      where: { projectId },
-      select: { id: true, prompt: true, createdAt: true, status: true },
-      orderBy: { createdAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-    prisma.generatedVideo.findMany({
-      where: { projectId },
-      select: { id: true, prompt: true, createdAt: true, status: true },
-      orderBy: { createdAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-    prisma.generatedAudio.findMany({
-      where: { projectId },
-      select: { id: true, prompt: true, createdAt: true, status: true },
-      orderBy: { createdAt: 'desc' },
-      take: PROJECT_TIMELINE_LIMIT,
-    }),
-  ]);
+  const [conversations, assets, documents, images, videos, audios, previousVisit] =
+    await Promise.all([
+      prisma.conversation.findMany({
+        where: { projectId, status: { not: 'DELETED' } },
+        select: { id: true, title: true, updatedAt: true, lastMessageAt: true, isArchived: true },
+        orderBy: { updatedAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      prisma.asset.findMany({
+        where: { projectId },
+        select: { id: true, name: true, createdAt: true, mimeType: true, size: true },
+        orderBy: { createdAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      prisma.document.findMany({
+        where: { projectId },
+        select: { id: true, title: true, updatedAt: true },
+        orderBy: { updatedAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      prisma.generatedImage.findMany({
+        where: { projectId },
+        select: { id: true, prompt: true, createdAt: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      prisma.generatedVideo.findMany({
+        where: { projectId },
+        select: { id: true, prompt: true, createdAt: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      prisma.generatedAudio.findMany({
+        where: { projectId },
+        select: { id: true, prompt: true, createdAt: true, status: true },
+        orderBy: { createdAt: 'desc' },
+        take: PROJECT_TIMELINE_LIMIT,
+      }),
+      // Read BEFORE this visit is recorded — the digest below must be
+      // measured against the LAST visit, not this one, or "what's new"
+      // would always be empty (comparing a moment to itself).
+      prisma.projectVisit.findUnique({
+        where: { projectId_userId: { projectId, userId } },
+        select: { lastViewedAt: true },
+      }),
+    ]);
 
   // Canvases live in a file-backed store rather than the database, so
   // they are read separately and merged into the same chronology. The
@@ -223,6 +248,31 @@ export async function getProjectWorkspace(
 
   const timeline = entries.slice(0, PROJECT_TIMELINE_LIMIT);
 
+  // Measured against ALL matching entries, not just the timeline page
+  // shown above — a digest that undercounted because a busy project's
+  // timeline got truncated first would be quietly wrong rather than
+  // honestly bounded.
+  const previousVisitAt = previousVisit ? iso(previousVisit.lastViewedAt) : null;
+  const newSinceLastVisit: ProjectVisitDigest | null = previousVisitAt
+    ? (() => {
+        const since = entries.filter((e) => e.at > previousVisitAt);
+        const byKind: Partial<Record<ProjectItemKind, number>> = {};
+        for (const e of since) byKind[e.kind] = (byKind[e.kind] ?? 0) + 1;
+        return { previousVisitAt, count: since.length, byKind };
+      })()
+    : null;
+
+  // Recorded AFTER the digest is computed, so this visit is never
+  // measured against itself, and only once the read has actually
+  // succeeded — a membership check that throws above must not silently
+  // consume the person's "last visit" on a request that never showed
+  // them anything.
+  await prisma.projectVisit.upsert({
+    where: { projectId_userId: { projectId, userId } },
+    create: { projectId, userId },
+    update: { lastViewedAt: new Date() },
+  });
+
   return {
     project: {
       id: project.id,
@@ -249,6 +299,7 @@ export async function getProjectWorkspace(
     // away.
     resumeConversationId: conversations.find((c) => !c.isArchived)?.id ?? null,
     lastActivityAt: timeline[0]?.at ?? null,
+    newSinceLastVisit,
   };
 }
 

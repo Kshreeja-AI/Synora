@@ -47,6 +47,19 @@ export interface ProjectWorkspace {
   /** Where to pick up. Null when there is nothing to continue. */
   resumeConversationId: string | null;
   lastActivityAt: string | null;
+  /**
+   * What's new since this person was last here. Null on a first-ever
+   * visit — there is no "since" to measure against yet. A returning
+   * visit always gets one, even with `count: 0`: "nothing changed" is a
+   * fact, not the same thing as "never been here."
+   */
+  newSinceLastVisit: ProjectVisitDigest | null;
+}
+
+export interface ProjectVisitDigest {
+  previousVisitAt: string;
+  count: number;
+  byKind: Partial<Record<ProjectItemKind, number>>;
 }
 
 export const PROJECT_WORKSPACE_KEY = 'project-workspace';

@@ -393,11 +393,39 @@ model Project {
   /// them was a filing cabinet rather than a project.
   conversations Conversation[]
 
+  /// Per-viewer "last opened" timestamps — see ProjectVisit below. Plural
+  /// because a shared workspace project is opened by more than one person,
+  /// each with their own sense of what's new since they were last here.
+  visits        ProjectVisit[]
+
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+/// When a person last opened a project's workspace view — purely a
+/// per-viewer timestamp, not a fact about the project itself. It exists so
+/// returning to a project after time away can say what changed since THIS
+/// person was last here ("continue work months later without starting
+/// from zero") instead of handing back the same undifferentiated timeline
+/// whether someone left for an hour or a quarter.
+///
+/// Deliberately NOT related to User by an explicit relation field, mirroring
+/// ConversationCollaborator's userId: a plain column, not a foreign key,
+/// so this table needs no reverse array on the User model.
+model ProjectVisit {
+  id           String   @id @default(cuid())
+  projectId    String
+  userId       String
+
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  lastViewedAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId])
 }
 
 // A folder organizes assets within a workspace, optionally scoped to a
