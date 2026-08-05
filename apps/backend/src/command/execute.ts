@@ -1,5 +1,5 @@
 import { prisma } from '@synora/database';
-import { prepareCommand } from './prepare';
+import { prepareCommand, type PreparedCommand } from './prepare';
 import { getTextProviderMetrics } from '../ai/textResilience';
 import { searchService } from '../services/search.service';
 import { conversationService } from '../services/conversation.service';
@@ -39,7 +39,20 @@ export type ExecutionState =
   | 'not-implemented'
   | 'not-bound'
   | 'waiting-approval'
+  | 'rejected'
+  | 'expired'
   | 'failed';
+
+/**
+ * How long a pending approval stays answerable.
+ *
+ * Long enough that an approver in another timezone can sleep first; short
+ * enough that nobody is ever asked to approve something whose context they
+ * have forgotten. An approval is a judgement about a moment, and the moment
+ * does not last forever — a request answered a week later is answered by
+ * someone who no longer remembers why it was made.
+ */
+export const APPROVAL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Which risk classes may run without a person approving first.
@@ -135,7 +148,11 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
 };
 
 /** Human-language outcome for each non-completed state. */
-function messageFor(state: ExecutionState, route: CommandRoute | null, detail?: string): string {
+export function messageFor(
+  state: ExecutionState,
+  route: CommandRoute | null,
+  detail?: string
+): string {
   switch (state) {
     case 'not-authorized':
       return `I understood what you asked, but you do not have permission to do this${
@@ -149,6 +166,10 @@ function messageFor(state: ExecutionState, route: CommandRoute | null, detail?: 
       return 'Synora can do this, but not yet by being asked in plain language. It is available in the app itself.';
     case 'waiting-approval':
       return 'I can do this, and it needs your approval first because it changes something outside Synora or affects other people.';
+    case 'rejected':
+      return detail ?? 'This was refused, so nothing was done.';
+    case 'expired':
+      return 'Nobody answered this in time, so nothing was done. Ask again if you still want it.';
     case 'failed':
       return detail ?? 'I tried to do this and it did not work.';
     default:
@@ -157,18 +178,24 @@ function messageFor(state: ExecutionState, route: CommandRoute | null, detail?: 
 }
 
 /**
- * Understand → resolve → check permission → check availability → classify
- * risk → approve-if-needed → EXECUTE → record.
+ * The decision, separated from the doing.
  *
- * Every outcome is recorded, not just the successes: a trail that only
- * contains completions is systematically optimistic, and the refusals are
- * exactly what an operator investigating an incident needs.
+ * Both the direct execute path and the approval path resolve what should
+ * happen through THIS function, so the two can never disagree about what a
+ * command means or who may run it. An approval path with its own copy of
+ * this logic is how a system ends up approving one thing and performing
+ * another.
  */
-export async function executeCommand(
-  commandText: string,
-  context: ExecutionContext
-): Promise<CommandExecutionResult> {
-  const prepared = prepareCommand(commandText, context.role);
+export interface CommandDecision {
+  understanding: PreparedCommand['understanding'];
+  route: CommandRoute | null;
+  permitted: boolean;
+  state: ExecutionState;
+  detail?: string;
+}
+
+export function decideCommand(commandText: string, role: WorkspaceRole): CommandDecision {
+  const prepared = prepareCommand(commandText, role);
   const { understanding } = prepared;
   const candidate = prepared.capabilities[0] ?? null;
   const route = candidate?.route ?? null;
@@ -198,30 +225,95 @@ export async function executeCommand(
     state = 'completed';
   }
 
+  return {
+    understanding,
+    route,
+    permitted: candidate?.permitted ?? false,
+    state,
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+/**
+ * Performs a resolved capability. The ONLY place a bound executor is called
+ * — the approval path runs through here too, so an approved action and a
+ * directly-executed one take literally the same code.
+ */
+export async function runBound(
+  capabilityId: string,
+  context: ExecutionContext,
+  subject: string
+): Promise<{ ok: true; result: unknown; summary: string } | { ok: false; detail?: string }> {
+  const executor = BOUND[capabilityId];
+  if (!executor) return { ok: false };
+  try {
+    const outcome = await executor(context, subject);
+    return { ok: true, result: outcome.result, summary: outcome.summary };
+  } catch (error) {
+    // The person gets plain language; the detail goes to the log. A raw
+    // stack trace as the primary experience is a dead end, not an answer.
+    logger.warn('[Command] Execution failed', {
+      capabilityId,
+      workspaceId: context.workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      ok: false,
+      ...(error instanceof Error && error.message
+        ? { detail: `I tried to do this and it did not work: ${error.message}` }
+        : {}),
+    };
+  }
+}
+
+/** Whether a resolved route needs a person to approve before it may run. */
+export function requiresApproval(route: CommandRoute | null): boolean {
+  return route ? !RUNS_WITHOUT_APPROVAL.has(route.riskClass) : false;
+}
+
+/**
+ * Whether the command layer can actually drive this capability.
+ *
+ * Exported so the approval path can say `not-bound` rather than discovering
+ * a missing executor at run time and reporting it as a failure. "Nobody
+ * wired this up" and "it broke" are different sentences, and only one of
+ * them sends a person looking for a bug.
+ */
+export function isBound(capabilityId: string | null): boolean {
+  return capabilityId !== null && capabilityId in BOUND;
+}
+
+/**
+ * Understand → resolve → check permission → check availability → classify
+ * risk → approve-if-needed → EXECUTE → record.
+ *
+ * Every outcome is recorded, not just the successes: a trail that only
+ * contains completions is systematically optimistic, and the refusals are
+ * exactly what an operator investigating an incident needs.
+ */
+export async function executeCommand(
+  commandText: string,
+  context: ExecutionContext
+): Promise<CommandExecutionResult> {
+  const decision = decideCommand(commandText, context.role);
+  const { understanding, route } = decision;
+  let { state, detail } = decision;
+
   let result: unknown;
   let summary: string | undefined;
 
   if (state === 'completed') {
-    try {
-      const outcome = await BOUND[route!.capabilityId](context, understanding.subject);
+    const outcome = await runBound(route!.capabilityId, context, understanding.subject);
+    if (outcome.ok) {
       result = outcome.result;
       summary = outcome.summary;
-    } catch (error) {
+    } else {
       state = 'failed';
-      // The person gets plain language; the detail goes to the log. A raw
-      // stack trace as the primary experience is a dead end, not an answer.
-      logger.warn('[Command] Execution failed', {
-        capabilityId: route!.capabilityId,
-        workspaceId: context.workspaceId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      detail =
-        error instanceof Error && error.message
-          ? `I tried to do this and it did not work: ${error.message}`
-          : undefined;
+      detail = outcome.detail;
     }
   }
 
+  const needsApproval = requiresApproval(route);
   const record = await prisma.commandExecution.create({
     data: {
       workspaceId: context.workspaceId,
@@ -230,10 +322,14 @@ export async function executeCommand(
       intent: understanding.intent,
       capabilityId: route?.capabilityId ?? null,
       riskClass: route?.riskClass ?? 'read-only',
-      permitted: candidate?.permitted ?? false,
+      permitted: decision.permitted,
       available: route?.availability === 'available',
-      approvalRequired: route ? !RUNS_WITHOUT_APPROVAL.has(route.riskClass) : false,
+      approvalRequired: needsApproval,
       approvalState: state === 'waiting-approval' ? 'pending' : 'none',
+      // The deadline is stored, not derived at read time: the promise made
+      // to the person waiting must be the promise the server keeps.
+      approvalExpiresAt:
+        state === 'waiting-approval' ? new Date(Date.now() + APPROVAL_WINDOW_MS) : null,
       state,
       resultSummary: summary ?? null,
       failureReason: state === 'completed' ? null : messageFor(state, route, detail),

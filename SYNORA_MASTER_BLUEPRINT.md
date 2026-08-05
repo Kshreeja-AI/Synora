@@ -309,12 +309,14 @@ A typed sentence now reaches the REAL services — never a re-implementation,
 never a simulated result. The chain is: understand → resolve → permission →
 availability → risk → approval gate → execute → durable record.
 
-**Seven states, never blurred** — `completed`, `not-authorized`,
-`unavailable`, `not-implemented`, `not-bound`, `waiting-approval`, `failed`.
-`not-bound` exists as its own state deliberately: the capability is real but
-the command layer cannot yet drive it, and collapsing that into
-"not implemented" would slander working code while "failed" would blame the
-user.
+**Nine states, never blurred** — `completed`, `not-authorized`,
+`unavailable`, `not-implemented`, `not-bound`, `waiting-approval`,
+`rejected`, `expired`, `failed`. `not-bound` exists as its own state
+deliberately: the capability is real but the command layer cannot yet drive
+it, and collapsing that into "not implemented" would slander working code
+while "failed" would blame the user. `rejected` (a person said no) and
+`expired` (nobody answered) are likewise distinct from each other and from
+`failed` — three very different things to have to explain to someone.
 
 **Risk decides approval.** Read-only and reversible proceed; sensitive and
 high-risk stop at `waiting-approval` and DO NOT run. Stopping to confirm a
@@ -332,11 +334,62 @@ naming another workspace cannot reach it.
 **Every outcome is recorded**, refusals included — a trail containing only
 completions is systematically optimistic.
 
-**Not yet built**: the approval ACTION (approve/reject/edit on a pending
-record) is the next slice; no voice or accessibility input path, no learned
-personalization, no multi-step decomposition, no UI. Bound capabilities so
-far are search, conversation-create and provider-metrics; everything else
-honestly reports `not-bound`.
+**Slice 4 shipped: a yes that means yes.** `command/approve.ts`,
+`POST /api/command/:workspaceId/executions/:executionId/decision` and
+`GET /api/command/:workspaceId/executions`. Slice 3 could refuse a sensitive
+action honestly but gave nobody a way to say yes. Almost all of slice 4 is
+the machinery that makes a "yes" mean exactly what everyone assumes.
+
+**The four ways an approval system lies, and what stops each:**
+
+1. *The client claims approval.* Nothing the caller sends says "approved".
+   The only approval that exists is a row this server wrote; the caller
+   supplies only which row they mean.
+2. *The same approval is used twice.* The pending state is CLAIMED with a
+   conditional update — a database-level compare-and-set — and only the
+   writer that actually changed the row proceeds. Two simultaneous
+   approvals cannot both win; a replay finds nothing left to claim.
+3. *The approval is stale.* Each pending record carries the deadline it was
+   created with (stored, not derived from a constant, so the deadline a
+   person was shown is the one enforced). Past it, the record expires
+   instead of running. Window: 24 hours.
+4. *The approved action is not the executed action.* THE IMPORTANT ONE. The
+   action is re-derived from the STORED command text and must still resolve
+   to the same capability, the same risk class, and the same need for
+   approval. The request body has no field that can influence what runs —
+   there is deliberately nothing to tamper with.
+
+**Approving runs it, atomically.** There is no window in which an approval
+exists but has not been spent: a stored unspent approval is a credential,
+and a credential sitting in a database is a thing to steal.
+
+**A crashed decision self-heals.** A claim abandoned mid-flight would
+otherwise wedge the record permanently, so the deadline covers claimed
+records too — nothing legitimate holds a claim for a day. A second approver
+arriving mid-decision is told the decision is IN FLIGHT, which is a
+different fact from "already decided" and the only one that is true.
+
+**Authority is split correctly.** The approver's own role must permit the
+capability — you cannot authorize what you would not be allowed to perform.
+The action then runs as the ORIGINAL requester, whose permission is
+re-checked at that moment, because roles change while things sit in queues.
+Order matters and is a correctness property: a demoted requester is reported
+as a permission change, never as "the action changed", or someone goes
+hunting for an edit that never happened.
+
+**Known limit, stated plainly**: today no capability is both sensitive AND
+bound, so approving one honestly reports `not-bound` — the approval is
+recorded as the fact it is, and nothing runs. The "approved action then
+runs" leg shares one code path (`runBound`) with direct execution, which
+slice 3 proves against a real database row. It is not separately proven
+end-to-end and will not be until a sensitive capability is bound.
+
+**Not yet built**: no voice or accessibility input path, no learned
+personalization, no multi-step decomposition, no UI, no undo. Bound
+capabilities so far are search, conversation-create and provider-metrics;
+everything else honestly reports `not-bound`. Self-approval is permitted —
+the gate is a deliberate pause and a record, NOT four-eyes separation of
+duties, and requiring a second person would break single-owner workspaces.
 
 ## 6. Standing engineering law (unchanged by any roadmap)
 

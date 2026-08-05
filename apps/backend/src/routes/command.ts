@@ -4,6 +4,7 @@ import { createApiResponse } from '@synora/shared';
 import { understandCommand } from '../command/understand';
 import { prepareCommand } from '../command/prepare';
 import { executeCommand } from '../command/execute';
+import { decideExecution, listExecutions, ApprovalRefused } from '../command/approve';
 import { requireMembership } from '../services/checks';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
@@ -120,6 +121,102 @@ router.post(
         role: membership.role,
       });
       return res.json(createApiResponse(outcome));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+const decisionRequestSchema = z.object({
+  decision: z.enum(['approved', 'rejected']),
+  /** Optional, and only meaningful for a rejection. */
+  reason: z.string().max(500).optional(),
+});
+
+/**
+ * POST /api/command/:workspaceId/executions/:executionId/decision — say yes
+ * or no to something that stopped for approval.
+ *
+ * Approving RUNS the action, in the same server-side transition that records
+ * the approval. There is deliberately no window in which an approval exists
+ * but has not been spent: an unspent approval sitting in a database is a
+ * credential, and credentials are things to steal.
+ *
+ * NOTHING the caller sends decides what runs. The body carries only "yes" or
+ * "no" and an optional reason — the action itself is re-derived from the
+ * stored record and must still resolve to the same capability, the same risk
+ * class and the same need for approval. There is no field here to tamper
+ * with, which is the strongest form of "validate the action, not the text".
+ *
+ * The approver's authority is checked against their OWN role; the action then
+ * runs as the person who originally asked for it, whose permission is
+ * re-checked at that moment. Roles change while things sit in queues.
+ */
+router.post(
+  '/:workspaceId/executions/:executionId/decision',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { decision, reason } = decisionRequestSchema.parse(req.body);
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      const outcome = await decideExecution(
+        req.params.executionId,
+        decision,
+        {
+          approverId: req.userId!,
+          approverRole: membership.role,
+          workspaceId: req.params.workspaceId,
+        },
+        reason
+      );
+      return res.json(createApiResponse(outcome));
+    } catch (error) {
+      if (error instanceof ApprovalRefused) {
+        // 200 with an explicit refusal, not an error status. The request was
+        // well-formed and correctly handled; the ANSWER is "no, and here is
+        // why". An error code here would make a legitimate refusal look like
+        // a malfunction, and the caller's job is to show the person a reason.
+        return res.json(
+          createApiResponse({
+            executed: false,
+            decision: 'refused',
+            state: error.state,
+            message: error.userMessage,
+          })
+        );
+      }
+      return next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/command/:workspaceId/executions — what has been asked, and what is
+ * waiting.
+ *
+ * Read-only, and load-bearing: without it `waiting-approval` would be a state
+ * the system can enter and no person can find, which would make the approval
+ * gate above unreachable. A pending item past its deadline is reported as
+ * expired even before the record converges, so nobody is invited to click
+ * something that can no longer work.
+ *
+ * You always see your own commands; seeing everyone's is the same question as
+ * reading workspace activity and takes the same `audit:view` permission.
+ */
+router.get(
+  '/:workspaceId/executions',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      const items = await listExecutions(req.params.workspaceId, req.userId!, membership.role, {
+        pendingOnly: req.query.pending === 'true',
+        take: req.query.take ? Number(req.query.take) : undefined,
+      });
+      return res.json(createApiResponse({ items, total: items.length }));
     } catch (error) {
       return next(error);
     }

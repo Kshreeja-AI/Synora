@@ -3683,13 +3683,29 @@ model CommandExecution {
   /// Whether this deployment can actually run it (credentials present).
   available      Boolean
   approvalRequired Boolean  @default(false)
-  /// none | pending | approved | rejected
+  /// none | pending | deciding | approved | rejected | expired
+  ///
+  /// `deciding` is a short-lived claim held while one approval is being
+  /// carried out. It exists so two simultaneous approvals of the same
+  /// record cannot both proceed: the claim is taken with a conditional
+  /// update, and only the writer that actually changed the row continues.
   approvalState  String   @default("none")
   approvedBy     String?
   approvedAt     DateTime?
+  /// Rejection is recorded separately from approval rather than reusing the
+  /// approved* columns. "Who approved this" and "who refused this" are
+  /// different questions, and an audit table that answers them with the same
+  /// column cannot be queried honestly.
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionReason String?
+  /// The deadline this record was created with. Stored rather than computed
+  /// from a constant so the deadline a person was shown is the deadline
+  /// actually enforced, even if the policy window changes later.
+  approvalExpiresAt DateTime?
 
   /// completed | not-authorized | unavailable | not-implemented | not-bound |
-  /// waiting-approval | failed
+  /// waiting-approval | rejected | expired | failed
   state          String
   /// Short human-readable outcome. Never a raw payload or stack trace.
   resultSummary  String?
