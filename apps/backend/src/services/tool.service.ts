@@ -35,6 +35,35 @@ export interface ExecuteToolInput {
 }
 
 /**
+ * Matches the placeholder syntax `tool-engine.service` substitutes at
+ * execution time. Used here ONLY to read which secret names a config
+ * references — never to resolve one.
+ */
+const SECRET_PLACEHOLDER_PATTERN = /\{\{secret:([A-Za-z0-9_.-]+)\}\}/g;
+
+export interface ToolExecutionPreview {
+  toolId: string;
+  toolName: string;
+  type: ToolType;
+  /** Literal: no request was sent and no execution record exists. */
+  executed: false;
+  /** True when a person must approve before this would actually run. */
+  wouldRequireApproval: boolean;
+  /**
+   * Where the request would go. `hostDependsOnSecret` is true when the
+   * host itself comes from a secret, in which case the real destination
+   * is genuinely unknown here rather than hidden.
+   */
+  destination: { host: string | null; method: string; hostDependsOnSecret: boolean } | null;
+  /** Names only. Values are never read, resolved, or returned. */
+  secretsUsed: string[];
+  rateLimit: { limitPerMinute: number; usedInLastMinute: number } | null;
+  blockers: string[];
+  unknowns: string[];
+  wouldRun: boolean;
+}
+
+/**
  * HTTP-backed tool types must carry a usable endpoint in their config;
  * catching a bad URL at definition time beats failing every execution.
  */
@@ -192,6 +221,132 @@ export class ToolService {
     });
 
     logger.info('Tool deleted (soft)', { toolId, workspaceId });
+  }
+
+  /**
+   * What executing this tool WOULD do, without doing it.
+   *
+   * The last unpreviewed path in the command pipeline: agent runs and
+   * workflows both had previews, but pressing Execute on a tool sent a
+   * real HTTP request to a real endpoint with no statement beforehand of
+   * where it goes. For a tool that emails a customer or posts to a
+   * webhook, that moment is exactly when a person needs the facts.
+   *
+   * FACTS, NEVER VERDICTS. The report says where the request goes, what
+   * method it uses, which declared secrets would be filled in, and what
+   * would stop it. It does not grade the tool "safe" or "risky" — Synora
+   * has no system that can judge that, and inventing a rating would be
+   * the same fabricated confidence this platform refuses everywhere.
+   *
+   * SECRETS ARE NEVER RESOLVED HERE. The preview reads the UNSUBSTITUTED
+   * config: it reports the secret NAMES the config references and never
+   * calls the secrets manager at all, so previewing cannot become a way
+   * to read a secret value.
+   */
+  async previewExecution(
+    userId: string,
+    workspaceId: string,
+    toolId: string,
+    input: Record<string, unknown>,
+  ): Promise<ToolExecutionPreview> {
+    const membership = await requireMembership(userId, workspaceId);
+    const tool = await this.getTool(userId, workspaceId, toolId);
+
+    const blockers: string[] = [];
+    const unknowns: string[] = [];
+
+    try {
+      requirePermission(membership.role, 'tool:execute');
+    } catch {
+      // Reported, not thrown — the same choice the workflow dry run
+      // makes. Someone who cannot execute still deserves to know what
+      // this tool would do, and why they are stopped.
+      blockers.push('you do not have permission to execute tools in this workspace');
+    }
+
+    if (!tool.isActive) blockers.push('this tool is not active');
+
+    if (!SUPPORTED_EXECUTION_TYPES.has(tool.type)) {
+      blockers.push(
+        `${tool.type} tools cannot be executed yet (supported: ${[...SUPPORTED_EXECUTION_TYPES].join(', ')})`,
+      );
+    }
+
+    try {
+      validateToolInput(input, tool.inputSchema as Record<string, unknown>);
+    } catch (err) {
+      blockers.push(err instanceof Error ? err.message : String(err));
+    }
+
+    let rateLimit: ToolExecutionPreview['rateLimit'] = null;
+    if (tool.rateLimit) {
+      const usedInLastMinute = await prisma.toolExecution.count({
+        where: { toolId, createdAt: { gte: new Date(Date.now() - 60000) } },
+      });
+      rateLimit = { limitPerMinute: tool.rateLimit, usedInLastMinute };
+      if (usedInLastMinute >= tool.rateLimit) {
+        blockers.push(`rate limit reached (${tool.rateLimit} calls per minute)`);
+      }
+    }
+
+    const config = (tool.config ?? {}) as { url?: unknown; method?: unknown; headers?: unknown };
+    let destination: ToolExecutionPreview['destination'] = null;
+    const secretsUsed = new Set<string>();
+
+    if (SUPPORTED_EXECUTION_TYPES.has(tool.type)) {
+      if (typeof config.url !== 'string' || config.url.length === 0) {
+        blockers.push('this tool has no destination URL configured');
+      } else {
+        for (const match of config.url.matchAll(SECRET_PLACEHOLDER_PATTERN)) {
+          secretsUsed.add(match[1]);
+        }
+        if (config.headers && typeof config.headers === 'object') {
+          for (const value of Object.values(config.headers as Record<string, unknown>)) {
+            if (typeof value === 'string') {
+              for (const match of value.matchAll(SECRET_PLACEHOLDER_PATTERN)) {
+                secretsUsed.add(match[1]);
+              }
+            }
+          }
+        }
+
+        const method =
+          typeof config.method === 'string' ? config.method.toUpperCase() : 'POST';
+        // The host is read from the UNSUBSTITUTED url. A placeholder
+        // inside the host means the real destination depends on a secret
+        // — stated plainly rather than shown as a broken hostname.
+        let host: string | null = null;
+        try {
+          host = new URL(config.url).host;
+        } catch {
+          host = null;
+        }
+        // A plain substring check, deliberately: `.test()` on a /g regex
+        // advances its lastIndex and would answer differently on the
+        // next call for the same input.
+        if (host && host.includes('{{secret:')) host = null;
+        destination = {
+          host,
+          method,
+          hostDependsOnSecret: host === null,
+        };
+        unknowns.push('the remote endpoint is not contacted by a preview, so its response is unknown');
+      }
+    }
+
+    return {
+      toolId: tool.id,
+      toolName: tool.displayName,
+      type: tool.type,
+      executed: false,
+      wouldRequireApproval: Boolean(tool.requiresApproval),
+      destination,
+      secretsUsed: [...secretsUsed],
+      rateLimit,
+      blockers,
+      unknowns,
+      wouldRun: blockers.length === 0,
+    };
   }
 
   async executeTool(userId: string, workspaceId: string, toolId: string, data: ExecuteToolInput): Promise<ToolExecution> {

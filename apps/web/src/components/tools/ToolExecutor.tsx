@@ -11,11 +11,14 @@ import {
   useToolExecution,
   useApproveExecution,
   useRejectExecution,
+  usePreviewExecution,
   isActiveExecution,
   type Tool,
+  type ToolExecutionPreview,
   type ToolExecutionStatus,
 } from '@/lib/api/tools';
-import { AlertCircle, CheckCircle, Clock, XCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, Clock, Eye, XCircle } from 'lucide-react';
+import { ToolPreviewPanel } from './ToolPreviewPanel';
 
 interface ToolExecutorProps {
   workspaceId: string;
@@ -111,6 +114,8 @@ export function ToolExecutor({ workspaceId, tool, conversationId }: ToolExecutor
   const execution = executionId ? executionData : undefined;
   const approve = useApproveExecution(workspaceId);
   const reject = useRejectExecution(workspaceId);
+  const previewExecution = usePreviewExecution(workspaceId, tool.id);
+  const [preview, setPreview] = useState<ToolExecutionPreview | null>(null);
 
   const buildInput = (): Record<string, unknown> | null => {
     const input: Record<string, unknown> = {};
@@ -159,9 +164,20 @@ export function ToolExecutor({ workspaceId, tool, conversationId }: ToolExecutor
         onSuccess: (result) => {
           setExecutionId(result.id);
           setRejectReason('');
+          // The preview described the inputs as they were; leaving it
+          // beside a real execution would read as that execution's own
+          // description.
+          setPreview(null);
         },
       }
     );
+  };
+
+  const handlePreview = () => {
+    setFormError(null);
+    const input = buildInput();
+    if (input === null) return;
+    previewExecution.mutate({ input }, { onSuccess: setPreview });
   };
 
   const active = execution ? isActiveExecution(execution.status) : false;
@@ -273,7 +289,33 @@ export function ToolExecutor({ workspaceId, tool, conversationId }: ToolExecutor
             'Execute Tool'
           )}
         </Button>
+
+        {/* Offered, never demanded, and never a gate in front of Execute:
+            a person who knows their tool should not be made to click
+            twice. Executing a webhook is irreversible from Synora's
+            side, so the option to look first has to exist. */}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handlePreview}
+          disabled={previewExecution.isPending || active}
+          className="w-full gap-2"
+        >
+          {previewExecution.isPending ? (
+            <>
+              <Spinner size="sm" />
+              Checking…
+            </>
+          ) : (
+            <>
+              <Eye className="h-4 w-4" />
+              What would this do?
+            </>
+          )}
+        </Button>
       </form>
+
+      {preview && <ToolPreviewPanel preview={preview} />}
 
       {execution && (
         <div className="space-y-3 rounded-md border border-border bg-background p-3">

@@ -159,6 +159,110 @@ describe('tool execution routes', () => {
     expect(statuses).toEqual(['COMPLETED', 'PENDING']);
   });
 
+  it('previews what executing a tool would do, without sending anything', async () => {
+    const owner = await register('tools-preview');
+    const ws = await createWorkspace(owner.cookie, 'Preview Tools Co');
+    const tool = await createApprovalGatedTool(owner.cookie, ws.id, 'notify-webhook');
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools/${tool.id}/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ input: {} });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.executed).toBe(false);
+    // The facts a person needs before committing: where it goes, how,
+    // and that it will stop for approval first.
+    expect(res.body.data.destination).toMatchObject({ host: 'example.com', method: 'POST' });
+    expect(res.body.data.wouldRequireApproval).toBe(true);
+    expect(res.body.data.unknowns.join(' ')).toMatch(/not contacted by a preview/);
+    // No safety verdict is invented anywhere in the payload.
+    expect(JSON.stringify(res.body.data)).not.toMatch(/\b(safe|risky|dangerous)\b/i);
+
+    // Previewing is not executing: no record was created.
+    const executions = await request(app)
+      .get(`/api/workspaces/${ws.id}/executions`)
+      .set('Cookie', owner.cookie);
+    expect(executions.body.data).toEqual([]);
+  });
+
+  it('names the secrets a tool would use without ever revealing one', async () => {
+    const owner = await register('tools-preview-secrets');
+    const ws = await createWorkspace(owner.cookie, 'Secret Preview Co');
+    const created = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools`)
+      .set('Cookie', owner.cookie)
+      .send({
+        name: 'secret-webhook',
+        displayName: 'Secret Webhook',
+        description: 'uses a token',
+        category: 'http',
+        type: 'HTTP',
+        inputSchema: { type: 'object', required: [] },
+        config: {
+          url: 'https://api.example.com/send',
+          headers: { authorization: 'Bearer {{secret:PARTNER_TOKEN}}' },
+        },
+        secrets: ['PARTNER_TOKEN'],
+      });
+    expect(created.status).toBe(201);
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools/${created.body.data.id}/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ input: {} });
+
+    expect(res.status).toBe(200);
+    // The NAME is useful ("this call is authenticated as the partner
+    // integration"). The VALUE is never read, so previewing can never
+    // become a way to exfiltrate a secret.
+    expect(res.body.data.secretsUsed).toEqual(['PARTNER_TOKEN']);
+    expect(JSON.stringify(res.body.data)).not.toMatch(/Bearer /);
+  });
+
+  it('reports a schema violation as a blocker instead of failing the request', async () => {
+    const owner = await register('tools-preview-schema');
+    const ws = await createWorkspace(owner.cookie, 'Schema Preview Co');
+    const created = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools`)
+      .set('Cookie', owner.cookie)
+      .send({
+        name: 'strict-webhook',
+        displayName: 'Strict Webhook',
+        description: 'needs a city',
+        category: 'http',
+        type: 'HTTP',
+        inputSchema: { type: 'object', required: ['city'] },
+        config: { url: 'https://example.com/hook' },
+      });
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools/${created.body.data.id}/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ input: {} });
+
+    // Finding out BEFORE pressing Execute is the entire point — so a bad
+    // input is a reported blocker, not a rejected request.
+    expect(res.status).toBe(200);
+    expect(res.body.data.wouldRun).toBe(false);
+    expect(res.body.data.blockers.join(' ')).toMatch(/city/);
+  });
+
+  it('hides the preview from someone outside the workspace', async () => {
+    const owner = await register('tools-preview-owner');
+    const stranger = await register('tools-preview-stranger');
+    const ws = await createWorkspace(owner.cookie, 'Closed Preview Co');
+    const tool = await createApprovalGatedTool(owner.cookie, ws.id, 'private-webhook');
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools/${tool.id}/preview`)
+      .set('Cookie', stranger.cookie)
+      .send({ input: {} });
+
+    // Where a tool sends data is information about that workspace.
+    expect([403, 404]).toContain(res.status);
+  });
+
   it('rejects a status value the enum does not know', async () => {
     const owner = await register('tools-badstatus');
     const ws = await createWorkspace(owner.cookie, 'Strict Co');

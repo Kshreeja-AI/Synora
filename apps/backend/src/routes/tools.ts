@@ -135,6 +135,24 @@ router.post('/:workspaceId/tools/:toolId/execute', authMiddleware, requireWorksp
   }
 });
 
+// POST /workspaces/:workspaceId/tools/:toolId/preview - what executing
+// this tool WOULD do. Sends nothing, creates no execution record, and
+// never resolves a secret: it reports the destination host and method
+// from the UNSUBSTITUTED config plus the secret NAMES that would be
+// filled in. Facts, not a safety verdict.
+router.post('/:workspaceId/tools/:toolId/preview', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+  try {
+    const { workspaceId, toolId } = req.params;
+    const { input } = z.object({ input: z.record(z.unknown()).default({}) }).parse(req.body ?? {});
+
+    const preview = await toolService.previewExecution(req.userId!, workspaceId, toolId, input);
+
+    res.json(createApiResponse(preview));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /workspaces/:workspaceId/tools/:toolId/executions - list executions for a tool
 router.get('/:workspaceId/tools/:toolId/executions', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {

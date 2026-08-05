@@ -282,6 +282,44 @@ export function useExecuteTool(
   });
 }
 
+export interface ToolExecutionPreview {
+  toolId: string;
+  toolName: string;
+  type: Tool['type'];
+  /** Literal: nothing was sent and no execution record exists. */
+  executed: false;
+  wouldRequireApproval: boolean;
+  /**
+   * Where the request would go. `hostDependsOnSecret` means the host
+   * itself comes from a secret, so the real destination is genuinely
+   * unknown here rather than being withheld.
+   */
+  destination: { host: string | null; method: string; hostDependsOnSecret: boolean } | null;
+  /** Names only — the server never reads or returns secret values. */
+  secretsUsed: string[];
+  rateLimit: { limitPerMinute: number; usedInLastMinute: number } | null;
+  blockers: string[];
+  unknowns: string[];
+  wouldRun: boolean;
+}
+
+/**
+ * What executing this tool would do, without doing it. No execution
+ * record is created, so there is nothing to invalidate on success.
+ */
+export function usePreviewExecution(
+  workspaceId: string,
+  toolId: string,
+): UseMutationResult<ToolExecutionPreview, Error, { input: Record<string, unknown> }> {
+  return useMutation({
+    mutationFn: ({ input }) =>
+      api.post<ToolExecutionPreview>(
+        `/api/workspaces/${workspaceId}/tools/${toolId}/preview`,
+        { input },
+      ),
+  });
+}
+
 /**
  * Get tool executions
  */

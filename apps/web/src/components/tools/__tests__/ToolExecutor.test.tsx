@@ -14,6 +14,7 @@ import type { Tool, ToolExecution } from '@/lib/api/tools';
 const mockExecuteMutate = vi.fn();
 const mockApproveMutate = vi.fn();
 const mockRejectMutate = vi.fn();
+const mockPreviewMutate = vi.fn();
 const mockExecutionData = vi.fn<() => ToolExecution | undefined>();
 
 vi.mock('@/lib/api/tools', async (importOriginal) => {
@@ -24,6 +25,7 @@ vi.mock('@/lib/api/tools', async (importOriginal) => {
     useToolExecution: () => ({ data: mockExecutionData() }),
     useApproveExecution: () => ({ mutate: mockApproveMutate, isPending: false, error: null }),
     useRejectExecution: () => ({ mutate: mockRejectMutate, isPending: false, error: null }),
+    usePreviewExecution: () => ({ mutate: mockPreviewMutate, isPending: false, error: null }),
   };
 });
 

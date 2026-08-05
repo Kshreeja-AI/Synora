@@ -115,8 +115,17 @@ any part of it becomes real.
    Budget exhaustion is reported as a blocker, never used to refuse the
    preview. UI: "Preview plan" beside Run on the agents page, rendering
    the report through the same RuntimeNotice provenance component every
-   run uses. Still missing: the single unifying surface across agent
-   runs / workflows / tools, and risk-classification language.
+   run uses. Slice 2 shipped 2026-08-05: **tool execution preview** —
+   POST `/tools/:toolId/preview` reports where the request would go
+   (host + method), whether it would stop for approval, which declared
+   secrets it would carry (NAMES only — the preview never resolves one,
+   so previewing can never become a way to read a secret), rate-limit
+   headroom, what would block it, and what is unknowable without
+   sending. Facts, never a safety verdict: nothing grades a tool "safe"
+   or "risky", because Synora has no system that can judge that. **All
+   three execution paths now have a preview** (agent runs, workflows,
+   tools). Still missing: the single unifying surface that shows them as
+   one pipeline, and risk-classification language.
 3. **Human Decision Center, full form** — partially advanced 2026-08-05:
    the home page's waiting surface now covers three item kinds — paused
    runs, tool executions stopped on `requiresApproval` (workspace-scoped,
