@@ -27,6 +27,8 @@ function report(overrides: Partial<PlanPreviewReport> = {}): PlanPreviewReport {
         description: 'Draft the summary',
         pausesForApproval: false,
         treatedAsMutating: false,
+        reversibleBySynora: true,
+        reversibilityNote: 'Nothing outside Synora changes, so there is nothing to undo.',
         unresolvedReferences: [],
         problems: [],
         unknowns: ['the generated text is only knowable by running the step'],
@@ -38,6 +40,8 @@ function report(overrides: Partial<PlanPreviewReport> = {}): PlanPreviewReport {
         description: 'Send it to the team',
         pausesForApproval: true,
         treatedAsMutating: true,
+        reversibleBySynora: false,
+        reversibilityNote: 'Synora cannot undo this once it runs — it acts on a system outside Synora.',
         unresolvedReferences: [],
         problems: [],
         unknowns: [],
@@ -80,6 +84,10 @@ describe('PlanPreviewPanel', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/may change things outside the run/)).toBeInTheDocument();
     expect(screen.getByText(/Unknown until it runs:/)).toBeInTheDocument();
+    // The honest core of "risk": a capability fact about undo, stated
+    // per step — never a grade.
+    expect(screen.getByText(/Synora cannot undo this once it runs/)).toBeInTheDocument();
+    expect(screen.getByText(/nothing to undo/)).toBeInTheDocument();
   });
 
   it('states blockers as failure, not as advice', () => {

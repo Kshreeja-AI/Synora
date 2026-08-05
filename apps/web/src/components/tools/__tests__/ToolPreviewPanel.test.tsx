@@ -20,6 +20,9 @@ function preview(overrides: Partial<ToolExecutionPreview> = {}): ToolExecutionPr
     wouldRequireApproval: false,
     destination: { host: 'hooks.example.com', method: 'POST', hostDependsOnSecret: false },
     secretsUsed: [],
+    reversibleBySynora: false,
+    reversibilityNote:
+      'Synora cannot undo this once it runs — the request reaches a system outside Synora.',
     rateLimit: null,
     blockers: [],
     unknowns: ['the remote endpoint is not contacted by a preview, so its response is unknown'],
@@ -34,6 +37,9 @@ describe('ToolPreviewPanel', () => {
     expect(screen.getByText(/Nothing has been sent/)).toBeInTheDocument();
     expect(screen.getByText(/hooks\.example\.com/)).toBeInTheDocument();
     expect(screen.getByText(/Unknown until it runs:/)).toBeInTheDocument();
+    // States what Synora can and cannot do about it afterwards — a
+    // capability fact, still not a verdict.
+    expect(screen.getByText(/Synora cannot undo this once it runs/)).toBeInTheDocument();
   });
 
   it('names secrets without implying their values are available', () => {

@@ -128,8 +128,16 @@ any part of it becomes real.
    the preview's facts** — the single-run read attaches the paused
    step's consequences (same shared checker), because whoever approves
    is usually not whoever asked and was previously shown only a step id
-   and a one-line reason. Still missing: the single unifying surface
-   that shows them as one pipeline, and risk-classification language.
+   and a one-line reason. Slice 4 shipped 2026-08-05: the **risk stage,
+   as consequence facts rather than grades** — every step check and the
+   tool preview now carry `reversibleBySynora` plus the server's own
+   wording ("Synora cannot undo this once it runs — it acts on a system
+   outside Synora" / "Nothing outside Synora changes, so there is
+   nothing to undo"). Undo is a capability Synora either has or lacks,
+   so this is certain; whether it *matters* is the reader's call, which
+   is why no surface says "safe" or "risky". Rendered on all three
+   surfaces from the one shared source. Still missing: the single
+   unifying surface that shows the pipeline as one thing.
 3. **Human Decision Center, full form** — partially advanced 2026-08-05:
    the home page's waiting surface now covers three item kinds — paused
    runs, tool executions stopped on `requiresApproval` (workspace-scoped,

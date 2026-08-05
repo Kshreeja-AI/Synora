@@ -172,6 +172,9 @@ describe('RunDetail — run again', () => {
           description: 'Email the invoice to the customer',
           pausesForApproval: true,
           treatedAsMutating: true,
+          reversibleBySynora: false,
+          reversibilityNote:
+            'Synora cannot undo this once it runs — it acts on a system outside Synora.',
           unresolvedReferences: [],
           problems: [],
           unknowns: ['the remote endpoint is not contacted by a dry run'],
@@ -185,6 +188,8 @@ describe('RunDetail — run again', () => {
     expect(screen.getByText(/Calls tool send-invoice/)).toBeInTheDocument();
     expect(screen.getByText(/may change things outside the run/)).toBeInTheDocument();
     expect(screen.getByText(/Unknown until it runs:/)).toBeInTheDocument();
+    // The one fact that most changes a person's answer at this moment.
+    expect(screen.getByText(/Synora cannot undo this once it runs/)).toBeInTheDocument();
   });
 
   it('says nothing extra when the backend supplied no step facts', () => {

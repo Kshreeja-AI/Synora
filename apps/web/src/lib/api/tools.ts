@@ -297,6 +297,9 @@ export interface ToolExecutionPreview {
   destination: { host: string | null; method: string; hostDependsOnSecret: boolean } | null;
   /** Names only — the server never reads or returns secret values. */
   secretsUsed: string[];
+  /** Whether Synora could undo the effect — a capability fact, not a grade. */
+  reversibleBySynora: boolean;
+  reversibilityNote: string;
   rateLimit: { limitPerMinute: number; usedInLastMinute: number } | null;
   blockers: string[];
   unknowns: string[];

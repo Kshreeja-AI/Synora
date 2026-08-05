@@ -189,6 +189,7 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
                     {facts.kind === 'tool' ? `Calls tool ${facts.toolId}` : 'Generates text'}
                     {facts.treatedAsMutating ? ' · may change things outside the run' : ''}
                   </p>
+                  <p className="text-xs">{facts.reversibilityNote}</p>
                   {facts.problems.map((problem) => (
                     <p key={problem} className="text-xs font-medium">
                       Would fail: {problem}

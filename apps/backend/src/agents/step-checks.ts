@@ -24,12 +24,52 @@ export interface PlannedStepCheck {
   pausesForApproval: boolean;
   /** The declared value with the fail-closed default already applied. */
   treatedAsMutating: boolean;
+  /**
+   * Whether Synora could undo this step's effect after it runs.
+   *
+   * This is the honest core of the blueprint's "risk class" stage, and
+   * it is a FACT rather than a grade: Synora has no mechanism to recall
+   * an HTTP request or un-send a webhook, so for a step that acts
+   * outside the run the answer is a certain no — not a judgement about
+   * whether that is dangerous, which only the reader can make. A step
+   * that changes nothing outside the run has nothing to undo, which is
+   * a different statement from "it is safe" and is worded as such.
+   */
+  reversibleBySynora: boolean;
+  /** Plain sentence for the above, so no surface has to word it twice. */
+  reversibilityNote: string;
   /** `{{refs}}` in the input that no earlier step supplies. */
   unresolvedReferences: string[];
   /** Conditions that would fail this step, found without executing it. */
   problems: string[];
   /** What cannot be known until the step actually runs. */
   unknowns: string[];
+}
+
+/**
+ * Undo is a capability Synora either has or does not have — never a
+ * guess. It has none for effects outside itself, so the answer for a
+ * mutating tool step is a flat no, stated without dressing it up as a
+ * warning.
+ */
+function reversibility(step: PlannedStep): {
+  reversibleBySynora: boolean;
+  reversibilityNote: string;
+} {
+  if (step.kind === 'tool' && step.mutating !== false) {
+    return {
+      reversibleBySynora: false,
+      reversibilityNote:
+        'Synora cannot undo this once it runs — it acts on a system outside Synora.',
+    };
+  }
+  return {
+    reversibleBySynora: true,
+    // Deliberately not "this is safe": nothing here judges the content
+    // of what gets generated or read, only that no outside system
+    // changes.
+    reversibilityNote: 'Nothing outside Synora changes, so there is nothing to undo.',
+  };
 }
 
 /** `{{name}}` references, matching the engine's own substitution syntax. */
@@ -108,6 +148,7 @@ export async function checkPlannedSteps(params: {
       // Undeclared means mutating. The check states the resolved value
       // so nobody has to know the default to read the report.
       treatedAsMutating: step.kind === 'tool' && step.mutating !== false,
+      ...reversibility(step),
       unresolvedReferences: referencesIn(step.input).filter((ref) => !seen.includes(ref)),
       problems: [],
       unknowns: [],

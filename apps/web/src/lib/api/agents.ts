@@ -165,6 +165,10 @@ export interface PlanPreviewStepCheck {
   toolId?: string;
   pausesForApproval: boolean;
   treatedAsMutating: boolean;
+  /** Whether Synora could undo the effect — a capability fact, not a grade. */
+  reversibleBySynora: boolean;
+  /** The server's wording for the above, so no surface phrases it twice. */
+  reversibilityNote: string;
   unresolvedReferences: string[];
   problems: string[];
   unknowns: string[];

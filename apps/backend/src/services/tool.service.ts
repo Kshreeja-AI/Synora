@@ -57,6 +57,14 @@ export interface ToolExecutionPreview {
   destination: { host: string | null; method: string; hostDependsOnSecret: boolean } | null;
   /** Names only. Values are never read, resolved, or returned. */
   secretsUsed: string[];
+  /**
+   * Whether Synora could undo the effect. A fact, not a grade: Synora
+   * has no mechanism to recall an HTTP request, so for an executable
+   * tool the answer is a certain no. Whether that matters is the
+   * reader's call, which is why nothing here says "risky".
+   */
+  reversibleBySynora: boolean;
+  reversibilityNote: string;
   rateLimit: { limitPerMinute: number; usedInLastMinute: number } | null;
   blockers: string[];
   unknowns: string[];
@@ -342,6 +350,9 @@ export class ToolService {
       wouldRequireApproval: Boolean(tool.requiresApproval),
       destination,
       secretsUsed: [...secretsUsed],
+      reversibleBySynora: false,
+      reversibilityNote:
+        'Synora cannot undo this once it runs — the request reaches a system outside Synora.',
       rateLimit,
       blockers,
       unknowns,

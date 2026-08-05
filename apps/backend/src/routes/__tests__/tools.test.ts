@@ -178,6 +178,11 @@ describe('tool execution routes', () => {
     expect(res.body.data.unknowns.join(' ')).toMatch(/not contacted by a preview/);
     // No safety verdict is invented anywhere in the payload.
     expect(JSON.stringify(res.body.data)).not.toMatch(/\b(safe|risky|dangerous)\b/i);
+    // Undo is a capability Synora either has or does not have. It has
+    // none for a request that leaves the system, so this is a certain
+    // fact — and it is what most changes a person's answer.
+    expect(res.body.data.reversibleBySynora).toBe(false);
+    expect(res.body.data.reversibilityNote).toMatch(/cannot undo/);
 
     // Previewing is not executing: no record was created.
     const executions = await request(app)

@@ -43,6 +43,8 @@ export function ToolPreviewPanel({ preview }: { preview: ToolExecutionPreview })
         </p>
       )}
 
+      <p className="text-xs text-muted-foreground">{preview.reversibilityNote}</p>
+
       {preview.wouldRequireApproval && (
         <p className="flex items-center gap-1 text-xs text-muted-foreground">
           <PauseCircle className="h-3 w-3" aria-hidden />

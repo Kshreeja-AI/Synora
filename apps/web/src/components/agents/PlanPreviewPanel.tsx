@@ -60,6 +60,9 @@ export function PlanPreviewPanel({ report }: { report: PlanPreviewReport }) {
               {step.kind === 'tool' ? `Calls tool ${step.toolId}` : 'Generates text'}
               {step.treatedAsMutating ? ' · may change things outside the run' : ''}
             </p>
+            {/* The honest core of "risk": a capability fact about undo,
+                never a grade like "safe" or "dangerous". */}
+            <p className="mt-1 text-xs text-muted-foreground">{step.reversibilityNote}</p>
             {step.pausesForApproval && (
               <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                 <PauseCircle className="h-3 w-3" aria-hidden />
