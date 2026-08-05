@@ -5,6 +5,7 @@ import { createNotification } from './notification.service';
 import { requirePermission, requireOwnerForOwnershipChange } from './permissions';
 import { recordAuditEvent } from './audit.service';
 import { requireMembership } from './checks';
+import { listRuns } from '../agents/run-engine';
 
 /**
  * Workspace create/list/get/update, membership listing, and member role
@@ -109,6 +110,52 @@ export async function createWorkspace(
     createdAt: workspace.createdAt,
     updatedAt: workspace.updatedAt,
   };
+}
+
+export interface WaitingElsewhereEntry {
+  workspaceId: string;
+  workspaceName: string;
+  pausedRuns: number;
+  pendingExecutions: number;
+}
+
+/**
+ * Where else decisions are waiting on this person. The home page's
+ * waiting surface shows the CURRENT workspace's items in full; a paused
+ * run in another workspace is just as stopped, but invisible from here —
+ * so this returns per-workspace COUNTS across every workspace the person
+ * belongs to. Counts only, deliberately: the context those decisions
+ * need (the run's reason, the execution's input) lives inside each
+ * workspace, and the honest job of this read is to say WHERE to go, not
+ * to reproduce a decision surface without its context.
+ *
+ * Self-scoped by construction — it starts from the caller's own
+ * memberships, so there is nothing here for a stranger to probe.
+ */
+export async function listWaitingElsewhere(userId: string): Promise<WaitingElsewhereEntry[]> {
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId },
+    select: { workspaceId: true, workspace: { select: { name: true } } },
+  });
+  if (memberships.length === 0) return [];
+
+  const workspaceIds = memberships.map((m) => m.workspaceId);
+  const pendingCounts = await prisma.toolExecution.groupBy({
+    by: ['workspaceId'],
+    where: { workspaceId: { in: workspaceIds }, status: 'PENDING' },
+    _count: { _all: true },
+  });
+  const pendingByWorkspace = new Map(pendingCounts.map((c) => [c.workspaceId, c._count._all]));
+
+  return memberships
+    .map((m) => ({
+      workspaceId: m.workspaceId,
+      workspaceName: m.workspace.name,
+      pausedRuns: listRuns(m.workspaceId).filter((run) => run.state === 'awaiting_approval')
+        .length,
+      pendingExecutions: pendingByWorkspace.get(m.workspaceId) ?? 0,
+    }))
+    .filter((entry) => entry.pausedRuns > 0 || entry.pendingExecutions > 0);
 }
 
 export async function listWorkspacesForUser(userId: string): Promise<WorkspaceSummary[]> {

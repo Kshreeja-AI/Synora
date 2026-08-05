@@ -5,6 +5,8 @@ import { PauseCircle } from 'lucide-react';
 import { useAgentRuns } from '@/lib/api/agents';
 import { useWorkspacePendingExecutions } from '@/lib/api/tools';
 import { useMyInvitations } from '@/lib/api/invitations';
+import { useWaitingElsewhere } from '@/hooks/useWaitingElsewhere';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
 /**
  * What is actually blocked on this person.
@@ -38,6 +40,12 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
   // workspace-scoped. A decision waiting on you follows you.
   const { data: myInvitations } = useMyInvitations();
   const invitations = myInvitations?.invitations ?? [];
+  // A paused run in a workspace you never open is just as stopped as
+  // one in front of you. Counts only for other workspaces — the context
+  // each decision needs lives there, so the row's job is to say WHERE.
+  const { data: waitingElsewhere = [] } = useWaitingElsewhere();
+  const setCurrentWorkspaceId = useWorkspaceStore((state) => state.setCurrentWorkspaceId);
+  const elsewhere = waitingElsewhere.filter((entry) => entry.workspaceId !== workspaceId);
 
   if (isLoading) return null;
 
@@ -118,6 +126,29 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               </p>
             </li>
           ))}
+        </ul>
+      )}
+
+      {elsewhere.length > 0 && (
+        <ul className="space-y-1">
+          {/* Switching workspace is exactly what WorkspaceSwitcher does —
+              the same store setter, so there is one navigation behavior
+              to reason about, not two. */}
+          {elsewhere.map((entry) => {
+            const total = entry.pausedRuns + entry.pendingExecutions;
+            return (
+              <li key={entry.workspaceId}>
+                <button
+                  type="button"
+                  onClick={() => setCurrentWorkspaceId(entry.workspaceId)}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  {total} {total === 1 ? 'decision is' : 'decisions are'} waiting in{' '}
+                  {entry.workspaceName} — switch to it
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

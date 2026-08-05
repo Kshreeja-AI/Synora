@@ -60,3 +60,19 @@ export function revokeInvitation(workspaceId: string, invitationId: string): Pro
 export function listAuditLog(workspaceId: string): Promise<AuditLogEntry[]> {
   return api.get<AuditLogEntry[]>(`/api/workspaces/${workspaceId}/audit-log`);
 }
+
+export interface WaitingElsewhereEntry {
+  workspaceId: string;
+  workspaceName: string;
+  pausedRuns: number;
+  pendingExecutions: number;
+}
+
+/**
+ * Per-workspace counts of decisions waiting on me, across every
+ * workspace I belong to. Counts only — the context each decision needs
+ * lives inside its workspace; this read says WHERE to go.
+ */
+export function listWaitingElsewhere(): Promise<WaitingElsewhereEntry[]> {
+  return api.get<WaitingElsewhereEntry[]>('/api/workspaces/waiting-elsewhere');
+}

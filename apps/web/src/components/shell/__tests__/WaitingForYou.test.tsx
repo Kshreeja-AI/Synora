@@ -30,6 +30,18 @@ vi.mock('@/lib/api/invitations', async () => {
   return { ...actual, useMyInvitations: vi.fn() };
 });
 
+vi.mock('@/hooks/useWaitingElsewhere', () => ({ useWaitingElsewhere: vi.fn() }));
+
+const setCurrentWorkspaceId = vi.fn();
+vi.mock('@/stores/workspace-store', () => ({
+  useWorkspaceStore: vi.fn(
+    (selector: (state: { currentWorkspaceId: string; setCurrentWorkspaceId: typeof setCurrentWorkspaceId }) => unknown) =>
+      selector({ currentWorkspaceId: 'ws_1', setCurrentWorkspaceId }),
+  ),
+}));
+
+import { useWaitingElsewhere } from '@/hooks/useWaitingElsewhere';
+
 function run(overrides: Record<string, unknown> = {}) {
   return {
     id: 'run_1',
@@ -70,6 +82,7 @@ beforeEach(() => {
   vi.mocked(invitationsApi.useMyInvitations).mockReturnValue({
     data: { emailVerified: true, invitations: [] },
   } as never);
+  vi.mocked(useWaitingElsewhere).mockReturnValue({ data: [] } as never);
 });
 
 describe('WaitingForYou', () => {
@@ -175,6 +188,29 @@ describe('WaitingForYou', () => {
     expect(screen.getByText(/join as a member/)).toBeInTheDocument();
     expect(screen.getByText(/expires on/)).toBeInTheDocument();
     expect(screen.queryByText(/Nothing is paused for a decision/)).not.toBeInTheDocument();
+  });
+
+  it('points to decisions waiting in OTHER workspaces, and switching goes there', async () => {
+    const { userEvent } = await import('@testing-library/user-event').then((m) => ({
+      userEvent: m.default,
+    }));
+    vi.mocked(useWaitingElsewhere).mockReturnValue({
+      data: [
+        // The current workspace's own items are shown in full above —
+        // repeating them as a count would double-claim attention.
+        { workspaceId: 'ws_1', workspaceName: 'Current Co', pausedRuns: 3, pendingExecutions: 0 },
+        { workspaceId: 'ws_2', workspaceName: 'Beta Co', pausedRuns: 1, pendingExecutions: 1 },
+      ],
+    } as never);
+
+    renderPanel();
+    expect(screen.queryByText(/Current Co/)).not.toBeInTheDocument();
+    const button = screen.getByRole('button', {
+      name: /2 decisions are waiting in Beta Co — switch to it/,
+    });
+    await userEvent.click(button);
+    // Same store setter WorkspaceSwitcher uses — one navigation behavior.
+    expect(setCurrentWorkspaceId).toHaveBeenCalledWith('ws_2');
   });
 
   it('renders nothing while runs are still loading', () => {

@@ -251,4 +251,86 @@ describe('workspaces routes (M4)', () => {
       expect(res.body.data.unreadCount).toBe(1);
     });
   });
+
+  describe('GET /api/workspaces/waiting-elsewhere', () => {
+    /** An approval-gated tool whose execution stays PENDING — a real "waiting on a person" fact with no network involved. */
+    async function createPendingExecution(accessToken: string, workspaceId: string) {
+      const tool = await request(app)
+        .post(`/api/workspaces/${workspaceId}/tools`)
+        .set('Cookie', accessToken)
+        .send({
+          name: `gated-${Math.random().toString(36).slice(2)}`,
+          displayName: 'Gated',
+          description: 'requires a decision',
+          category: 'http',
+          type: 'HTTP',
+          inputSchema: { type: 'object', required: [] },
+          config: { url: 'https://example.com/hook' },
+          requiresApproval: true,
+        });
+      expect(tool.status).toBe(201);
+      const executed = await request(app)
+        .post(`/api/workspaces/${workspaceId}/tools/${tool.body.data.id}/execute`)
+        .set('Cookie', accessToken)
+        .send({ input: {} });
+      expect(executed.body.data.status).toBe('PENDING');
+    }
+
+    it('counts decisions per workspace, listing only workspaces where something waits', async () => {
+      const person = await register('elsewhere');
+      const quietId = (await createWorkspace(person.accessToken, { name: 'Quiet Co' })).body.data
+        .id as string;
+      const busy = await createWorkspace(person.accessToken, { name: 'Busy Co' });
+      const busyId = busy.body.data.id as string;
+      const busyName = busy.body.data.name as string;
+      await createPendingExecution(person.accessToken, busyId);
+
+      const res = await request(app)
+        .get('/api/workspaces/waiting-elsewhere')
+        .set('Cookie', person.accessToken);
+
+      // The static path must win over /:id — "waiting-elsewhere" read as
+      // a workspace id would 404 here.
+      expect(res.status).toBe(200);
+      const entries = res.body.data as {
+        workspaceId: string;
+        workspaceName: string;
+        pausedRuns: number;
+        pendingExecutions: number;
+      }[];
+      // Quiet Co has nothing waiting, so it earns no row at all — a
+      // zero-count entry would be the panel inventing attention.
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({
+        workspaceId: busyId,
+        workspaceName: busyName,
+        pausedRuns: 0,
+        pendingExecutions: 1,
+      });
+      expect(entries.some((e) => e.workspaceId === quietId)).toBe(false);
+    });
+
+    it('never shows another person their neighbor’s waiting decisions', async () => {
+      const alice = await register('elsewhere-alice');
+      const bob = await register('elsewhere-bob');
+      const aliceWsId = (await createWorkspace(alice.accessToken, { name: 'Alice Co' })).body.data
+        .id as string;
+      await createWorkspace(bob.accessToken, { name: 'Bob Co' });
+      await createPendingExecution(alice.accessToken, aliceWsId);
+
+      const res = await request(app)
+        .get('/api/workspaces/waiting-elsewhere')
+        .set('Cookie', bob.accessToken);
+
+      // Self-scoped by construction: the read starts from Bob's own
+      // memberships, so Alice's pending work cannot appear.
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual([]);
+    });
+
+    it('requires authentication', async () => {
+      const res = await request(app).get('/api/workspaces/waiting-elsewhere');
+      expect(res.status).toBe(401);
+    });
+  });
 });

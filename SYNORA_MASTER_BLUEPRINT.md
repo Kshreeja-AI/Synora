@@ -113,10 +113,13 @@ any part of it becomes real.
    in-app surface is never weaker than the emailed token it stands in
    for). Per-item WHO/WHEN shipped 2026-08-05: every waiting row names
    the person who asked and when (batched name resolution on the read
-   surfaces; email fallback; never a raw id). Still missing from the
-   defined standard: remaining non-run work kinds (documents, generated
-   media), cross-workspace runs/executions, and per-item
-   RECOMMENDATION/consequences detail.
+   surfaces; email fallback; never a raw id). Cross-workspace awareness
+   shipped 2026-08-05: per-workspace counts of waiting decisions across
+   all the person's workspaces, with one-click switching (counts only —
+   the context each decision needs lives inside its workspace). Still
+   missing from the defined standard: remaining non-run work kinds
+   (documents, generated media) and per-item RECOMMENDATION/consequences
+   detail.
 4. **Operations visualization (office view)** — role-scoped layers
    (EXECUTIVE / OPERATIONS / ENGINEERING / SECURITY / AI / AUDIT) over the
    EOS event bus. Founder-only data stays founder-only.
