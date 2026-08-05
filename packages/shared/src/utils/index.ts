@@ -181,3 +181,17 @@ export class ServiceUnavailableException extends ApiException {
     this.name = 'ServiceUnavailableException';
   }
 }
+
+/**
+ * 429 — deliberately the same code the express-rate-limit handlers emit
+ * (`resourceRateLimit.ts`, auth limiters), so a 429 raised from inside a
+ * service (e.g. Synora's own outbound provider pacing) is indistinguishable
+ * in shape from one raised at the HTTP edge: clients need exactly one
+ * "back off and retry" handler.
+ */
+export class TooManyRequestsException extends ApiException {
+  constructor(message = 'Too many requests. Please wait a moment and try again.') {
+    super('RATE_LIMIT_EXCEEDED', message, 429);
+    this.name = 'TooManyRequestsException';
+  }
+}

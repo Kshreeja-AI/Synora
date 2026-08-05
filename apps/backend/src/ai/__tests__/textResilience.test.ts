@@ -9,8 +9,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { generateWithResilience, resetTextResilienceForTests } from '../textResilience';
-import { AIProviderError } from '../types';
+import {
+  generateWithResilience,
+  resetTextResilienceForTests,
+  setTextRateLimiterForTests,
+} from '../textResilience';
+import { AIProviderError, AIRateLimitedError } from '../types';
 import type { TextGenerationProvider, TextGenerationResult } from '../types';
 
 const okResult: TextGenerationResult = {
@@ -111,5 +115,65 @@ describe('generateWithResilience', () => {
     await expect(generateWithResilience(provider, { prompt: 'hi' })).rejects.toThrow(
       /resume automatically/i,
     );
+  });
+
+  describe('outbound rate limiting', () => {
+    it('refuses a call the limiter rejects WITHOUT contacting the provider', async () => {
+      setTextRateLimiterForTests({ tryAcquire: async () => false });
+      const provider = providerWith(async () => okResult);
+
+      await expect(generateWithResilience(provider, { prompt: 'hi' })).rejects.toThrow(
+        AIRateLimitedError,
+      );
+      // The whole point: the request was never sent, so it cost nothing.
+      expect(provider.generateText).not.toHaveBeenCalled();
+    });
+
+    it('says the refusal is Synora pacing itself and that retrying is safe', async () => {
+      setTextRateLimiterForTests({ tryAcquire: async () => false });
+      const provider = providerWith(async () => okResult);
+
+      await expect(generateWithResilience(provider, { prompt: 'hi' })).rejects.toThrow(
+        /was not sent/,
+      );
+      await expect(generateWithResilience(provider, { prompt: 'hi' })).rejects.toThrow(
+        /safe to retry/,
+      );
+    });
+
+    it('never counts a self-imposed refusal as a provider failure', async () => {
+      // Reject far past the breaker's 5-failure threshold...
+      setTextRateLimiterForTests({ tryAcquire: async () => false });
+      const provider = providerWith(async () => okResult);
+      for (let i = 0; i < 10; i++) {
+        await expect(generateWithResilience(provider, { prompt: 'hi' })).rejects.toThrow(
+          AIRateLimitedError,
+        );
+      }
+
+      // ...and the breaker must still be closed: pacing OURSELVES says
+      // nothing about the provider's health.
+      setTextRateLimiterForTests({ tryAcquire: async () => true });
+      const result = await generateWithResilience(provider, { prompt: 'hi' });
+      expect(result.text).toBe('hello');
+    });
+
+    it('acquires one token per logical call, not per retry attempt', async () => {
+      const tryAcquire = vi.fn(async () => true);
+      setTextRateLimiterForTests({ tryAcquire });
+      let calls = 0;
+      const provider = providerWith(async () => {
+        calls += 1;
+        if (calls < 3) throw new Error('503 service unavailable');
+        return okResult;
+      });
+
+      await generateWithResilience(provider, { prompt: 'hi' });
+      // Three provider attempts inside the call, one acquisition —
+      // mirrors the embeddings stack, where the limiter sits outside retry.
+      expect(calls).toBe(3);
+      expect(tryAcquire).toHaveBeenCalledTimes(1);
+      expect(tryAcquire).toHaveBeenCalledWith('fake');
+    });
   });
 });

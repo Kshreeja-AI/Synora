@@ -108,19 +108,22 @@ The six OpenAI-compatible providers are thin (25 lines each) because they
 delegate to `OpenAICompatibleTextProvider`. That is correct design, not an
 incomplete adapter — verified by reading the shared class.
 
-### What every one of them is missing
+### Cross-cutting concerns in the live text path
 
-Uniform across all ten, verified by grep returning nothing:
+At audit time (2026-08-05, morning) the first five rows below were all
+NOT-IMPLEMENTED, verified by grep returning nothing. The audit's build phase
+closed four of them the same day — statuses below are CURRENT, with the
+original finding kept in the notes so the history stays legible:
 
 | Concern | Status in live text path |
 |---|---|
-| Timeout | **NOT-IMPLEMENTED** |
-| Retry | **NOT-IMPLEMENTED** |
+| Timeout | **IMPLEMENTED** — `resilience/timeout.ts` via `ai/textResilience.ts` (120s; bounds waiting only, does not cancel the HTTP request) |
+| Retry | **IMPLEMENTED** — shared `resilience/retry.ts` (3 attempts, exponential backoff, transient shapes only; 401 never retried) |
 | Cancellation (AbortSignal) | **NOT-IMPLEMENTED** |
-| Rate-limit handling | **NOT-IMPLEMENTED** |
-| Circuit breaking | **NOT-IMPLEMENTED** |
-| Health check | **NOT-IMPLEMENTED** |
-| Credential *validation* | **NOT-IMPLEMENTED** — see §4 |
+| Rate-limit handling | **IMPLEMENTED** — outbound per-provider pacing (`AI_RATE_LIMIT_*`), refused before the request is sent, surfaced as the standard 429 envelope. Vendor 429s are separately classified as transient by the retry layer. LIMIT: keys by provider only — per-workspace fairness (the embeddings standard) needs the facade to carry caller identity first |
+| Circuit breaking | **IMPLEMENTED** — per-provider breaker via `ai/textResilience.ts`; registry deliberately separate from the embeddings stack's |
+| Health check | **NOT-IMPLEMENTED** — `verifyCredential()` is a setup-time check, not a liveness probe |
+| Credential *validation* | **IMPLEMENTED** — see §8 (four-outcome `verifyCredential()`, built by this audit) |
 | Model discovery | **NOT-IMPLEMENTED** — models come from config strings |
 | Capability discovery | **NOT-IMPLEMENTED** — capabilities are hardcoded per provider, not per model |
 | Error normalization | **IMPLEMENTED** (`AIProviderError`) |
@@ -238,6 +241,9 @@ business logic changes.
 - Mock streaming provider
 - The entire agent/workflow/tool/approval/audit orchestration layer
 - All previews (agent plan, workflow dry run, tool execution)
+- Text-path resilience: timeout, retry, circuit breaking and outbound
+  rate limiting — enforced locally on every `generateText()` call, tested
+  against simulated failure shapes (no provider contact)
 
 ### B. Ready for real credentials — set a key and it runs
 - Anthropic, OpenAI, Gemini, xAI, OpenRouter, DeepSeek, Together text generation
@@ -260,8 +266,13 @@ business logic changes.
   a provider** (Synora's contract cannot express them)
 - Reranking, moderation, speech-to-text, realtime voice, web search,
   browser/computer use, fine-tuning
-- Timeout, retry, cancellation, rate-limit handling, circuit breaking and
-  health checks **in the text path** (the embeddings stack has all of these)
+- True cancellation (AbortSignal through the SDKs) and health checks **in the
+  text path** — timeout/retry/circuit-breaking/rate-limiting were closed by
+  this audit's build phase, see §2 and §10
+- Per-workspace rate-limit fairness in the text path (the limiter keys by
+  provider only; the facade deliberately hides caller identity)
+- Metrics, tracing and caching in the text path (the embeddings stack has all
+  three)
 - Model-level capability discovery and negotiation
 
 ### F. Blocked by a founder decision
@@ -324,9 +335,14 @@ objective and is, on the evidence above, met for the providers in list B.
 
 ## 10. Recommended order for closing the gaps in E
 
-1. **Text-path resilience** — port `retry`/`circuitBreaker`/`rateLimiter` from
-   `embeddings/` to the text stack. The pattern is proven in-repo; this is
-   transplant work, not design work.
+1. ~~**Text-path resilience**~~ — **CLOSED 2026-08-05.** `retry`/`circuitBreaker`/
+   `rateLimiter` MOVED (not copied) from `embeddings/` to shared
+   `src/resilience/`, plus a new `timeout.ts`, all wired through
+   `ai/textResilience.ts` so every `generateText()` caller inherits them.
+   The outbound rate limiter is config-driven (`AI_RATE_LIMIT_*`) and its
+   refusal surfaces as the standard 429 envelope. Still open from the
+   embeddings standard: metrics, tracing, cache, true cancellation, and
+   per-workspace fairness keying (needs the facade to carry caller identity).
 2. **Resolve the orphaned stack** — either wire `ai/core` in or delete it.
    Leaving 250+ lines of unreachable OpenAI adapter is an active trap for the
    next reader.

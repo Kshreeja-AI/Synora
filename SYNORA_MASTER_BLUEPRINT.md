@@ -191,9 +191,15 @@ facts that change how the rest of this blueprint should be read:
    breaker moved to shared `src/resilience/` (embeddings files re-export;
    one definition, two consumers) plus a new timeout module; every
    `generateText()` call now runs under timeout → retry → per-provider
-   breaker. Remaining from the embeddings standard: rate limiter,
-   metrics, tracing, cache — and true request cancellation (the timeout
-   bounds waiting, not the underlying HTTP call).
+   breaker. The outbound rate limiter followed in the next increment:
+   `rateLimiter.ts` moved to `src/resilience/` the same way, wired between
+   the breaker and retry, config-driven (`AI_RATE_LIMIT_*`), refusing a
+   call BEFORE it is sent (standard 429 envelope, never counted as a
+   provider failure). Remaining from the embeddings standard: metrics,
+   tracing, cache — plus true request cancellation (the timeout bounds
+   waiting, not the underlying HTTP call) and per-workspace fairness
+   keying (the text facade deliberately hides caller identity from the
+   provider layer; embeddings keys `provider:workspace`).
 
 Closed by that audit: **credential verification** — `verifyCredential()` on
 the descriptor contract answers "is this key actually accepted", separate

@@ -95,6 +95,17 @@ export const AppConfigSchema = z.object({
     bedrockModelId: z.string().min(1),
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),
+    /**
+     * Synora's own outbound pacing toward text-generation vendors, keyed
+     * per provider — the text-path twin of `embeddings.rateLimit`. `redis`
+     * backend is required for multi-instance deployments (an in-memory
+     * bucket per instance would jointly admit N x the intended rate).
+     */
+    rateLimit: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      requestsPerSecond: z.number().positive().default(10),
+      redisUrl: z.string().url().optional(),
+    }),
   }),
 
   /**

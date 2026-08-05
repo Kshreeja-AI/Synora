@@ -24,7 +24,7 @@ export type {
   TextToSpeechResult,
   TextToSpeechProvider,
 } from './types';
-export { AIProviderError, NoProviderConfiguredError } from './types';
+export { AIProviderError, AIRateLimitedError, NoProviderConfiguredError } from './types';
 export { PROVIDER_REGISTRY, getProviderDescriptor, providersForCapability } from './registry';
 export type { AIProviderDescriptor } from './registry';
 export { resolveProvider, resolveTextGenerationProvider } from './resolver';

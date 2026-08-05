@@ -45,6 +45,10 @@ export interface StageDefaults {
     azureOpenAIApiVersion: string;
     bedrockModelId: string;
     ollamaModel: string;
+    rateLimit: {
+      backend: 'memory' | 'redis';
+      requestsPerSecond: number;
+    };
   };
   mail: {
     transport: 'console' | 'smtp';
@@ -185,6 +189,15 @@ const BASE_DEFAULTS: StageDefaults = {
     azureOpenAIApiVersion: '2024-10-21',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',
+    rateLimit: {
+      // Outbound pacing toward text-generation vendors, per provider. This
+      // is a backstop against runaway callers (an agent loop, a batch job),
+      // NOT a mirror of any vendor's tier — set it from your actual tier on
+      // credential day. 10/s is deliberately below every major vendor's
+      // entry paid tier so the default never masks a real 429.
+      backend: 'memory',
+      requestsPerSecond: 10,
+    },
   },
   mail: {
     // Console until MAIL_TRANSPORT explicitly selects a real provider — see

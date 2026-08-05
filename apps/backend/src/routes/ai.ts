@@ -1,7 +1,7 @@
 import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { createApiResponse } from '@synora/shared';
-import { generateText } from '../ai';
+import { createApiResponse, TooManyRequestsException } from '@synora/shared';
+import { generateText, AIRateLimitedError } from '../ai';
 import { listAvailableModels } from '../ai/models';
 import { checkProviderReadiness } from '../ai/verification';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
@@ -74,6 +74,14 @@ router.post('/generate', authMiddleware, aiGenerationLimiter, async (req: AuthRe
 
     res.json(createApiResponse(result));
   } catch (error) {
+    // Synora's own outbound pacing refused the call before it was sent —
+    // a 429 with the same envelope the inbound limiters use, so clients
+    // need exactly one back-off handler. Distinct from a vendor 429, which
+    // surfaces as a provider error after a real call.
+    if (error instanceof AIRateLimitedError) {
+      next(new TooManyRequestsException(error.message));
+      return;
+    }
     next(error);
   }
 });

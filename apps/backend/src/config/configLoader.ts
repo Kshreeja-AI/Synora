@@ -140,6 +140,19 @@ export async function loadConfig(
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
+      rateLimit: {
+        backend: readString(
+          env,
+          'AI_RATE_LIMIT_BACKEND',
+          defaults.ai.rateLimit.backend
+        ) as AppConfig['ai']['rateLimit']['backend'],
+        requestsPerSecond: readNumber(
+          env,
+          'AI_RATE_LIMIT_REQUESTS_PER_SECOND',
+          defaults.ai.rateLimit.requestsPerSecond
+        ),
+        redisUrl: env.AI_RATE_LIMIT_REDIS_URL || undefined,
+      },
     },
     mail: {
       transport: readString(env, 'MAIL_TRANSPORT', defaults.mail.transport) as AppConfig['mail']['transport'],

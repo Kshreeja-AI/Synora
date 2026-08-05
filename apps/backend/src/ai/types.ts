@@ -235,6 +235,23 @@ export class AIProviderError extends Error {
   }
 }
 
+/**
+ * Thrown when Synora's OWN outbound rate limit for a provider is reached —
+ * the request was never sent, so this says nothing about the provider's
+ * health or the credential's validity. Distinct from a vendor 429 (which
+ * arrives as an AIProviderError after a real call): this one is
+ * self-imposed pacing, configured via AI_RATE_LIMIT_REQUESTS_PER_SECOND.
+ */
+export class AIRateLimitedError extends Error {
+  constructor(readonly providerId: string) {
+    super(
+      `Synora's outbound rate limit for provider "${providerId}" was reached, ` +
+        'so this request was not sent. It is safe to retry in a moment.'
+    );
+    this.name = 'AIRateLimitedError';
+  }
+}
+
 /** Thrown by the resolver when no provider is configured for a capability. */
 export class NoProviderConfiguredError extends Error {
   constructor(capability: AICapability, checkedProviders: readonly string[]) {
