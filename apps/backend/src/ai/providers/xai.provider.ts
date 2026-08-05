@@ -2,7 +2,10 @@ import OpenAI from 'openai';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
-import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
+import {
+  OpenAICompatibleTextProvider,
+  verifyOpenAICompatibleKey,
+} from './openaiCompatible.provider';
 
 /** xAI documents its Grok API as OpenAI-compatible. */
 const XAI_BASE_URL = 'https://api.x.ai/v1';
@@ -21,5 +24,9 @@ export const xaiDescriptor: AIProviderDescriptor = {
       new OpenAI({ apiKey, baseURL: XAI_BASE_URL }),
       getConfig().ai.xaiModel
     );
+  },
+  async verifyCredential() {
+    const apiKey = await secretsManager.get('XAI_API_KEY', 'ai:xai');
+    return verifyOpenAICompatibleKey(new OpenAI({ apiKey, baseURL: XAI_BASE_URL }), 'xAI');
   },
 };

@@ -77,4 +77,17 @@ export const anthropicDescriptor: AIProviderDescriptor = {
     const apiKey = await secretsManager.get('ANTHROPIC_API_KEY', 'ai:anthropic');
     return new AnthropicTextProvider(new Anthropic({ apiKey }), getConfig().ai.anthropicModel);
   },
+  /**
+   * `models.list` is the cheapest authenticated call Anthropic exposes: it
+   * costs no tokens, so verifying a key never bills the founder, and a 401
+   * from it is unambiguous proof the key is bad.
+   */
+  async verifyCredential() {
+    const apiKey = await secretsManager.get('ANTHROPIC_API_KEY', 'ai:anthropic');
+    await new Anthropic({ apiKey }).models.list({ limit: 1 });
+    return {
+      status: 'verified' as const,
+      detail: 'Anthropic accepted the API key.',
+    };
+  },
 };

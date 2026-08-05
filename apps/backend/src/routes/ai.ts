@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { generateText } from '../ai';
 import { listAvailableModels } from '../ai/models';
+import { checkProviderReadiness } from '../ai/verification';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { aiGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
@@ -24,6 +25,30 @@ router.get('/models', authMiddleware, async (_req: AuthRequest, res: Response, n
     return next(err);
   }
 });
+
+/**
+ * GET /api/ai/provider-readiness — "if I add credentials, what actually works?"
+ *
+ * `/models` answers whether a key is PRESENT. This answers whether that key
+ * is ACCEPTED, by making the cheapest authenticated call each provider
+ * offers. The two are different questions and a typo'd or expired key
+ * answers the first one "yes".
+ *
+ * Authenticated rather than public: the response enumerates which providers
+ * this deployment has credentials for, which is infrastructure information
+ * about the operator, not about any workspace.
+ */
+router.get(
+  '/provider-readiness',
+  authMiddleware,
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      return res.json(createApiResponse({ providers: await checkProviderReadiness() }));
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 const generateTextRequestSchema = z.object({
   prompt: z.string().min(1, 'Prompt is required'),

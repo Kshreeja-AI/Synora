@@ -169,6 +169,33 @@ any part of it becomes real.
 8. **Client IP pseudonymization** — **CONDITIONAL, awaiting founder
    sign-off** (Engineering Constitution).
 
+## 5b. Provider integration — audited 2026-08-05
+
+Full findings: `docs/operations/PROVIDER_READINESS_MATRIX.md`. The three
+facts that change how the rest of this blueprint should be read:
+
+1. **Three AI stacks exist; one is unreachable.** `src/ai/core/*` (9 files)
+   plus `src/ai/providers/openai.provider.ts` (250 lines, the only raw-fetch
+   OpenAI adapter, with tools/streaming/health/retry) is imported by nothing.
+   A reader would credit Synora with capabilities no request can reach.
+   **Decide: wire it in or delete it.** Leaving it is a trap for the next
+   reader.
+2. **Synora's live text contract cannot express tool calling, structured
+   output, or vision** — the providers support all three. "Provider supports
+   X" and "Synora supports X through that provider" are different claims and
+   this blueprint must never conflate them. Agent tool use works by Synora's
+   own planner + tool runner, which is orchestration-level tool use, not
+   provider-native function calling.
+3. **The embeddings stack is the standard the text stack should meet.**
+   `embeddings/` has retry, circuit breaker, rate limiter, metrics, tracing,
+   cache, usage and security modules. The text path has none of them.
+   Transplanting the proven in-repo pattern is the top resilience item.
+
+Closed by that audit: **credential verification** — `verifyCredential()` on
+the descriptor contract answers "is this key actually accepted", separate
+from `isConfigured()`'s "is a key present", with `unreachable` never
+collapsed into `rejected`.
+
 ## 6. Standing engineering law (unchanged by any roadmap)
 
 - Security fails closed. 404, not 403, where existence is the secret.

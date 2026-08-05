@@ -2,7 +2,10 @@ import OpenAI from 'openai';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
-import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
+import {
+  OpenAICompatibleTextProvider,
+  verifyOpenAICompatibleKey,
+} from './openaiCompatible.provider';
 
 /** Together AI documents its inference API as OpenAI-compatible. */
 const TOGETHER_BASE_URL = 'https://api.together.xyz/v1';
@@ -21,5 +24,9 @@ export const togetherDescriptor: AIProviderDescriptor = {
       new OpenAI({ apiKey, baseURL: TOGETHER_BASE_URL }),
       getConfig().ai.togetherModel
     );
+  },
+  async verifyCredential() {
+    const apiKey = await secretsManager.get('TOGETHER_API_KEY', 'ai:together');
+    return verifyOpenAICompatibleKey(new OpenAI({ apiKey, baseURL: TOGETHER_BASE_URL }), 'Together AI');
   },
 };

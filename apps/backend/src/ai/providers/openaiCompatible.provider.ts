@@ -9,7 +9,7 @@ import {
   TextGenerationResult,
 } from '../types';
 import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
-import type { AIProviderDescriptor } from '../types/descriptor';
+import type { AIProviderDescriptor, CredentialVerification } from '../types/descriptor';
 
 /**
  * Generic adapter for any provider that exposes an OpenAI-compatible chat
@@ -85,4 +85,28 @@ export const openaiDescriptor: AIProviderDescriptor = {
       getConfig().ai.openaiModel
     );
   },
+  async verifyCredential() {
+    const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai');
+    return verifyOpenAICompatibleKey(new OpenAI({ apiKey }), 'OpenAI');
+  },
 };
+
+/**
+ * Shared verification for every OpenAI-compatible provider. `models.list`
+ * is unauthenticated-safe to call, costs no tokens, and returns 401 for a
+ * bad key — so checking a credential never bills the founder.
+ *
+ * Exported so each compatible provider (xAI, DeepSeek, Together,
+ * OpenRouter) verifies through the same code path it generates through,
+ * rather than growing its own slightly-different check that could drift.
+ */
+export async function verifyOpenAICompatibleKey(
+  client: OpenAI,
+  displayName: string
+): Promise<CredentialVerification> {
+  await client.models.list();
+  return {
+    status: 'verified',
+    detail: `${displayName} accepted the API key.`,
+  };
+}
