@@ -113,8 +113,15 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
     );
   }
 
-  const { counts, timeline, resumeConversationId, project, lastActivityAt, newSinceLastVisit } =
-    data;
+  const {
+    counts,
+    timeline,
+    resumeConversationId,
+    project,
+    lastActivityAt,
+    newSinceLastVisit,
+    decisions,
+  } = data;
   const held = (Object.keys(counts) as ProjectItemKind[]).filter((k) => counts[k] > 0);
 
   return (
@@ -242,6 +249,32 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
           </Button>
         </div>
       </div>
+
+      {/*
+        The decision log, whole — full verbatim content, never crowded
+        out of view by other activity the way old timeline entries can
+        be. Collapsed by default: it reads when wanted, like the run
+        log, and claims no attention when not. Absent when empty.
+      */}
+      {decisions.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-sm font-semibold">
+            Decisions ({decisions.length})
+          </summary>
+          <ol className="mt-2 space-y-2">
+            {decisions.map((d) => (
+              <li key={d.id} className="rounded-md border p-3 text-sm">
+                <p className="whitespace-pre-wrap">{d.content}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {d.author ?? 'Someone'} · {when(d.at)}
+                  {d.correction ? ' · correction' : ''}
+                  {d.correctedLater ? ' · corrected by a later note' : ''}
+                </p>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
 
       {timeline.length === 0 ? (
         <p className="text-sm text-muted-foreground">

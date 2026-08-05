@@ -402,6 +402,23 @@ describe('projects routes (M5)', () => {
       const correctionEntry = noteEntries.find((e) => e.title.startsWith('Actually vendor A'));
       expect(originalEntry?.detail).toContain('corrected by a later note');
       expect(correctionEntry?.detail).toContain('correction');
+
+      // The decisions log carries FULL verbatim content (the timeline
+      // truncates titles) with both correction flags, newest first.
+      const decisions = view.body.data.decisions as {
+        content: string;
+        correction: boolean;
+        correctedLater: boolean;
+        author: string | null;
+      }[];
+      expect(decisions).toHaveLength(2);
+      expect(decisions[0].content).toBe('Actually vendor A — B failed the security review.');
+      expect(decisions[0].correction).toBe(true);
+      expect(decisions[0].correctedLater).toBe(false);
+      expect(decisions[1].content).toBe('Went with vendor B.');
+      expect(decisions[1].correction).toBe(false);
+      expect(decisions[1].correctedLater).toBe(true);
+      expect(decisions[1].author).toBeTruthy();
     });
 
     it("refuses to 'correct' a note that lives in a different project", async () => {

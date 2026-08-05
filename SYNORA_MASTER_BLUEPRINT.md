@@ -110,10 +110,10 @@ any part of it becomes real.
 4. **Operations visualization (office view)** — role-scoped layers
    (EXECUTIVE / OPERATIONS / ENGINEERING / SECURITY / AI / AUDIT) over the
    EOS event bus. Founder-only data stays founder-only.
-5. **Decision-note lifecycle** — ~~append-only corrections~~ SHIPPED
-   2026-08-05 (`correctsNoteId`; the original stays visible, marked).
-   Still open from this item: a dedicated per-project "decisions" view
-   (notes currently live only in the merged timeline).
+5. ~~**Decision-note lifecycle**~~ — SHIPPED IN FULL 2026-08-05:
+   append-only corrections (`correctsNoteId`; the original stays
+   visible, marked) and the per-project decisions view (`decisions`
+   payload with full verbatim content, rendered as a collapsed log).
 6. ~~**Workspace-level "since you were last here"**~~ — SHIPPED
    2026-08-05 (`WorkspaceVisit` + `/whats-new` + the dashboard banner;
    see the matrix's "Continuing work after time away" row).

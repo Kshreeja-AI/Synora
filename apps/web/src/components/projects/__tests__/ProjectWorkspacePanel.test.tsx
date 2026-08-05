@@ -49,6 +49,7 @@ function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace 
     resumeConversationId: 'c1',
     lastActivityAt: new Date(Date.now() - 3_600_000).toISOString(),
     newSinceLastVisit: null,
+    decisions: [],
     ...overrides,
   };
 }
@@ -234,6 +235,47 @@ describe('ProjectWorkspacePanel', () => {
     expect(
       screen.queryByText(/original stays visible, marked as corrected/i),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows the whole decision log verbatim, with corrections marked, absent when empty', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        decisions: [
+          {
+            id: 'n2',
+            content:
+              'Actually vendor A — B failed the security review, and their SLA excluded the exact incident class we care about.',
+            author: 'Priya',
+            at: new Date(Date.now() - 300_000).toISOString(),
+            correction: true,
+            correctedLater: false,
+          },
+          {
+            id: 'n1',
+            content: 'Went with vendor B.',
+            author: 'Priya',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            correction: false,
+            correctedLater: true,
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText(/Decisions \(2\)/)).toBeInTheDocument();
+    // FULL content, past the timeline's 80-char truncation — the log is
+    // where the whole reasoning lives.
+    expect(
+      screen.getByText(/their SLA excluded the exact incident class we care about/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/corrected by a later note/)).toBeInTheDocument();
+  });
+
+  it('shows no decisions section at all when there are none', () => {
+    renderPanel();
+    expect(screen.queryByText(/Decisions \(/)).not.toBeInTheDocument();
   });
 
   it('does not offer to correct a note that is already corrected', () => {

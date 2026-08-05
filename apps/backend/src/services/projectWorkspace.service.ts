@@ -87,6 +87,26 @@ export interface ProjectWorkspace {
    * been here before."
    */
   newSinceLastVisit: ProjectVisitDigest | null;
+  /**
+   * The decision log, whole. Distinct from the merged timeline for two
+   * reasons a decisions reader cares about: content is FULL and verbatim
+   * (the timeline truncates titles to 80 chars), and a busy project's
+   * other activity can crowd old notes out of the timeline's cap — the
+   * log must not shrink because someone uploaded files. Newest first.
+   */
+  decisions: ProjectDecision[];
+}
+
+export interface ProjectDecision {
+  id: string;
+  /** Exactly as typed — never summarised, corrected, or reworded. */
+  content: string;
+  author: string | null;
+  at: string;
+  /** This note corrects an earlier one. */
+  correction: boolean;
+  /** A later note corrects this one. It stays readable, marked. */
+  correctedLater: boolean;
 }
 
 export interface ProjectVisitDigest {
@@ -346,6 +366,15 @@ export async function getProjectWorkspace(
     resumeConversationId: conversations.find((c) => !c.isArchived)?.id ?? null,
     lastActivityAt: timeline[0]?.at ?? null,
     newSinceLastVisit,
+    // Already fetched above — the log is a re-shaping, not a new query.
+    decisions: notes.map((n) => ({
+      id: n.id,
+      content: n.content,
+      author: authorNameById.get(n.userId) ?? null,
+      at: iso(n.createdAt),
+      correction: n.correctsNoteId !== null,
+      correctedLater: correctedNoteIds.has(n.id),
+    })),
   };
 }
 

@@ -61,6 +61,20 @@ export interface ProjectWorkspace {
    * fact, not the same thing as "never been here."
    */
   newSinceLastVisit: ProjectVisitDigest | null;
+  /**
+   * The decision log, whole: full verbatim content (the timeline
+   * truncates titles), never crowded out by other activity. Newest first.
+   */
+  decisions: ProjectDecision[];
+}
+
+export interface ProjectDecision {
+  id: string;
+  content: string;
+  author: string | null;
+  at: string;
+  correction: boolean;
+  correctedLater: boolean;
 }
 
 export interface ProjectVisitDigest {
