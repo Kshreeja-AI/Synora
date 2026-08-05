@@ -136,6 +136,73 @@ export async function revokeInvitation(actorId: string, workspaceId: string, inv
   });
 }
 
+export interface MyInvitation {
+  id: string;
+  token: string;
+  role: WorkspaceRole;
+  workspaceName: string;
+  invitedBy: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface MyInvitationsResult {
+  emailVerified: boolean;
+  invitations: MyInvitation[];
+}
+
+/**
+ * Invitations addressed to the signed-in person, for the in-app waiting
+ * surface. Invitation email delivery is best-effort, so without this
+ * list a person whose email never arrived has no way inside the product
+ * to learn someone invited them.
+ *
+ * SECURITY: today the emailed token proves mailbox ownership — only the
+ * person reading that inbox can accept. This list must not weaken that
+ * proof. An account whose email is unverified has merely CLAIMED the
+ * address, so it sees nothing here (not even that invitations exist);
+ * a verified email is the equivalent proof of mailbox ownership, so
+ * handing the verified owner the token reaches exactly the person the
+ * email was meant to reach. Fails closed.
+ */
+export async function listMyInvitations(userId: string): Promise<MyInvitationsResult> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { email: true, emailVerified: true },
+  });
+
+  if (!user.emailVerified) {
+    return { emailVerified: false, invitations: [] };
+  }
+
+  const invitations = await prisma.workspaceInvitation.findMany({
+    where: {
+      email: user.email,
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: { gt: new Date() },
+    },
+    include: {
+      workspace: { select: { name: true } },
+      invitedBy: { select: { name: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return {
+    emailVerified: true,
+    invitations: invitations.map((invitation) => ({
+      id: invitation.id,
+      token: invitation.token,
+      role: invitation.role,
+      workspaceName: invitation.workspace.name,
+      invitedBy: invitation.invitedBy.name,
+      createdAt: invitation.createdAt,
+      expiresAt: invitation.expiresAt,
+    })),
+  };
+}
+
 export interface InvitationPreview {
   workspaceName: string;
   role: WorkspaceRole;

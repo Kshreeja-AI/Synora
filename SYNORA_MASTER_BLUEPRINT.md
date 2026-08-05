@@ -104,9 +104,16 @@ any part of it becomes real.
    verification → result → audit, as one pipeline. Foundations exist
    (agent engine's plan/approve/execute, EOS proposals, tool permission
    layer); the unifying surface does not.
-3. **Human Decision Center, full form** — today's home page covers runs
-   only, workspace-scoped. The defined standard adds non-run work,
-   cross-workspace view, and per-item WHO/WHY/RECOMMENDATION/consequences.
+3. **Human Decision Center, full form** — partially advanced 2026-08-05:
+   the home page's waiting surface now covers three item kinds — paused
+   runs, tool executions stopped on `requiresApproval` (workspace-scoped,
+   linking to where the decision's full context lives), and workspace
+   invitations addressed to the signed-in person (the first
+   account-scoped, cross-workspace item; verified-email-gated so the
+   in-app surface is never weaker than the emailed token it stands in
+   for). Still missing from the defined standard: remaining non-run work
+   kinds (documents, generated media), cross-workspace runs/executions,
+   and per-item WHO/WHY/RECOMMENDATION/consequences detail.
 4. **Operations visualization (office view)** — role-scoped layers
    (EXECUTIVE / OPERATIONS / ENGINEERING / SECURITY / AI / AUDIT) over the
    EOS event bus. Founder-only data stays founder-only.

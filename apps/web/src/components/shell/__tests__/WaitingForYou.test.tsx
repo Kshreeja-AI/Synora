@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WaitingForYou } from '../WaitingForYou';
 import * as agentsApi from '@/lib/api/agents';
 import * as toolsApi from '@/lib/api/tools';
+import * as invitationsApi from '@/lib/api/invitations';
 
 vi.mock('@/lib/api/agents', async () => {
   const actual = await vi.importActual<typeof agentsApi>('@/lib/api/agents');
@@ -22,6 +23,11 @@ vi.mock('@/lib/api/agents', async () => {
 vi.mock('@/lib/api/tools', async () => {
   const actual = await vi.importActual<typeof toolsApi>('@/lib/api/tools');
   return { ...actual, useWorkspacePendingExecutions: vi.fn() };
+});
+
+vi.mock('@/lib/api/invitations', async () => {
+  const actual = await vi.importActual<typeof invitationsApi>('@/lib/api/invitations');
+  return { ...actual, useMyInvitations: vi.fn() };
 });
 
 function run(overrides: Record<string, unknown> = {}) {
@@ -59,6 +65,9 @@ beforeEach(() => {
   } as never);
   vi.mocked(toolsApi.useWorkspacePendingExecutions).mockReturnValue({
     data: [],
+  } as never);
+  vi.mocked(invitationsApi.useMyInvitations).mockReturnValue({
+    data: { emailVerified: true, invitations: [] },
   } as never);
 });
 
@@ -128,6 +137,37 @@ describe('WaitingForYou', () => {
     // is visible — a yes/no here would be a decision without its context.
     expect(link).toHaveAttribute('href', '/dashboard/tools');
     expect(screen.getByText(/requires approval before it executes/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is paused for a decision/)).not.toBeInTheDocument();
+  });
+
+  it('shows an invitation addressed to me, linking to the one real accept flow', () => {
+    vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [], isLoading: false } as never);
+    vi.mocked(invitationsApi.useMyInvitations).mockReturnValue({
+      data: {
+        emailVerified: true,
+        invitations: [
+          {
+            id: 'inv_1',
+            token: 'tok_abc',
+            role: 'MEMBER',
+            workspaceName: 'Northwind',
+            invitedBy: 'Priya',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 6 * 86_400_000).toISOString(),
+          },
+        ],
+      },
+    } as never);
+
+    renderPanel();
+    const link = screen.getByRole('link', { name: /Priya invited you to join Northwind/ });
+    // Accepting happens on the invite page — the same surface the emailed
+    // link lands on, so there is exactly one accept flow to reason about.
+    expect(link).toHaveAttribute('href', '/invite/tok_abc');
+    // The consequences are stated before the click: what role, that
+    // nothing changes until acceptance, and that the offer expires.
+    expect(screen.getByText(/join as a member/)).toBeInTheDocument();
+    expect(screen.getByText(/expires on/)).toBeInTheDocument();
     expect(screen.queryByText(/Nothing is paused for a decision/)).not.toBeInTheDocument();
   });
 
