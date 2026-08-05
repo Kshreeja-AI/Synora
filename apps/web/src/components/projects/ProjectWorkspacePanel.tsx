@@ -93,16 +93,24 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
   const { data, isLoading } = useProjectWorkspace(projectId);
   const addNote = useAddProjectNote(projectId);
   const [noteText, setNoteText] = useState('');
+  /** The note being corrected, if any — a correction is a NEW note. */
+  const [correctingId, setCorrectingId] = useState<string | null>(null);
 
   if (isLoading || !data) return null;
 
   function submitNote() {
     const content = noteText.trim();
     if (!content) return;
-    addNote.mutate(content, {
-      onSuccess: () => setNoteText(''),
-      onError: (e) => toast.error(e.message),
-    });
+    addNote.mutate(
+      { content, correctsNoteId: correctingId ?? undefined },
+      {
+        onSuccess: () => {
+          setNoteText('');
+          setCorrectingId(null);
+        },
+        onError: (e) => toast.error(e.message),
+      },
+    );
   }
 
   const { counts, timeline, resumeConversationId, project, lastActivityAt, newSinceLastVisit } =
@@ -196,6 +204,20 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
       <div className="flex items-start gap-2">
         <StickyNote className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="flex-1 space-y-1.5">
+          {correctingId && (
+            // Said before the click: the original is never edited or
+            // erased — it stays in the timeline, marked.
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              Correcting an earlier note. The original stays visible, marked as corrected.
+              <button
+                type="button"
+                onClick={() => setCorrectingId(null)}
+                className="underline hover:text-foreground"
+              >
+                Cancel correction
+              </button>
+            </p>
+          )}
           <label htmlFor="project-note-input" className="sr-only">
             Add a note about why a decision was made
           </label>
@@ -253,7 +275,23 @@ export function ProjectWorkspacePanel({ projectId }: { projectId: string }) {
                     {body}
                   </Link>
                 ) : (
-                  <div className="flex gap-2 p-2">{body}</div>
+                  <div className="flex gap-2 p-2">
+                    {body}
+                    {/* A note already marked corrected does not offer a
+                        second correction from here — the newest note is
+                        the one to correct, and offering both would make
+                        two chains where the person meant one. */}
+                    {entry.kind === 'note' && !entry.detail?.includes('corrected by') && (
+                      <button
+                        type="button"
+                        onClick={() => setCorrectingId(entry.id)}
+                        aria-label={`Correct the note “${entry.title}”`}
+                        className="self-start rounded border px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        Correct
+                      </button>
+                    )}
+                  </div>
                 )}
               </li>
             );

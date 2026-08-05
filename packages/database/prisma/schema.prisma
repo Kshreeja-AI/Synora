@@ -462,14 +462,24 @@ model WorkspaceVisit {
 /// name is resolved by a separate lookup when the timeline is built, the
 /// same way agent and workflow names are resolved for run entries.
 model ProjectNote {
-  id        String   @id @default(cuid())
-  projectId String
-  userId    String
-  content   String
+  id             String   @id @default(cuid())
+  projectId      String
+  userId         String
+  content        String
 
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// A correction is a NEW note pointing at the one it corrects — the
+  /// original is never edited or deleted, because a record of the past
+  /// that can be quietly rewritten is not a record. The timeline shows
+  /// the original marked "corrected later" beside the correction, so a
+  /// reader months from now neither acts on stale rationale nor loses
+  /// the history of what was believed at the time. Plain column, not a
+  /// self-relation: the timeline resolves it with one set lookup, and a
+  /// deleted original (project cascade) takes its corrections with it.
+  correctsNoteId String?
 
-  createdAt DateTime @default(now())
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
 
   @@index([projectId])
 }

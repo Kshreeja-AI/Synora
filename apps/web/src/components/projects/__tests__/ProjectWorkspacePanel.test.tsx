@@ -180,7 +180,7 @@ describe('ProjectWorkspacePanel', () => {
   });
 
   it('adds a note and clears the field once it is saved', () => {
-    const mutate = vi.fn((_content, opts) => opts?.onSuccess?.());
+    const mutate = vi.fn((_input, opts) => opts?.onSuccess?.());
     vi.mocked(api.useAddProjectNote).mockReturnValue({ mutate, isPending: false } as never);
 
     renderPanel();
@@ -188,8 +188,87 @@ describe('ProjectWorkspacePanel', () => {
     fireEvent.change(input, { target: { value: 'Chose vendor B for pricing.' } });
     fireEvent.click(screen.getByRole('button', { name: /add note/i }));
 
-    expect(mutate).toHaveBeenCalledWith('Chose vendor B for pricing.', expect.anything());
+    expect(mutate).toHaveBeenCalledWith(
+      { content: 'Chose vendor B for pricing.', correctsNoteId: undefined },
+      expect.anything(),
+    );
     expect(input).toHaveValue('');
+  });
+
+  it('corrects a note by appending a new one, with the consequence stated before the click', () => {
+    const mutate = vi.fn((_input, opts) => opts?.onSuccess?.());
+    vi.mocked(api.useAddProjectNote).mockReturnValue({ mutate, isPending: false } as never);
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 1 },
+        timeline: [
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /correct the note/i }));
+    // The consequence is stated before anything is sent: the original
+    // stays visible, marked — never edited or erased.
+    expect(screen.getByText(/original stays visible, marked as corrected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/add a note/i), {
+      target: { value: 'Actually vendor A — B failed the security review.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { content: 'Actually vendor A — B failed the security review.', correctsNoteId: 'n1' },
+      expect.anything(),
+    );
+    // The correcting state is consumed by the save, not left armed for
+    // the next unrelated note.
+    expect(
+      screen.queryByText(/original stays visible, marked as corrected/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not offer to correct a note that is already corrected', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 2 },
+        timeline: [
+          {
+            kind: 'note',
+            id: 'n2',
+            title: 'Actually vendor A.',
+            at: new Date(Date.now() - 300_000).toISOString(),
+            detail: 'Priya · correction',
+          },
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya · corrected by a later note',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // The already-corrected original offers no second correction; the
+    // newest note is the one to correct.
+    expect(
+      screen.queryByRole('button', { name: /correct the note “went with vendor b/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /correct the note “actually vendor a/i }),
+    ).toBeInTheDocument();
   });
 
   it('will not add an empty note', () => {

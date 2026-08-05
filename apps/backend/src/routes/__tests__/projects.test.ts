@@ -374,6 +374,57 @@ describe('projects routes (M5)', () => {
       expect(entry?.detail).toBeTruthy();
     });
 
+    it('corrects a note by appending, marking the original rather than rewriting it', async () => {
+      const user = await register('proj-note-correct');
+      const ws = await createWorkspace(user.accessToken, 'Correction Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const original = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Went with vendor B.' });
+      const correction = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Actually vendor A — B failed the security review.', correctsNoteId: original.body.data.id });
+      expect(correction.status).toBe(201);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      const noteEntries = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).filter((e) => e.kind === 'note');
+
+      // BOTH notes remain visible: the original marked, never erased.
+      expect(noteEntries).toHaveLength(2);
+      const originalEntry = noteEntries.find((e) => e.title === 'Went with vendor B.');
+      const correctionEntry = noteEntries.find((e) => e.title.startsWith('Actually vendor A'));
+      expect(originalEntry?.detail).toContain('corrected by a later note');
+      expect(correctionEntry?.detail).toContain('correction');
+    });
+
+    it("refuses to 'correct' a note that lives in a different project", async () => {
+      const user = await register('proj-note-crossfix');
+      const ws = await createWorkspace(user.accessToken, 'CrossFix Co');
+      const projectA = await makeProject(user.accessToken, ws.id);
+      const projectB = await makeProject(user.accessToken, ws.id);
+
+      const noteInA = await request(app)
+        .post(`/api/projects/${projectA.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Belongs to project A.' });
+
+      const res = await request(app)
+        .post(`/api/projects/${projectB.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Trying to correct across projects.', correctsNoteId: noteInA.body.data.id });
+
+      // The correction target is a claim, verified in the same project —
+      // 404, the same answer a nonexistent id gets.
+      expect(res.status).toBe(404);
+    });
+
     it('refuses an empty note rather than filing a blank record', async () => {
       const user = await register('proj-note-empty');
       const ws = await createWorkspace(user.accessToken, 'Empty Note Co');

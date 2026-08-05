@@ -34,6 +34,8 @@ const updateProjectSchema = z.object({
 
 const addNoteSchema = z.object({
   content: z.string().trim().min(1).max(4000),
+  /** A correction is a new note pointing at the one it corrects. */
+  correctsNoteId: z.string().min(1).optional(),
 });
 
 router.get('/', authMiddleware, validateIdQuery, async (req: AuthRequest, res, next) => {
@@ -116,8 +118,13 @@ router.post(
   requireProjectAccess(),
   async (req: AuthRequest, res, next) => {
     try {
-      const { content } = addNoteSchema.parse(req.body);
-      const note = await addProjectNote(req.userId!, req.params.projectId, content);
+      const { content, correctsNoteId } = addNoteSchema.parse(req.body);
+      const note = await addProjectNote(
+        req.userId!,
+        req.params.projectId,
+        content,
+        correctsNoteId,
+      );
       res.status(201).json(createApiResponse(note));
     } catch (error) {
       next(error);

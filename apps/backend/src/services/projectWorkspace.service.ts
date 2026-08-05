@@ -162,11 +162,18 @@ export async function getProjectWorkspace(
       }),
       prisma.projectNote.findMany({
         where: { projectId },
-        select: { id: true, userId: true, content: true, createdAt: true },
+        select: { id: true, userId: true, content: true, createdAt: true, correctsNoteId: true },
         orderBy: { createdAt: 'desc' },
         take: PROJECT_TIMELINE_LIMIT,
       }),
     ]);
+
+  // Which notes have been corrected by a LATER note. The original is
+  // never edited — it is marked, so a reader neither acts on stale
+  // rationale nor loses what was believed at the time.
+  const correctedNoteIds = new Set(
+    notes.map((n) => n.correctsNoteId).filter((id): id is string => id !== null),
+  );
 
   // A note's author is resolved by a separate lookup rather than a Prisma
   // relation on ProjectNote — the same choice made for agent/workflow names
@@ -265,13 +272,23 @@ export async function getProjectWorkspace(
     // A person's own record of why a decision was made — content shown
     // exactly as written, never summarised or reworded, so the timeline
     // never implies an AI produced a rationale nobody actually stated.
-    ...notes.map((n) => ({
-      kind: 'note' as const,
-      id: n.id,
-      title: n.content.slice(0, 80),
-      at: iso(n.createdAt),
-      detail: authorNameById.get(n.userId),
-    })),
+    ...notes.map((n) => {
+      const author = authorNameById.get(n.userId);
+      // The original stays visible, marked — a reader must neither act
+      // on stale rationale nor lose what was believed at the time.
+      const status = correctedNoteIds.has(n.id)
+        ? 'corrected by a later note'
+        : n.correctsNoteId
+          ? 'correction'
+          : undefined;
+      return {
+        kind: 'note' as const,
+        id: n.id,
+        title: n.content.slice(0, 80),
+        at: iso(n.createdAt),
+        detail: status ? `${author ?? 'Someone'} · ${status}` : author,
+      };
+    }),
   ].sort((a, b) => b.at.localeCompare(a.at));
 
   const timeline = entries.slice(0, PROJECT_TIMELINE_LIMIT);
@@ -351,6 +368,7 @@ export async function addProjectNote(
   userId: string,
   projectId: string,
   content: string,
+  correctsNoteId?: string,
 ): Promise<{ id: string; createdAt: string }> {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) throw new NotFoundException('Project');
@@ -360,8 +378,19 @@ export async function addProjectNote(
   const trimmed = content.trim();
   if (!trimmed) throw new ValidationException('note content cannot be empty');
 
+  // A correction target is a claim, so it is verified: the note must
+  // exist IN THIS PROJECT. Same-shaped 404 as every other cross-boundary
+  // probe — whether it exists elsewhere is not this caller's to learn.
+  if (correctsNoteId) {
+    const target = await prisma.projectNote.findFirst({
+      where: { id: correctsNoteId, projectId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('Note');
+  }
+
   const note = await prisma.projectNote.create({
-    data: { projectId, userId, content: trimmed },
+    data: { projectId, userId, content: trimmed, correctsNoteId: correctsNoteId ?? null },
     select: { id: true, createdAt: true },
   });
   return { id: note.id, createdAt: iso(note.createdAt) };

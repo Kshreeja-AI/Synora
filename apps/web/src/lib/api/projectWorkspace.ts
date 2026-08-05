@@ -82,15 +82,17 @@ export function useProjectWorkspace(
   });
 }
 
-export function useAddProjectNote(
-  projectId: string,
-): UseMutationResult<{ id: string; createdAt: string }, Error, string> {
+export function useAddProjectNote(projectId: string): UseMutationResult<
+  { id: string; createdAt: string },
+  Error,
+  { content: string; correctsNoteId?: string }
+> {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (content: string) =>
-      api.post<{ id: string; createdAt: string }>(`/api/projects/${projectId}/notes`, {
-        content,
-      }),
+    // A correction is a NEW note pointing at the one it corrects — the
+    // original is never edited or deleted, only marked in the timeline.
+    mutationFn: (input: { content: string; correctsNoteId?: string }) =>
+      api.post<{ id: string; createdAt: string }>(`/api/projects/${projectId}/notes`, input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [PROJECT_WORKSPACE_KEY, projectId] });
     },
