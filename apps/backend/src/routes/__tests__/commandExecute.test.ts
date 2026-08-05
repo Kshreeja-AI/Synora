@@ -90,6 +90,37 @@ describe('POST /api/command/:workspaceId/execute', () => {
       expect(created!.workspaceId).toBe(workspaceId);
     });
 
+    it('answers "what needs my decision" from the real run registry', async () => {
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Show me what needs my decision' })
+        .expect(200);
+
+      expect(res.body.data.state).toBe('completed');
+      expect(res.body.data.executed).toBe(true);
+      const result = res.body.data.result as {
+        pausedRuns: unknown[];
+        pendingCommands: number;
+        covers: string;
+      };
+      expect(Array.isArray(result.pausedRuns)).toBe(true);
+      // The count names what it counted. A total that quietly omitted the
+      // tool-execution queue would be worse than one that says so.
+      expect(result.covers).toMatch(/not tool executions/i);
+    });
+
+    it('shows recent activity to an ordinary member, who genuinely may see it', async () => {
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Show me what has recently happened here' })
+        .expect(200);
+
+      expect(res.body.data.state).toBe('completed');
+      expect(res.body.data.result).toHaveProperty('entries');
+    });
+
     it('writes a durable record for a completed command', async () => {
       await request(app)
         .post(`/api/command/${workspaceId}/execute`)
@@ -154,11 +185,14 @@ describe('POST /api/command/:workspaceId/execute', () => {
       const notBound = await request(app)
         .post(`/api/command/${workspaceId}/execute`)
         .set('Cookie', ownerCookie)
-        .send({ command: 'Show me what needs my decision' })
+        .send({ command: 'What would happen if I ran this' })
         .expect(200);
-      // Synora genuinely has an approvals queue; the command layer just
-      // cannot drive it yet. Calling that "not implemented" would slander
-      // working code.
+      // Synora genuinely previews agent plans; the command layer cannot
+      // drive it yet, because a preview needs a specific agent that a bare
+      // sentence does not name. Calling that "not implemented" would
+      // slander working code. (This example used to be the approvals
+      // queue, which is now bound — the distinction is what is under test,
+      // not the particular capability that illustrates it.)
       expect(notBound.body.data.state).toBe('not-bound');
       expect(notBound.body.data.message).toMatch(/available in the app itself/i);
     });

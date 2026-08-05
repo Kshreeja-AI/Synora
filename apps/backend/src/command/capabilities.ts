@@ -104,7 +104,12 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
       requiredPermission: null,
       summary: 'Show everything that is waiting for your decision, and why.',
       availability: 'available',
-      surface: 'GET /api/workspaces/:workspaceId/agents/runs/waiting',
+      // CORRECTED. This previously claimed `.../agents/runs/waiting`, a
+      // route that has never existed — the exact failure this file's
+      // header says it exists to prevent, committed in this file. The
+      // real surface lists runs and the caller selects the paused ones,
+      // which is what the home page has always done.
+      surface: 'GET /api/workspaces/:workspaceId/agents/runs',
       mayNeedApproval: false,
     },
   ],
@@ -114,6 +119,11 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
       capabilityId: 'providers.metrics',
       riskClass: 'read-only',
       requiredPermission: null,
+      // "monitor" covers two genuinely different questions. Without a hint
+      // the first entry answers both, so someone asking what happened in
+      // their workspace would get AI provider statistics — a confident
+      // answer to a question they did not ask.
+      hint: /\b(provider|model|ai|llm|api)\b/i,
       summary: 'Show how AI provider calls have been going — successes, failures, refusals.',
       availability: 'available',
       surface: 'GET /api/ai/provider-metrics',
@@ -122,7 +132,16 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
     {
       capabilityId: 'activity.recent',
       riskClass: 'read-only',
-      requiredPermission: 'audit:view',
+      // CORRECTED from `audit:view`. The activity feed is deliberately
+      // membership-only: it shows a curated ALLOWLIST of work events whose
+      // outcomes any member could already see by clicking around.
+      // `audit:view` gates the GOVERNANCE log — roles, billing,
+      // invitations — which this feed excludes. Declaring the stricter
+      // permission told ordinary members they lacked access to something
+      // they could in fact use, which is a lie about a person's own
+      // permissions even though it errs toward refusing.
+      requiredPermission: null,
+      hint: /\b(happen(ed|ing)|activity|recent|history|workspace|here|lately)\b/i,
       summary: 'Show what has recently happened in a workspace.',
       availability: 'available',
       surface: 'GET /api/workspaces/:workspaceId/activity',

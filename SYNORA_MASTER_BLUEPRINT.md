@@ -420,12 +420,42 @@ prompts unread, and the prompt that finally matters gets the same reflex.
 suggesting "email the team a summary" would teach a capability that does
 not exist and be discovered as a lie on first use.
 
+**Slice 6: two more bound, and two lies in the catalogue found by binding
+them.** Binding is not busywork — it is the only thing that actually checks
+whether a catalogue entry is true. Both defects had survived every test:
+
+1. `approvals.waiting` claimed `GET /api/workspaces/:workspaceId/agents/runs/waiting`,
+   **a route that has never existed in this repository**. `capabilities.ts`
+   opens by saying a command layer's characteristic failure is confidently
+   routing to a capability that was only ever a plan, and claims a test
+   keeps it honest — but that test only checked the surface STRING SHAPE
+   (`^(GET|POST|…) /api/`). The file's own stated discipline was not
+   enforced. There is now a test that walks the REAL Express router; it was
+   confirmed to fail on the original bug, naming the phantom surface,
+   before the fix went in.
+2. `activity.recent` declared `requiredPermission: 'audit:view'` when the
+   activity feed is deliberately membership-only — `audit:view` gates the
+   GOVERNANCE log, which that feed excludes by allowlist. It would have
+   told ordinary members they lacked access to something they could use.
+
+**One intent can cover two questions, and it used to answer the wrong one.**
+"Monitor" means both "how are the AI providers behaving" and "what happened
+in my workspace". Catalogue order alone decided, so one always won and the
+other was unreachable — a confident answer to a question nobody asked,
+which is the worst thing this layer can do. Routes may now carry a `hint`
+claiming phrasings within their intent. Hints only PROMOTE: a sentence no
+hint claims still resolves in catalogue order, so adding one can never make
+a capability unreachable. Both properties are test-pinned.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound capabilities
-so far are search, conversation-create and provider-metrics; everything
-else honestly reports `not-bound`. Self-approval is permitted — the gate is
-a deliberate pause and a record, NOT four-eyes separation of duties, and
-requiring a second person would break single-owner workspaces.
+are search, conversation-create, provider-metrics, approvals-waiting and
+activity-recent; everything else honestly reports `not-bound`. The
+approvals answer states what it counted (`agent runs and commands; not tool
+executions`) rather than implying it covers everything. Self-approval is
+permitted — the gate is a deliberate pause and a record, NOT four-eyes
+separation of duties, and requiring a second person would break
+single-owner workspaces.
 
 ## 6. Standing engineering law (unchanged by any roadmap)
 

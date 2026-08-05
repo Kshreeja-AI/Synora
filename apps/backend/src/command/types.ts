@@ -83,6 +83,21 @@ export interface CommandRoute {
    */
   riskClass: 'read-only' | 'reversible' | 'sensitive' | 'high-risk';
   /**
+   * Optional claim on a sentence WITHIN its intent.
+   *
+   * An intent can hold several capabilities — "monitor" covers both how the
+   * AI providers are behaving and what happened in the workspace — and
+   * catalogue order alone cannot tell them apart. Without this, one of them
+   * always wins and the other is unreachable, which means a confident
+   * answer to a question nobody asked. That is the single worst thing this
+   * layer can do, so a capability may state which phrasings are ITS OWN.
+   *
+   * Unmatched hints never exclude anything: a route with no matching hint
+   * still competes in catalogue order, so adding a hint can promote a
+   * capability but can never make one unreachable.
+   */
+  hint?: RegExp;
+  /**
    * The real surface that performs it, for operators and for tests that
    * assert this layer never names a surface that does not exist.
    */

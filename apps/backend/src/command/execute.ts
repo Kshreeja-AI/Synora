@@ -3,6 +3,8 @@ import { prepareCommand, type PreparedCommand } from './prepare';
 import { getTextProviderMetrics } from '../ai/textResilience';
 import { searchService } from '../services/search.service';
 import { conversationService } from '../services/conversation.service';
+import { listWorkspaceActivity } from '../services/activity.service';
+import { listRuns } from '../agents/run-engine';
 import { logger } from '../utils/logger';
 import type { CommandRoute } from './types';
 import type { WorkspaceRole } from '../services/permissions';
@@ -127,6 +129,60 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
         names.length === 0
           ? 'No AI provider calls have been made in this process yet.'
           : `Reported activity for ${names.length} provider${names.length === 1 ? '' : 's'}.`,
+    };
+  },
+
+  'approvals.waiting': async (context) => {
+    // The same in-memory run registry the runs list serves from, filtered
+    // the same way the home page filters it. Deliberately NOT a new query
+    // that could answer "what is waiting" differently from the panel a
+    // person already trusts.
+    const paused = listRuns(context.workspaceId).filter(
+      (run) => run.state === 'awaiting_approval'
+    );
+    const commands = await prisma.commandExecution.count({
+      where: {
+        workspaceId: context.workspaceId,
+        approvalState: 'pending',
+        state: 'waiting-approval',
+      },
+    });
+    const total = paused.length + commands;
+    return {
+      result: {
+        pausedRuns: paused.map((run) => ({
+          id: run.id,
+          task: run.task,
+          reason: run.pendingApproval?.reason ?? null,
+          createdAt: run.createdAt,
+        })),
+        pendingCommands: commands,
+        // Named explicitly so the count can never read as "everything".
+        // Tool executions awaiting approval are a third queue this does
+        // not yet read, and a total that quietly omitted them would be
+        // worse than one that says what it covered.
+        covers: 'agent runs and commands; not tool executions',
+      },
+      summary:
+        total === 0
+          ? 'Nothing is waiting for your decision in agent runs or commands.'
+          : `${total} thing${total === 1 ? ' is' : 's are'} waiting for a decision.`,
+    };
+  },
+
+  'activity.recent': async (context) => {
+    // listWorkspaceActivity performs its own requireMembership, and shows
+    // only the work-event allowlist — governance events stay behind
+    // audit:view and are not reachable from here.
+    const entries = await listWorkspaceActivity(context.userId, context.workspaceId, {
+      limit: 20,
+    });
+    return {
+      result: { entries },
+      summary:
+        entries.length === 0
+          ? 'Nothing has been recorded in this workspace yet.'
+          : `Here are the last ${entries.length} thing${entries.length === 1 ? '' : 's'} that happened.`,
     };
   },
 

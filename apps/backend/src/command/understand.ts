@@ -107,7 +107,10 @@ const INTENT_RULES: readonly { intent: CommandIntent; pattern: RegExp }[] = [
   { intent: 'plan', pattern: /\b(plan|outline)\s+(the|my|a|this)\b/i },
 
   // Monitor.
-  { intent: 'monitor', pattern: /\b(how\s+(is|are)\s+(things|it|everything|the\s+system)|system\s+(health|status)|what\s+happened|show\s+me\s+(the\s+)?(status|activity|metrics))\b/i },
+  // `what (has recently) happened` / `what's been happening`: people put
+  // words between "what" and the verb, and a grammar that only accepts the
+  // shortest phrasing refuses the way most people actually ask.
+  { intent: 'monitor', pattern: /\b(how\s+(is|are)\s+(things|it|everything|the\s+system)|system\s+(health|status)|what(’s|'s)?(\s+\w+){0,2}\s+happen(ed|ing)|show\s+me\s+(the\s+)?(status|activity|metrics))\b/i },
   { intent: 'monitor', pattern: /\b(monitor|status\s+of|is\s+everything\s+(ok|okay|working|fine))\b/i },
 
   // Find.
@@ -242,7 +245,15 @@ export function understandCommand(rawInput: string): CommandUnderstanding {
   }
 
   const subject = extractSubject(normalized, rule.pattern);
-  const routes = routesForIntent(rule.intent);
+  // Within one intent, a capability whose hint matches this sentence goes
+  // first. Stable otherwise, so the catalogue's best-first order still
+  // decides when nothing claims the sentence — a hint can promote a
+  // capability, never hide one.
+  const routes = [...routesForIntent(rule.intent)].sort((a, b) => {
+    const aClaims = a.hint?.test(normalized) ? 1 : 0;
+    const bClaims = b.hint?.test(normalized) ? 1 : 0;
+    return bClaims - aClaims;
+  });
   const unknowns: string[] = [];
 
   if (subject.length === 0) {
