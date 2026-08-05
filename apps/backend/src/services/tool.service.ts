@@ -275,14 +275,24 @@ export class ToolService {
     return execution;
   }
 
-  async listExecutions(userId: string, workspaceId: string, toolId?: string): Promise<ToolExecution[]> {
+  async listExecutions(
+    userId: string,
+    workspaceId: string,
+    toolId?: string,
+    status?: ExecutionStatus,
+  ): Promise<(ToolExecution & { tool?: { name: string } })[]> {
     await requireMembership(userId, workspaceId);
 
+    // The tool's name rides along so a list of executions can say WHICH
+    // tool is waiting without a lookup per row — the same batched-name
+    // principle the project timeline uses for runs and notes.
     return prisma.toolExecution.findMany({
       where: {
         workspaceId,
         ...(toolId && { toolId }),
+        ...(status && { status }),
       },
+      include: { tool: { select: { name: true } } },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });

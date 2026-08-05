@@ -361,6 +361,50 @@ describe('ToolService', () => {
     });
   });
 
+  describe('listExecutions', () => {
+    it('passes the status filter through to the query and asks for the tool name', async () => {
+      const { prisma } = await import('@synora/database');
+
+      vi.mocked(prisma.toolExecution.findMany).mockResolvedValueOnce([
+        { id: 'exec-1', status: 'PENDING', tool: { name: 'send-invoice-email' } } as never,
+      ]);
+
+      const result = await toolService.listExecutions(
+        mockUser.id,
+        mockWorkspace.id,
+        undefined,
+        'PENDING' as never
+      );
+
+      expect(result).toHaveLength(1);
+      const args = vi.mocked(prisma.toolExecution.findMany).mock.calls[0][0];
+      expect(args).toMatchObject({
+        where: { workspaceId: mockWorkspace.id, status: 'PENDING' },
+        include: { tool: { select: { name: true } } },
+      });
+      // No toolId filter was asked for, so none may be applied — a
+      // workspace-wide question must get a workspace-wide answer.
+      expect(args?.where).not.toHaveProperty('toolId');
+    });
+
+    it('omits the status clause entirely when no filter is given', async () => {
+      const { prisma } = await import('@synora/database');
+
+      vi.mocked(prisma.toolExecution.findMany).mockResolvedValueOnce([]);
+
+      await toolService.listExecutions(mockUser.id, mockWorkspace.id);
+
+      const args = vi.mocked(prisma.toolExecution.findMany).mock.calls[0][0];
+      expect(args?.where).not.toHaveProperty('status');
+    });
+
+    it('requires workspace membership before answering', async () => {
+      vi.mocked(checks.requireMembership).mockRejectedValueOnce(new Error('Not found'));
+
+      await expect(toolService.listExecutions(mockUser.id, mockWorkspace.id)).rejects.toThrow();
+    });
+  });
+
   describe('rejectExecution', () => {
     it('rejects a PENDING execution with a reason', async () => {
       const { prisma } = await import('@synora/database');

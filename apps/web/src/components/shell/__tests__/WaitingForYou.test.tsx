@@ -12,10 +12,16 @@ import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WaitingForYou } from '../WaitingForYou';
 import * as agentsApi from '@/lib/api/agents';
+import * as toolsApi from '@/lib/api/tools';
 
 vi.mock('@/lib/api/agents', async () => {
   const actual = await vi.importActual<typeof agentsApi>('@/lib/api/agents');
   return { ...actual, useAgentRuns: vi.fn() };
+});
+
+vi.mock('@/lib/api/tools', async () => {
+  const actual = await vi.importActual<typeof toolsApi>('@/lib/api/tools');
+  return { ...actual, useWorkspacePendingExecutions: vi.fn() };
 });
 
 function run(overrides: Record<string, unknown> = {}) {
@@ -50,6 +56,9 @@ beforeEach(() => {
   vi.mocked(agentsApi.useAgentRuns).mockReturnValue({
     data: [run()],
     isLoading: false,
+  } as never);
+  vi.mocked(toolsApi.useWorkspacePendingExecutions).mockReturnValue({
+    data: [],
   } as never);
 });
 
@@ -94,6 +103,32 @@ describe('WaitingForYou', () => {
     // The important reassurance: nothing is quietly running while it
     // waits for an answer.
     expect(screen.getByText(/Nothing runs in the meantime/)).toBeInTheDocument();
+  });
+
+  it('shows a tool execution stopped on approval, pointing where the decision lives', () => {
+    vi.mocked(agentsApi.useAgentRuns).mockReturnValue({ data: [], isLoading: false } as never);
+    vi.mocked(toolsApi.useWorkspacePendingExecutions).mockReturnValue({
+      data: [
+        {
+          id: 'exec_1',
+          toolId: 't1',
+          workspaceId: 'ws_1',
+          userId: 'u1',
+          input: {},
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          tool: { name: 'Send invoice email' },
+        },
+      ],
+    } as never);
+
+    renderPanel();
+    const link = screen.getByRole('link', { name: /Send invoice email is waiting to run/ });
+    // Approval stays on the tools page, where the execution's full input
+    // is visible — a yes/no here would be a decision without its context.
+    expect(link).toHaveAttribute('href', '/dashboard/tools');
+    expect(screen.getByText(/requires approval before it executes/)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing is paused for a decision/)).not.toBeInTheDocument();
   });
 
   it('renders nothing while runs are still loading', () => {

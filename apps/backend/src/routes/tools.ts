@@ -148,6 +148,41 @@ router.get('/:workspaceId/tools/:toolId/executions', authMiddleware, requireWork
   }
 });
 
+// GET /workspaces/:workspaceId/executions - workspace-wide execution list,
+// optionally filtered by status. Exists so "what is waiting on a person"
+// can be answered in one read: PENDING here means a tool marked
+// requiresApproval has stopped and will not run until someone decides.
+const listExecutionsQuerySchema = z.object({
+  status: z
+    .enum([
+      'PENDING',
+      'APPROVED',
+      'RUNNING',
+      'STREAMING',
+      'COMPLETED',
+      'FAILED',
+      'CANCELLED',
+      'TIMEOUT',
+      'REJECTED',
+    ])
+    .optional(),
+});
+
+router.get('/:workspaceId/executions', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+  try {
+    const { status } = listExecutionsQuerySchema.parse(req.query);
+    const executions = await toolService.listExecutions(
+      req.userId!,
+      req.params.workspaceId,
+      undefined,
+      status,
+    );
+    res.json(createApiResponse(executions));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /workspaces/:workspaceId/executions/:executionId - get execution
 router.get('/:workspaceId/executions/:executionId', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { PauseCircle } from 'lucide-react';
 import { useAgentRuns } from '@/lib/api/agents';
+import { useWorkspacePendingExecutions } from '@/lib/api/tools';
 
 /**
  * What is actually blocked on this person.
@@ -28,10 +29,14 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
   const { data: runs = [], isLoading } = useAgentRuns(workspaceId, {
     enabled: !!workspaceId,
   });
+  const { data: pendingExecutions = [] } = useWorkspacePendingExecutions(workspaceId, {
+    enabled: !!workspaceId,
+  });
 
   if (isLoading) return null;
 
   const waiting = runs.filter((run) => run.state === 'awaiting_approval');
+  const nothingWaiting = waiting.length === 0 && pendingExecutions.length === 0;
 
   return (
     <section className="space-y-3 rounded-md border p-4" aria-labelledby="waiting-heading">
@@ -42,7 +47,7 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
         </h2>
       </div>
 
-      {waiting.length === 0 ? (
+      {nothingWaiting ? (
         <p className="text-sm text-muted-foreground">
           Nothing is paused for a decision right now.
         </p>
@@ -62,12 +67,28 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               </p>
             </li>
           ))}
+          {/* Tool executions stopped on requiresApproval are the same
+              kind of fact a paused run is: work that will not proceed
+              until a person decides. Approval itself stays on the tools
+              page, where the execution's full input is visible — a
+              yes/no here would be a decision made without the context
+              the decision needs. */}
+          {pendingExecutions.map((execution) => (
+            <li key={execution.id} className="rounded-md border p-3 text-sm">
+              <Link href="/dashboard/tools" className="font-medium hover:underline">
+                {execution.tool?.name ?? 'A tool'} is waiting to run
+              </Link>
+              <p className="mt-1 text-xs text-muted-foreground">
+                This tool requires approval before it executes. Review it on the tools page.
+              </p>
+            </li>
+          ))}
         </ul>
       )}
 
       <p className="text-xs text-muted-foreground">
-        A run pauses here because a step was marked as needing a person, and stays paused until
-        you approve or decline it. Nothing runs in the meantime.
+        Work pauses here because a step or a tool was marked as needing a person, and stays
+        paused until you approve or decline it. Nothing runs in the meantime.
       </p>
     </section>
   );

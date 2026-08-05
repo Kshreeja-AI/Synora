@@ -89,6 +89,8 @@ export interface ToolExecution {
   startedAt?: string | null;
   createdAt: string;
   completedAt?: string | null;
+  /** Rides along on list reads so a row can say WHICH tool is waiting. */
+  tool?: { name: string };
 }
 
 export interface CreateToolInput {
@@ -295,6 +297,25 @@ export function useToolExecutions(
       return Array.isArray(response) ? response : response.items || [];
     },
     enabled: !!workspaceId && !!toolId && options?.enabled !== false,
+  });
+}
+
+/**
+ * Every execution in the workspace waiting on a human decision. A
+ * PENDING execution is a fact, not a suggestion: the tool was marked
+ * requiresApproval, so nothing runs until someone says yes or no —
+ * which is exactly what earns it a place on the home page's "waiting
+ * for you" surface.
+ */
+export function useWorkspacePendingExecutions(
+  workspaceId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<ToolExecution[]> {
+  return useQuery({
+    queryKey: [EXECUTIONS_KEY, workspaceId, 'pending'],
+    queryFn: () =>
+      api.get<ToolExecution[]>(`/api/workspaces/${workspaceId}/executions?status=PENDING`),
+    enabled: !!workspaceId && options?.enabled !== false,
   });
 }
 
