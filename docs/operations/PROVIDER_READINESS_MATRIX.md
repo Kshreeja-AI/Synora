@@ -472,3 +472,49 @@ this answers "what is happening in this process right now", which is what an
 operator needs during a live incident. Durable cross-instance aggregation is a
 metrics backend's job and this collector does not pretend to be one. Tracing
 and response caching remain the last unported embeddings-standard items.
+
+---
+
+## 14. Finding (not yet fixed): EOS instrumentation covers less than it appears to
+
+While scoping the next observability increment, reading (not inferring from
+declarations) surfaced a real gap in the EOS instrumentation system
+(`eos/instrumentation.ts`), which is the audit's own methodology applied to a
+different subsystem.
+
+`declareAiPath('chat.generate')` is called in exactly one place:
+`workers/generateResponse.worker.ts`, the SSE streaming worker. Because
+`getAiPathCoverage()` reports a path as `instrumented: true` the moment any
+one call site declares it, EOS's own coverage report currently reads as "chat
+generation is instrumented" — true of the streaming path, silently untrue of
+several others that generate text and report to nobody:
+
+| Call site | What it does | Reports to EOS today |
+|---|---|---|
+| `workers/generateResponse.worker.ts` | user message -> streamed reply | **Yes** (`chat.generate`) |
+| `routes/ai.ts` `POST /api/ai/generate` | direct non-streaming API call | No |
+| `agents/runtime.ts` (planner + execution) | agent step planning/generation | No |
+| `services/conversation.service.ts` `generateTitle` | 20-token auto-title | No |
+| `eos/judge-wiring.ts` | EOS's own quality-gate judge calls | No |
+
+**Why this was not fixed in the same pass, on purpose**: these five call
+sites are not one population. An agent-planning call and a 20-token
+auto-title call have entirely different cost and latency shapes from a full
+chat reply. `cost-monitor.ts`, `latency-drift.ts` and `provider-degradation.ts`
+all compare against a historical baseline **per `promptId`** — pooling
+heterogeneous traffic under the existing `chat.generate` label would corrupt
+the exact baselines those detectors depend on, which is a worse outcome than
+the current gap. (The judge-wiring call site is sharper still: EOS recording
+its own judge's calls under a normal prompt id would be self-referential
+pollution of EOS's own data.)
+
+The correct fix is a small promptId taxonomy — at minimum separating
+end-user chat generation (wherever it happens, streaming or not) from
+agent-orchestration calls and from auxiliary/internal calls — decided
+deliberately rather than defaulted into. Not built in this pass because
+getting the taxonomy wrong is worse than leaving the gap documented.
+
+Status: **NOT-IMPLEMENTED**, now documented rather than invisible. This is a
+gap in observability accuracy, not in the resilience/rate-limit/metrics work
+closed the same day — the text path itself is fully hardened; what it lacks
+is being seen correctly by EOS's business-level monitors.
