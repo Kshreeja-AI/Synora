@@ -184,4 +184,78 @@ describe('activity routes', () => {
       .set('Cookie', stranger.cookie);
     expect([403, 404]).toContain(cross.status);
   });
+
+  describe('whats-new (since your last visit)', () => {
+    it('says nothing on a first-ever visit, then counts what happened since', async () => {
+      const owner = await register('wn-first');
+      const ws = await createWorkspace(owner.cookie, 'WhatsNew Co');
+
+      // First read: no previous visit exists, so no digest — everything
+      // would be trivially "new", which states nothing.
+      const first = await request(app)
+        .get(`/api/workspaces/${ws.id}/whats-new`)
+        .set('Cookie', owner.cookie);
+      expect(first.status).toBe(200);
+      expect(first.body.data).toBeNull();
+
+      // Work happens: a project creation is an allowlisted activity event.
+      await request(app)
+        .post('/api/projects')
+        .set('Cookie', owner.cookie)
+        .send({ name: 'After baseline', workspaceId: ws.id });
+
+      const second = await request(app)
+        .get(`/api/workspaces/${ws.id}/whats-new`)
+        .set('Cookie', owner.cookie);
+      expect(second.body.data).not.toBeNull();
+      expect(second.body.data.count).toBe(1);
+      expect(typeof second.body.data.previousVisitAt).toBe('string');
+    });
+
+    it('reports zero, not nothing, when a returning visit found no new activity', async () => {
+      const owner = await register('wn-quiet');
+      const ws = await createWorkspace(owner.cookie, 'Quiet WhatsNew Co');
+
+      await request(app).get(`/api/workspaces/${ws.id}/whats-new`).set('Cookie', owner.cookie);
+      const second = await request(app)
+        .get(`/api/workspaces/${ws.id}/whats-new`)
+        .set('Cookie', owner.cookie);
+
+      // "Nothing happened since last time" is a statable fact, distinct
+      // from "never been here before".
+      expect(second.body.data).not.toBeNull();
+      expect(second.body.data.count).toBe(0);
+    });
+
+    it("keeps each member's baseline independent", async () => {
+      const owner = await register('wn-owner');
+      const member = await register('wn-member');
+      const ws = await createWorkspace(owner.cookie, 'Independent WhatsNew Co');
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: member.userId, role: 'MEMBER' },
+      });
+
+      // Owner establishes a baseline; the member never has.
+      await request(app).get(`/api/workspaces/${ws.id}/whats-new`).set('Cookie', owner.cookie);
+
+      const memberFirst = await request(app)
+        .get(`/api/workspaces/${ws.id}/whats-new`)
+        .set('Cookie', member.cookie);
+      // Inheriting the owner's baseline would either hide activity from
+      // the member or falsely claim they had been here before.
+      expect(memberFirst.body.data).toBeNull();
+    });
+
+    it('is hidden from strangers and the unauthenticated', async () => {
+      const owner = await register('wn-guard');
+      const stranger = await register('wn-stranger');
+      const ws = await createWorkspace(owner.cookie, 'WhatsNew Guard Co');
+
+      expect((await request(app).get(`/api/workspaces/${ws.id}/whats-new`)).status).toBe(401);
+      const cross = await request(app)
+        .get(`/api/workspaces/${ws.id}/whats-new`)
+        .set('Cookie', stranger.cookie);
+      expect([403, 404]).toContain(cross.status);
+    });
+  });
 });

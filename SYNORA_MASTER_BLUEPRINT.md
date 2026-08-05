@@ -112,8 +112,9 @@ any part of it becomes real.
    EOS event bus. Founder-only data stays founder-only.
 5. **Decision-note lifecycle** — append-only corrections (never silent
    edits), and a per-project "decisions" view.
-6. **Workspace-level "since you were last here"** — the project-level
-   digest generalized to the whole workspace.
+6. ~~**Workspace-level "since you were last here"**~~ — SHIPPED
+   2026-08-05 (`WorkspaceVisit` + `/whats-new` + the dashboard banner;
+   see the matrix's "Continuing work after time away" row).
 7. **Async long-running work** — **BLOCKED on founder sign-off**
    (standing constraint). Workflows currently run inside the HTTP request.
 8. **Client IP pseudonymization** — **CONDITIONAL, awaiting founder

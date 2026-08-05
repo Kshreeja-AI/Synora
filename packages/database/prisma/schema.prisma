@@ -222,6 +222,7 @@ model Workspace {
   folders       Folder[]
   assets        Asset[]
   auditLogs     AuditLog[]
+  visits        WorkspaceVisit[]
 
   // Billing relations (M6)
   subscription  Subscription?
@@ -429,6 +430,23 @@ model ProjectVisit {
 
   @@unique([projectId, userId])
   @@index([projectId])
+}
+
+/// When a person last opened their workspace home — the workspace-level
+/// sibling of ProjectVisit, recorded when the dashboard's "what's new"
+/// digest is read. Same shape, same reasoning: a per-viewer fact about
+/// this person's relationship to the workspace, not about the workspace.
+model WorkspaceVisit {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  userId       String
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  lastViewedAt DateTime  @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
 }
 
 /// A person's own record of why a decision was made — "I want Synora to

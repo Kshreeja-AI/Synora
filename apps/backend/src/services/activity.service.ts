@@ -65,6 +65,62 @@ export interface ActivityEntry {
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
+export interface WorkspaceWhatsNew {
+  /** The visit this is measured since — not the one just recorded. */
+  previousVisitAt: string;
+  /** How many allowlisted work events happened since then. */
+  count: number;
+}
+
+/**
+ * What happened in this workspace since THIS person last opened its home
+ * — the workspace-level sibling of the project visit digest, built on
+ * the exact same allowlisted work events `listWorkspaceActivity` shows.
+ * Because the digest and the visible feed count the same rows, they can
+ * never disagree about what "new" means.
+ *
+ * Null on a first-ever visit: everything would be trivially "new", which
+ * states nothing. A returning visit always gets a digest, even at zero —
+ * "nothing happened" is a fact, distinct from "never been here".
+ *
+ * The visit is recorded AFTER the count is read (never measured against
+ * itself) and only once the membership check has passed — a refused
+ * request must not consume someone's "last time".
+ */
+export async function getWorkspaceWhatsNew(
+  userId: string,
+  workspaceId: string,
+): Promise<WorkspaceWhatsNew | null> {
+  await requireMembership(userId, workspaceId);
+
+  const previousVisit = await prisma.workspaceVisit.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    select: { lastViewedAt: true },
+  });
+
+  // A COUNT over the full window, not a capped page: a busy week away
+  // must not be under-reported because a list limit truncated it first.
+  const count = previousVisit
+    ? await prisma.auditLog.count({
+        where: {
+          workspaceId,
+          action: { in: Object.keys(WORK_ACTIONS) },
+          createdAt: { gt: previousVisit.lastViewedAt },
+        },
+      })
+    : 0;
+
+  await prisma.workspaceVisit.upsert({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    create: { workspaceId, userId },
+    update: { lastViewedAt: new Date() },
+  });
+
+  return previousVisit
+    ? { previousVisitAt: previousVisit.lastViewedAt.toISOString(), count }
+    : null;
+}
+
 export async function listWorkspaceActivity(
   userId: string,
   workspaceId: string,

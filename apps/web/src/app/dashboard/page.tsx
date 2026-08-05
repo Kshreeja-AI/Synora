@@ -9,6 +9,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
+import { WhatsNew } from '../../components/shell/WhatsNew';
 import { WaitingForYou } from '../../components/shell/WaitingForYou';
 import { ActiveWork } from '../../components/shell/ActiveWork';
 import { NeedsAttention } from '../../components/shell/NeedsAttention';
@@ -84,6 +85,11 @@ export default function DashboardPage(): React.JSX.Element {
         />
       ) : (
         <div className="space-y-6">
+          {/* Returning after time away starts with what happened while
+              you were gone — then what needs you. Absent on a first
+              visit and when nothing changed. */}
+          <WhatsNew workspaceId={currentWorkspace.id} />
+
           {/* Ordered by how real the claim on attention is: blocked on a
               decision only a person can make, then in progress right
               now, then things that stopped on their own without being

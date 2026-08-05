@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
-import { listWorkspaceActivity } from '../services/activity.service';
+import { getWorkspaceWhatsNew, listWorkspaceActivity } from '../services/activity.service';
 
 /**
  * The workspace's recent history, as sentences.
@@ -17,6 +17,7 @@ import { listWorkspaceActivity } from '../services/activity.service';
 const router: ExpressRouter = Router({ mergeParams: true });
 
 router.use('/:workspaceId/activity', authMiddleware, requireWorkspaceAccess());
+router.use('/:workspaceId/whats-new', authMiddleware, requireWorkspaceAccess());
 
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
@@ -32,6 +33,22 @@ router.get('/:workspaceId/activity', async (req: AuthRequest, res, next) => {
       before,
     });
     res.json(createApiResponse(entries));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Reading this endpoint IS the visit — it returns what happened since
+ * this person last asked, then moves their baseline forward. Null data
+ * on a first-ever visit; a `count: 0` digest when nothing happened
+ * since a real one.
+ */
+router.get('/:workspaceId/whats-new', async (req: AuthRequest, res, next) => {
+  try {
+    res.json(
+      createApiResponse(await getWorkspaceWhatsNew(req.userId!, req.params.workspaceId)),
+    );
   } catch (error) {
     next(error);
   }

@@ -25,6 +25,37 @@ export interface ActivityEntry {
 
 export const ACTIVITY_KEY = 'workspace-activity';
 
+/**
+ * What happened since THIS person last opened the workspace home. Null
+ * on a first-ever visit (there is no "since" yet); a `count: 0` digest
+ * when nothing happened since a real one. Reading it IS the visit — the
+ * server moves the baseline forward after answering.
+ */
+export interface WorkspaceWhatsNew {
+  previousVisitAt: string;
+  count: number;
+}
+
+export const WHATS_NEW_KEY = 'workspace-whats-new';
+
+export function useWorkspaceWhatsNew(
+  workspaceId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<WorkspaceWhatsNew | null> {
+  return useQuery({
+    queryKey: [WHATS_NEW_KEY, workspaceId],
+    queryFn: () =>
+      api.get<WorkspaceWhatsNew | null>(`/api/workspaces/${workspaceId}/whats-new`),
+    enabled: !!workspaceId && options?.enabled !== false,
+    // Never refetched in the background: each read consumes the "since
+    // last time" baseline, so an invisible refetch would silently zero a
+    // digest the person had not read yet.
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+  });
+}
+
 export function useWorkspaceActivity(
   workspaceId: string,
   options?: { enabled?: boolean; limit?: number },
