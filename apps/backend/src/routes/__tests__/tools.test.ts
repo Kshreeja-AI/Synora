@@ -253,6 +253,41 @@ describe('tool execution routes', () => {
     expect(res.body.data.blockers.join(' ')).toMatch(/city/);
   });
 
+  it('does not cry wolf about a request that only reads', async () => {
+    const owner = await register('tools-preview-get');
+    const ws = await createWorkspace(owner.cookie, 'Read Only Co');
+    const created = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools`)
+      .set('Cookie', owner.cookie)
+      .send({
+        name: 'lookup-weather',
+        displayName: 'Lookup Weather',
+        description: 'reads a public API',
+        category: 'http',
+        type: 'HTTP',
+        inputSchema: { type: 'object', required: [] },
+        config: { url: 'https://example.com/weather', method: 'GET' },
+      });
+    expect(created.status).toBe(201);
+
+    const res = await request(app)
+      .post(`/api/workspaces/${ws.id}/tools/${created.body.data.id}/preview`)
+      .set('Cookie', owner.cookie)
+      .send({ input: {} });
+
+    expect(res.status).toBe(200);
+    // Synora still has no undo mechanism, so the FLAG is unchanged and
+    // keeps meaning exactly what it says…
+    expect(res.body.data.reversibleBySynora).toBe(false);
+    // …but the wording distinguishes reading from changing. Saying
+    // "cannot be undone" about a plain lookup is the kind of warning
+    // that teaches people to skip warnings.
+    expect(res.body.data.reversibilityNote).toMatch(/asks for data rather than submitting a change/);
+    // And it still refuses to promise nothing happens: Synora sees the
+    // method it sends, never what the remote does about it.
+    expect(res.body.data.reversibilityNote).toMatch(/cannot undo anything the remote system does/);
+  });
+
   it('hides the preview from someone outside the workspace', async () => {
     const owner = await register('tools-preview-owner');
     const stranger = await register('tools-preview-stranger');

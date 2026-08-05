@@ -41,6 +41,24 @@ export interface ExecuteToolInput {
  */
 const SECRET_PLACEHOLDER_PATTERN = /\{\{secret:([A-Za-z0-9_.-]+)\}\}/g;
 
+/** Methods whose shape is "ask for data" rather than "submit a change". */
+const READ_SHAPED_METHODS = new Set(['GET', 'HEAD']);
+
+/**
+ * Wording for what Synora can and cannot do after the call. The read
+ * case still refuses to promise nothing happens: Synora sees the method
+ * it sends, never what the remote system chooses to do about it.
+ */
+function reversibilityNoteFor(method: string | undefined): string {
+  if (method && READ_SHAPED_METHODS.has(method)) {
+    return (
+      `This is a ${method} request, which asks for data rather than submitting a change. ` +
+      'Synora still cannot undo anything the remote system does in response.'
+    );
+  }
+  return 'Synora cannot undo this once it runs — the request reaches a system outside Synora.';
+}
+
 export interface ToolExecutionPreview {
   toolId: string;
   toolName: string;
@@ -350,9 +368,15 @@ export class ToolService {
       wouldRequireApproval: Boolean(tool.requiresApproval),
       destination,
       secretsUsed: [...secretsUsed],
+      // Synora has no undo mechanism for anything outside itself, so
+      // this stays false for every outbound call — the field means
+      // exactly what it says. The NOTE, however, distinguishes a
+      // request shaped to READ from one shaped to CHANGE: telling
+      // someone a plain lookup "cannot be undone" is true but breeds
+      // the alarm fatigue that makes people stop reading warnings at
+      // the moment one finally matters.
       reversibleBySynora: false,
-      reversibilityNote:
-        'Synora cannot undo this once it runs — the request reaches a system outside Synora.',
+      reversibilityNote: reversibilityNoteFor(destination?.method),
       rateLimit,
       blockers,
       unknowns,
