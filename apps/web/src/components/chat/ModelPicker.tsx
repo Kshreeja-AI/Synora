@@ -11,7 +11,7 @@ import {
   Loader2,
   Cpu,
 } from 'lucide-react';
-import { listAIModels, type ProviderCatalog } from '@/lib/api/aiModels';
+import { listAIModels, type ModelCard, type ProviderCatalog } from '@/lib/api/aiModels';
 
 /**
  * Compact provider+model selector.
@@ -52,6 +52,25 @@ const CAPABILITY_META: Record<
   thinking: { icon: Sparkles, label: 'Thinking' },
 };
 
+/**
+ * Whether a badge should light up — and whether a "requires vision" flow
+ * should offer this model at all.
+ *
+ * `vision` and `toolUse` are answered by `synoraSupports`, NOT by the
+ * vendor's claim: those need an adapter on our side, and a badge promising
+ * a capability no request can reach is worse than no badge. `reasoning` and
+ * `thinking` happen inside the model with nothing for Synora to implement,
+ * so the vendor's claim is the correct answer for them.
+ */
+function hasCapability(
+  model: ModelCard,
+  capability: 'vision' | 'toolUse' | 'reasoning' | 'thinking'
+): boolean {
+  if (capability === 'vision') return model.synoraSupports.vision;
+  if (capability === 'toolUse') return model.synoraSupports.toolCalling;
+  return model.capabilities[capability] === true;
+}
+
 export function ModelPicker({
   value,
   onChange,
@@ -78,9 +97,7 @@ export function ModelPicker({
   const filteredModels = useMemo(() => {
     const models = currentProvider?.models ?? [];
     if (!requireCapabilities?.length) return models;
-    return models.filter((m) =>
-      requireCapabilities.every((cap) => m.capabilities[cap])
-    );
+    return models.filter((m) => requireCapabilities.every((cap) => hasCapability(m, cap)));
   }, [currentProvider, requireCapabilities]);
 
   const currentModel = filteredModels.find((m) => m.id === value.model);
@@ -153,7 +170,7 @@ export function ModelPicker({
           <div className="text-foreground">{currentModel.description}</div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {(['vision', 'toolUse', 'reasoning', 'thinking'] as const).map((cap) =>
-              currentModel.capabilities[cap] ? (
+              hasCapability(currentModel, cap) ? (
                 <span
                   key={cap}
                   className="inline-flex items-center gap-1 rounded bg-background px-1.5 py-0.5"

@@ -15,6 +15,7 @@
  */
 
 import { PROVIDER_REGISTRY } from './registry';
+import type { AICapability } from './types';
 
 export interface ModelCard {
   /** Wire model id sent to the provider — do not localize or rewrite. */
@@ -25,7 +26,13 @@ export interface ModelCard {
   readonly description: string;
   /** Max input tokens (approximate; a provider's real limit is authoritative). */
   readonly contextWindow: number;
-  /** Well-known capability flags — drive picker badges and filtering. */
+  /**
+   * What the VENDOR says this model can do. These are claims about the
+   * model, NOT claims about Synora — a model can support tool calling
+   * while Synora has no adapter able to ask it for one. Never badge these
+   * directly in a UI; badge `synoraSupports` below, which is the honest
+   * answer to "will this work here".
+   */
   readonly capabilities: {
     readonly vision?: boolean;
     readonly toolUse?: boolean;
@@ -50,11 +57,16 @@ export interface ModelCard {
   readonly speedTokensPerSecond?: number;
 }
 
+/** A model card plus what Synora can actually do with it here. */
+export interface ResolvedModelCard extends ModelCard {
+  readonly synoraSupports: SynoraModelSupport;
+}
+
 export interface ProviderCatalog {
   readonly providerId: string;
   readonly providerName: string;
   readonly configured: boolean;
-  readonly models: readonly ModelCard[];
+  readonly models: readonly ResolvedModelCard[];
 }
 
 const ANTHROPIC_MODELS: readonly ModelCard[] = [
@@ -225,7 +237,15 @@ const OLLAMA_MODELS: readonly ModelCard[] = [
   },
 ];
 
-/** Maps a provider id to its curated model list. Extend when adding providers. */
+/**
+ * Maps a provider id to its curated model list. Extend when adding providers.
+ *
+ * Keys MUST be the descriptor's own `id` (see `./registry.ts`) — a key that
+ * matches no descriptor silently yields an empty model list, which renders
+ * as a configured provider with nothing to pick. `azure-openai` was spelled
+ * `azure` here and did exactly that; `modelCatalogGaps()` below now makes
+ * such a mismatch impossible to reintroduce unnoticed.
+ */
 const CATALOG_BY_PROVIDER: Readonly<Record<string, readonly ModelCard[]>> = {
   anthropic: ANTHROPIC_MODELS,
   openai: OPENAI_MODELS,
@@ -234,10 +254,77 @@ const CATALOG_BY_PROVIDER: Readonly<Record<string, readonly ModelCard[]>> = {
   deepseek: DEEPSEEK_MODELS,
   together: TOGETHER_MODELS,
   openrouter: OPENROUTER_MODELS,
-  azure: AZURE_MODELS,
+  'azure-openai': AZURE_MODELS,
   bedrock: BEDROCK_MODELS,
   ollama: OLLAMA_MODELS,
 };
+
+/**
+ * Provider ids with a real adapter in `ai/streaming/providers/`. Streaming
+ * is served by a SEPARATE stack from the descriptor registry, so a provider
+ * can be fully configured for generation and still have no streaming path —
+ * `groq` is the mirror image, streaming-only with no descriptor at all.
+ */
+const STREAMING_PROVIDER_IDS: ReadonlySet<string> = new Set([
+  'anthropic',
+  'openai',
+  'gemini',
+  'openrouter',
+  'deepseek',
+]);
+
+/**
+ * What SYNORA can actually do with a given model through a given provider.
+ *
+ * This is the answer a picker badge must show. A vendor claim on the model
+ * card is necessary but not sufficient: Gemini's models genuinely support
+ * tool calling, and Synora's Gemini adapter genuinely cannot ask for one,
+ * so badging the vendor's claim would promise something no request can
+ * deliver. Every flag here is a conjunction — the model must claim it AND
+ * Synora must implement it.
+ */
+export interface SynoraModelSupport {
+  /** Model claims tool use AND this provider's adapter implements the mapping. */
+  readonly toolCalling: boolean;
+  /** Model claims streaming AND a streaming adapter exists for this provider. */
+  readonly streaming: boolean;
+  /**
+   * Always false today. Several models accept image input; Synora's text
+   * contract has no field carrying one, so no request can use it. Stated as
+   * a computed capability rather than omitted, so the day vision is
+   * implemented this becomes a real conjunction rather than a new concept.
+   */
+  readonly vision: boolean;
+}
+
+export function negotiateModelSupport(
+  model: ModelCard,
+  providerId: string,
+  providerCapabilities: readonly AICapability[]
+): SynoraModelSupport {
+  return {
+    toolCalling:
+      model.capabilities.toolUse === true && providerCapabilities.includes('tool-calling'),
+    streaming: model.capabilities.streaming === true && STREAMING_PROVIDER_IDS.has(providerId),
+    vision: false,
+  };
+}
+
+/**
+ * Providers registered in `PROVIDER_REGISTRY` with no catalog entry, and
+ * catalog keys matching no registered provider. Both are silent failures in
+ * a picker — the first shows a provider with nothing selectable, the second
+ * is a list nobody can ever see — so a test asserts this stays empty.
+ */
+export function modelCatalogGaps(): { providersWithoutModels: string[]; orphanedCatalogKeys: string[] } {
+  const registeredIds = new Set(PROVIDER_REGISTRY.map((p) => p.id));
+  return {
+    providersWithoutModels: PROVIDER_REGISTRY.filter(
+      (p) => (CATALOG_BY_PROVIDER[p.id] ?? []).length === 0
+    ).map((p) => p.id),
+    orphanedCatalogKeys: Object.keys(CATALOG_BY_PROVIDER).filter((key) => !registeredIds.has(key)),
+  };
+}
 
 /**
  * The full catalog with live availability per provider — the payload the
@@ -251,7 +338,13 @@ export async function listAvailableModels(): Promise<ProviderCatalog[]> {
       providerId: descriptor.id,
       providerName: descriptor.displayName,
       configured: await descriptor.isConfigured(),
-      models: CATALOG_BY_PROVIDER[descriptor.id] ?? [],
+      models: (CATALOG_BY_PROVIDER[descriptor.id] ?? []).map((model) => ({
+        ...model,
+        // Negotiated per model AND per provider: the same model reached
+        // through two providers can be usable differently, because the
+        // limit is Synora's adapter, not the model.
+        synoraSupports: negotiateModelSupport(model, descriptor.id, descriptor.capabilities),
+      })),
     }))
   );
 }

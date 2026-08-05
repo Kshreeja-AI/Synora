@@ -136,7 +136,7 @@ original finding kept in the notes so the history stays legible:
 | Health check | **NOT-IMPLEMENTED** — `verifyCredential()` is a setup-time check, not a liveness probe |
 | Credential *validation* | **IMPLEMENTED** — see §8 (four-outcome `verifyCredential()`, built by this audit) |
 | Model discovery | **NOT-IMPLEMENTED** — models come from config strings |
-| Capability discovery | **NOT-IMPLEMENTED** — capabilities are hardcoded per provider, not per model |
+| Capability discovery | **PARTIAL** — negotiated per model AND per provider from a hand-maintained catalog (§12); still not *discovered* from a live provider API |
 | Error normalization | **IMPLEMENTED** (`AIProviderError`) |
 | Usage accounting | **PARTIAL** — tokens captured when the SDK returns them |
 | Cost accounting | **PARTIAL** — see §5 |
@@ -364,10 +364,7 @@ objective and is, on the evidence above, met for the providers in list B.
    Leaving 250+ lines of unreachable OpenAI adapter is an active trap for the
    next reader.
 3. ~~**Tool calling through providers**~~ — **CLOSED 2026-08-05**, see §11.
-4. **Model-level capability negotiation** — now unblocked (3 is done).
-   Capabilities are still declared per PROVIDER, not per MODEL, so a
-   provider whose newest model supports tools and whose oldest does not is
-   described by one flag for both.
+4. ~~**Model-level capability negotiation**~~ — **CLOSED 2026-08-05**, see §12.
 5. **Pricing coverage** — needs published rates.
 
 ---
@@ -405,3 +402,44 @@ Not done, deliberately: the agent runtime still plans with its own planner
 (adopting provider-native calling there is an orchestration change, not a
 provider change); Gemini/Bedrock/Ollama adapters; streaming tool-call events;
 parallel-call fan-out policy above the provider layer.
+
+---
+
+## 12. Model-level capability negotiation (built 2026-08-05)
+
+Capabilities were declared per PROVIDER while the model catalog declared them
+per MODEL, and nothing reconciled the two. Both halves could be individually
+accurate and still combine into a false statement to a user:
+
+- Gemini's model cards say `toolUse: true` — **true about the model.** Synora's
+  Gemini adapter cannot request a tool call — **also true.** The picker badged
+  the first and so promised a capability no request could deliver.
+- DeepSeek's chat card claims no tool use while its adapter (OpenAI-compatible)
+  does support it — the opposite error, hiding something real.
+
+`negotiateModelSupport(model, providerId, providerCapabilities)` returns
+`synoraSupports`, a **conjunction**: the model must claim the capability AND
+Synora must implement it for that provider. It is computed server-side in
+`listAvailableModels()` so no surface can disagree, and the picker now badges
+and filters on it.
+
+| Field | Rule |
+|---|---|
+| `toolCalling` | model claims `toolUse` **and** descriptor declares `tool-calling` |
+| `streaming` | model claims `streaming` **and** a `ai/streaming/providers/` adapter exists |
+| `vision` | **always false** — several models accept images; Synora's contract has no field to carry one |
+
+`reasoning` and `thinking` are deliberately NOT negotiated: they happen inside
+the model with nothing for Synora to implement, so the vendor's claim is the
+correct answer and pretending otherwise would be its own distortion.
+
+**Defect found and fixed in the same pass**: `CATALOG_BY_PROVIDER` keyed Azure
+as `azure` while its descriptor id is `azure-openai`, so a fully configured
+Azure deployment rendered as a provider with **zero selectable models** — a
+silent failure no error surface could report. `modelCatalogGaps()` now
+enumerates providers with no models and catalog keys matching no provider, and
+a test asserts both stay empty, so the class of bug cannot return unnoticed.
+
+Status: **IMPLEMENTED** (local, no credentials needed). 8 unit tests.
+Remaining: capabilities come from a hand-maintained catalog, not live provider
+discovery — a model shipped today is invisible until the catalog is updated.

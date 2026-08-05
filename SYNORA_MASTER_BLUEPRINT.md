@@ -193,6 +193,12 @@ facts that change how the rest of this blueprint should be read:
    OpenAI, xAI, DeepSeek, Together, OpenRouter, Azure). `tool-calling` is
    declared as a capability ONLY where implemented, so
    `providersForCapability('tool-calling')` stays a truthful answer.
+   **Capability negotiation followed** (same day): `synoraSupports` on every
+   model in the catalog is a conjunction of the model's claim AND Synora's
+   adapter, computed server-side, so the model picker can no longer badge a
+   capability no request can reach. It also exposed a real defect — Azure's
+   catalog key did not match its provider id, so a configured Azure
+   deployment showed zero selectable models.
    **Still true and still must not be conflated**: structured output and
    vision remain unexpressible; Gemini/Bedrock/Ollama have no tool mapping;
    and the agent runtime still plans with its own planner — the capability is
