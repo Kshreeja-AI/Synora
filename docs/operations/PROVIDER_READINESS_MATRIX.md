@@ -475,7 +475,7 @@ and response caching remain the last unported embeddings-standard items.
 
 ---
 
-## 14. Finding (not yet fixed): EOS instrumentation covers less than it appears to
+## 14. Finding, CLOSED 2026-08-05: EOS instrumentation covered less than it appeared to
 
 While scoping the next observability increment, reading (not inferring from
 declarations) surfaced a real gap in the EOS instrumentation system
@@ -508,13 +508,28 @@ the current gap. (The judge-wiring call site is sharper still: EOS recording
 its own judge's calls under a normal prompt id would be self-referential
 pollution of EOS's own data.)
 
-The correct fix is a small promptId taxonomy — at minimum separating
-end-user chat generation (wherever it happens, streaming or not) from
-agent-orchestration calls and from auxiliary/internal calls — decided
-deliberately rather than defaulted into. Not built in this pass because
-getting the taxonomy wrong is worse than leaving the gap documented.
+**Closed the same day.** A five-entry promptId taxonomy was added to
+`KNOWN_AI_PATHS`, each kept SEPARATE rather than folded into `chat.generate`:
 
-Status: **NOT-IMPLEMENTED**, now documented rather than invisible. This is a
-gap in observability accuracy, not in the resilience/rate-limit/metrics work
-closed the same day — the text path itself is fully hardened; what it lacks
-is being seen correctly by EOS's business-level monitors.
+| promptId | Call site | Why it is its own bucket |
+|---|---|---|
+| `agent.plan` | `agents/runtime.ts` (planner) | automated planning call, not a chat reply |
+| `agent.step.generate` | `agents/runtime.ts` (step execution) | automated step call, different volume/shape |
+| `chat.title` | `services/conversation.service.ts` `generateTitle` | 20-token prompt; would drag the chat latency average down |
+| `eos.judge` | `eos/judge-wiring.ts` | EOS judging other output — recording it as normal traffic would be self-referential pollution of EOS's own data |
+| `api.generate.direct` | `routes/ai.ts` `POST /api/ai/generate` | unknown calling context; pooling it would be a guess dressed as a measurement |
+
+A single wrapper, `ai/instrumentedGenerate.ts`, does the timing and emission
+once; each call site only declares its own promptId and passes it in — the
+same "one definition, many consumers" shape as the resilience modules
+earlier in this document. On failure it recovers the provider id from
+`AIProviderError`/`AIRateLimitedError` when the error carries one, rather
+than defaulting to `unknown` when the information already exists.
+
+Status: **IMPLEMENTED**. 5 new unit tests on the wrapper (report under the
+caller's promptId, never leak into `chat.generate`, error passthrough
+unchanged, provider-id recovery on both error types, never throws a NEW
+error). All four wiring points verified against the existing eos/agents/ai
+suites (742 tests, 64 files) with zero regressions — the coverage test's own
+`toHaveLength(KNOWN_AI_PATHS.length)` assertion is self-referential, so
+adding entries could not silently break it, and did not.

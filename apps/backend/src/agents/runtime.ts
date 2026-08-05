@@ -1,5 +1,5 @@
-import { generateText } from '../ai/index.js';
 import { resolveTextGenerationProvider } from '../ai/resolver.js';
+import { instrumentedGenerate } from '../ai/instrumentedGenerate.js';
 import { createModelPlanner } from './model-planner.js';
 import { createWorkspaceToolRunner } from './tool-runner-adapter.js';
 import { createDeterministicGenerate, createDeterministicPlanner } from './local-runtime.js';
@@ -7,7 +7,17 @@ import type { RunEngineDeps } from './run-engine.js';
 import type { ExecutableDefinition } from './types.js';
 import { getAgent } from './agent-registry.js';
 import { getWorkflow } from '../workflows/workflow-registry.js';
+import { declareAiPath } from '../eos/instrumentation.js';
 import { logger } from '../utils/logger.js';
+
+/**
+ * Reported under their own promptIds, never 'chat.generate': planning a run
+ * and generating inside a step are automated, agent-driven calls with a
+ * different cost/latency shape from a person's chat message — pooling them
+ * would corrupt the baseline cost-monitor/latency-drift compare against.
+ */
+declareAiPath('agent.plan');
+declareAiPath('agent.step.generate');
 
 /**
  * Assembles the dependencies a run executes with, and — just as important —
@@ -103,9 +113,9 @@ export async function resolveAgentRuntime(requestedBy: string): Promise<Resolved
 
   return {
     deps: {
-      planner: createModelPlanner((request) => generateText(request)),
+      planner: createModelPlanner((request) => instrumentedGenerate('agent.plan', request)),
       toolRunner,
-      generate: (request) => generateText(request),
+      generate: (request) => instrumentedGenerate('agent.step.generate', request),
     },
     mode: 'model',
     provider,

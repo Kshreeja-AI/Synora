@@ -5,6 +5,16 @@ import { requirePermission } from './permissions'
 import { requireMembership } from './checks'
 import { recordAuditEvent } from './audit.service'
 import { getProviderDescriptor } from '../ai'
+import { instrumentedGenerate } from '../ai/instrumentedGenerate'
+import { declareAiPath } from '../eos/instrumentation'
+
+/**
+ * Its own promptId, never 'chat.generate': a 20-token auto-title has an
+ * entirely different cost/latency shape from a full chat reply, and
+ * pooling the two would corrupt the baseline the chat path's cost/latency
+ * monitors compare against.
+ */
+declareAiPath('chat.title')
 
 export interface CreateConversationInput {
   title: string
@@ -348,9 +358,8 @@ export class ConversationService {
     }
 
     // Generate title using the conversation's configured provider
-    const { generateText } = await import('../ai')
     try {
-      const result = await generateText({
+      const result = await instrumentedGenerate('chat.title', {
         prompt: `Based on this conversation, generate a concise 5-10 word title. Reply with ONLY the title, no punctuation.\n\n${messageContent}`,
         model: conversation.model,
         maxTokens: 20,

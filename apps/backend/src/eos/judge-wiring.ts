@@ -1,8 +1,18 @@
-import { generateText } from '../ai/index.js';
 import { resolveTextGenerationProvider } from '../ai/resolver.js';
+import { instrumentedGenerate } from '../ai/instrumentedGenerate.js';
 import { configureJudge, isJudgeConfigured } from './ai-judge.js';
 import { createModelJudge } from './model-judge.js';
+import { declareAiPath } from './instrumentation.js';
 import { logger } from '../utils/logger.js';
+
+/**
+ * Reported under its own promptId, never 'chat.generate': the judge calls a
+ * model to EVALUATE other output, not to answer a user, and recording it
+ * under a normal prompt id would be self-referential pollution of EOS's own
+ * data — the judge's traffic would quietly train the baseline it is meant
+ * to be independent of.
+ */
+declareAiPath('eos.judge');
 
 /**
  * Connects the evaluation judge to whichever text provider is configured.
@@ -44,7 +54,7 @@ export async function wireJudgeIfProviderAvailable(): Promise<boolean> {
 
   configureJudge(
     createModelJudge({
-      generate: (request) => generateText(request),
+      generate: (request) => instrumentedGenerate('eos.judge', request),
     }),
   );
 

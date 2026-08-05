@@ -26,6 +26,22 @@ export const KNOWN_AI_PATHS = [
   { promptId: 'video.generate', label: 'Video generation' },
   { promptId: 'audio.generate', label: 'Audio generation' },
   { promptId: 'embeddings.embed', label: 'Embeddings' },
+  /**
+   * The four paths below close the coverage gap recorded in
+   * docs/operations/PROVIDER_READINESS_MATRIX.md #14: each is a real
+   * `generateText()` call site that used to report to nobody. Each gets
+   * its OWN promptId rather than being folded into `chat.generate`,
+   * because cost-monitor/latency-drift/provider-degradation all baseline
+   * PER PROMPT ID — an agent's planning call and a 20-token auto-title
+   * have entirely different cost/latency shapes from a chat reply, and
+   * pooling them would corrupt the very baselines those detectors exist
+   * to protect.
+   */
+  { promptId: 'agent.plan', label: 'Agent run planning' },
+  { promptId: 'agent.step.generate', label: 'Agent step generation' },
+  { promptId: 'chat.title', label: 'Conversation auto-titling' },
+  { promptId: 'eos.judge', label: 'EOS evaluation judge' },
+  { promptId: 'api.generate.direct', label: 'Direct text-generation API' },
 ] as const;
 
 const declaredPaths = new Set<string>();

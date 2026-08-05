@@ -1,12 +1,22 @@
 import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { createApiResponse, TooManyRequestsException } from '@synora/shared';
-import { generateText, AIRateLimitedError } from '../ai';
+import { AIRateLimitedError } from '../ai';
+import { instrumentedGenerate } from '../ai/instrumentedGenerate';
 import { listAvailableModels } from '../ai/models';
 import { checkProviderReadiness } from '../ai/verification';
 import { getTextProviderMetrics } from '../ai/textResilience';
+import { declareAiPath } from '../eos/instrumentation';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { aiGenerationLimiter } from '../middleware/resourceRateLimit.js';
+
+/**
+ * Its own promptId, never 'chat.generate': this is a raw API entry point
+ * any client or integration can call directly, with a shape and calling
+ * context Synora cannot infer — pooling it into the interactive chat
+ * baseline would be a guess dressed up as a measurement.
+ */
+declareAiPath('api.generate.direct');
 
 const router: Router = Router();
 
@@ -95,7 +105,7 @@ router.post('/generate', authMiddleware, aiGenerationLimiter, async (req: AuthRe
   try {
     const body = generateTextRequestSchema.parse(req.body);
 
-    const result = await generateText({
+    const result = await instrumentedGenerate('api.generate.direct', {
       prompt: body.prompt,
       mode: body.mode,
       model: body.model,
