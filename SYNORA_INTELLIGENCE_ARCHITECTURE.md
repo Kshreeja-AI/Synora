@@ -27,7 +27,7 @@ itself to:
 | Memory and experience system | **memory exists**; experience record does not |
 | Evaluation and learning system | **evaluation partial**; learning absent |
 | Model/provider abstraction | **exists** — `ai/registry.ts`, `ai/resolver.ts` |
-| Local/self-hosted model capability | **not implemented** |
+| Local/self-hosted model capability | **adapter implemented** (`ai/providers/ollama.provider.ts`, tested, keyless, off by default); no model installed yet |
 | A Synora-trained model | **does not exist** |
 | Model-training infrastructure | **schema and registry exist; no training** |
 
@@ -184,9 +184,12 @@ duplicated:
 4. **No learning pipeline.** Nothing converts experience into a candidate,
    evaluates it, versions it, or deploys it. `SB-015` constrains a thing that
    is not there yet.
-5. **No local model adapter.** When no provider is configured, natural
-   language beyond the fixed grammar simply cannot be served, and the system
-   says so rather than pretending.
+5. **No local model RUNNING.** The adapter exists — the launch audit
+   corrected this document's earlier claim that it did not
+   (`ollama.provider.ts`, registered and tested, activated by
+   `OLLAMA_BASE_URL`). What is missing is an installed Ollama and a pulled
+   model. Until then, natural language beyond the fixed grammar cannot be
+   served, and the system says so rather than pretending.
 
 ---
 
@@ -217,5 +220,6 @@ Written as future work on purpose. None of this exists.
 4. **Learning pipeline** — experience → normalisation → consent check →
    evaluation → candidate → review → versioned deployment. Depends on all
    of the above, and is governed by `SB-015` before a line of it is written.
-5. **Local model adapter** — a runnable open-source model behind the existing
-   provider seam, so no business logic changes.
+5. **Local model activation** — the adapter exists; this slice is installing
+   Ollama, pulling an evaluated model, and verifying generation end-to-end.
+   No business logic changes.
