@@ -33,6 +33,7 @@ const ALL_STATES: CommandState[] = [
   'not-implemented',
   'not-bound',
   'waiting-approval',
+  'needs-input',
   'rejected',
   'expired',
   'failed',

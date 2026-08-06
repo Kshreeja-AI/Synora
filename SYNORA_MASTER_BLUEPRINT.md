@@ -309,9 +309,9 @@ A typed sentence now reaches the REAL services — never a re-implementation,
 never a simulated result. The chain is: understand → resolve → permission →
 availability → risk → approval gate → execute → durable record.
 
-**Nine states, never blurred** — `completed`, `not-authorized`,
+**Ten states, never blurred** — `completed`, `not-authorized`,
 `unavailable`, `not-implemented`, `not-bound`, `waiting-approval`,
-`rejected`, `expired`, `failed`. `not-bound` exists as its own state
+`needs-input`, `rejected`, `expired`, `failed`. `not-bound` exists as its own state
 deliberately: the capability is real but the command layer cannot yet drive
 it, and collapsing that into "not implemented" would slander working code
 while "failed" would blame the user. `rejected` (a person said no) and
@@ -509,11 +509,34 @@ is null where no single page serves the capability, because a wrong
 destination costs a click, a wait, and the belief that Synora knows its own
 product.
 
+**Slice 10: the resolution primitive, and the first capability bound
+through it.** The world-building directive's rule — "if a dependency is
+missing, build the dependency first" — applied to the blocker slice 9
+named: services want ids, sentences name things loosely. `command/resolve.ts`
+is a PURE, deterministic matcher (exact match → whole-word containment →
+most-specific-wins tie-break) over candidates the caller fetched with a
+workspace-scoped query, so it can never be where isolation leaks and never
+needs a provider. THE RULE THAT MATTERS: not exactly one match → it NEVER
+guesses. A wrong guess is a confident action on a record nobody named —
+worse than any question.
+
+A tenth state, `needs-input`, because every neighbour would lie: `failed`
+blames a bug that does not exist, `not-implemented` slanders working code,
+`completed` would make `executed: true` mean "I asked you something". The
+question carries the CHOICES as data (capped in prose, listed in the
+payload) so a person picks instead of retyping.
+
+`agent.preview` is bound through it: "Preview what the Research agent
+would do about competitor pricing" reaches the SAME planner, validation
+and per-step checks the Agents page uses, and runs nothing. Ambiguity
+("Digest" vs "Digest v2") resolves by specificity; naming nobody returns
+the honest question with every agent listed.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound capabilities
-are search, conversation-create, provider-metrics, approvals-waiting and
-activity-recent; everything else honestly reports `not-bound` — and now
-says where to go. The
+are search, conversation-create, provider-metrics, approvals-waiting,
+activity-recent and agent-preview; everything else honestly reports
+`not-bound` — and says where to go. The
 approvals answer states what it counted (`agent runs and commands; not tool
 executions`) rather than implying it covers everything. Self-approval is
 permitted — the gate is a deliberate pause and a record, NOT four-eyes

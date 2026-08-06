@@ -7,8 +7,25 @@
  * discovered by the user afterwards, from the consequences.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
+
+/**
+ * NO NETWORK — same pin as agents.test.ts, for the same reason. The test
+ * environment carries a placeholder ANTHROPIC_API_KEY, and provider
+ * resolution treats "a key exists" as "a provider is available", so the
+ * agent-preview binding would otherwise make a real outbound call and fail
+ * on a vendor 401. Forcing resolution to fail pins the runtime into its
+ * local deterministic planner — hermetic, and honestly labeled as local.
+ */
+vi.mock('../../ai/resolver', () => ({
+  resolveTextGenerationProvider: vi.fn(async () => {
+    throw new Error('no provider configured (test)');
+  }),
+  resolveProvider: vi.fn(async () => {
+    throw new Error('no provider configured (test)');
+  }),
+}));
 import type { Express } from 'express';
 import { prisma } from '@synora/database';
 import { createApp } from '../../app';
@@ -185,20 +202,20 @@ describe('POST /api/command/:workspaceId/execute', () => {
       const notBound = await request(app)
         .post(`/api/command/${workspaceId}/execute`)
         .set('Cookie', ownerCookie)
-        .send({ command: 'What would happen if I ran this' })
+        .send({ command: 'Automate my weekly report' })
         .expect(200);
-      // Synora genuinely previews agent plans; the command layer cannot
-      // drive it yet, because a preview needs a specific agent that a bare
-      // sentence does not name. Calling that "not implemented" would
-      // slander working code. (This example used to be the approvals
-      // queue, which is now bound — the distinction is what is under test,
-      // not the particular capability that illustrates it.)
+      // Synora genuinely authors workflows; the command layer cannot drive
+      // it yet, because authoring needs structured steps a sentence does
+      // not carry. Calling that "not implemented" would slander working
+      // code. (This example has moved twice as capabilities were bound —
+      // the DISTINCTION is what is under test, not the capability that
+      // happens to illustrate it.)
       expect(notBound.body.data.state).toBe('not-bound');
       // And it says WHERE. A refusal with nowhere to go is a dead end, so
       // the message names the page and the response carries it as a field
       // the UI can turn into a link.
-      expect(notBound.body.data.message).toMatch(/you can do it yourself on the \/agents page/i);
-      expect(notBound.body.data.appPath).toBe('/agents');
+      expect(notBound.body.data.message).toMatch(/you can do it yourself on the \/workflows page/i);
+      expect(notBound.body.data.appPath).toBe('/workflows');
     });
 
     it('records refusals too, not only successes', async () => {
@@ -209,6 +226,79 @@ describe('POST /api/command/:workspaceId/execute', () => {
       expect(record).not.toBeNull();
       expect(record!.state).toBe('not-implemented');
       expect(record!.failureReason).toBeTruthy();
+    });
+  });
+
+  describe('resolution: from a mention to a record, never to a guess', () => {
+    async function createAgent(name: string): Promise<string> {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/agents`)
+        .set('Cookie', ownerCookie)
+        .send({ name, instructions: `You are ${name}. Answer briefly.` })
+        .expect(201);
+      return res.body.data.id as string;
+    }
+
+    it('previews a REAL agent named loosely in a sentence, running nothing', async () => {
+      await createAgent('Research');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Preview what the Research agent would do about competitor pricing' })
+        .expect(200);
+
+      // The same preview the Agents page runs — same planner, same checks —
+      // reached from a sentence that never contained an id.
+      expect(res.body.data.state).toBe('completed');
+      expect(res.body.data.executed).toBe(true);
+      const report = res.body.data.result as { steps: unknown[]; runtime: { mode: string } };
+      expect(Array.isArray(report.steps)).toBe(true);
+      expect(report.steps.length).toBeGreaterThan(0);
+      expect(res.body.data.message).toContain('"Research"');
+      expect(res.body.data.message).toMatch(/nothing run/i);
+    });
+
+    it('asks — with the choices — when the sentence names nobody', async () => {
+      await createAgent('Alpha');
+      await createAgent('Beta');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Preview what the agent would do here' })
+        .expect(200);
+
+      // Not failed (nothing broke), not not-bound (the binding exists), and
+      // above all NOT a guess: a wrong pick would preview a record nobody
+      // named, which is worse than any question.
+      expect(res.body.data.state).toBe('needs-input');
+      expect(res.body.data.executed).toBe(false);
+      expect(res.body.data.result).toBeUndefined();
+      const names = (res.body.data.candidates as { name: string }[]).map((c) => c.name);
+      expect(names).toEqual(expect.arrayContaining(['Alpha', 'Beta', 'Research']));
+
+      const record = await prisma.commandExecution.findFirst({
+        where: { workspaceId, commandText: 'Preview what the agent would do here' },
+      });
+      expect(record?.state).toBe('needs-input');
+      expect(record?.failureReason).toMatch(/could not tell which agent/i);
+    });
+
+    it('prefers the most specific name when one contains another', async () => {
+      await createAgent('Digest');
+      await createAgent('Digest v2');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Preview what the Digest v2 agent would do with the inbox' })
+        .expect(200);
+
+      // "Digest" also matched the sentence, but a person who typed
+      // "digest v2" did not mean it. Specificity resolves; nothing guessed.
+      expect(res.body.data.state).toBe('completed');
+      expect(res.body.data.message).toContain('"Digest v2"');
     });
   });
 

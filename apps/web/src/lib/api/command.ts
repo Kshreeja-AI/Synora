@@ -26,6 +26,7 @@ export type CommandState =
   | 'not-implemented'
   | 'not-bound'
   | 'waiting-approval'
+  | 'needs-input'
   | 'rejected'
   | 'expired'
   | 'failed';
@@ -41,6 +42,8 @@ export interface CommandOutcome {
   executed: boolean;
   /** Where the person can do this themselves, when Synora knows. */
   appPath?: string;
+  /** On needs-input only: the concrete choices behind the question. */
+  candidates?: { id: string; name: string }[];
 }
 
 /** A decision that was not carried out, and why. */

@@ -30,7 +30,20 @@
  * remain unverified, and that is a real gap rather than an oversight.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+
+// NO NETWORK — same pin as agents.test.ts and commandExecute.test.ts: the
+// test env's placeholder key would otherwise let the agent-preview probe
+// reach a real vendor and fail on a 401 that has nothing to do with
+// permissions. The local deterministic planner is the branch under probe.
+vi.mock('../../ai/resolver', () => ({
+  resolveTextGenerationProvider: vi.fn(async () => {
+    throw new Error('no provider configured (test)');
+  }),
+  resolveProvider: vi.fn(async () => {
+    throw new Error('no provider configured (test)');
+  }),
+}));
 import { prisma } from '@synora/database';
 import { routesForIntent } from '../capabilities';
 import { isBound } from '../execute';
@@ -38,6 +51,9 @@ import { searchService } from '../../services/search.service';
 import { conversationService } from '../../services/conversation.service';
 import { listWorkspaceActivity } from '../../services/activity.service';
 import { listRuns } from '../../agents/run-engine';
+import { createAgent, listAgents } from '../../agents/agent-registry';
+import { previewAgentPlan } from '../../agents/plan-preview';
+import { resolveAgentRuntime } from '../../agents/runtime';
 import { getTextProviderMetrics } from '../../ai/textResilience';
 import type { CommandIntent, CommandRoute } from '../types';
 import { hasPermission, type Permission } from '../../services/permissions';
@@ -80,6 +96,18 @@ describe('declared permissions match the real surfaces', () => {
     'approvals.waiting': async (_userId, wsId) => listRuns(wsId),
 
     'activity.recent': (userId, wsId) => listWorkspaceActivity(userId, wsId, { limit: 1 }),
+
+    'agent.preview': async (userId, wsId) => {
+      // The same call the executor makes, against a real registered agent.
+      // Membership-only by declaration, so a VIEWER must get a real report.
+      const agent = listAgents(wsId)[0];
+      if (!agent) throw new Error('probe setup failed: no agent registered');
+      const runtime = await resolveAgentRuntime(userId);
+      return previewAgentPlan(
+        { agent, workspaceId: wsId, requestedBy: userId, task: 'probe task' },
+        runtime.deps
+      );
+    },
   };
 
   async function register(prefix: string): Promise<string> {
@@ -107,6 +135,14 @@ describe('declared permissions match the real surfaces', () => {
       },
     });
     workspaceId = workspace.id;
+
+    // A real agent for the preview probe to plan against, in THIS workspace.
+    createAgent({
+      workspaceId,
+      name: 'Permission Probe Agent',
+      instructions: 'You are a probe. Answer briefly.',
+      createdBy: ownerId,
+    });
   });
 
   afterAll(async () => {

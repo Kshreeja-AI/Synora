@@ -41,6 +41,7 @@ import type { CommandOutcome, CommandState } from '@/lib/api/command';
 const LABEL: Record<CommandState, string> = {
   completed: 'Done',
   'waiting-approval': 'Waiting for approval',
+  'needs-input': 'One detail missing',
   'not-authorized': 'Not allowed',
   unavailable: 'Not connected here',
   'not-implemented': 'Synora cannot do this',
@@ -58,7 +59,9 @@ const LABEL: Record<CommandState, string> = {
  */
 function toneFor(state: CommandState): string {
   if (state === 'completed') return 'border-l-4 border-l-green-600';
-  if (state === 'waiting-approval') return 'border-l-4 border-l-amber-500';
+  // needs-input shares amber with waiting-approval: both mean "you must
+  // act before anything happens", and that is the glanceable fact.
+  if (state === 'waiting-approval' || state === 'needs-input') return 'border-l-4 border-l-amber-500';
   return 'border-l-4 border-l-muted-foreground';
 }
 
@@ -91,6 +94,19 @@ export function CommandOutcomeCard({ outcome }: { outcome: CommandOutcome }) {
           ? 'This ran, and the result above is real.'
           : 'Nothing was done. Synora did not run anything for this.'}
       </p>
+
+      {/* The choices behind a needs-input question, as text a person can
+          reuse in their next sentence. Facts, not buttons that act — the
+          next command still goes through every gate. */}
+      {outcome.candidates && outcome.candidates.length > 0 && (
+        <ul className="flex flex-wrap gap-2" data-testid="command-candidates">
+          {outcome.candidates.map((candidate) => (
+            <li key={candidate.id} className="rounded-full border px-3 py-1 text-xs">
+              {candidate.name}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* A refusal with nowhere to go is a dead end. When Synora knows the
           page, it is a link — offered on refusals, where it is the next

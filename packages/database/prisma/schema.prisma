@@ -3705,7 +3705,7 @@ model CommandExecution {
   approvalExpiresAt DateTime?
 
   /// completed | not-authorized | unavailable | not-implemented | not-bound |
-  /// waiting-approval | rejected | expired | failed
+  /// waiting-approval | needs-input | rejected | expired | failed
   state          String
   /// Short human-readable outcome. Never a raw payload or stack trace.
   resultSummary  String?

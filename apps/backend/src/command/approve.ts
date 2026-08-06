@@ -350,7 +350,14 @@ export async function decideExecution(
     freshDecision!.understanding.subject
   );
 
-  const finalState: ExecutionState = outcome.ok ? 'completed' : 'failed';
+  // Three honest outcomes of an approved run, never collapsed: it ran, it
+  // needs one more detail (the capability is FINE — blaming a bug would
+  // send someone hunting for one), or it genuinely broke.
+  const finalState: ExecutionState = outcome.ok
+    ? 'completed'
+    : outcome.needsInput
+      ? 'needs-input'
+      : 'failed';
   const updated = await prisma.commandExecution.update({
     where: { id: record.id },
     data: {
@@ -361,7 +368,9 @@ export async function decideExecution(
       resultSummary: outcome.ok ? outcome.summary : null,
       failureReason: outcome.ok
         ? null
-        : messageFor('failed', freshDecision!.route, outcome.ok ? undefined : outcome.detail),
+        : outcome.needsInput
+          ? outcome.needsInput.question
+          : messageFor('failed', freshDecision!.route, outcome.detail),
       completedAt: new Date(),
     },
   });

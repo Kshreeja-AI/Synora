@@ -5,6 +5,10 @@ import { searchService } from '../services/search.service';
 import { conversationService } from '../services/conversation.service';
 import { listWorkspaceActivity } from '../services/activity.service';
 import { listRuns } from '../agents/run-engine';
+import { listAgents } from '../agents/agent-registry';
+import { previewAgentPlan } from '../agents/plan-preview';
+import { resolveAgentRuntime } from '../agents/runtime';
+import { resolveByName, nameSample, type NamedCandidate } from './resolve';
 import { logger } from '../utils/logger';
 import type { CommandRoute } from './types';
 import type { WorkspaceRole } from '../services/permissions';
@@ -41,9 +45,35 @@ export type ExecutionState =
   | 'not-implemented'
   | 'not-bound'
   | 'waiting-approval'
+  | 'needs-input'
   | 'rejected'
   | 'expired'
   | 'failed';
+
+/**
+ * Raised by a bound executor when the sentence did not carry something the
+ * capability genuinely needs — usually WHICH record the person meant.
+ *
+ * A tenth state instead of a stretch of an existing one, because every
+ * neighbour would lie: `failed` blames a bug that does not exist,
+ * `not-implemented` slanders working code, and `completed` with a question
+ * inside would make `executed: true` mean "I asked you something". The
+ * honest sentence is "Synora can do this and needs one more detail first",
+ * and nothing ran.
+ *
+ * NEVER used to guess. When two records match, the question names them —
+ * a wrong guess here is a confident action on a record nobody named, which
+ * is the single worst thing this layer can do.
+ */
+export class NeedsInput extends Error {
+  constructor(
+    readonly question: string,
+    readonly candidates: NamedCandidate[] = []
+  ) {
+    super(question);
+    this.name = 'NeedsInput';
+  }
+}
 
 /**
  * How long a pending approval stays answerable.
@@ -95,6 +125,11 @@ export interface CommandExecutionResult {
    * still worth finding.
    */
   appPath?: string;
+  /**
+   * On `needs-input` only: the concrete choices behind the question, so a
+   * UI can offer them rather than making the person retype a name.
+   */
+  candidates?: NamedCandidate[];
 }
 
 /**
@@ -193,6 +228,52 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
     };
   },
 
+  'agent.preview': async (context, subject) => {
+    // First capability bound THROUGH resolution: the sentence names an
+    // agent loosely; the preview needs a specific one. Resolution is
+    // workspace-scoped by construction — the candidate list comes from
+    // listAgents(workspaceId), so a sentence cannot name its way into
+    // another workspace's agents.
+    const agents = listAgents(context.workspaceId);
+    if (agents.length === 0) {
+      throw new NeedsInput(
+        'This workspace has no agents yet, so there is nothing to preview. Create one on the Agents page first.'
+      );
+    }
+
+    const resolution = resolveByName(agents, subject);
+    if (resolution.status === 'unresolved') {
+      throw resolution.matched.length > 0
+        ? new NeedsInput(
+            `Which agent did you mean — ${nameSample(resolution.matched)}?`,
+            resolution.matched.map((a) => ({ id: a.id, name: a.name }))
+          )
+        : new NeedsInput(
+            `I could not tell which agent you meant. This workspace has ${nameSample(agents)}.`,
+            agents.map((a) => ({ id: a.id, name: a.name }))
+          );
+    }
+
+    // The same preview the Agents page runs: same planner, same validation,
+    // same per-step checks. Never a re-implementation.
+    const runtime = await resolveAgentRuntime(context.userId);
+    const report = await previewAgentPlan(
+      {
+        agent: resolution.entity,
+        workspaceId: context.workspaceId,
+        requestedBy: context.userId,
+        task: subject,
+      },
+      runtime.deps
+    );
+    return {
+      result: { ...report, runtime: { mode: runtime.mode, notice: runtime.notice } },
+      summary: `Previewed what "${resolution.entity.name}" would do — ${report.steps.length} step${
+        report.steps.length === 1 ? '' : 's'
+      } planned, nothing run.`,
+    };
+  },
+
   'conversation.create': async (context, subject) => {
     // conversationService.create runs its OWN requireMembership +
     // requirePermission. That is the authoritative check re-running at the
@@ -236,6 +317,8 @@ export function messageFor(
         : 'Synora can do this, but not yet by being asked in plain language. It is available in the app itself.';
     case 'waiting-approval':
       return 'I can do this, and it needs your approval first because it changes something outside Synora or affects other people.';
+    case 'needs-input':
+      return detail ?? 'I can do this, and I need one more detail from you first. Nothing has run.';
     case 'rejected':
       return detail ?? 'This was refused, so nothing was done.';
     case 'expired':
@@ -313,13 +396,24 @@ export async function runBound(
   capabilityId: string,
   context: ExecutionContext,
   subject: string
-): Promise<{ ok: true; result: unknown; summary: string } | { ok: false; detail?: string }> {
+): Promise<
+  | { ok: true; result: unknown; summary: string }
+  | { ok: false; detail?: string; needsInput?: { question: string; candidates: NamedCandidate[] } }
+> {
   const executor = BOUND[capabilityId];
   if (!executor) return { ok: false };
   try {
     const outcome = await executor(context, subject);
     return { ok: true, result: outcome.result, summary: outcome.summary };
   } catch (error) {
+    if (error instanceof NeedsInput) {
+      // Not a failure: the capability worked exactly as designed and is
+      // asking for the one thing the sentence did not carry.
+      return {
+        ok: false,
+        needsInput: { question: error.question, candidates: error.candidates },
+      };
+    }
     // The person gets plain language; the detail goes to the log. A raw
     // stack trace as the primary experience is a dead end, not an answer.
     logger.warn('[Command] Execution failed', {
@@ -371,12 +465,20 @@ export async function executeCommand(
 
   let result: unknown;
   let summary: string | undefined;
+  let candidates: NamedCandidate[] | undefined;
 
   if (state === 'completed') {
     const outcome = await runBound(route!.capabilityId, context, understanding.subject);
     if (outcome.ok) {
       result = outcome.result;
       summary = outcome.summary;
+    } else if (outcome.needsInput) {
+      // Distinct from failed on purpose: the capability is fine, the
+      // sentence is missing one thing, and blaming a bug would send the
+      // person hunting for one.
+      state = 'needs-input';
+      detail = outcome.needsInput.question;
+      candidates = outcome.needsInput.candidates;
     } else {
       state = 'failed';
       detail = outcome.detail;
@@ -418,5 +520,7 @@ export async function executeCommand(
     // True ONLY when a real capability actually ran.
     executed: state === 'completed',
     ...(route?.appPath ? { appPath: route.appPath } : {}),
+    // The choices behind a needs-input question, as data a UI can offer.
+    ...(candidates && candidates.length > 0 ? { candidates } : {}),
   };
 }
