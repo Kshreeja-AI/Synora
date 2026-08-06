@@ -77,7 +77,7 @@ describe('POST /api/command/:workspaceId/executions/:executionId/decision', () =
   });
 
   describe('a yes actually means yes', () => {
-    it('records the approval as a fact, and reports not-bound rather than pretending', async () => {
+    it('records the approval as a fact even when the action cannot proceed', async () => {
       const executionId = await pendingExecution('Run the onboarding tool');
 
       const res = await request(app)
@@ -86,13 +86,16 @@ describe('POST /api/command/:workspaceId/executions/:executionId/decision', () =
         .send({ decision: 'approved' })
         .expect(200);
 
-      // Today NO sensitive capability is also bound — `tool.execute` needs a
-      // specific tool the command layer cannot resolve from a sentence yet.
-      // So this is the honest outcome of approving one, and it is neither
-      // "completed" (a lie) nor "failed" (blaming a bug that does not
-      // exist). The approval itself still happened and is recorded.
+      // UPDATED when `tool.execute` was bound. This previously asserted
+      // `not-bound`, which was the honest answer while no sensitive
+      // capability had an executor. Now one does, and this workspace simply
+      // has no tools — so the honest answer is `needs-input`, naming what is
+      // missing. The PROPERTY under test is unchanged and is the reason this
+      // test exists: a yes is recorded as a fact even when the action cannot
+      // proceed, and the state is the specific true reason rather than
+      // "completed" (a lie) or "failed" (blaming a bug that does not exist).
       expect(res.body.data.decision).toBe('approved');
-      expect(res.body.data.state).toBe('not-bound');
+      expect(res.body.data.state).toBe('needs-input');
       expect(res.body.data.executed).toBe(false);
 
       const record = await prisma.commandExecution.findUnique({ where: { id: executionId } });

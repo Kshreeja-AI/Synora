@@ -121,11 +121,18 @@ const INTENT_RULES: readonly { intent: CommandIntent; pattern: RegExp }[] = [
   { intent: 'communicate', pattern: /\b(invite|add)\s+\S+@\S+/i },
   { intent: 'communicate', pattern: /\binvite\s+(\w+\s+)?(to\s+(my|the|this)\s+workspace|as\s+a)/i },
 
-  // Control — running a configured tool. The optional descriptor group
-  // matters: people name the thing ("run the DEPLOYMENT tool"), and a
-  // grammar that only accepts the bare noun silently fails to recognize
-  // the most natural way to phrase it.
-  { intent: 'control', pattern: /\b(run|execute|trigger|fire)\s+(the\s+|my\s+)?([\w-]+\s+)?(tool|webhook|integration)\b/i },
+  // Control — running a configured tool. The descriptor group matters:
+  // people name the thing ("run the DEPLOYMENT tool"), and a grammar that
+  // only accepts the bare noun silently fails to recognize the most natural
+  // way to phrase it.
+  //
+  // WIDENED from one descriptor word to several, and found by binding the
+  // capability: real tools are called "Alpha Deploy" and "Nightly Data
+  // Sync", so "run the Alpha Deploy tool" — an entirely ordinary sentence —
+  // was not recognized as a command at all and answered `not-implemented`.
+  // Bounded rather than open-ended, and still anchored on the literal noun,
+  // so the rule cannot drift into claiming unrelated sentences.
+  { intent: 'control', pattern: /\b(run|execute|trigger|fire)\s+(the\s+|my\s+)?([\w-]+\s+){0,4}(tool|webhook|integration)\b/i },
 
   // Create.
   { intent: 'create', pattern: /\b(create|make|draft|write|generate|design|compose)\b/i },

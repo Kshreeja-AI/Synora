@@ -664,11 +664,23 @@ approving one yields `not-bound` and the plan correctly stops. The resume
 path is exercised directly against real stored plans until a sensitive
 capability is bound.
 
-**The next binding, and the three things reading its contract revealed.**
-Binding `tool.execute` is what would make an approval able to lead to a
-completed step. Reading `services/tool.service.ts` before writing any code
-surfaced three facts that must shape it rather than be discovered
-afterwards:
+**Slice 17: `tool.execute` bound — the approval chain closes.** The first
+bound capability that acts OUTSIDE Synora, and the first reachable ONLY
+through the approval gate. That combination completes the chain end-to-end:
+a plan pauses on a tool step, a person approves through the real endpoint,
+a real tool execution is created, and the plan resumes to completion. Slice
+16's resume moves from "exercised directly" to "reachable by a real
+request", which is what raises it from B to A. **A real grammar defect
+found by binding, again**: `control` allowed only ONE word between "the"
+and "tool", so "run the Alpha Deploy tool" — an ordinary sentence naming a
+real multi-word tool — was answered `not-implemented`. Widened to a bounded
+four, still anchored on the literal noun, with a test proving "run a report
+on last quarter" is still not claimed. The slice-7 vacuity guard fired
+correctly: binding demanded a permission probe, and the probe confirms the
+real service refuses a VIEWER by its own `tool:execute` check rather than
+by an HTTP route the command path never touches. Built directly from the
+three contract findings below, which were recorded BEFORE any code was
+written rather than discovered halfway through:
 
 1. **Tools carry their OWN `requiresApproval` flag.** A command-layer
    approval can therefore produce a tool execution that is still `PENDING`
@@ -687,13 +699,21 @@ afterwards:
    shortfall, and it means binding this capability delivers less immediate
    reach than it appears to.
 
-This is the one capability that acts OUTSIDE Synora, so it gets the design
-pass rather than the quick pass.
+This is the one capability that acts OUTSIDE Synora, so it got the design
+pass rather than the quick pass — and all three facts survived contact with
+the implementation: the tool's own approval gate means the message leads
+with "has NOT run yet" and `result.finished` is literally `false`; the
+async runner means the summary says *started*, never succeeded; and a tool
+with required fields is asked about by name rather than handed an invented
+payload. Test hermeticity is stated rather than assumed: every tool in the
+binding tests sets `requiresApproval`, so no test fires a real webhook — a
+test that reached a third party to prove an authorization rule would be
+doing outside Synora exactly what it is checking inside. The immediate-run
+branch is therefore exercised in production, not in the suite.
 
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no bound sensitive capability (so no approval can yet lead
-to a completed step), no plan UI (slices 14-16 are reachable by API only),
-no undo. Bound: search,
+personalization, no plan UI (slices 14-17 are reachable by API only), no
+undo. Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`
 and say where to go. The

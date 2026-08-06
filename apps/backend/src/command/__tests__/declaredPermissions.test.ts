@@ -59,6 +59,7 @@ import { listSchedules, deleteSchedule } from '../../workflows/schedule';
 import { previewAgentPlan } from '../../agents/plan-preview';
 import { resolveAgentRuntime } from '../../agents/runtime';
 import { getTextProviderMetrics } from '../../ai/textResilience';
+import { toolService } from '../../services/tool.service';
 import type { CommandIntent, CommandRoute } from '../types';
 import { hasPermission, type Permission } from '../../services/permissions';
 
@@ -79,6 +80,7 @@ describe('declared permissions match the real surfaces', () => {
   let viewerId: string;
   let ownerId: string;
   let probeWorkflowId: string;
+  let probeToolId: string;
   const emails: string[] = [];
 
   /**
@@ -111,6 +113,15 @@ describe('declared permissions match the real surfaces', () => {
         kind: 'interval',
         intervalMs: 3_600_000,
       }),
+
+    'tool.execute': (userId, wsId) =>
+      // The real service the executor calls, which enforces `tool:execute`
+      // itself. A VIEWER must be refused by THIS code — the command path
+      // never touches the HTTP route, so the route's checks prove nothing
+      // about it. Deliberately probes with a tool that requires no input,
+      // so a refusal can only come from the permission check rather than
+      // from input validation.
+      toolService.executeTool(userId, wsId, probeToolId, { input: {} }),
 
     'agent.preview': async (userId, wsId) => {
       // The same call the executor makes, against a real registered agent.
@@ -166,6 +177,27 @@ describe('declared permissions match the real surfaces', () => {
       steps: [{ id: 's1', kind: 'generate', description: 'probe', input: 'probe' }],
       createdBy: ownerId,
     }).id;
+
+    // A real tool for the tool.execute probe. `requiresApproval` so the
+    // owner leg creates a PENDING execution and nothing is actually sent to
+    // an outside system by a permission test — the probe is about who may
+    // ASK, and a test that fired real webhooks to prove that would be
+    // reaching outside Synora to check an authorization rule.
+    const tool = await prisma.toolDefinition.create({
+      data: {
+        workspaceId,
+        name: 'Permission Probe Tool',
+        displayName: 'Permission Probe Tool',
+        category: 'UTILITY',
+        description: 'probe',
+        type: 'HTTP',
+        config: { url: 'https://example.invalid/probe', method: 'POST' },
+        inputSchema: {},
+        requiresApproval: true,
+        createdBy: ownerId,
+      },
+    });
+    probeToolId = tool.id;
   });
 
   afterAll(async () => {

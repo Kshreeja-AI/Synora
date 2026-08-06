@@ -93,22 +93,20 @@ describe('plan resume after an approval decision', () => {
   });
 
   /**
-   * WHY THIS ONE CALLS `resumePlanAfterStep` DIRECTLY INSTEAD OF APPROVING
-   * OVER HTTP — and why that is a statement about the product, not a
-   * shortcut in the test:
+   * WHY THIS ONE CALLS `resumePlanAfterStep` DIRECTLY.
    *
-   * Reaching this branch through the approval endpoint needs an approved
-   * step that then COMPLETES. Every capability that requires approval is
-   * currently unbound (`tool.execute` is the only sensitive one, and the
-   * command layer cannot yet drive it), so approving one honestly yields
-   * `not-bound` and the plan correctly stops. There is therefore no
-   * sentence today whose approval leads to a completed step.
+   * UPDATED once `tool.execute` was bound. This comment previously said no
+   * approval could ever lead to a completed step, which was true then and
+   * is not now: `commandToolExecute.test.ts` drives the whole chain over
+   * HTTP — plan pauses, a person approves, the tool execution is really
+   * created, the plan resumes to completion.
    *
-   * So this exercises the REAL resume function against a REAL stored plan
-   * and the real `executeCommand` — everything except the one fact that
-   * cannot yet occur: that an approved step completed. When a sensitive
-   * capability is bound, this becomes reachable end-to-end with no change
-   * to the code under test.
+   * This test stays as the FOCUSED check on the resume function itself,
+   * against a real stored plan and the real `executeCommand`, without
+   * needing a tool to exist. Keeping it means the resume logic is still
+   * covered if the tool binding is ever changed or removed — a test that
+   * only reached this code through another capability would go quiet
+   * exactly when that capability broke.
    */
   it('carries on with the remaining steps once the paused step completes', async () => {
     const { planId } = await pausedPlan();
@@ -249,15 +247,17 @@ describe('plan resume after an approval decision', () => {
   });
 
   it('records the decided step honestly when the approved action cannot run', async () => {
-    // `tool.execute` is not bound, so approving it yields `not-bound` — the
-    // capability exists but the command layer cannot drive it. The plan
-    // must reflect that rather than claiming the step completed.
+    // UPDATED when `tool.execute` was bound. This workspace has no tools, so
+    // approving the step yields `needs-input` naming what is missing rather
+    // than the older `not-bound`. The property is the same one either way:
+    // the plan records what actually happened to the decided step instead of
+    // claiming it completed.
     const { planId, executionId } = await pausedPlan();
     const res = await decide(executionId, 'approved').expect(200);
-    expect(res.body.data.state).toBe('not-bound');
+    expect(res.body.data.state).toBe('needs-input');
 
     const stepOne = await prisma.commandPlanStep.findFirst({ where: { planId, index: 1 } });
-    expect(stepOne!.state).toBe('not-bound');
+    expect(stepOne!.state).toBe('needs-input');
     expect(stepOne!.completedAt).toBeNull();
     // And the plan did NOT continue past a step that did not complete.
     const plan = await prisma.commandPlan.findUnique({ where: { id: planId } });

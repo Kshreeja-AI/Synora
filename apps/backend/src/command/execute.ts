@@ -12,6 +12,7 @@ import { resolveByName, nameSample, type NamedCandidate } from './resolve';
 import { parseSchedulePhrase } from './schedule-phrase';
 import { listWorkflows } from '../workflows/workflow-registry';
 import { createScheduleAuthorized } from '../workflows/schedule-authorized';
+import { toolService } from '../services/tool.service';
 import { logger } from '../utils/logger';
 import type { CommandRoute } from './types';
 import type { WorkspaceRole } from '../services/permissions';
@@ -348,6 +349,82 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
       summary: `Scheduled "${resolution.entity.name}" to run ${parsed.describe}. First run ${new Date(
         schedule.nextFireAt
       ).toISOString()}. You can change or delete this on the Workflows page.`,
+    };
+  },
+
+  'tool.execute': async (context, _subject, rawText) => {
+    // THE ONLY BOUND CAPABILITY THAT ACTS OUTSIDE SYNORA, and the first
+    // whose risk class means it can only ever be reached through the
+    // approval gate. Three facts about the real service shape everything
+    // below; each was read from `tool.service.ts` before this was written.
+    const tools = await toolService.listTools(context.userId, context.workspaceId);
+    if (tools.length === 0) {
+      throw new NeedsInput(
+        'This workspace has no tools configured yet, so there is nothing to run. You can add one on the Tools page.'
+      );
+    }
+
+    const resolution = resolveByName(tools, rawText);
+    if (resolution.status === 'unresolved') {
+      throw resolution.matched.length > 0
+        ? new NeedsInput(
+            `Which tool did you mean — ${nameSample(resolution.matched)}?`,
+            resolution.matched.map((t) => ({ id: t.id, name: t.name }))
+          )
+        : new NeedsInput(
+            `I could not tell which tool you meant. This workspace has ${nameSample(tools)}.`,
+            tools.map((t) => ({ id: t.id, name: t.name }))
+          );
+    }
+
+    // FACT 1: tools declare required input fields, and a sentence carries no
+    // structured input. Guessing values for a tool that contacts an outside
+    // system is the worst possible guess in this codebase, so a tool needing
+    // input is answered with a question and a destination — never with an
+    // invented payload or an empty one the tool would reject downstream.
+    const schema = resolution.entity.inputSchema as { required?: unknown } | null;
+    const required = Array.isArray(schema?.required) ? (schema.required as string[]) : [];
+    if (required.length > 0) {
+      throw new NeedsInput(
+        `"${resolution.entity.name}" needs ${required.join(', ')} before it can run, and a sentence does not carry ${
+          required.length === 1 ? 'that value' : 'those values'
+        }. Run it from the Tools page, where you can fill them in.`
+      );
+    }
+
+    // The authoritative check lives INSIDE this call: executeTool re-runs
+    // membership AND `tool:execute` at the moment of execution, which is the
+    // real gate. The catalogue's earlier answer was a courtesy.
+    const execution = await toolService.executeTool(
+      context.userId,
+      context.workspaceId,
+      resolution.entity.id,
+      { input: {} }
+    );
+
+    // FACTS 2 AND 3, both about never overstating what happened:
+    //
+    // A tool may carry its OWN `requiresApproval` flag, in which case the
+    // execution is created PENDING and waits for a second, tool-level
+    // decision. Approving here allowed the REQUEST; it did not authorise
+    // the tool to run, and a person who reads "approved" as "it ran" would
+    // discover otherwise only from the consequences.
+    //
+    // And execution is asynchronous: when it does proceed, this returns
+    // once it has STARTED. Synora knows the tool began, never that it
+    // succeeded, so the summary says started and points at where the real
+    // outcome will appear.
+    const waitingOnTool = execution.status === 'PENDING';
+    return {
+      result: {
+        executionId: execution.id,
+        toolName: resolution.entity.name,
+        status: execution.status,
+        finished: false,
+      },
+      summary: waitingOnTool
+        ? `Created a run of "${resolution.entity.name}". It has NOT run yet — this tool has its own approval step, and someone must approve it on the Tools page.`
+        : `Started "${resolution.entity.name}". It runs in the background, so this means started, not finished — the result appears on the Tools page.`,
     };
   },
 
