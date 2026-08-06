@@ -59,6 +59,36 @@ export class SecretsManager {
   }
 
   /**
+   * Like tryGet(), but a generated placeholder resolves to undefined.
+   *
+   * Two different questions hide inside "does this secret exist". For
+   * INTERNAL secrets — JWT_SECRET, DATABASE_URL — a deterministic
+   * placeholder is genuinely useful: sign and verify agree with each
+   * other, and development boots with zero configuration. tryGet()
+   * answers that question. For EXTERNAL credentials — API keys, SMTP
+   * passwords — the other side of the wire has never heard of our
+   * placeholder, so "a value resolves" and "we can authenticate" are
+   * different claims. A provider that treats the first as the second
+   * selects itself, calls a real vendor with `placeholder_…`, and turns
+   * an honest "not configured" into a misleading auth failure. Every
+   * isConfigured() must ask THIS question, never tryGet()'s.
+   *
+   * The declined read still lands in the audit log as
+   * `access-placeholder`, so "why does this provider say unconfigured?"
+   * is answerable from the trail.
+   */
+  async tryGetReal(key: string, actor?: string): Promise<string | undefined> {
+    const record = await this.tryGetRecord(key, actor);
+    if (!record || record.isPlaceholder) return undefined;
+    return record.value;
+  }
+
+  /** True only when a real (non-placeholder) value resolves for this key. */
+  async hasReal(key: string, actor?: string): Promise<boolean> {
+    return (await this.tryGetReal(key, actor)) !== undefined;
+  }
+
+  /**
    * Replaces a secret's current value with a caller-supplied one and
    * bumps its version, preserving prior versions in history. This is the
    * primitive a rotation job (manual or scheduled) calls; SecretsManager

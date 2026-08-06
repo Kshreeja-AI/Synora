@@ -24,10 +24,18 @@ export async function resolveBillingProvider(): Promise<BillingProvider> {
   if (providerId === 'stripe') {
     const secretKey = await secretsManager.get('STRIPE_SECRET_KEY');
     const webhookSecret = await secretsManager.get('STRIPE_WEBHOOK_SECRET');
+    // Provenance travels with the values: in development both resolve to
+    // generated placeholders (so the provider constructs and billing routes
+    // answer honestly instead of crashing), but only REAL values may make
+    // isConfigured() claim Stripe can actually be charged against.
+    const hasRealCredentials =
+      (await secretsManager.hasReal('STRIPE_SECRET_KEY')) &&
+      (await secretsManager.hasReal('STRIPE_WEBHOOK_SECRET'));
 
     provider = new StripeProvider({
       secretKey,
       webhookSecret,
+      hasRealCredentials,
     });
   } else {
     throw new BillingProviderError('UNSUPPORTED_PROVIDER', `Billing provider not yet implemented: ${providerId}`);

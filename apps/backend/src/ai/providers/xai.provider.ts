@@ -15,7 +15,8 @@ export const xaiDescriptor: AIProviderDescriptor = {
   displayName: 'xAI Grok',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('XAI_API_KEY', 'ai:xai')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('XAI_API_KEY', 'ai:xai');
   },
   async create() {
     const apiKey = await secretsManager.get('XAI_API_KEY', 'ai:xai');

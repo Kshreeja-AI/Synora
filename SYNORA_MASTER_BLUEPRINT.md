@@ -227,7 +227,11 @@ facts that change how the rest of this blueprint should be read:
 Closed by that audit: **credential verification** — `verifyCredential()` on
 the descriptor contract answers "is this key actually accepted", separate
 from `isConfigured()`'s "is a key present", with `unreachable` never
-collapsed into `rejected`.
+collapsed into `rejected`. Sharpened by the command layer's slice 13:
+`isConfigured()` now means "is a REAL key present" — a generated
+development placeholder reads as absent (`SecretsManager.hasReal`), so in a
+credential-less deployment resolution honestly finds nothing instead of
+selecting a real vendor and failing with a 401 dressed up as availability.
 
 ## 5c. The Universal Command Layer — begun 2026-08-05
 
@@ -556,6 +560,39 @@ the name is stripped before cadence parsing. The authoritative check lives
 in `createScheduleAuthorized` (membership + tool:manage + persist-before-
 return), because the command path never touches slice 11's HTTP middleware
 — and the permission probe drives exactly that surface.
+
+**Slice 13: a placeholder is not a credential.** The secrets chain in
+development/testing deliberately ends in a source that manufactures a
+deterministic fake value for ANY key, so the app boots with zero real
+secrets — but every provider's `isConfigured()` was implemented as "tryGet
+returned something", which in those stages is ALWAYS true. So the
+capabilities report showed providers as active with no credentials
+anywhere, resolution selected a real vendor and called it with
+`placeholder_…` (the 401-dressed-as-availability caveat carried since
+slice 10), and three vector-DB connect paths handed the placeholder to
+self-hosted instances as a fake auth token. Fixed at the root: the secrets
+manager now answers two different questions — `tryGet()` for INTERNAL
+secrets (JWT signing, DATABASE_URL), where a deterministic placeholder is
+exactly what lets dev boot; `hasReal()`/`tryGetReal()` for EXTERNAL
+credentials, where "a value resolves" and "we can authenticate" are
+different claims. All 16 AI/embeddings descriptors, Pinecone, the SMTP
+transport, the config provider flags, and Stripe converted — Stripe's
+conversion DELETED the one place that had already answered this question
+by re-generating the placeholder format and string-comparing, billing's
+private duplicate of secrets internals (and it only checked one of the two
+secrets). The declined read still audits as `access-placeholder`, so "why
+does this provider say unconfigured?" is answerable from the trail. The
+guard test runs descriptors against the REAL secrets manager in the
+testing stage — exactly where the lie lived — and was proven to fail on
+the old code before it was trusted. Removing the lie then exposed a ghost
+coupling it had been hiding: `ConversationService.create` gated the
+CONTAINER on the provider's `isConfigured()`, so with honesty in place,
+"start a conversation" required a vendor key — 56 test failures, one root
+line. Creation now validates only the data invariants (provider exists,
+does text generation); the honest refusal lives at generation time, where
+it always did. A conversation is a container, and a container needs no
+vendor — that property is now test-pinned with an asserted precondition
+so it cannot go vacuous.
 
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound: search,

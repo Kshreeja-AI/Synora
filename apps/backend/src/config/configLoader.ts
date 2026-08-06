@@ -47,9 +47,14 @@ export async function loadConfig(
   const defaults = getStageDefaults(stage, modes);
 
   const databaseUrl = await secrets.tryGet('DATABASE_URL', 'config-loader');
-  const openaiKey = await secrets.tryGet('OPENAI_API_KEY', 'config-loader');
-  const anthropicKey = await secrets.tryGet('ANTHROPIC_API_KEY', 'config-loader');
-  const replicateKey = await secrets.tryGet('REPLICATE_API_KEY', 'config-loader');
+  // hasReal, not tryGet, for the provider flags: these feed
+  // `providers.*Enabled`, which is an availability CLAIM — and a generated
+  // placeholder is not a credential any vendor would accept. DATABASE_URL
+  // above deliberately stays tryGet: a deterministic placeholder DSN is an
+  // internal value, useful for booting development with zero configuration.
+  const hasOpenaiKey = await secrets.hasReal('OPENAI_API_KEY', 'config-loader');
+  const hasAnthropicKey = await secrets.hasReal('ANTHROPIC_API_KEY', 'config-loader');
+  const hasReplicateKey = await secrets.hasReal('REPLICATE_API_KEY', 'config-loader');
 
   const candidate = {
     stage,
@@ -106,9 +111,9 @@ export async function loadConfig(
       url: databaseUrl ?? '',
     },
     providers: {
-      openaiEnabled: Boolean(openaiKey),
-      anthropicEnabled: Boolean(anthropicKey),
-      replicateEnabled: Boolean(replicateKey),
+      openaiEnabled: hasOpenaiKey,
+      anthropicEnabled: hasAnthropicKey,
+      replicateEnabled: hasReplicateKey,
     },
     ai: {
       provider: env.AI_PROVIDER || undefined,

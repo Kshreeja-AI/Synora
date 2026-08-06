@@ -289,11 +289,27 @@ export class ConversationService {
     return conversation
   }
 
-  /** A conversation's provider must name a registered, currently-configured
-   * descriptor — otherwise it could never generate a reply. Model is
-   * intentionally not validated against a fixed list: models are free-form
-   * per-provider config strings throughout this codebase (see
-   * ai/types.ts), and a fixed enum here would contradict that. */
+  /** A conversation's provider must name a registered descriptor that
+   * supports text generation — those are invariants of the stored DATA
+   * (an unknown id or an image-only provider could never produce a
+   * reply). Model is intentionally not validated against a fixed list:
+   * models are free-form per-provider config strings throughout this
+   * codebase (see ai/types.ts), and a fixed enum here would contradict
+   * that.
+   *
+   * Deliberately NOT validated: whether the provider is configured right
+   * now. That is a claim about the DEPLOYMENT at one arbitrary moment,
+   * and creation cannot promise it for the conversation's lifetime —
+   * keys are added and removed while conversations persist, in both
+   * directions. A conversation is a container; the honest refusal lives
+   * where the action is: generation resolves the provider per message
+   * and records a clear failure when it is unconfigured. This check
+   * previously gated on isConfigured() and only ever passed in
+   * development because a generated placeholder counted as a credential;
+   * when that lie was removed (SecretsManager.hasReal), the gate revealed
+   * itself as blocking conversation creation entirely in credential-less
+   * deployments — including local development, which this platform
+   * promises works with zero keys. */
   private async validateProvider(provider: string): Promise<void> {
     const descriptor = getProviderDescriptor(provider)
     if (!descriptor) {
@@ -301,11 +317,6 @@ export class ConversationService {
     }
     if (!descriptor.capabilities.includes('text-generation')) {
       throw new ValidationException(`Provider "${provider}" does not support text generation.`)
-    }
-    if (!(await descriptor.isConfigured())) {
-      throw new ValidationException(
-        `Provider "${provider}" is not configured on this server — its required API key/secret is missing.`
-      )
     }
   }
 

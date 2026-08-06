@@ -114,6 +114,79 @@ describe('SecretsManager', () => {
     });
   });
 
+  describe('tryGetReal / hasReal — placeholders are not credentials', () => {
+    it('returns a real value exactly like tryGet does', async () => {
+      const manager = new SecretsManager({
+        environment: 'development',
+        sources: [new InMemorySource({ API_KEY: 'sk-real' }), new PlaceholderSecretSource()],
+        auditLog: new RecordingAuditLog(),
+      });
+
+      await expect(manager.tryGetReal('API_KEY')).resolves.toBe('sk-real');
+      await expect(manager.hasReal('API_KEY')).resolves.toBe(true);
+    });
+
+    it('answers the two questions differently for the same placeholder-backed key', async () => {
+      // The whole point of the split, proven on one manager: tryGet still
+      // serves the placeholder (internal secrets like JWT_SECRET need dev to
+      // boot), while tryGetReal/hasReal refuse to call it a credential.
+      const manager = new SecretsManager({
+        environment: 'development',
+        sources: [new InMemorySource({}), new PlaceholderSecretSource()],
+        auditLog: new RecordingAuditLog(),
+      });
+
+      await expect(manager.tryGet('VENDOR_API_KEY')).resolves.toBe(
+        PlaceholderSecretSource.generate('VENDOR_API_KEY')
+      );
+      await expect(manager.tryGetReal('VENDOR_API_KEY')).resolves.toBeUndefined();
+      await expect(manager.hasReal('VENDOR_API_KEY')).resolves.toBe(false);
+    });
+
+    it('resolves undefined/false for a key no source has at all', async () => {
+      const manager = new SecretsManager({
+        environment: 'development',
+        sources: [new InMemorySource({})],
+        auditLog: new RecordingAuditLog(),
+      });
+
+      await expect(manager.tryGetReal('MISSING')).resolves.toBeUndefined();
+      await expect(manager.hasReal('MISSING')).resolves.toBe(false);
+    });
+
+    it('treats a rotated-in value as real, even if the key started as a placeholder', async () => {
+      // Provenance is record-level (isPlaceholder), not value-shape
+      // sniffing: rotation writes a real record, and hasReal must follow.
+      const manager = new SecretsManager({
+        environment: 'development',
+        sources: [new PlaceholderSecretSource()],
+        auditLog: new RecordingAuditLog(),
+      });
+
+      await expect(manager.hasReal('VENDOR_API_KEY')).resolves.toBe(false);
+      await manager.rotate('VENDOR_API_KEY', 'sk-now-real');
+      await expect(manager.hasReal('VENDOR_API_KEY')).resolves.toBe(true);
+      await expect(manager.tryGetReal('VENDOR_API_KEY')).resolves.toBe('sk-now-real');
+    });
+
+    it('still records the declined placeholder read in the audit trail', async () => {
+      // "Why does this provider say unconfigured?" must be answerable from
+      // the audit log — the refusal is an access-placeholder event, not
+      // silence.
+      const auditLog = new RecordingAuditLog();
+      const manager = new SecretsManager({
+        environment: 'development',
+        sources: [new PlaceholderSecretSource()],
+        auditLog,
+      });
+
+      await manager.hasReal('VENDOR_API_KEY', 'test-actor');
+      const event = auditLog.events.find((e) => e.action === 'access-placeholder');
+      expect(event).toBeDefined();
+      expect(event?.actor).toBe('test-actor');
+    });
+  });
+
   describe('rotation and versioning', () => {
     it('rotate() bumps the version and preserves history', async () => {
       const manager = new SecretsManager({

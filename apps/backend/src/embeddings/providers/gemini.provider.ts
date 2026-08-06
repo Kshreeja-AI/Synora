@@ -76,7 +76,8 @@ export const geminiEmbeddingDescriptor: EmbeddingProviderDescriptor = {
   id: 'gemini',
   displayName: 'Google Gemini',
   async isConfigured() {
-    return (await secretsManager.tryGet('GOOGLE_AI_API_KEY', 'embeddings:gemini')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('GOOGLE_AI_API_KEY', 'embeddings:gemini');
   },
   async create() {
     const apiKey = await secretsManager.get('GOOGLE_AI_API_KEY', 'embeddings:gemini');

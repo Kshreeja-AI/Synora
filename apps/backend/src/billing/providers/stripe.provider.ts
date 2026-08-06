@@ -1,22 +1,29 @@
 import Stripe from 'stripe';
 import { BillingProvider, BillingProviderError, PaymentMethodSummary, RefundResult, WebhookEvent } from '../types.js';
-import { PlaceholderSecretSource } from '../../secrets/sources/placeholderSource.js';
 
 export class StripeProvider implements BillingProvider {
   private stripe: Stripe;
   private secretKey: string;
   private webhookSecret: string;
+  private hasRealCredentials: boolean;
 
-  constructor(config: { secretKey: string; webhookSecret: string }) {
+  /**
+   * `hasRealCredentials` is provenance, decided by whoever fetched the
+   * secrets (the billing resolver asks SecretsManager.hasReal()). This
+   * replaced a hack where this file re-generated the development
+   * placeholder and string-compared against it — duplicating the secrets
+   * system's internals in billing, and only checking the secret key, so a
+   * real key with a placeholder webhook secret still claimed configured.
+   */
+  constructor(config: { secretKey: string; webhookSecret: string; hasRealCredentials: boolean }) {
     this.secretKey = config.secretKey;
     this.webhookSecret = config.webhookSecret;
+    this.hasRealCredentials = config.hasRealCredentials;
     this.stripe = new Stripe(config.secretKey, { apiVersion: '2023-10-16' });
   }
 
   isConfigured(): boolean {
-    const placeholder = PlaceholderSecretSource.generate('STRIPE_SECRET_KEY');
-    const isPlaceholder = this.secretKey === placeholder;
-    return !isPlaceholder && this.secretKey !== '';
+    return this.hasRealCredentials && this.secretKey !== '';
   }
 
   async createCustomer(input: { workspaceId: string; email: string }): Promise<string> {

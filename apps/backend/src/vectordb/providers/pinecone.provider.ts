@@ -154,8 +154,9 @@ export const pineconeVectorDBDescriptor: VectorDBProviderDescriptor = {
   id: 'pinecone',
   displayName: 'Pinecone',
   async isConfigured() {
-    const apiKey = await secretsManager.tryGet('PINECONE_API_KEY', 'vectordb:pinecone');
-    return apiKey !== undefined && Boolean(getConfig().vectordb.pineconeHost);
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    const hasKey = await secretsManager.hasReal('PINECONE_API_KEY', 'vectordb:pinecone');
+    return hasKey && Boolean(getConfig().vectordb.pineconeHost);
   },
   async create() {
     const apiKey = await secretsManager.get('PINECONE_API_KEY', 'vectordb:pinecone');

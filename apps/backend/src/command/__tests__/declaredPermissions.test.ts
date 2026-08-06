@@ -32,10 +32,11 @@
 
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
-// NO NETWORK — same pin as agents.test.ts and commandExecute.test.ts: the
-// test env's placeholder key would otherwise let the agent-preview probe
-// reach a real vendor and fail on a 401 that has nothing to do with
-// permissions. The local deterministic planner is the branch under probe.
+// NO NETWORK — same pin as agents.test.ts and commandExecute.test.ts.
+// Placeholder keys no longer read as configured (SecretsManager.hasReal),
+// so the local planner is reached honestly — but a real key in a
+// developer's ambient shell would still be picked up, and the branch under
+// probe here is the local deterministic planner regardless of machine.
 vi.mock('../../ai/resolver', () => ({
   resolveTextGenerationProvider: vi.fn(async () => {
     throw new Error('no provider configured (test)');

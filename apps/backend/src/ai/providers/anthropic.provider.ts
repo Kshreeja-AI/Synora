@@ -154,7 +154,8 @@ export const anthropicDescriptor: AIProviderDescriptor = {
   displayName: 'Anthropic Claude',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('ANTHROPIC_API_KEY', 'ai:anthropic')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('ANTHROPIC_API_KEY', 'ai:anthropic');
   },
   async create() {
     const apiKey = await secretsManager.get('ANTHROPIC_API_KEY', 'ai:anthropic');

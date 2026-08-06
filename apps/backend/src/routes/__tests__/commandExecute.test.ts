@@ -11,12 +11,12 @@ import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 
 /**
- * NO NETWORK — same pin as agents.test.ts, for the same reason. The test
- * environment carries a placeholder ANTHROPIC_API_KEY, and provider
- * resolution treats "a key exists" as "a provider is available", so the
- * agent-preview binding would otherwise make a real outbound call and fail
- * on a vendor 401. Forcing resolution to fail pins the runtime into its
- * local deterministic planner — hermetic, and honestly labeled as local.
+ * NO NETWORK — same pin as agents.test.ts, for the same reason. Since the
+ * placeholder-credential fix (SecretsManager.hasReal), a placeholder key
+ * honestly reads as "no provider configured" and resolution falls to the
+ * local planner on its own — but a REAL key exported in a developer's
+ * ambient shell would still be picked up and make these tests do outbound
+ * I/O. Forcing resolution to fail keeps them hermetic on every machine.
  */
 vi.mock('../../ai/resolver', () => ({
   resolveTextGenerationProvider: vi.fn(async () => {

@@ -18,6 +18,7 @@ vi.mock('../../secrets', () => ({
   secretsManager: {
     tryGet: vi.fn(),
     get: vi.fn(),
+    hasReal: vi.fn(),
   },
 }));
 
@@ -36,13 +37,13 @@ describe('text-to-speech provider registry', () => {
   });
 
   it('reports unconfigured when no OPENAI_API_KEY is present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue(undefined);
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(false);
     expect(await isTextToSpeechConfigured()).toBe(false);
     await expect(resolveTextToSpeechProvider()).rejects.toBeInstanceOf(NoProviderConfiguredError);
   });
 
   it('resolves the OpenAI text-to-speech provider when credentials are present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue('sk-test');
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(true);
     vi.mocked(secretsManager.get).mockResolvedValue('sk-test');
 
     const provider = await resolveTextToSpeechProvider();

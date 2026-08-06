@@ -128,7 +128,8 @@ export const replicateVideoDescriptor: AIProviderDescriptor<VideoGenerationProvi
   displayName: 'Replicate Video',
   capabilities: ['video-generation'],
   async isConfigured() {
-    return (await secretsManager.tryGet('REPLICATE_API_KEY', 'ai:replicate-video')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('REPLICATE_API_KEY', 'ai:replicate-video');
   },
   async create() {
     const apiToken = await secretsManager.get('REPLICATE_API_KEY', 'ai:replicate-video');

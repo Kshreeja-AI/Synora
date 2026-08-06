@@ -78,7 +78,8 @@ export const openaiTextToSpeechDescriptor: AIProviderDescriptor<TextToSpeechProv
   displayName: 'OpenAI Text-to-Speech',
   capabilities: ['text-to-speech'],
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENAI_API_KEY', 'ai:openai-tts')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai-tts');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai-tts');

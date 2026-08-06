@@ -298,6 +298,20 @@ procured:
 2. Read it via `await secretsManager.get('YOUR_KEY')` (throws if missing)
    or `tryGet()` (returns `undefined` if missing) — never
    `process.env.YOUR_KEY` directly in application code.
+
+   **If the secret is an external credential** (an API key, an SMTP
+   password — anything a system *outside* Synora must accept), use
+   `tryGetReal()` / `hasReal()` for any "is this configured?" decision.
+   These answer `undefined`/`false` when the value is a generated
+   placeholder, because the other side of the wire has never heard of our
+   placeholder: "a value resolves" and "we can authenticate" are different
+   claims. `get()`/`tryGet()` remain correct for *internal* secrets
+   (`JWT_SECRET`, `DATABASE_URL`), where a deterministic placeholder is
+   exactly what lets development boot with zero configuration. Every
+   provider descriptor's `isConfigured()` follows this rule; the declined
+   placeholder read still lands in the audit log as `access-placeholder`,
+   so "why does this provider say unconfigured?" is answerable from the
+   trail.
 3. Add the key to every relevant `.env.example` file, commented out with a
    placeholder-style value, so local setup docs stay accurate.
 4. If it's required in staging/production, `validateRequired()` (called at

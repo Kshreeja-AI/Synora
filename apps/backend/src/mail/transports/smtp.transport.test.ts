@@ -4,7 +4,7 @@ import { secretsManager } from '../../secrets';
 
 vi.mock('../../config', () => ({ getConfig: vi.fn() }));
 vi.mock('../../secrets', () => ({
-  secretsManager: { tryGet: vi.fn(), get: vi.fn() },
+  secretsManager: { tryGet: vi.fn(), get: vi.fn(), hasReal: vi.fn() },
 }));
 
 const sendMailMock = vi.fn();
@@ -28,13 +28,13 @@ describe('smtp transport', () => {
 
     it('is false when host is set but credentials are missing', async () => {
       (getConfig as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ mail: { smtpHost: 'smtp.example.com' } });
-      (secretsManager.tryGet as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+      (secretsManager.hasReal as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
       expect(await smtpTransportDescriptor.isConfigured()).toBe(false);
     });
 
     it('is true when host and credentials are all present', async () => {
       (getConfig as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ mail: { smtpHost: 'smtp.example.com' } });
-      (secretsManager.tryGet as unknown as ReturnType<typeof vi.fn>).mockResolvedValue('secret-value');
+      (secretsManager.hasReal as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(true);
       expect(await smtpTransportDescriptor.isConfigured()).toBe(true);
     });
   });

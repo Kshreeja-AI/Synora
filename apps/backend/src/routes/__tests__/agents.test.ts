@@ -10,13 +10,14 @@ import { InMemoryKeyedStore, setAgentDefinitionStore, setAgentRunStore } from '.
 import type { AgentDefinition, AgentRun } from '../../agents/types';
 
 /**
- * NO NETWORK. The test environment carries a placeholder ANTHROPIC_API_KEY,
- * and provider resolution treats "a key exists" as "a provider is
- * available" — so without this mock these tests made real outbound calls
- * and failed on a 401 from a vendor. Forcing resolution to fail pins the
- * runtime into its local branch, which is both hermetic and the branch this
- * file is actually about: what a caller is told when no model is available.
- * The model branch is covered in `agents/__tests__/agent-runtime.test.ts`.
+ * NO NETWORK. Historically the test env's placeholder ANTHROPIC_API_KEY
+ * read as "a provider is available" and these tests made real outbound
+ * calls that failed on a vendor 401; SecretsManager.hasReal fixed that, and
+ * resolution now falls to the local branch honestly. The mock remains
+ * because a REAL key exported in a developer's ambient shell would still be
+ * picked up — and the local branch is the branch this file is actually
+ * about: what a caller is told when no model is available. The model branch
+ * is covered in `agents/__tests__/agent-runtime.test.ts`.
  */
 vi.mock('../../ai/resolver', () => ({
   resolveTextGenerationProvider: vi.fn(async () => {

@@ -15,7 +15,8 @@ export const deepseekDescriptor: AIProviderDescriptor = {
   displayName: 'DeepSeek',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('DEEPSEEK_API_KEY', 'ai:deepseek')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('DEEPSEEK_API_KEY', 'ai:deepseek');
   },
   async create() {
     const apiKey = await secretsManager.get('DEEPSEEK_API_KEY', 'ai:deepseek');

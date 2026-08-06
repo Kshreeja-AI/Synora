@@ -174,7 +174,8 @@ export const openaiDescriptor: AIProviderDescriptor = {
   displayName: 'OpenAI',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENAI_API_KEY', 'ai:openai')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai');

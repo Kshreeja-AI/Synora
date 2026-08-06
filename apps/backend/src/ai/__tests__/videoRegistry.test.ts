@@ -11,6 +11,7 @@ vi.mock('../../secrets', () => ({
   secretsManager: {
     tryGet: vi.fn(),
     get: vi.fn(),
+    hasReal: vi.fn(),
   },
 }));
 
@@ -29,13 +30,13 @@ describe('video generation provider registry', () => {
   });
 
   it('reports unconfigured when no REPLICATE_API_KEY is present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue(undefined);
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(false);
     expect(await isVideoGenerationConfigured()).toBe(false);
     await expect(resolveVideoProvider()).rejects.toBeInstanceOf(NoProviderConfiguredError);
   });
 
   it('resolves the Replicate video provider when credentials are present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue('r8_test');
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(true);
     vi.mocked(secretsManager.get).mockResolvedValue('r8_test');
 
     const provider = await resolveVideoProvider();

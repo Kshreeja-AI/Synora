@@ -15,7 +15,8 @@ export const openaiEmbeddingDescriptor: EmbeddingProviderDescriptor = {
   id: 'openai',
   displayName: 'OpenAI',
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENAI_API_KEY', 'embeddings:openai')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENAI_API_KEY', 'embeddings:openai');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'embeddings:openai');

@@ -15,7 +15,8 @@ export const openrouterDescriptor: AIProviderDescriptor = {
   displayName: 'OpenRouter',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENROUTER_API_KEY', 'ai:openrouter')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENROUTER_API_KEY', 'ai:openrouter');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENROUTER_API_KEY', 'ai:openrouter');

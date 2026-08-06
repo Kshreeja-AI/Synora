@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import Stripe from 'stripe';
 import { StripeProvider } from '../stripe.provider';
 import { BillingProviderError } from '../../types.js';
-import { PlaceholderSecretSource } from '../../../secrets/sources/placeholderSource.js';
 
 vi.mock('stripe');
 
@@ -44,29 +43,34 @@ describe('StripeProvider', () => {
     provider = new StripeProvider({
       secretKey: 'sk_test_123',
       webhookSecret: 'whsec_test_123',
+      hasRealCredentials: true,
     });
   });
 
   describe('isConfigured', () => {
-    it('returns true when secret key is configured', () => {
+    it('returns true when constructed with real credentials', () => {
       const result = provider.isConfigured();
       expect(result).toBe(true);
     });
 
-    it('returns false when secret key is placeholder', () => {
-      const placeholder = PlaceholderSecretSource.generate('STRIPE_SECRET_KEY');
+    it('returns false when the resolver marked the credentials as placeholders', () => {
+      // Provenance now comes from the billing resolver (which asks
+      // SecretsManager.hasReal for BOTH secrets) rather than this class
+      // re-generating the placeholder format and string-comparing.
       const unconfiguredProvider = new StripeProvider({
-        secretKey: placeholder,
-        webhookSecret: 'whsec_test',
+        secretKey: 'placeholder_generated_value',
+        webhookSecret: 'placeholder_generated_value',
+        hasRealCredentials: false,
       });
       const result = unconfiguredProvider.isConfigured();
       expect(result).toBe(false);
     });
 
-    it('returns false when secret key is empty', () => {
+    it('returns false when secret key is empty even if flagged real', () => {
       const emptyProvider = new StripeProvider({
         secretKey: '',
         webhookSecret: 'whsec_test',
+        hasRealCredentials: true,
       });
       const result = emptyProvider.isConfigured();
       expect(result).toBe(false);

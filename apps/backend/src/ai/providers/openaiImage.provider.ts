@@ -79,7 +79,8 @@ export const openaiImageDescriptor: AIProviderDescriptor<ImageGenerationProvider
   displayName: 'OpenAI Images',
   capabilities: ['image-generation'],
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENAI_API_KEY', 'ai:openai-image')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai-image');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai-image');

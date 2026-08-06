@@ -15,7 +15,8 @@ export const togetherDescriptor: AIProviderDescriptor = {
   displayName: 'Together AI',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
   async isConfigured() {
-    return (await secretsManager.tryGet('TOGETHER_API_KEY', 'ai:together')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('TOGETHER_API_KEY', 'ai:together');
   },
   async create() {
     const apiKey = await secretsManager.get('TOGETHER_API_KEY', 'ai:together');

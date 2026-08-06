@@ -18,6 +18,7 @@ vi.mock('../../secrets', () => ({
   secretsManager: {
     tryGet: vi.fn(),
     get: vi.fn(),
+    hasReal: vi.fn(),
   },
 }));
 
@@ -36,13 +37,13 @@ describe('image generation provider registry', () => {
   });
 
   it('reports unconfigured when no OPENAI_API_KEY is present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue(undefined);
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(false);
     expect(await isImageGenerationConfigured()).toBe(false);
     await expect(resolveImageProvider()).rejects.toBeInstanceOf(NoProviderConfiguredError);
   });
 
   it('resolves the OpenAI image provider when credentials are present', async () => {
-    vi.mocked(secretsManager.tryGet).mockResolvedValue('sk-test');
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(true);
     vi.mocked(secretsManager.get).mockResolvedValue('sk-test');
 
     const provider = await resolveImageProvider();

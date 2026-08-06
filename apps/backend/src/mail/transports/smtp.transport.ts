@@ -41,9 +41,11 @@ export const smtpTransportDescriptor: MailTransportDescriptor = {
   async isConfigured() {
     const host = getConfig().mail.smtpHost;
     if (!host) return false;
-    const user = await secretsManager.tryGet('SMTP_USER', 'mail:smtp');
-    const password = await secretsManager.tryGet('SMTP_PASSWORD', 'mail:smtp');
-    return Boolean(user) && Boolean(password);
+    // hasReal, not tryGet: a generated placeholder is not a credential a
+    // real SMTP relay would accept.
+    const hasUser = await secretsManager.hasReal('SMTP_USER', 'mail:smtp');
+    const hasPassword = await secretsManager.hasReal('SMTP_PASSWORD', 'mail:smtp');
+    return hasUser && hasPassword;
   },
   async create() {
     const { smtpHost, smtpPort, smtpSecure } = getConfig().mail;
