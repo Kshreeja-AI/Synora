@@ -213,9 +213,22 @@ export function CommandPlanResult({ result }: { result: PlanRunResult }) {
         <h2 id="plan-result-heading" className="font-semibold">
           {result.summary}
         </h2>
-        {result.stoppedReason && (
+          {result.stoppedReason && (
           <p className="mt-1 text-sm text-muted-foreground">
             Stopped at step {result.stoppedAtStep}: {result.stoppedReason}
+          </p>
+        )}
+        {/* POINTS AT THE DECISION SURFACE RATHER THAN BECOMING A SECOND ONE.
+            `PendingApprovals` states the risk in plain words and the deadline
+            BEFORE its buttons are reachable, deliberately, so nobody says yes
+            without the sentence, the risk and the clock in front of them.
+            Approve/reject buttons here would be that exact "yes from a
+            summary" — and two decision surfaces drift. So this says where to
+            go; the panel is already on this page, just below. */}
+        {result.status === 'waiting-approval' && (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Step {result.stoppedAtStep} needs your decision. It is waiting below, with what it
+            would do and how long you have to answer.
           </p>
         )}
       </div>
