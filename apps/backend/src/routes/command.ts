@@ -1,9 +1,10 @@
 import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
-import { createApiResponse } from '@synora/shared';
+import { createApiResponse, NotFoundException } from '@synora/shared';
 import { understandCommand } from '../command/understand';
 import { prepareCommand } from '../command/prepare';
 import { planCommand } from '../command/plan';
+import { runPlan, getPlan } from '../command/run-plan';
 import { executeCommand } from '../command/execute';
 import { decideExecution, listExecutions, ApprovalRefused } from '../command/approve';
 import { requireMembership } from '../services/checks';
@@ -119,6 +120,73 @@ router.post(
       const { command } = understandRequestSchema.parse(req.body);
       const membership = await requireMembership(req.userId!, req.params.workspaceId);
       return res.json(createApiResponse(planCommand(command, membership.role)));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/command/:workspaceId/plan/execute — run a multi-action request.
+ *
+ * Steps run IN ORDER, each through the same `executeCommand` a single
+ * command uses: same permission re-check at the moment it runs, same
+ * approval gate, same durable audit row — correlated to the plan so a trail
+ * reads PLAN → STEP → APPROVAL → outcome.
+ *
+ * IT STOPS AT THE FIRST STEP THAT DOES NOT COMPLETE, and does not push on to
+ * later steps even if they look independent. A person who asked for four
+ * things and got an unpredictable subset has to reconstruct which; a plan
+ * that stops leaves a state describable in one sentence. It also never
+ * retries: no capability here carries an idempotency key yet, so a retry
+ * could create a second schedule or a second conversation. `safeToRetry` in
+ * the response says plainly whether asking again would repeat anything.
+ */
+router.post(
+  '/:workspaceId/plan/execute',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { command } = understandRequestSchema.parse(req.body);
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      const outcome = await runPlan(command, {
+        userId: req.userId!,
+        workspaceId: req.params.workspaceId,
+        role: membership.role,
+      });
+      return res.json(createApiResponse(outcome));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * GET /api/command/:workspaceId/plans/:planId — what did that plan do?
+ *
+ * Load-bearing rather than convenience: a plan that stops at an approval is
+ * answered later, possibly after a restart, and without this the stored
+ * state would be a thing the system can reach and no person can read.
+ * Workspace-scoped inside the query, so a plan id from another workspace is
+ * simply not found.
+ */
+router.get(
+  '/:workspaceId/plans/:planId',
+  authMiddleware,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const plan = await getPlan(req.params.planId, req.params.workspaceId);
+      if (!plan) {
+        // 404, never 403 — the same rule every workspace-scoped route
+        // follows, so an id from elsewhere reveals nothing by its status.
+        // Thrown rather than hand-rolled so it takes the platform's shared
+        // error shape, like every other not-found in this codebase.
+        throw new NotFoundException('Plan');
+      }
+      return res.json(createApiResponse(plan));
     } catch (error) {
       return next(error);
     }

@@ -567,8 +567,40 @@ commands with an order between them.
 - **Capabilities, never vendors.** A step names `ai.generate`, not a
   provider; provider choice stays in the existing resolver.
 - **Planning executes nothing** (`executed: false` is a literal type, and
-  no durable record is written). Ordered execution with pause-and-resume
-  at each approval is the next increment.
+  no durable record is written). `POST .../plan` resolves and reports;
+  `POST .../plan/execute` is the endpoint that acts.
+
+### Running a plan
+
+`run-plan.ts` stores the plan (`CommandPlan` + `CommandPlanStep`) and runs
+its steps in order. Each step is executed by the SAME `executeCommand` a
+single command uses, so it re-derives its capability, re-checks the
+caller's permission at the moment it runs, honours the approval gate, and
+writes its own `CommandExecution` audit row — correlated by `planId` and
+`planStepIndex`, so a trail reads PLAN → STEP → APPROVAL → outcome.
+
+- **Durable, because plans pause.** A plan can stop at an approval someone
+  answers tomorrow. In-memory state would mean a deploy silently discards
+  work a person is waiting on, and they would never learn why.
+- **Stop honestly; do not push on.** Execution halts at the first step that
+  does not complete and does not skip ahead to later "independent" steps.
+  A person who asked for four things and received an unpredictable subset
+  has to reconstruct which; a plan that stops leaves a state describable in
+  one sentence. Steps never reached are `skipped`, deliberately not
+  `failed` — nothing was attempted, so nothing broke.
+- **Never retries.** No capability here carries an idempotency key, so a
+  retry could create a second schedule or a second conversation. The
+  response's `safeToRetry` says plainly whether asking again would repeat
+  anything: false as soon as any step completed.
+- **`partially-completed` is first-class**, never collapsed into
+  `completed` or `failed`. "Three of four ran" is the truth and both
+  neighbours are lies about it.
+- **A dependency that did not complete stops the dependent step.** Running
+  it would act on an input that does not exist.
+
+Not yet built: resuming a plan automatically after its paused step is
+approved. Approving that step runs THAT step through the existing
+approval machinery; the remaining steps do not continue on their own yet.
 
 ## Queue Architecture — not implemented (M7)
 

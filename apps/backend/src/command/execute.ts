@@ -533,9 +533,25 @@ export function isBound(capabilityId: string | null): boolean {
  * contains completions is systematically optimistic, and the refusals are
  * exactly what an operator investigating an incident needs.
  */
+export interface PlanCorrelation {
+  planId: string;
+  /** 1-based position within that plan. */
+  planStepIndex: number;
+}
+
 export async function executeCommand(
   commandText: string,
-  context: ExecutionContext
+  context: ExecutionContext,
+  /**
+   * Set when this execution is one step of a multi-step plan, so the audit
+   * trail reads PLAN → STEP 2 → APPROVAL → outcome without a second lookup.
+   *
+   * Correlation ONLY. It changes no decision: the capability, the
+   * permission check, the availability answer and the approval gate are
+   * identical whether a command arrives alone or inside a plan. A plan that
+   * could soften any of those would be a way to launder a refused action.
+   */
+  correlation?: PlanCorrelation
 ): Promise<CommandExecutionResult> {
   const decision = decideCommand(commandText, context.role);
   const { understanding, route } = decision;
@@ -584,6 +600,8 @@ export async function executeCommand(
       resultSummary: summary ?? null,
       failureReason: state === 'completed' ? null : messageFor(state, route, detail),
       completedAt: state === 'completed' ? new Date() : null,
+      planId: correlation?.planId ?? null,
+      planStepIndex: correlation?.planStepIndex ?? null,
     },
   });
 

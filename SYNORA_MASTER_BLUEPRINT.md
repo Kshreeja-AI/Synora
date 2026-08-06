@@ -619,8 +619,29 @@ running steps in order, pausing at each approval, durable state — is the
 next slice, because a plan nobody can read is not something to start
 running.
 
+**Slice 15: running a plan, durably.** `CommandPlan` + `CommandPlanStep`
+tables and `run-plan.ts` execute a plan's steps in order — each through the
+SAME `executeCommand` a single command uses, so every step re-derives its
+capability, re-checks permission at the moment it runs, honours the approval
+gate, and writes its own audit row correlated by `planId`/`planStepIndex`. A
+plan orchestrates; it never becomes a second way to make something happen.
+**Durable because plans pause**: a plan stops at an approval someone answers
+tomorrow, and in-memory state would let a deploy silently discard work a
+person is waiting on. **Stop honestly, do not push on**: execution halts at
+the first step that does not complete and does not skip ahead to later
+"independent" steps, because an unpredictable subset forces a person to
+reconstruct what happened while a stop leaves one describable sentence.
+Steps never reached are `skipped`, not `failed` — nothing was attempted, so
+nothing broke. **Never retries**: no capability carries an idempotency key
+yet, so a retry could create a second schedule; `safeToRetry` says plainly
+whether asking again repeats anything, and is false the moment any step
+completes. `partially-completed` is first-class, never collapsed into
+`completed` or `failed`. Verified non-vacuously: injecting "push on past a
+stop" fails exactly the three tests that assert it.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no plan EXECUTION (decomposition and resolution only), no
+personalization, no automatic RESUME after a paused plan step is approved
+(approving runs that step; the remainder does not continue on its own), no
 undo. Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`

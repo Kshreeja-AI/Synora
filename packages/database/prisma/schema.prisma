@@ -119,6 +119,7 @@ model User {
   mfaChallenges  MFAChallengeToken[]
   mfaSetupTokens MFASetupToken[]
   commandExecutions CommandExecution[]
+  commandPlans   CommandPlan[]
 
   // Timestamps
   createdAt     DateTime    @default(now())
@@ -224,6 +225,7 @@ model Workspace {
   assets        Asset[]
   auditLogs     AuditLog[]
   commandExecutions CommandExecution[]
+  commandPlans  CommandPlan[]
   visits        WorkspaceVisit[]
 
   // Billing relations (M6)
@@ -3712,10 +3714,112 @@ model CommandExecution {
   /// Human-language reason a command did not complete, for the person to act on.
   failureReason  String?
 
+  /// Correlation, when this execution was one step of a multi-step plan.
+  ///
+  /// Deliberately a plain id rather than a relation with a cascade: an
+  /// execution is an AUDIT record and must outlive the plan that produced
+  /// it. `onDelete: Cascade` here would mean deleting a plan silently
+  /// erased the evidence of what it did, which is the one thing an audit
+  /// trail may never do.
+  planId         String?
+  /// 1-based position within that plan, so a trail reads
+  /// PLAN → STEP 2 → APPROVAL → outcome without a second lookup.
+  planStepIndex  Int?
+
   createdAt      DateTime @default(now())
   completedAt    DateTime?
 
   @@index([workspaceId, createdAt])
   @@index([userId])
   @@index([state])
+  @@index([planId])
+}
+
+/// A multi-action request, stored so it survives a restart.
+///
+/// WHY DURABLE: a plan pauses. It stops at an approval that a person in
+/// another timezone will answer tomorrow, or at a step that needs one more
+/// detail. In-memory state would mean a deploy silently discards work
+/// someone is waiting on, and they would never learn why — the plan would
+/// simply cease to exist.
+///
+/// Stores NO secrets and no payloads: `originalText` is the person's own
+/// sentence, and each step keeps a short human summary, never a result body.
+model CommandPlan {
+  id             String   @id @default(cuid())
+
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The whole sentence, verbatim, so an investigation sees what was typed.
+  originalText   String
+
+  /// executing | completed | waiting-approval | needs-input |
+  /// partially-completed | failed | cancelled
+  ///
+  /// `partially-completed` is a first-class outcome, never collapsed into
+  /// `completed` or `failed`. "Three of four steps ran" is the truth a
+  /// person needs, and both neighbours are lies about it.
+  status         String
+
+  /// 1-based index of the step execution stopped at, when it did not finish.
+  stoppedAtStep  Int?
+  /// Plain-language reason execution stopped. Never a stack trace.
+  stoppedReason  String?
+
+  steps          CommandPlanStep[]
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([status])
+}
+
+/// One action within a plan, with its resolved facts and its outcome.
+///
+/// The resolved facts are stored rather than recomputed on read: they are
+/// what the person was SHOWN and what the server acted on. Re-deriving them
+/// later would silently rewrite history whenever a role, a credential or the
+/// catalogue changed.
+model CommandPlanStep {
+  id             String   @id @default(cuid())
+
+  planId         String
+  plan           CommandPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the order the person read and the order execution followed.
+  index          Int
+  /// This step's own words, verbatim.
+  text           String
+
+  capabilityId   String?
+  riskClass      String
+  /// Whether this person's role permitted THIS step. Never inherited.
+  permitted      Boolean
+  /// Indices of steps whose output this one consumes. Empty when independent.
+  dependsOn      Int[]
+
+  /// The same ten command states, plus `skipped` for a step never reached.
+  /// `skipped` is distinct from `failed` on purpose: nothing was attempted,
+  /// so nothing broke, and reporting it as a failure would send someone
+  /// hunting for a bug that does not exist.
+  state          String
+  /// Short human-readable outcome. Never a raw payload.
+  resultSummary  String?
+  /// Human-language reason this step did not complete.
+  failureReason  String?
+
+  /// The audit record for this step's execution, when it ran. Plain id, not
+  /// a relation, for the same reason CommandExecution.planId is.
+  executionId    String?
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@unique([planId, index])
+  @@index([planId])
 }
