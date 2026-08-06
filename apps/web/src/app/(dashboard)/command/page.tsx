@@ -152,6 +152,17 @@ export default function CommandPage() {
             you first.
           </span>
         </div>
+        {/* A browser pass found a new account landing here with both buttons
+            disabled and nothing saying why: commands are workspace-scoped,
+            and a fresh account has no workspace yet. A disabled control with
+            no reason is a dead end — the person cannot tell whether Synora
+            is broken, still loading, or waiting on them. */}
+        {!workspaceId && (
+          <p className="text-sm text-muted-foreground">
+            Synora works inside a workspace, and you are not in one yet. Pick or create one from the
+            switcher at the top of the sidebar, and this page will be ready.
+          </p>
+        )}
       </form>
 
       <section className="space-y-2" aria-labelledby="examples-heading">
