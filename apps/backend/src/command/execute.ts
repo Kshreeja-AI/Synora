@@ -1,6 +1,7 @@
 import { prisma } from '@synora/database';
 import { prepareCommand, type PreparedCommand } from './prepare';
 import { unavailableReason, isRunnableHere } from './availability';
+import { privacyConsentService } from '../services/privacyConsent.service';
 import { getTextProviderMetrics } from '../ai/textResilience';
 import { searchService } from '../services/search.service';
 import { conversationService } from '../services/conversation.service';
@@ -698,9 +699,25 @@ export async function executeCommand(
   let summary: string | undefined;
   let candidates: NamedCandidate[] | undefined;
   let undo = { undoKind: null as string | null, undoTargetId: null as string | null };
+  let latencyMs: number | null = null;
+
+  // Consent captured AT THE MOMENT of the interaction, never recomputed
+  // later: consent looked up at training time would apply today's answer to
+  // last year's words. Fails closed — an error here records "not eligible",
+  // because losing one learning example is recoverable and using words
+  // someone did not consent to is not. True means only "may enter the
+  // pipeline that evaluates and selects"; recorded ≠ eligible ≠ selected.
+  const trainingEligibleAtCapture = await privacyConsentService
+    .canUseForTraining(context.userId, context.workspaceId)
+    .catch(() => false);
 
   if (state === 'completed') {
+    const startedAt = Date.now();
     const outcome = await runBound(route!.capabilityId, context, understanding.subject, commandText);
+    // The attempt's duration, whatever it produced. Measured around the
+    // work itself, not around the DB write below — the record is not the
+    // experience.
+    latencyMs = Date.now() - startedAt;
     if (outcome.ok) {
       result = outcome.result;
       summary = outcome.summary;
@@ -742,6 +759,14 @@ export async function executeCommand(
       planId: correlation?.planId ?? null,
       planStepIndex: correlation?.planStepIndex ?? null,
       ...undo,
+      // Experience fields — each has a real producer, none is invented.
+      confidence: understanding.confidence,
+      latencyMs,
+      // The question Synora asked back, previously composed and thrown
+      // away. Only meaningful for needs-input; null elsewhere rather than
+      // an empty string pretending to be one.
+      clarificationQuestion: state === 'needs-input' ? (detail ?? null) : null,
+      trainingEligibleAtCapture,
     },
   });
 

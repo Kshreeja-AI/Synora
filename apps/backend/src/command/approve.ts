@@ -366,12 +366,17 @@ export async function decideExecution(
   // Run it AS THE ORIGINAL REQUESTER — the action belongs to the person who
   // asked for it, and it must land in the audit trail of every downstream
   // service under their name, not the approver's.
+  const approvedRunStartedAt = Date.now();
   const outcome = await runBound(
     freshDecision!.route!.capabilityId,
     { userId: record.userId, workspaceId: record.workspaceId, role: requester!.role },
     freshDecision!.understanding.subject,
     record.commandText
   );
+  // The RESUMED run's duration. The days the record sat waiting for a
+  // decision are a queue, not latency, and folding them in would make
+  // every approved action look catastrophically slow.
+  const approvedRunLatencyMs = Date.now() - approvedRunStartedAt;
 
   // Three honest outcomes of an approved run, never collapsed: it ran, it
   // needs one more detail (the capability is FINE — blaming a bug would
@@ -399,6 +404,11 @@ export async function decideExecution(
       // action can be reversed is a property of the ACTION, not of the
       // route it took to run. See `undoColumns`.
       ...undoColumns(outcome),
+      // Experience fields for the approved run. Confidence and training
+      // eligibility were captured when the record was CREATED and are not
+      // rewritten here — they describe the interaction, not the decision.
+      latencyMs: approvedRunLatencyMs,
+      clarificationQuestion: !outcome.ok && outcome.needsInput ? outcome.needsInput.question : null,
     },
   });
 

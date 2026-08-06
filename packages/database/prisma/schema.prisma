@@ -3729,6 +3729,39 @@ model CommandExecution {
   undoneAt       DateTime?
   undoneBy       String?
 
+  /// ---- EXPERIENCE FIELDS ----
+  /// The first fields recorded for the intelligence layer rather than for
+  /// the person waiting on the answer. Each one exists because a REAL
+  /// producer writes it today; fields the future architecture wants but
+  /// nothing can populate (model identity, cost, user correction,
+  /// evaluation result) are deliberately absent — a column that can only
+  /// hold null teaches every reader to ignore the table.
+
+  /// How sure the understander was of its reading: 'high' | 'low' | 'none'.
+  /// Copied from the deterministic classifier at the moment it ran, so the
+  /// learning layer can later ask "was low confidence actually less
+  /// accurate?" against outcomes rather than guesses.
+  confidence     String?
+  /// Wall-clock milliseconds for the execution attempt, measured by the
+  /// server around the work itself. For a command that paused for approval
+  /// this is the RESUMED run's duration, not the days it waited — a queue
+  /// is not latency.
+  latencyMs      Int?
+  /// The exact question Synora asked back when one detail was missing
+  /// (state = 'needs-input'). Stored because "what did Synora not
+  /// understand?" is among the most valuable learning signals there is,
+  /// and it was previously composed, sent, and thrown away.
+  clarificationQuestion String?
+  /// Whether the requester had consented to training use AT THE MOMENT of
+  /// this interaction — captured then, never recomputed later. Consent
+  /// looked up at training time would apply TODAY's answer to LAST YEAR's
+  /// words. Fails closed: any doubt records false.
+  ///
+  /// TRUE DOES NOT MEAN "IS TRAINING DATA". It means this record may enter
+  /// the pipeline that evaluates, filters and selects — each a separate,
+  /// later, governed step. Recorded ≠ eligible ≠ selected ≠ trained.
+  trainingEligibleAtCapture Boolean @default(false)
+
   /// Correlation, when this execution was one step of a multi-step plan.
   ///
   /// Deliberately a plain id rather than a relation with a cascade: an
