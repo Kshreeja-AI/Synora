@@ -12,6 +12,7 @@ import {
 } from './execute';
 import { hasPermission, type Permission, type WorkspaceRole } from '../services/permissions';
 import { requireMembership } from '../services/checks';
+import { resumePlanAfterStep, type PlanRunResult } from './run-plan';
 import { logger } from '../utils/logger';
 
 /**
@@ -63,6 +64,13 @@ export interface ApprovalOutcome extends CommandExecutionResult {
   /** Who decided, so a caller never has to infer it from the request. */
   decidedBy: string;
   decision: ApprovalDecision | 'refused';
+  /**
+   * The plan this step belonged to, after the decision was applied — absent
+   * for an ordinary single command, which is the common case. Present so an
+   * approver immediately sees what their decision set in motion (or
+   * stopped) rather than having to go and look.
+   */
+  plan?: PlanRunResult;
 }
 
 /**
@@ -294,6 +302,10 @@ export async function decideExecution(
         completedAt: now,
       },
     });
+    // A refused step stops its plan. Nothing after it is attempted, and the
+    // plan says a PERSON refused rather than that something broke — those
+    // send an operator to completely different places.
+    const plan = await resumePlanIfAny(record, 'rejected', updated.failureReason!, updated.id);
     return {
       executionId: updated.id,
       state: 'rejected',
@@ -304,6 +316,7 @@ export async function decideExecution(
       executed: false,
       decidedBy: context.approverId,
       decision: 'rejected',
+      ...(plan ? { plan } : {}),
     };
   }
 
@@ -328,6 +341,12 @@ export async function decideExecution(
         completedAt: now,
       },
     });
+    // This branch returns early, so it needs its own resume call. Missing it
+    // was a real defect caught by the tests: the plan step stayed recorded
+    // as `waiting-approval` forever even though the approval had been
+    // decided — a stored state that disagreed with what actually happened.
+    // An approved-but-unrunnable step stops its plan; it did not complete.
+    const plan = await resumePlanIfAny(record, 'not-bound', updated.failureReason!, updated.id);
     return {
       executionId: updated.id,
       state: 'not-bound',
@@ -338,6 +357,7 @@ export async function decideExecution(
       executed: false,
       decidedBy: context.approverId,
       decision: 'approved',
+      ...(plan ? { plan } : {}),
     };
   }
 
@@ -376,6 +396,13 @@ export async function decideExecution(
     },
   });
 
+  // If this was one step of a plan, the plan continues from the next step.
+  // AFTER the decision is durably recorded, never before: a resume that
+  // crashed mid-way must not be able to lose the approval that authorised
+  // it. The decided step is never re-run — it already ran above, and a
+  // person authorised it exactly once.
+  const plan = await resumePlanIfAny(record, finalState, updated.resultSummary ?? updated.failureReason ?? '', updated.id);
+
   return {
     executionId: updated.id,
     state: finalState,
@@ -387,7 +414,43 @@ export async function decideExecution(
     executed: outcome.ok,
     decidedBy: context.approverId,
     decision: 'approved',
+    ...(plan ? { plan } : {}),
   };
+}
+
+/**
+ * Continue the plan this execution belonged to, if it belonged to one.
+ *
+ * Isolated here so the ordinary single-command approval path — which is the
+ * overwhelming majority — is provably untouched: no planId means no plan
+ * work, and nothing about a lone command's approval changes.
+ *
+ * A failure to resume never fails the approval. The decision itself is
+ * already recorded and the approved action already ran; throwing here would
+ * report a completed, authorised action as an error, and the person would
+ * reasonably try again — repeating a side effect that already happened.
+ */
+async function resumePlanIfAny(
+  record: { planId: string | null; planStepIndex: number | null },
+  state: string,
+  message: string,
+  executionId: string
+): Promise<PlanRunResult | null> {
+  if (!record.planId || record.planStepIndex === null) return null;
+  try {
+    return await resumePlanAfterStep(record.planId, record.planStepIndex, {
+      state,
+      message,
+      executionId,
+    });
+  } catch (error) {
+    logger.error('[Command] Plan resume failed after an approved step', {
+      planId: record.planId,
+      stepIndex: record.planStepIndex,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export interface ExecutionListItem {

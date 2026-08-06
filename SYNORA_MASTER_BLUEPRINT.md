@@ -639,10 +639,34 @@ completes. `partially-completed` is first-class, never collapsed into
 `completed` or `failed`. Verified non-vacuously: injecting "push on past a
 stop" fails exactly the three tests that assert it.
 
+**Slice 16: a decided step resumes its plan.** Deciding a paused step now
+continues the plan from the approval path itself, once the decision is
+durably recorded — never before, because a resume that crashed must not be
+able to lose the approval that authorised it. **An approval buys its own
+step and nothing else**: every remaining step goes through `executeCommand`,
+so a later step needing approval pauses the plan AGAIN (test-pinned), which
+is the "approve once, act broadly" failure this layer exists to prevent. The
+decided step is never re-run — it already ran inside the approval
+transaction, and a person authorised it exactly once. The requester's
+CURRENT role is re-fetched, never remembered: roles change while plans sit
+in queues, and if the requester has left the workspace the remainder does
+not run under anyone else's authority. A rejected step gives the plan status
+`rejected`, distinct from `failed` — a person said no, nothing broke. A
+failed resume never fails the approval, because reporting an authorised,
+completed action as an error invites a repeat. **Two real defects found by
+building it**: I first hardcoded the resumed role as OWNER — a privilege
+escalation in my own code, caught and fixed before any test ran — and the
+`not-bound` early return skipped the resume hook entirely, leaving a plan
+step recorded as `waiting-approval` after its approval had been decided.
+**Honest limit**: an approved step that then COMPLETES is not yet reachable
+over HTTP, because every approval-requiring capability is unbound, so
+approving one yields `not-bound` and the plan correctly stops. The resume
+path is exercised directly against real stored plans until a sensitive
+capability is bound.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no automatic RESUME after a paused plan step is approved
-(approving runs that step; the remainder does not continue on its own), no
-undo. Bound: search,
+personalization, no bound sensitive capability (so no approval can yet lead
+to a completed step), no undo. Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`
 and say where to go. The

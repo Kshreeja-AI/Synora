@@ -598,9 +598,35 @@ writes its own `CommandExecution` audit row — correlated by `planId` and
 - **A dependency that did not complete stops the dependent step.** Running
   it would act on an input that does not exist.
 
-Not yet built: resuming a plan automatically after its paused step is
-approved. Approving that step runs THAT step through the existing
-approval machinery; the remaining steps do not continue on their own yet.
+### Resuming after a decision
+
+Deciding a paused step continues its plan, from the approval path itself
+once the decision is durably recorded (never before — a resume that
+crashed must not be able to lose the approval that authorised it).
+
+- **An approval buys its own step and nothing else.** Every remaining step
+  runs through `executeCommand`, so a later step that needs approval pauses
+  the plan again. "Approve once, act broadly" is precisely what this layer
+  exists to prevent.
+- **The decided step is never re-run.** It already ran inside the approval
+  transaction, and a person authorised it exactly once.
+- **The requester's CURRENT role is re-fetched.** Roles change while plans
+  sit in queues; a plan resumed tomorrow is entitled to what its requester
+  can do today, not what they could do when they asked. If they have left
+  the workspace, the remaining steps do not run under anyone else's
+  authority.
+- **A rejected step gives the plan status `rejected`**, distinct from
+  `failed`: a person said no, nothing broke, and those send an operator to
+  completely different places.
+- **A failed resume never fails the approval.** The decision is recorded
+  and the action already ran; throwing would report an authorised,
+  completed action as an error and invite a repeat.
+
+Not yet reachable end-to-end: an approved step that then COMPLETES. Every
+capability requiring approval is currently unbound, so approving one
+honestly yields `not-bound` and the plan stops. The resume path is
+exercised directly against real stored plans until a sensitive capability
+is bound.
 
 ## Queue Architecture — not implemented (M7)
 

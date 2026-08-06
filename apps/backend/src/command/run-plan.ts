@@ -33,6 +33,7 @@
 import { prisma } from '@synora/database';
 import { planCommand, type PlannedStep } from './plan';
 import { executeCommand, type ExecutionContext } from './execute';
+import { requireMembership } from '../services/checks';
 
 /**
  * How a whole plan ended. `partially-completed` is first-class and never
@@ -45,6 +46,8 @@ export type PlanStatus =
   | 'needs-input'
   | 'partially-completed'
   | 'failed'
+  /** A person refused a step. Distinct from `failed`: nothing broke. */
+  | 'rejected'
   | 'cannot-plan';
 
 export interface PlanRunStep {
@@ -160,13 +163,51 @@ export async function runPlan(
     include: { steps: true },
   });
 
+  const outcome = await executeSteps(record.id, plan.steps, {
+    context,
+    completedIndices: new Set<number>(),
+    alreadyDone: [],
+  });
+
+  return { ...outcome, originalText: plan.originalText };
+}
+
+/** The minimum a step must carry to be executed — satisfied by a freshly
+ *  planned step and by one loaded back from the database alike. */
+interface RunnableStep {
+  index: number;
+  text: string;
+  capabilityId: string | null;
+  dependsOn: number[];
+}
+
+/**
+ * The one place plan steps are executed, shared by a first run and by a
+ * resume.
+ *
+ * Shared deliberately rather than written twice: two loops would eventually
+ * disagree about when to stop, and the disagreement would surface as a
+ * resumed plan quietly behaving differently from a fresh one — the hardest
+ * class of bug to notice, because both paths look correct in isolation.
+ */
+async function executeSteps(
+  planId: string,
+  steps: RunnableStep[],
+  options: {
+    context: ExecutionContext;
+    /** Indices already known to have completed (populated on resume). */
+    completedIndices: Set<number>;
+    /** Steps from an earlier pass, reported unchanged in the result. */
+    alreadyDone: PlanRunStep[];
+  }
+): Promise<Omit<PlanRunResult, 'originalText'>> {
+  const { context, completedIndices, alreadyDone } = options;
   const results: PlanRunStep[] = [];
-  const completedIndices = new Set<number>();
-  let stoppedAt: PlannedStep | undefined;
+  let stoppedAt: RunnableStep | undefined;
   let stoppedState = '';
   let stoppedMessage = '';
 
-  for (const step of plan.steps) {
+  for (const step of steps) {
     if (stoppedAt) {
       // Everything after the stop is untouched, and says so.
       results.push({
@@ -201,8 +242,13 @@ export async function runPlan(
     // THE REAL EXECUTION PATH. Same function, same permission re-check, same
     // approval gate, same audit row as a single command — correlated to this
     // plan so a trail reads PLAN → STEP → APPROVAL → outcome.
+    //
+    // A later step needing approval pauses the plan AGAIN. An earlier
+    // approval buys exactly the step it was given for: approving step 2 is
+    // not consent to step 4, and treating it as such would be the
+    // "approve once, act broadly" failure this layer exists to prevent.
     const outcome = await executeCommand(step.text, context, {
-      planId: record.id,
+      planId,
       planStepIndex: step.index,
     });
 
@@ -225,6 +271,7 @@ export async function runPlan(
     }
   }
 
+  const allSteps = [...alreadyDone, ...results].sort((a, b) => a.index - b.index);
   const completedCount = completedIndices.size;
   const status: PlanStatus = stoppedAt
     ? statusForStop(stoppedState, completedCount)
@@ -233,7 +280,7 @@ export async function runPlan(
   await prisma.$transaction([
     ...results.map((step) =>
       prisma.commandPlanStep.update({
-        where: { planId_index: { planId: record.id, index: step.index } },
+        where: { planId_index: { planId, index: step.index } },
         data: {
           state: step.state,
           resultSummary: step.state === 'completed' ? step.message : null,
@@ -244,7 +291,7 @@ export async function runPlan(
       })
     ),
     prisma.commandPlan.update({
-      where: { id: record.id },
+      where: { id: planId },
       data: {
         status,
         stoppedAtStep: stoppedAt?.index ?? null,
@@ -255,16 +302,193 @@ export async function runPlan(
   ]);
 
   return {
-    planId: record.id,
+    planId,
     status,
-    originalText: plan.originalText,
-    steps: results,
-    summary: summarize(status, results, completedCount),
+    steps: allSteps,
+    summary: summarize(status, allSteps, completedCount),
     ...(stoppedAt ? { stoppedAtStep: stoppedAt.index, stoppedReason: stoppedMessage } : {}),
     completedCount,
     // Any completed step makes the whole sentence unsafe to repeat.
     safeToRetry: completedCount === 0,
   };
+}
+
+/**
+ * Continue a plan after the step it paused on was decided.
+ *
+ * Called by the approval path once a decision is durably recorded. It never
+ * re-runs the decided step — that step already ran (or was refused) inside
+ * the approval transaction, and repeating it would duplicate a side effect
+ * a person explicitly authorised exactly once.
+ *
+ * WHAT AN APPROVAL DOES NOT BUY: anything beyond its own step. Every
+ * remaining step is executed through the same `executeCommand`, so each
+ * re-checks permission at the moment it runs and each stops for its own
+ * approval if it needs one. Roles change while things sit in queues, and a
+ * plan resumed tomorrow is not entitled to what its requester could do
+ * yesterday.
+ *
+ * Returns null when the execution was not part of a plan — the ordinary
+ * single-command case, which must be entirely unaffected by any of this.
+ */
+export async function resumePlanAfterStep(
+  planId: string,
+  decidedStepIndex: number,
+  decided: { state: string; message: string; executionId: string }
+): Promise<PlanRunResult | null> {
+  const plan = await prisma.commandPlan.findUnique({
+    where: { id: planId },
+    include: { steps: { orderBy: { index: 'asc' } } },
+  });
+  if (!plan) return null;
+
+  // Record the decided step's real outcome first, so the stored plan is
+  // truthful even if resuming the remainder fails afterwards.
+  await prisma.commandPlanStep.update({
+    where: { planId_index: { planId, index: decidedStepIndex } },
+    data: {
+      state: decided.state,
+      resultSummary: decided.state === 'completed' ? decided.message : null,
+      failureReason: decided.state === 'completed' ? null : decided.message,
+      executionId: decided.executionId,
+      completedAt: decided.state === 'completed' ? new Date() : null,
+    },
+  });
+
+  const completedIndices = new Set<number>(
+    plan.steps.filter((s) => s.state === 'completed' || s.index === decidedStepIndex)
+      .filter((s) => s.index !== decidedStepIndex || decided.state === 'completed')
+      .map((s) => s.index)
+  );
+
+  const alreadyDone: PlanRunStep[] = plan.steps
+    .filter((s) => s.index <= decidedStepIndex)
+    .map((s) => ({
+      index: s.index,
+      text: s.text,
+      capabilityId: s.capabilityId,
+      state: s.index === decidedStepIndex ? decided.state : s.state,
+      message:
+        s.index === decidedStepIndex
+          ? decided.message
+          : (s.resultSummary ?? s.failureReason ?? ''),
+      dependsOn: s.dependsOn,
+      executionId: s.index === decidedStepIndex ? decided.executionId : (s.executionId ?? undefined),
+    }));
+
+  // The decided step did not complete — a rejection, or an approved action
+  // that then failed. Nothing after it runs, and the plan says which.
+  if (decided.state !== 'completed') {
+    const status: PlanStatus = decided.state === 'rejected' ? 'rejected' : 'partially-completed';
+    const remaining: PlanRunStep[] = plan.steps
+      .filter((s) => s.index > decidedStepIndex)
+      .map((s) => ({
+        index: s.index,
+        text: s.text,
+        capabilityId: s.capabilityId,
+        state: 'skipped',
+        message: `Not attempted — execution stopped at step ${decidedStepIndex}.`,
+        dependsOn: s.dependsOn,
+      }));
+
+    await prisma.$transaction([
+      ...remaining.map((step) =>
+        prisma.commandPlanStep.update({
+          where: { planId_index: { planId, index: step.index } },
+          data: { state: 'skipped', failureReason: step.message },
+        })
+      ),
+      prisma.commandPlan.update({
+        where: { id: planId },
+        data: {
+          status,
+          stoppedAtStep: decidedStepIndex,
+          stoppedReason: decided.message,
+          completedAt: null,
+        },
+      }),
+    ]);
+
+    const steps = [...alreadyDone, ...remaining];
+    const completedCount = completedIndices.size;
+    return {
+      planId,
+      status,
+      originalText: plan.originalText,
+      steps,
+      summary:
+        status === 'rejected'
+          ? `${completedCount} of ${steps.length} done. Step ${decidedStepIndex} was refused, so nothing after it was attempted.`
+          : summarize(status, steps, completedCount),
+      stoppedAtStep: decidedStepIndex,
+      stoppedReason: decided.message,
+      completedCount,
+      safeToRetry: completedCount === 0,
+    };
+  }
+
+  // Approved and completed: carry on with everything after it.
+  const remaining: RunnableStep[] = plan.steps
+    .filter((s) => s.index > decidedStepIndex)
+    .map((s) => ({
+      index: s.index,
+      text: s.text,
+      capabilityId: s.capabilityId,
+      dependsOn: s.dependsOn,
+    }));
+
+  // The requester's CURRENT role, re-fetched — never a role remembered from
+  // when the plan was created, and emphatically never a constant. Roles
+  // change while plans sit in approval queues, and a plan resumed tomorrow
+  // must be entitled to exactly what its requester can do TODAY.
+  const requester = await requireMembership(plan.userId, plan.workspaceId).catch(() => null);
+  if (!requester) {
+    // The person who asked is no longer in this workspace. Their remaining
+    // steps do not run under anyone else's authority.
+    const stranded: PlanRunStep[] = remaining.map((s) => ({
+      index: s.index,
+      text: s.text,
+      capabilityId: s.capabilityId,
+      state: 'not-authorized',
+      message:
+        'The person who asked for this is no longer in this workspace, so the rest was not done.',
+      dependsOn: s.dependsOn,
+    }));
+    await prisma.$transaction([
+      ...stranded.map((step) =>
+        prisma.commandPlanStep.update({
+          where: { planId_index: { planId, index: step.index } },
+          data: { state: 'not-authorized', failureReason: step.message },
+        })
+      ),
+      prisma.commandPlan.update({
+        where: { id: planId },
+        data: {
+          status: 'partially-completed',
+          stoppedAtStep: decidedStepIndex + 1,
+          stoppedReason: stranded[0]?.message ?? null,
+        },
+      }),
+    ]);
+    const steps = [...alreadyDone, ...stranded];
+    return {
+      planId,
+      status: 'partially-completed',
+      originalText: plan.originalText,
+      steps,
+      summary: summarize('partially-completed', steps, completedIndices.size),
+      completedCount: completedIndices.size,
+      safeToRetry: completedIndices.size === 0,
+    };
+  }
+
+  const outcome = await executeSteps(planId, remaining, {
+    context: { userId: plan.userId, workspaceId: plan.workspaceId, role: requester.role },
+    completedIndices,
+    alreadyDone,
+  });
+
+  return { ...outcome, originalText: plan.originalText };
 }
 
 /**
