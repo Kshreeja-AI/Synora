@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createApiResponse } from '@synora/shared';
 import { understandCommand } from '../command/understand';
 import { prepareCommand } from '../command/prepare';
+import { planCommand } from '../command/plan';
 import { executeCommand } from '../command/execute';
 import { decideExecution, listExecutions, ApprovalRefused } from '../command/approve';
 import { requireMembership } from '../services/checks';
@@ -82,6 +83,42 @@ router.post(
       const { command } = understandRequestSchema.parse(req.body);
       const membership = await requireMembership(req.userId!, req.params.workspaceId);
       return res.json(createApiResponse(prepareCommand(command, membership.role)));
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/command/:workspaceId/plan — "you asked for several things; here
+ * they are, in order."
+ *
+ * People do not speak in single commands. This route splits one sentence
+ * into the actions it describes and resolves EACH ONE independently — same
+ * grammar, same catalogue, same permission model, same availability rules as
+ * a single command, because a step is an ordinary command with an order
+ * around it.
+ *
+ * NO STEP INHERITS ANYTHING FROM ITS NEIGHBOURS. Being allowed to find a
+ * document says nothing about being allowed to send it to someone, and a
+ * planner that decided entitlement once would let a harmless first step
+ * carry a dangerous last one past the gate. Every step is asked every
+ * question.
+ *
+ * Executes nothing — `executed: false` is a literal in the response type.
+ * Running a plan (in order, pausing at each approval, with durable state) is
+ * the next slice; a plan nobody can read is not something to start running.
+ */
+router.post(
+  '/:workspaceId/plan',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { command } = understandRequestSchema.parse(req.body);
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      return res.json(createApiResponse(planCommand(command, membership.role)));
     } catch (error) {
       return next(error);
     }

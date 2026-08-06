@@ -500,12 +500,75 @@ call-site change.
   since `src/routes/users.ts` is imported — and its module-scope `multer()`
   call evaluated — before `initConfig()` has necessarily run).
 
-### Agent architecture — not implemented
+### Agent architecture — implemented
 
-No agent/orchestration layer exists today (no tool-use loops, no
-multi-step planning). When it arrives (Release 3+), it sits **above**
-`generateText()` and below routes, so it inherits provider-agnosticism
-by construction rather than needing its own provider handling.
+CORRECTED: this section previously said no agent or orchestration layer
+existed. Agents, a deterministic local planner, per-step approval gates
+and provider-native tool calling all ship today. As designed, the layer
+sits **above** `generateText()` and below routes, so it inherits
+provider-agnosticism by construction rather than handling providers
+itself. See `src/agents/` and the Universal Command Layer below.
+
+## Universal Command Layer
+
+The human-facing control language: a person describes an OUTCOME in their
+own words, and Synora resolves it into real capabilities, real permission
+answers, and real execution — or into an honest refusal. It lives in
+`apps/backend/src/command/` and is reached through `/api/command/*`.
+
+**It is deliberately deterministic and local.** Understanding, resolution,
+decomposition, permission checks, approval flow and scheduling logic are
+Synora's own code, not a model call. Three reasons, in order: a model asked
+to interpret a hostile sentence can be *talked into* interpreting it
+favourably (that is what prompt injection is, and a fixed grammar cannot be
+argued with); understanding "show me what needs my decision" must work when
+every provider is down; and a deterministic classifier that fails to
+recognize a sentence says so, while a model always produces something whose
+shape is indistinguishable from a correct answer. A model may LATER improve
+ranking or phrasing coverage — it must never become required.
+
+**The pipeline**, each stage separate on purpose:
+
+```
+sentence
+  → understand   deterministic grammar → intent + subject   (identity-free)
+  → decompose    one sentence → the actions it describes     (slice 14)
+  → prepare      per-step: may THIS person, in THIS workspace
+  → decide       capability? available here? risk class? approval?
+  → approve      authoritative gate; server re-derives the action
+  → execute      the SAME services the ordinary routes call
+  → record       durable CommandExecution row, successes and refusals alike
+```
+
+**Ten execution states, never blurred**: `completed`, `not-authorized`,
+`unavailable`, `not-implemented`, `not-bound`, `waiting-approval`,
+`needs-input`, `rejected`, `expired`, `failed`. Each answers a different
+question and sends a person to a different place for help — collapsing any
+two is how a layer starts lying. `not-bound` in particular means "Synora
+can do this, but not yet by being asked in plain language", which is
+neither a missing capability nor a bug.
+
+### Multi-step commands
+
+`decompose.ts` splits one sentence into the actions it describes;
+`plan.ts` resolves each step through the SAME `decideCommand` a single
+command uses. A plan is not a privileged path — it is several ordinary
+commands with an order between them.
+
+- **No step inherits anything from its neighbours.** Permission,
+  availability and approval are re-asked per step. Otherwise a harmless
+  first step could carry a dangerous last one past the gate.
+- **Under-split, never over-split.** Merging two actions is visible and
+  harmless; inventing one means acting on a fabrication. Only segments
+  that independently read as actions become steps.
+- **Dependencies come from back-references** ("summarize *it*"). A step
+  that refers to nothing waits for nothing; a step whose input will never
+  exist is marked blocked rather than ready.
+- **Capabilities, never vendors.** A step names `ai.generate`, not a
+  provider; provider choice stays in the existing resolver.
+- **Planning executes nothing** (`executed: false` is a literal type, and
+  no durable record is written). Ordered execution with pause-and-resume
+  at each approval is the next increment.
 
 ## Queue Architecture — not implemented (M7)
 

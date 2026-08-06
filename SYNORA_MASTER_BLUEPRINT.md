@@ -594,8 +594,34 @@ it always did. A conversation is a container, and a container needs no
 vendor — that property is now test-pinned with an asserted precondition
 so it cannot go vacuous.
 
+**Slice 14: one sentence, several actions.** People do not speak in single
+commands. `decompose.ts` splits a request into the actions it describes and
+`plan.ts` resolves each one INDEPENDENTLY through the same `decideCommand` a
+single command uses — same grammar, same catalogue, same permission model,
+same ten states. A plan is not a privileged path; it is several ordinary
+commands with an order between them, and the central security property is
+that **a step inherits nothing from its neighbours**: being allowed to find
+a document says nothing about being allowed to send it, and a planner that
+decided entitlement once would let a harmless first step carry a dangerous
+last one past the gate. The splitter's governing bias is to UNDER-split:
+merging two actions is visible and harmless, while inventing an action means
+Synora acts on its own fabrication — so "sales, marketing, and support"
+stays one subject and only segments that independently read as actions
+become steps. Dependencies come from back-references ("summarize IT"), so a
+step that refers to nothing waits for nothing; a step whose input will never
+exist is marked blocked rather than ready. The action-word lexicon
+deliberately includes verbs Synora CANNOT perform (`send`, `delete`, `pay`)
+— recognizing that an action was requested is a different question from
+being able to do it, and absorbing an unroutable segment into its
+neighbour's subject would make a step silently disappear. Nothing executes:
+`executed: false` is a literal type on the response. Orchestration —
+running steps in order, pausing at each approval, durable state — is the
+next slice, because a plan nobody can read is not something to start
+running.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no multi-step decomposition, no undo. Bound: search,
+personalization, no plan EXECUTION (decomposition and resolution only), no
+undo. Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`
 and say where to go. The
