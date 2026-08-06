@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { NotFoundException } from '@synora/shared';
-import { isMember } from '../services/checks';
+import { isMember, requireMembership } from '../services/checks';
+import { requirePermission, type Permission } from '../services/permissions';
 import { AuthRequest } from './auth';
 import { logger } from '../utils/logger';
 
@@ -43,6 +44,41 @@ export function requireWorkspaceAccess() {
       next();
     } catch (error) {
       logger.error('Error checking workspace membership', { userId, workspaceId, error });
+      next(error);
+    }
+  };
+}
+
+/**
+ * Membership AND a named permission, in that order.
+ *
+ * ORDER IS THE POINT. Non-members still get the platform's standard 404 —
+ * a permission check that answered first would leak workspace existence
+ * through a 403. Members lacking the permission get the same 403 wording
+ * `requirePermission` produces everywhere else, so there is ONE sentence
+ * for "your role cannot do this" across the platform, not two.
+ *
+ * Exists because the workflow surfaces enforced membership only: the
+ * permission model says VIEWER is read-only and `tool:manage` gates
+ * automation authoring (the tool service already enforces exactly that on
+ * its own CRUD), but nothing applied it to workflows, schedules or
+ * triggers — so a VIEWER could author autonomous recurring behaviour. A
+ * middleware rather than per-handler calls, so a future mutating route is
+ * one declaration away from the same discipline instead of one forgotten
+ * call away from the same hole.
+ *
+ * Usage:
+ *   router.post('/:workspaceId/workflows', authMiddleware,
+ *     requireWorkspaceAccess(), requireWorkspacePermission('tool:manage'),
+ *     handler)
+ */
+export function requireWorkspacePermission(permission: Permission) {
+  return async (req: AuthRequest, _res: Response, next: NextFunction) => {
+    try {
+      const membership = await requireMembership(req.userId!, req.params.workspaceId);
+      requirePermission(membership.role, permission);
+      next();
+    } catch (error) {
       next(error);
     }
   };

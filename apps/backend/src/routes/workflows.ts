@@ -2,7 +2,7 @@ import { Router, type Router as ExpressRouter } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
-import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
+import { requireWorkspaceAccess, requireWorkspacePermission } from '../middleware/requireWorkspaceAccess';
 import { createApiResponse, NotFoundException, ValidationException } from '@synora/shared';
 import {
   archiveWorkflow,
@@ -163,7 +163,7 @@ router.get('/:workspaceId/workflows', async (req: AuthRequest, res, next) => {
   }
 });
 
-router.post('/:workspaceId/workflows', async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/workflows', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const body = createSchema.parse(req.body);
     const workflow = createWorkflow({
@@ -188,7 +188,7 @@ router.get('/:workspaceId/workflows/:workflowId', async (req: AuthRequest, res, 
   }
 });
 
-router.patch('/:workspaceId/workflows/:workflowId', async (req: AuthRequest, res, next) => {
+router.patch('/:workspaceId/workflows/:workflowId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const body = updateSchema.parse(req.body);
     const next_ = updateWorkflow(req.params.workflowId, req.params.workspaceId, body, req.userId!);
@@ -209,7 +209,7 @@ router.get('/:workspaceId/workflows/:workflowId/history', async (req: AuthReques
   }
 });
 
-router.delete('/:workspaceId/workflows/:workflowId', async (req: AuthRequest, res, next) => {
+router.delete('/:workspaceId/workflows/:workflowId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const archived = archiveWorkflow(req.params.workflowId, req.params.workspaceId);
     await persistWorkflow(archived.id);
@@ -318,7 +318,7 @@ router.get('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthRequ
   }
 });
 
-router.post('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/workflows/:workflowId/schedules', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const body = scheduleSchema.parse(req.body);
     // Resolved first so a schedule can never point at a workflow the
@@ -342,7 +342,7 @@ router.post('/:workspaceId/workflows/:workflowId/schedules', async (req: AuthReq
   }
 });
 
-router.patch('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, res, next) => {
+router.patch('/:workspaceId/schedules/:scheduleId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
     const schedule = setScheduleEnabled(req.params.scheduleId, req.params.workspaceId, enabled);
@@ -353,7 +353,7 @@ router.patch('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, res
   }
 });
 
-router.delete('/:workspaceId/schedules/:scheduleId', async (req: AuthRequest, res, next) => {
+router.delete('/:workspaceId/schedules/:scheduleId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const removed = deleteSchedule(req.params.scheduleId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Schedule'));
@@ -382,7 +382,7 @@ router.get('/:workspaceId/workflows/:workflowId/triggers', async (req: AuthReque
   }
 });
 
-router.post('/:workspaceId/workflows/:workflowId/triggers', async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/workflows/:workflowId/triggers', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
     if (!workflow) return next(new NotFoundException('Workflow'));
@@ -405,7 +405,7 @@ router.post('/:workspaceId/workflows/:workflowId/triggers', async (req: AuthRequ
   }
 });
 
-router.patch('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res, next) => {
+router.patch('/:workspaceId/triggers/:triggerId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
     const trigger = setTriggerEnabled(req.params.triggerId, req.params.workspaceId, enabled);
@@ -416,7 +416,7 @@ router.patch('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res, 
   }
 });
 
-router.delete('/:workspaceId/triggers/:triggerId', async (req: AuthRequest, res, next) => {
+router.delete('/:workspaceId/triggers/:triggerId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const removed = deleteTrigger(req.params.triggerId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Trigger'));
@@ -465,6 +465,7 @@ const eventTriggerSchema = z.object({
 
 router.post(
   '/:workspaceId/workflows/:workflowId/event-triggers',
+  requireWorkspacePermission('tool:manage'),
   async (req: AuthRequest, res, next) => {
     try {
       const workflow = getWorkflow(req.params.workflowId, req.params.workspaceId);
@@ -492,7 +493,7 @@ router.post(
   },
 );
 
-router.patch('/:workspaceId/event-triggers/:triggerId', async (req: AuthRequest, res, next) => {
+router.patch('/:workspaceId/event-triggers/:triggerId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const { enabled } = z.object({ enabled: z.boolean() }).parse(req.body);
     const trigger = setEventTriggerEnabled(
@@ -507,7 +508,7 @@ router.patch('/:workspaceId/event-triggers/:triggerId', async (req: AuthRequest,
   }
 });
 
-router.delete('/:workspaceId/event-triggers/:triggerId', async (req: AuthRequest, res, next) => {
+router.delete('/:workspaceId/event-triggers/:triggerId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
     const removed = deleteEventTrigger(req.params.triggerId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Trigger'));

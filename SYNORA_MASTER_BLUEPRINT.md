@@ -532,11 +532,24 @@ and per-step checks the Agents page uses, and runs nothing. Ambiguity
 ("Digest" vs "Digest v2") resolves by specificity; naming nobody returns
 the honest question with every agent listed.
 
+**Slice 11: the authorization hole the next binding would have widened.**
+Preparing to bind `workflow.schedule`, the slice-7 question — what does the
+real surface enforce? — answered *membership only*: a VIEWER could author
+workflows, schedules and triggers despite holding only `billing:view`. The
+catalogue's `tool:manage` declaration was RIGHT and the routes were wrong —
+the mirror image of the `activity.recent` defect, and the second time two
+independent derivations disagreeing has been the alarm. Fixed with a
+`requireWorkspacePermission` middleware on all 12 mutating routes,
+membership answering first so outsiders keep the 404. Reads, runs and
+dry-runs untouched. MEMBERs lose authoring they only ever had through the
+hole; granting it back deliberately is a one-line permission change.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no multi-step decomposition, no undo. Bound capabilities
 are search, conversation-create, provider-metrics, approvals-waiting,
 activity-recent and agent-preview; everything else honestly reports
-`not-bound` — and says where to go. The
+`not-bound` — and says where to go. `workflow.schedule` is next, now that
+the surface it binds to enforces what the catalogue always claimed. The
 approvals answer states what it counted (`agent runs and commands; not tool
 executions`) rather than implying it covers everything. Self-approval is
 permitted — the gate is a deliberate pause and a record, NOT four-eyes
