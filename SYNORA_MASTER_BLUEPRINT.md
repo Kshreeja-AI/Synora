@@ -544,12 +544,24 @@ membership answering first so outsiders keep the 404. Reads, runs and
 dry-runs untouched. MEMBERs lose authoring they only ever had through the
 hole; granting it back deliberately is a one-line permission change.
 
+**Slice 12: recurring behaviour from a sentence, with nothing guessed.**
+"Schedule the Daily Digest workflow every day at 9am Asia/Kolkata" creates
+a real DST-correct schedule. The phrase parser is stricter than the
+resolver because its output RECURS — a misread schedule fires wrong every
+day — so every ambiguity is a question: no hour → asks; bare "at 9" → asks
+am/pm; **no zone → asks, because the platform stores no timezone and a bare
+"9am" is a guess about the person's clock**; weekly/monthly say plainly
+they are not built. A workflow named "Hourly Report" does not imply hourly:
+the name is stripped before cadence parsing. The authoritative check lives
+in `createScheduleAuthorized` (membership + tool:manage + persist-before-
+return), because the command path never touches slice 11's HTTP middleware
+— and the permission probe drives exactly that surface.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no multi-step decomposition, no undo. Bound capabilities
-are search, conversation-create, provider-metrics, approvals-waiting,
-activity-recent and agent-preview; everything else honestly reports
-`not-bound` — and says where to go. `workflow.schedule` is next, now that
-the surface it binds to enforces what the catalogue always claimed. The
+personalization, no multi-step decomposition, no undo. Bound: search,
+conversation-create, provider-metrics, approvals-waiting, activity-recent,
+agent-preview and workflow-schedule; the rest honestly report `not-bound`
+and say where to go. The
 approvals answer states what it counted (`agent runs and commands; not tool
 executions`) rather than implying it covers everything. Self-approval is
 permitted — the gate is a deliberate pause and a record, NOT four-eyes

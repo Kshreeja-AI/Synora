@@ -52,6 +52,9 @@ import { conversationService } from '../../services/conversation.service';
 import { listWorkspaceActivity } from '../../services/activity.service';
 import { listRuns } from '../../agents/run-engine';
 import { createAgent, listAgents } from '../../agents/agent-registry';
+import { createWorkflow } from '../../workflows/workflow-registry';
+import { createScheduleAuthorized } from '../../workflows/schedule-authorized';
+import { listSchedules, deleteSchedule } from '../../workflows/schedule';
 import { previewAgentPlan } from '../../agents/plan-preview';
 import { resolveAgentRuntime } from '../../agents/runtime';
 import { getTextProviderMetrics } from '../../ai/textResilience';
@@ -74,6 +77,7 @@ describe('declared permissions match the real surfaces', () => {
   let workspaceId: string;
   let viewerId: string;
   let ownerId: string;
+  let probeWorkflowId: string;
   const emails: string[] = [];
 
   /**
@@ -96,6 +100,16 @@ describe('declared permissions match the real surfaces', () => {
     'approvals.waiting': async (_userId, wsId) => listRuns(wsId),
 
     'activity.recent': (userId, wsId) => listWorkspaceActivity(userId, wsId, { limit: 1 }),
+
+    'workflow.schedule': (userId, wsId) =>
+      // The authoritative non-HTTP surface the executor calls. Declared
+      // tool:manage, so a VIEWER must be refused by THIS code — the HTTP
+      // middleware never runs on the command path.
+      createScheduleAuthorized(userId, wsId, {
+        workflowId: probeWorkflowId,
+        kind: 'interval',
+        intervalMs: 3_600_000,
+      }),
 
     'agent.preview': async (userId, wsId) => {
       // The same call the executor makes, against a real registered agent.
@@ -143,9 +157,21 @@ describe('declared permissions match the real surfaces', () => {
       instructions: 'You are a probe. Answer briefly.',
       createdBy: ownerId,
     });
+
+    // And a real workflow for the schedule probe.
+    probeWorkflowId = createWorkflow({
+      workspaceId,
+      name: 'Permission Probe Workflow',
+      steps: [{ id: 's1', kind: 'generate', description: 'probe', input: 'probe' }],
+      createdBy: ownerId,
+    }).id;
   });
 
   afterAll(async () => {
+    // The owner leg of the probes creates real in-memory schedules.
+    for (const schedule of listSchedules(workspaceId)) {
+      deleteSchedule(schedule.id, workspaceId);
+    }
     await prisma.workspace.deleteMany({ where: { id: workspaceId } });
     await prisma.user.deleteMany({ where: { email: { in: emails } } });
   });

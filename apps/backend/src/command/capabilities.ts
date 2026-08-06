@@ -82,6 +82,10 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
       appPath: '/workflows',
       riskClass: 'reversible',
       requiredPermission: 'tool:manage',
+      // "automate" covers authoring AND scheduling; cadence words claim the
+      // sentence for scheduling so "run X every day" never lands on the
+      // authoring capability it does not describe.
+      hint: /\b(every\s+\w+|daily|hourly|weekly|on\s+a\s+schedule|recurring)\b/i,
       summary: 'Run something automatically on a schedule.',
       availability: 'available',
       surface: 'POST /api/workspaces/:workspaceId/workflows/:workflowId/schedules',

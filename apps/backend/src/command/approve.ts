@@ -347,7 +347,8 @@ export async function decideExecution(
   const outcome = await runBound(
     freshDecision!.route!.capabilityId,
     { userId: record.userId, workspaceId: record.workspaceId, role: requester!.role },
-    freshDecision!.understanding.subject
+    freshDecision!.understanding.subject,
+    record.commandText
   );
 
   // Three honest outcomes of an approved run, never collapsed: it ran, it

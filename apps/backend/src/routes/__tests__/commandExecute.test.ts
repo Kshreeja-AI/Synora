@@ -202,14 +202,15 @@ describe('POST /api/command/:workspaceId/execute', () => {
       const notBound = await request(app)
         .post(`/api/command/${workspaceId}/execute`)
         .set('Cookie', ownerCookie)
-        .send({ command: 'Automate my weekly report' })
+        .send({ command: 'Automate my report process' })
         .expect(200);
       // Synora genuinely authors workflows; the command layer cannot drive
       // it yet, because authoring needs structured steps a sentence does
       // not carry. Calling that "not implemented" would slander working
-      // code. (This example has moved twice as capabilities were bound —
-      // the DISTINCTION is what is under test, not the capability that
-      // happens to illustrate it.)
+      // code. (This example has moved THREE times as capabilities were
+      // bound — the DISTINCTION is what is under test, not the capability
+      // that happens to illustrate it. The sentence must stay free of
+      // cadence words, or the schedule hint rightly claims it.)
       expect(notBound.body.data.state).toBe('not-bound');
       // And it says WHERE. A refusal with nowhere to go is a dead end, so
       // the message names the page and the response carries it as a field
@@ -299,6 +300,89 @@ describe('POST /api/command/:workspaceId/execute', () => {
       // "digest v2" did not mean it. Specificity resolves; nothing guessed.
       expect(res.body.data.state).toBe('completed');
       expect(res.body.data.message).toContain('"Digest v2"');
+    });
+  });
+
+  describe('scheduling from a sentence: explicit or asked, never guessed', () => {
+    async function createWorkflow(name: string): Promise<string> {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows`)
+        .set('Cookie', ownerCookie)
+        .send({
+          name,
+          steps: [{ id: 's1', kind: 'generate', description: 'Summarize', input: 'summarize' }],
+          limits: {},
+        })
+        .expect(201);
+      return res.body.data.id as string;
+    }
+
+    it('creates a REAL daily schedule from a complete sentence, and says exactly what will run', async () => {
+      const workflowId = await createWorkflow('Daily Digest');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Schedule the Daily Digest workflow every day at 9am Asia/Kolkata' })
+        .expect(200);
+
+      expect(res.body.data.state).toBe('completed');
+      expect(res.body.data.executed).toBe(true);
+      // What will run, when, in which zone, and how to undo — in the answer.
+      expect(res.body.data.message).toContain('"Daily Digest"');
+      expect(res.body.data.message).toContain('every day at 09:00 (Asia/Kolkata)');
+      expect(res.body.data.message).toMatch(/change or delete/i);
+
+      // The schedule is REAL: visible through the same route the app uses,
+      // with the DST-correct zone the person named.
+      const schedules = await request(app)
+        .get(`/api/workspaces/${workspaceId}/workflows/${workflowId}/schedules`)
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      expect(schedules.body.data).toHaveLength(1);
+      expect(schedules.body.data[0]).toMatchObject({
+        kind: 'daily',
+        atMinuteUtc: 540,
+        timeZone: 'Asia/Kolkata',
+      });
+    });
+
+    it('asks for the zone rather than assuming one, and creates NOTHING meanwhile', async () => {
+      const workflowId = await createWorkflow('Zone Probe');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Schedule the Zone Probe workflow every day at 9am' })
+        .expect(200);
+
+      // The platform stores no timezone; a bare "9am" scheduled in UTC
+      // would fire hours off the person's clock, daily. One question.
+      expect(res.body.data.state).toBe('needs-input');
+      expect(res.body.data.executed).toBe(false);
+      expect(res.body.data.message).toMatch(/time zone/i);
+
+      const schedules = await request(app)
+        .get(`/api/workspaces/${workspaceId}/workflows/${workflowId}/schedules`)
+        .set('Cookie', ownerCookie)
+        .expect(200);
+      expect(schedules.body.data).toHaveLength(0);
+    });
+
+    it("does not read a workflow's own name as the cadence", async () => {
+      await createWorkflow('Hourly Report');
+
+      const res = await request(app)
+        .post(`/api/command/${workspaceId}/execute`)
+        .set('Cookie', ownerCookie)
+        .send({ command: 'Put the Hourly Report workflow on a schedule' })
+        .expect(200);
+
+      // "Hourly" belongs to the NAME. Treating it as the cadence would
+      // schedule sixty-minute recurrence nobody asked for; the honest
+      // answer is the how-often question.
+      expect(res.body.data.state).toBe('needs-input');
+      expect(res.body.data.message).toMatch(/how often/i);
     });
   });
 

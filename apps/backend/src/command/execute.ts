@@ -9,6 +9,9 @@ import { listAgents } from '../agents/agent-registry';
 import { previewAgentPlan } from '../agents/plan-preview';
 import { resolveAgentRuntime } from '../agents/runtime';
 import { resolveByName, nameSample, type NamedCandidate } from './resolve';
+import { parseSchedulePhrase } from './schedule-phrase';
+import { listWorkflows } from '../workflows/workflow-registry';
+import { createScheduleAuthorized } from '../workflows/schedule-authorized';
 import { logger } from '../utils/logger';
 import type { CommandRoute } from './types';
 import type { WorkspaceRole } from '../services/permissions';
@@ -143,7 +146,17 @@ export interface CommandExecutionResult {
  * A map entry that guessed at a service's contract would be exactly the
  * fabricated-adapter problem this codebase has been auditing all along.
  */
-type BoundExecutor = (context: ExecutionContext, subject: string) => Promise<{
+type BoundExecutor = (
+  context: ExecutionContext,
+  subject: string,
+  /**
+   * The person's whole sentence, unstripped. The subject has the matched
+   * verb phrase removed, which is right for search terms and wrong for
+   * anything that must re-read the cadence words ("every day at 9am") the
+   * intent match consumed.
+   */
+  rawText: string
+) => Promise<{
   result: unknown;
   summary: string;
 }>;
@@ -274,6 +287,70 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
     };
   },
 
+  'workflow.schedule': async (context, _subject, rawText) => {
+    // Resolution runs against the RAW sentence: the intent match consumed
+    // the cadence words, and a workflow named "Daily Digest" must still be
+    // findable next to them.
+    const workflows = listWorkflows(context.workspaceId);
+    if (workflows.length === 0) {
+      throw new NeedsInput(
+        'This workspace has no workflows yet, so there is nothing to schedule. Create one on the Workflows page first.'
+      );
+    }
+
+    const resolution = resolveByName(workflows, rawText);
+    if (resolution.status === 'unresolved') {
+      throw resolution.matched.length > 0
+        ? new NeedsInput(
+            `Which workflow did you mean — ${nameSample(resolution.matched)}?`,
+            resolution.matched.map((w) => ({ id: w.id, name: w.name }))
+          )
+        : new NeedsInput(
+            `I could not tell which workflow you meant. This workspace has ${nameSample(workflows)}.`,
+            workflows.map((w) => ({ id: w.id, name: w.name }))
+          );
+    }
+
+    // The workflow's own name must not read as cadence words: a workflow
+    // called "Daily Digest" does not imply "daily" — the person still has
+    // to SAY when it runs.
+    const phrase = rawText.replace(
+      new RegExp(resolution.entity.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
+      ' '
+    );
+    const parsed = parseSchedulePhrase(phrase);
+    if (parsed.status === 'incomplete') {
+      throw new NeedsInput(parsed.question);
+    }
+
+    // The authoritative check lives INSIDE this call — membership and
+    // tool:manage at the moment of execution, exactly as the HTTP route
+    // enforces through middleware. The catalogue's earlier answer was a
+    // courtesy, never a substitute.
+    const schedule = await createScheduleAuthorized(context.userId, context.workspaceId, {
+      workflowId: resolution.entity.id,
+      kind: parsed.kind,
+      ...(parsed.kind === 'interval' ? { intervalMs: parsed.intervalMs } : {}),
+      ...(parsed.kind === 'daily'
+        ? { atMinuteUtc: parsed.atMinute, timeZone: parsed.timeZone }
+        : {}),
+    });
+
+    return {
+      result: {
+        scheduleId: schedule.id,
+        workflowId: schedule.workflowId,
+        kind: schedule.kind,
+        describe: parsed.describe,
+        nextFireAt: new Date(schedule.nextFireAt).toISOString(),
+      },
+      // What will run, when, and how to undo it — before anyone has to ask.
+      summary: `Scheduled "${resolution.entity.name}" to run ${parsed.describe}. First run ${new Date(
+        schedule.nextFireAt
+      ).toISOString()}. You can change or delete this on the Workflows page.`,
+    };
+  },
+
   'conversation.create': async (context, subject) => {
     // conversationService.create runs its OWN requireMembership +
     // requirePermission. That is the authoritative check re-running at the
@@ -395,7 +472,8 @@ export function decideCommand(commandText: string, role: WorkspaceRole): Command
 export async function runBound(
   capabilityId: string,
   context: ExecutionContext,
-  subject: string
+  subject: string,
+  rawText: string
 ): Promise<
   | { ok: true; result: unknown; summary: string }
   | { ok: false; detail?: string; needsInput?: { question: string; candidates: NamedCandidate[] } }
@@ -403,7 +481,7 @@ export async function runBound(
   const executor = BOUND[capabilityId];
   if (!executor) return { ok: false };
   try {
-    const outcome = await executor(context, subject);
+    const outcome = await executor(context, subject, rawText);
     return { ok: true, result: outcome.result, summary: outcome.summary };
   } catch (error) {
     if (error instanceof NeedsInput) {
@@ -468,7 +546,7 @@ export async function executeCommand(
   let candidates: NamedCandidate[] | undefined;
 
   if (state === 'completed') {
-    const outcome = await runBound(route!.capabilityId, context, understanding.subject);
+    const outcome = await runBound(route!.capabilityId, context, understanding.subject, commandText);
     if (outcome.ok) {
       result = outcome.result;
       summary = outcome.summary;
