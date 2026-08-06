@@ -3,8 +3,17 @@
 import { useState, type FormEvent } from 'react';
 import { Button, Textarea } from '@synora/design-system';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
-import { useCommandExecutions, useRunCommand, type CommandOutcome } from '@/lib/api/command';
+import {
+  useCommandExecutions,
+  useRunCommand,
+  usePlanCommand,
+  useRunPlan,
+  type CommandOutcome,
+  type CommandPlan,
+  type PlanRunResult,
+} from '@/lib/api/command';
 import { CommandOutcomeCard, COMMAND_STATE_LABEL } from '@/components/command/CommandOutcome';
+import { CommandPlanPreview, CommandPlanResult } from '@/components/command/CommandPlanCard';
 import { PendingApprovals } from '@/components/command/PendingApprovals';
 
 /**
@@ -49,13 +58,53 @@ export default function CommandPage() {
 
   const [command, setCommand] = useState('');
   const [outcome, setOutcome] = useState<CommandOutcome | null>(null);
+  const [plan, setPlan] = useState<CommandPlan | null>(null);
+  const [planResult, setPlanResult] = useState<PlanRunResult | null>(null);
   const run = useRunCommand(workspaceId);
+  const planIt = usePlanCommand(workspaceId);
+  const runPlan = useRunPlan(workspaceId);
   const { data: history } = useCommandExecutions(workspaceId);
+
+  /** Only one answer is ever on screen, so nothing stale reads as current. */
+  function clearAnswers() {
+    setOutcome(null);
+    setPlan(null);
+    setPlanResult(null);
+  }
+
+  /**
+   * Resolve the sentence into steps WITHOUT running any of it.
+   *
+   * A separate action rather than a confirmation step in front of "Do it":
+   * making every search pass through a preview is how people learn to click
+   * through prompts, and the prompt that finally matters gets the same
+   * reflex. This is for when a person WANTS to see the shape of what they
+   * asked for first.
+   */
+  function preview() {
+    const text = command.trim();
+    if (!text || !workspaceId) return;
+    clearAnswers();
+    planIt.mutate(text, { onSuccess: setPlan });
+  }
+
+  function startPlan() {
+    const text = command.trim();
+    if (!text || !workspaceId) return;
+    runPlan.mutate(text, {
+      onSuccess: (result) => {
+        setPlan(null);
+        setPlanResult(result);
+        if (result.completedCount > 0) setCommand('');
+      },
+    });
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
     const text = command.trim();
     if (!text || !workspaceId) return;
+    clearAnswers();
     run.mutate(text, {
       onSuccess: (result) => {
         setOutcome(result);
@@ -89,6 +138,14 @@ export default function CommandPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button type="submit" disabled={run.isPending || !command.trim() || !workspaceId}>
             {run.isPending ? 'Working…' : 'Do it'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={preview}
+            disabled={planIt.isPending || !command.trim() || !workspaceId}
+          >
+            {planIt.isPending ? 'Reading…' : 'See the steps'}
           </Button>
           <span className="text-xs text-muted-foreground">
             Anything that would leave Synora, spend money, or change who can do what stops and asks
@@ -127,6 +184,12 @@ export default function CommandPage() {
       )}
 
       {outcome && <CommandOutcomeCard outcome={outcome} />}
+
+      {plan && (
+        <CommandPlanPreview plan={plan} onRun={startPlan} running={runPlan.isPending} />
+      )}
+
+      {planResult && <CommandPlanResult result={planResult} />}
 
       {workspaceId && <PendingApprovals workspaceId={workspaceId} />}
 

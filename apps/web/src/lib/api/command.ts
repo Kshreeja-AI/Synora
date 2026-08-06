@@ -133,3 +133,99 @@ export function isRefusal(
 ): outcome is CommandRefusal {
   return outcome.decision === 'refused';
 }
+
+/* ------------------------------------------------------------------ *
+ * Multi-action requests
+ * ------------------------------------------------------------------ */
+
+/** A step's readiness, or `skipped` for one execution never reached. */
+export type PlanStepState = CommandState | 'skipped' | 'pending';
+
+export interface PlannedStep {
+  index: number;
+  text: string;
+  understood: string;
+  capabilityId: string | null;
+  riskClass: string;
+  requiredPermission: string | null;
+  permitted: boolean;
+  needsApproval: boolean;
+  bound: boolean;
+  readiness: CommandState;
+  message: string;
+  dependsOn: number[];
+  /** Set when this step's input will never exist because an earlier one won't run. */
+  blockedBy?: number;
+  appPath?: string;
+}
+
+export type CommandPlan =
+  | {
+      status: 'planned';
+      originalText: string;
+      steps: PlannedStep[];
+      summary: string;
+      observations: { kind: string; detail: string }[];
+      executed: false;
+    }
+  | { status: 'cannot-plan'; originalText: string; question: string; executed: false };
+
+export interface PlanRunStep {
+  index: number;
+  text: string;
+  capabilityId: string | null;
+  state: PlanStepState;
+  message: string;
+  dependsOn: number[];
+  executionId?: string;
+}
+
+export interface PlanRunResult {
+  planId: string;
+  status:
+    | 'completed'
+    | 'waiting-approval'
+    | 'needs-input'
+    | 'partially-completed'
+    | 'failed'
+    | 'rejected'
+    | 'cannot-plan';
+  originalText: string;
+  steps: PlanRunStep[];
+  summary: string;
+  stoppedAtStep?: number;
+  stoppedReason?: string;
+  completedCount: number;
+  /**
+   * Whether asking again would repeat something already done. Passed
+   * through verbatim — the UI must never soften this into "try again",
+   * because the whole point is that repeating can duplicate a side effect.
+   */
+  safeToRetry: boolean;
+}
+
+/**
+ * Resolves a sentence into an ordered plan WITHOUT running any of it.
+ *
+ * Separate from running on purpose: a person deciding whether to set four
+ * actions in motion should be able to read them first, and a preview that
+ * quietly executed would make that reading meaningless.
+ */
+export function usePlanCommand(workspaceId: string) {
+  return useMutation({
+    mutationFn: (command: string) =>
+      api.post<CommandPlan>(`/api/command/${workspaceId}/plan`, { command }),
+  });
+}
+
+/** Runs a planned request, in order, stopping at the first step that cannot proceed. */
+export function useRunPlan(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (command: string) =>
+      api.post<PlanRunResult>(`/api/command/${workspaceId}/plan/execute`, { command }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [COMMAND_EXECUTIONS_KEY, workspaceId] });
+    },
+  });
+}

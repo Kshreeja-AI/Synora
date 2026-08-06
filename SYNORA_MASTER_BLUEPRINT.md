@@ -712,8 +712,9 @@ doing outside Synora exactly what it is checking inside. The immediate-run
 branch is therefore exercised in production, not in the suite.
 
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no plan UI (slices 14-17 are reachable by API only), no
-undo. Bound: search,
+personalization, no undo, and no way to approve a paused plan step from
+the plan view itself (the approvals panel below it is where that happens).
+Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`
 and say where to go. The
