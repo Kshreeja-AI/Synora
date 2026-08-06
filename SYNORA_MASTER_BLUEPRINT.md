@@ -664,9 +664,36 @@ approving one yields `not-bound` and the plan correctly stops. The resume
 path is exercised directly against real stored plans until a sensitive
 capability is bound.
 
+**The next binding, and the three things reading its contract revealed.**
+Binding `tool.execute` is what would make an approval able to lead to a
+completed step. Reading `services/tool.service.ts` before writing any code
+surfaced three facts that must shape it rather than be discovered
+afterwards:
+
+1. **Tools carry their OWN `requiresApproval` flag.** A command-layer
+   approval can therefore produce a tool execution that is still `PENDING`
+   on a SECOND, tool-level approval. Two independent gates is correct — the
+   command layer asks "may this person ask for this", the tool asks "may
+   this particular tool run" — but the outcome must never let "you approved
+   it" read as "it ran". A person who approved something and later finds it
+   never happened has been misled by a system that was technically correct.
+2. **Execution is asynchronous** (`runAsync`). The command layer would learn
+   that a tool STARTED, never that it succeeded. So the honest summary is
+   "started", and `completed` here must mean "the execution was really
+   created", worded so nobody reads it as "the tool did its job".
+3. **Tools have an `inputSchema` with required fields**, and a sentence
+   carries no structured input. Most real tools would therefore honestly
+   answer `needs-input` rather than run — which is the correct answer, not a
+   shortfall, and it means binding this capability delivers less immediate
+   reach than it appears to.
+
+This is the one capability that acts OUTSIDE Synora, so it gets the design
+pass rather than the quick pass.
+
 **Not yet built**: no voice or accessibility input path, no learned
 personalization, no bound sensitive capability (so no approval can yet lead
-to a completed step), no undo. Bound: search,
+to a completed step), no plan UI (slices 14-16 are reachable by API only),
+no undo. Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`
 and say where to go. The
