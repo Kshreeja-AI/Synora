@@ -757,11 +757,41 @@ something they already deleted. The HTTP delete route had the same bug. Both
 are fixed at the source, with a regression test that persists, deletes,
 restarts and asserts nothing comes back.
 
-**Not yet built**: no voice or accessibility input path, no learned
-personalization, undo covers only the two capabilities that create something
-reversible (conversations and schedules), and there is no way to approve a
-paused plan step from the plan view itself (the approvals panel below it is
-where that happens).
+**Slice 20: every answer reaches a person who cannot see it.** The first
+work under the standing rule that all input and output paths resolve
+through ONE architecture rather than a parallel one per method — and the
+first place that rule was being broken was not an input at all. The command
+page promises "Synora tells you exactly what it did, or exactly why it did
+not", and every answer was inserted silently into the page. Someone using a
+screen reader pressed "Do it", focus stayed in the box, and nothing was
+announced. The layer keeps ten outcomes rigorously distinct and then
+delivered them in a form one class of user could not perceive, which throws
+the whole discipline away at the last step exactly as a green tick and a red
+cross would.
+
+`CommandAnnouncer` is a polite live region, mounted from first render — a
+region that appears at the same moment as its content is not announced at
+all, which is the standard way to build one that never speaks. It composes
+no new prose: the state label comes from the same map the visible card uses
+and the reason is the server's sentence verbatim, so there is no second
+wording to drift in front of the one person who cannot check it against the
+screen.
+
+**A founder decision is attached to the REST of this axis.** Voice input is
+the obvious next door, and it cannot be opened purely as engineering. The
+browser's own speech recognition is the only credential-free option, and in
+most browsers it works by **sending the captured audio to the browser
+vendor's servers**. For a platform that stores customers' work, that is a
+data-egress decision, not an implementation detail, and shipping it quietly
+would be precisely the kind of unstated behaviour this project refuses. The
+options and the recommendation are in the brief; nothing voice-related will
+be built until that is answered.
+
+**Not yet built**: no voice input path, no learned personalization, undo
+covers only the two capabilities that create something reversible
+(conversations and schedules), and there is no way to approve a paused plan
+step from the plan view itself (the approvals panel below it is where that
+happens).
 Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`

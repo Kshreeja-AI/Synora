@@ -660,6 +660,38 @@ Two capabilities create something reversible today — `conversation.create`
 and `workflow.schedule` — so those are what undo covers. Anything else
 answers `not-reversible` rather than improvising a reversal.
 
+### Reaching every person, through one pipeline
+
+The standing rule is that text, voice, accessibility, visual, robotic and
+agent inputs all resolve through the SAME intent → policy → plan → approval
+→ execution → observation architecture. Not parallel systems — one system
+with several doors. The corollary applies to the output side too, and it is
+where the first real gap was: every answer the command page produced was
+inserted silently into the DOM, so a person using a screen reader pressed
+"Do it" and was told nothing.
+
+`CommandAnnouncer` is the observation door for that path. It is a
+`role="status" aria-live="polite"` region, mounted from first render and
+never conditionally — a live region that appears at the same moment as its
+content is not announced at all.
+
+- **It speaks the server's words**, using the same `COMMAND_STATE_LABEL`
+  map as the visible card and `outcome.message` verbatim. It composes no
+  new prose, for the same reason nothing else in this layer does: a second
+  wording is a second thing to keep in sync, and here the two would
+  disagree in front of the one person who cannot see the correct one.
+- **It preserves the ten states.** Someone listening gets the same
+  distinction between "Not connected here" and "Did not work" as someone
+  looking.
+- **A live region, not seized focus.** The person pressed a button and is
+  waiting; taking focus would also discard the caret of anyone about to
+  edit their sentence after a refusal — the case the page already protects
+  by deliberately not clearing the box.
+
+Still missing on this axis: voice input. See the note in
+`SYNORA_MASTER_BLUEPRINT.md` — it carries a founder decision about where
+audio is allowed to travel, which is not an engineering call.
+
 ## Queue Architecture — not implemented (M7)
 
 There is no job queue today; text/code generation is served

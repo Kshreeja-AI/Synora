@@ -17,6 +17,7 @@ import {
 import { CommandOutcomeCard, COMMAND_STATE_LABEL } from '@/components/command/CommandOutcome';
 import { CommandPlanPreview, CommandPlanResult } from '@/components/command/CommandPlanCard';
 import { PendingApprovals } from '@/components/command/PendingApprovals';
+import { CommandAnnouncer } from '@/components/command/CommandAnnouncer';
 
 /**
  * Ask Synora for an outcome, in a sentence.
@@ -141,6 +142,18 @@ export default function CommandPage() {
         </p>
       </header>
 
+      {/* Every answer this page produces is announced here. Without it a
+          person using a screen reader pressed "Do it" and was told nothing
+          at all — on the one surface whose entire promise is that Synora
+          says exactly what it did. */}
+      <CommandAnnouncer
+        pending={run.isPending || runPlan.isPending || undoIt.isPending}
+        outcome={outcome}
+        planResult={planResult}
+        undoResult={undoResult}
+        unreachable={undoUnreachable}
+      />
+
       <form onSubmit={submit} className="space-y-3">
         <Textarea
           value={command}
@@ -190,6 +203,11 @@ export default function CommandPage() {
               <button
                 type="button"
                 onClick={() => setCommand(example)}
+                // These REPLACE what is in the box rather than running
+                // anything, and a bare chip label does not say so. Someone
+                // who cannot see the box refill has no way to learn what
+                // the press did.
+                aria-label={`Put this in the box: ${example}`}
                 className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
               >
                 {example}
