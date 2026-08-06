@@ -1,5 +1,6 @@
 import { prisma } from '@synora/database';
 import { prepareCommand, type PreparedCommand } from './prepare';
+import { unavailableReason, isRunnableHere } from './availability';
 import { getTextProviderMetrics } from '../ai/textResilience';
 import { searchService } from '../services/search.service';
 import { conversationService } from '../services/conversation.service';
@@ -501,7 +502,12 @@ export function messageFor(
         route?.requiredPermission ? ` — it needs "${route.requiredPermission}"` : ''
       }.`;
     case 'unavailable':
-      return "I can do this, but it is not connected in this deployment yet, so I have not tried.";
+      // Names the specific obstacle rather than one sentence for every
+      // cause. "Not connected" sends someone to an administrator even when
+      // what they actually need is a local model.
+      return route
+        ? `I can do this, but it ${unavailableReason(route.availability)}, so I have not tried.`
+        : 'I can do this, but it is not connected in this deployment yet, so I have not tried.';
     case 'not-implemented':
       return detail ?? 'Synora cannot do this yet.';
     case 'not-bound':
@@ -566,7 +572,7 @@ export function decideCommand(commandText: string, role: WorkspaceRole): Command
     detail = 'I could not tell what you wanted me to do.';
   } else if (!candidate!.permitted) {
     state = 'not-authorized';
-  } else if (route.availability !== 'available') {
+  } else if (!isRunnableHere(route)) {
     state = 'unavailable';
   } else if (!RUNS_WITHOUT_APPROVAL.has(route.riskClass)) {
     state = 'waiting-approval';

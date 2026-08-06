@@ -52,6 +52,15 @@ export type CapabilityAvailability =
   | 'available'
   /** Implemented, but this deployment needs a provider credential first. */
   | 'needs-credentials'
+  /**
+   * Implemented, but needs a language model — satisfiable EITHER by a local
+   * model running alongside Synora OR by a configured external provider.
+   *
+   * Distinct from `needs-credentials` because the next step is genuinely
+   * different: a credential has one path and a vendor; a model has two, and
+   * one of them costs nothing. Collapsing them hides the free path.
+   */
+  | 'needs-model'
   /** Synora has no implementation of this yet. */
   | 'not-implemented';
 

@@ -1,5 +1,6 @@
 import { hasPermission, type Permission, type WorkspaceRole } from '../services/permissions';
 import { understandCommand } from './understand';
+import { isRunnableHere } from './availability';
 import type { CommandRoute, CommandUnderstanding } from './types';
 
 /**
@@ -64,7 +65,7 @@ function prepareCapability(route: CommandRoute, role: WorkspaceRole): PreparedCa
     route,
     permitted,
     ...(permitted ? {} : { missingPermission: route.requiredPermission ?? undefined }),
-    actionable: permitted && route.availability === 'available',
+    actionable: permitted && isRunnableHere(route),
   };
 }
 

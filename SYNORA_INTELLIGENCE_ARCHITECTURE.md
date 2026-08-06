@@ -118,6 +118,38 @@ already shipped without it.
 
 ---
 
+## Implemented: capability availability says what is actually missing
+
+`apps/backend/src/command/availability.ts`
+
+The catalogue answered "why can't Synora do this here?" with two values, so
+every unavailable capability produced one sentence — *"needs a provider
+credential configured"*. For text generation that was wrong in the way that
+matters: answering a question needs a **model**, and a local model serves it
+as well as a bought one. Telling someone an administrator must configure a
+credential hides the path that needs no vendor, no account and no money —
+the path this platform intends to make ordinary.
+
+`needs-model` is now its own value, and `ai.generate` carries it. Sending an
+invitation stays `needs-credentials`, because SMTP has no local substitute.
+Same word before, different worlds.
+
+**Only values with a real capability behind them exist.** The directive lists
+a longer vocabulary — infrastructure required, training required, and others.
+Nothing in the catalogue is blocked by those today, and an enum member
+nothing produces is a value no test can exercise and no reader can trust.
+They are absent, and a test pins the set of values actually in use, so a
+future slice adding one must add a capability that uses it.
+
+**A regression this nearly shipped.** `understandCommand` filtered for the
+literal `'needs-credentials'` when listing what cannot run. Reclassifying
+`ai.generate` would have silently dropped it from that list, and a person
+asking for text generation would have been told nothing was wrong right up
+until it failed. All six availability checks now go through one
+`isRunnableHere` helper so the next widening cannot repeat it.
+
+---
+
 ## Reused, not rebuilt
 
 The audit found substantially more prior art than expected. None of it was
@@ -146,10 +178,9 @@ duplicated:
    genuine proto-version, but it carries no ambiguity, clarification, user
    correction, confidence, latency, cost, model identity, evaluation result,
    privacy class or retention class.
-3. **No capability-status vocabulary.** Today `availability` has exactly two
-   values, `available` and `needs-credentials`. The eight-status vocabulary
-   (`LOCAL_MODEL_REQUIRED`, `INFRASTRUCTURE_REQUIRED`, `TRAINING_REQUIRED`
-   and the rest) does not exist.
+3. ~~**No capability-status vocabulary.**~~ **Partly addressed.** See
+   "Implemented: capability availability" below. The values with no real
+   capability behind them are still deliberately absent.
 4. **No learning pipeline.** Nothing converts experience into a candidate,
    evaluates it, versions it, or deploys it. `SB-015` constrains a thing that
    is not there yet.
@@ -176,16 +207,15 @@ degrading into a guess.
 
 Written as future work on purpose. None of this exists.
 
-1. **Capability status vocabulary** — replace the two-value `availability`
-   with the eight-status vocabulary. No dependencies.
-2. **Experience record** — extend the `CommandExecution` lineage into a full
-   experience, including privacy and retention classification. Depends on 1.
-3. **Rule evaluation** — answer "did this interaction violate a rule?"
-   against the registry. Depends on 2.
-4. **Kernel interface** — the stable eight-verb surface over the existing
-   modules. Depends on 2 and 3.
-5. **Learning pipeline** — experience → normalisation → consent check →
+1. **Experience record** — extend the `CommandExecution` lineage into a full
+   experience, including privacy and retention classification. The
+   availability vocabulary it needed now exists.
+2. **Rule evaluation** — answer "did this interaction violate a rule?"
+   against the registry. Depends on 1.
+3. **Kernel interface** — the stable eight-verb surface over the existing
+   modules. Depends on 1 and 2.
+4. **Learning pipeline** — experience → normalisation → consent check →
    evaluation → candidate → review → versioned deployment. Depends on all
    of the above, and is governed by `SB-015` before a line of it is written.
-6. **Local model adapter** — a runnable open-source model behind the existing
+5. **Local model adapter** — a runnable open-source model behind the existing
    provider seam, so no business logic changes.

@@ -1,4 +1,5 @@
 import { routesForIntent } from './capabilities';
+import { isRunnableHere, unavailableReason } from './availability';
 import type {
   CommandIntent,
   CommandTextObservation,
@@ -266,10 +267,14 @@ export function understandCommand(rawInput: string): CommandUnderstanding {
   if (subject.length === 0) {
     unknowns.push('The action was recognized, but not what it should apply to.');
   }
-  const unavailable = routes.filter((route) => route.availability === 'needs-credentials');
+  // Anything that cannot run here, NOT just the credential case. This
+  // filter previously matched the literal 'needs-credentials', so widening
+  // the vocabulary would have silently dropped `ai.generate` from the list
+  // and told the person nothing was wrong with it.
+  const unavailable = routes.filter((route) => !isRunnableHere(route));
   for (const route of unavailable) {
     unknowns.push(
-      `"${route.summary}" is implemented but needs a provider credential configured in this deployment before it can run.`
+      `"${route.summary}" is implemented but ${unavailableReason(route.availability)}, so it cannot run here yet.`
     );
   }
 

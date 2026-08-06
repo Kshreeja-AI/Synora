@@ -177,7 +177,7 @@ describe('POST /api/command/:workspaceId/execute', () => {
       expect(record?.approvalState).toBe('pending');
     });
 
-    it('reports unavailable — not failed — when a capability needs credentials', async () => {
+    it('reports unavailable — not failed — and names what is actually missing', async () => {
       const res = await request(app)
         .post(`/api/command/${workspaceId}/execute`)
         .set('Cookie', ownerCookie)
@@ -188,7 +188,12 @@ describe('POST /api/command/:workspaceId/execute', () => {
       // owner hunting a bug that does not exist.
       expect(res.body.data.state).toBe('unavailable');
       expect(res.body.data.executed).toBe(false);
-      expect(res.body.data.message).toMatch(/not connected in this deployment/i);
+      // The message names the SPECIFIC obstacle. This used to read "not
+      // connected in this deployment" for every unavailable capability,
+      // which sent someone to an administrator even when what they actually
+      // needed was a local model — a path that needs no vendor and no money.
+      expect(res.body.data.message).toMatch(/language model/i);
+      expect(res.body.data.message).toMatch(/local model/i);
     });
 
     it('separates "Synora cannot" from "the command layer cannot drive it yet"', async () => {

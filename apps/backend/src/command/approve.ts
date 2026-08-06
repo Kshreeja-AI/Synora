@@ -11,6 +11,7 @@ import {
   type CommandExecutionResult,
   type ExecutionState,
 } from './execute';
+import { isRunnableHere } from './availability';
 import { hasPermission, type Permission, type WorkspaceRole } from '../services/permissions';
 import { requireMembership } from '../services/checks';
 import { resumePlanAfterStep, type PlanRunResult } from './run-plan';
@@ -262,7 +263,7 @@ export async function decideExecution(
     // A credential that vanished between request and approval. Reporting
     // this as a failure would send an operator looking for a broken
     // capability instead of a missing configuration.
-    if (freshDecision.route!.availability !== 'available') {
+    if (!isRunnableHere(freshDecision.route!)) {
       throw new ApprovalRefused(messageFor('unavailable', freshDecision.route), 'unavailable');
     }
   }

@@ -34,10 +34,13 @@ const CATALOGUE: Record<Exclude<CommandIntent, 'not-yet-capable' | 'unrecognized
       appPath: '/conversations',
       riskClass: 'reversible',
       requiredPermission: null,
-      summary: 'Answer a question or write something using a configured AI provider.',
+      summary: 'Answer a question or write something using a language model.',
       // Honest: the deterministic local planner can plan an agent run with no
       // credentials, but answering a question genuinely requires a model.
-      availability: 'needs-credentials',
+      // A MODEL, not merely a credential: a local model would serve this
+      // just as well as a provider key, and saying "credential" would hide
+      // the path that needs no vendor and no money.
+      availability: 'needs-model',
       surface: 'POST /api/ai/generate',
       mayNeedApproval: false,
     },
