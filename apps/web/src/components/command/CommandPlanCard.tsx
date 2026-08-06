@@ -28,7 +28,18 @@ import type { CommandPlan, PlanRunResult, PlanStepState } from '@/lib/api/comman
  * wording of the same rule eventually disagrees in front of a user.
  */
 
-/** Plain words for what a step is, never a verdict about it. */
+/**
+ * Plain words for what a step is, never a verdict about it.
+ *
+ * `completed` MEANS TWO DIFFERENT THINGS depending on whether the plan has
+ * run, which is why the label is chosen per mode rather than from one map.
+ * Before running, the server's `completed` readiness means "this WOULD run";
+ * after running, it means "this DID run". A single map labelled both "Done"
+ * — and a browser pass caught exactly that: a preview that said "Nothing has
+ * run yet" at the top and "Done" beside every ready step. The component
+ * tests missed it because they asserted the message text, which was right,
+ * and never the label in preview context.
+ */
 const STEP_LABEL: Record<string, string> = {
   completed: 'Done',
   pending: 'Not started',
@@ -63,6 +74,7 @@ function StepRow({
   message,
   dependsOn,
   appPath,
+  mode,
 }: {
   index: number;
   text: string;
@@ -70,7 +82,11 @@ function StepRow({
   message: string;
   dependsOn: number[];
   appPath?: string;
+  /** Decides what `completed` is called. See STEP_LABEL. */
+  mode: 'preview' | 'result';
 }) {
+  const label =
+    mode === 'preview' && state === 'completed' ? 'Ready' : (STEP_LABEL[state] ?? state);
   return (
     <li className="rounded-md border p-3">
       <div className="flex items-start justify-between gap-3">
@@ -81,7 +97,7 @@ function StepRow({
         <span
           className={`shrink-0 text-xs font-medium ${STEP_TONE[state] ?? 'text-muted-foreground'}`}
         >
-          {STEP_LABEL[state] ?? state}
+          {label}
         </span>
       </div>
       {message && <p className="mt-1 text-xs text-muted-foreground">{message}</p>}
@@ -163,6 +179,7 @@ export function CommandPlanPreview({
             message={step.message}
             dependsOn={step.dependsOn}
             appPath={step.appPath}
+            mode="preview"
           />
         ))}
       </ol>
@@ -212,6 +229,7 @@ export function CommandPlanResult({ result }: { result: PlanRunResult }) {
             state={step.state}
             message={step.message}
             dependsOn={step.dependsOn}
+            mode="result"
           />
         ))}
       </ol>

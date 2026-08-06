@@ -46,6 +46,17 @@ describe('CommandPlanPreview', () => {
     expect(screen.getByText(/Nothing has run yet/i)).toBeInTheDocument();
   });
 
+  it('calls a ready step "Ready", never "Done", before anything has run', () => {
+    // FOUND IN A BROWSER, not by these tests. The server's `completed`
+    // readiness means "this WOULD run" in a preview and "this DID run" in a
+    // result, and labelling both "Done" put the word beside every step of a
+    // plan whose own heading said nothing had happened. The earlier tests
+    // missed it by asserting the message text, which was correct all along.
+    render(<CommandPlanPreview plan={plan([step({ index: 1, readiness: 'completed' })])} />);
+    expect(screen.getByText('Ready')).toBeInTheDocument();
+    expect(screen.queryByText('Done')).not.toBeInTheDocument();
+  });
+
   it('states a dependency rather than leaving it to be inferred', () => {
     render(<CommandPlanPreview plan={plan([step({ index: 1 }), step({ index: 2, dependsOn: [1] })])} />);
     expect(screen.getByText(/Uses the result of step 1/)).toBeInTheDocument();
@@ -148,6 +159,8 @@ describe('CommandPlanResult', () => {
   });
 
   it('shows each step its own outcome rather than one status for the plan', () => {
+    // "Done" IS right here — this step really ran. The same word would be a
+    // lie in a preview, which is the distinction the mode carries.
     render(<CommandPlanResult result={runResult()} />);
     expect(screen.getByText('Done')).toBeInTheDocument();
     expect(screen.getByText('Not connected here')).toBeInTheDocument();
