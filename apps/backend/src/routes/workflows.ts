@@ -355,7 +355,7 @@ router.patch('/:workspaceId/schedules/:scheduleId', requireWorkspacePermission('
 
 router.delete('/:workspaceId/schedules/:scheduleId', requireWorkspacePermission('tool:manage'), async (req: AuthRequest, res, next) => {
   try {
-    const removed = deleteSchedule(req.params.scheduleId, req.params.workspaceId);
+    const removed = await deleteSchedule(req.params.scheduleId, req.params.workspaceId);
     if (!removed) return next(new NotFoundException('Schedule'));
     res.json(createApiResponse({ deleted: true }));
   } catch (error) {

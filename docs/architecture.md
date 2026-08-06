@@ -622,11 +622,43 @@ crashed must not be able to lose the approval that authorised it).
   and the action already ran; throwing would report an authorised,
   completed action as an error and invite a repeat.
 
-Not yet reachable end-to-end: an approved step that then COMPLETES. Every
-capability requiring approval is currently unbound, so approving one
-honestly yields `not-bound` and the plan stops. The resume path is
-exercised directly against real stored plans until a sensitive capability
-is bound.
+Reachable end-to-end since `tool.execute` was bound: a plan pauses on a
+tool step, a person approves it through the real endpoint, a real tool
+execution is created, and the plan resumes. Capabilities that require
+approval and are still unbound honestly yield `not-bound` on approval, and
+the plan stops there.
+
+### Undo
+
+Reversibility used to be something the layer only reasoned about:
+`reversible` is a risk class, it is why creating a conversation runs
+without an approval gate, and nothing could actually reverse anything.
+`undo.ts` and `POST .../executions/:executionId/undo` close that.
+
+- **The undo target is declared by the executor, never guessed.** Whichever
+  bound executor did the work names what would reverse it at the moment it
+  performs it, and that is stored on the audit row (`undoKind`,
+  `undoTargetId`). Inferring a target from a capability id would eventually
+  infer wrong, and a wrong guess deletes the wrong thing.
+- **Permission is re-checked at undo time**, by the same services that
+  enforce it everywhere else — `conversationService.delete` requires
+  `conversation:manage`; `deleteScheduleAuthorized` requires `tool:manage`
+  for a command path that never passes through the HTTP middleware. Having
+  been allowed to create something is not standing permission to remove it.
+- **Once only.** The reversal is claimed with a conditional update, and a
+  second attempt is refused rather than silently repeated.
+- **Reverse first, record second** — the opposite of the approval path,
+  because the failure modes are not symmetric. A crash after reversing
+  leaves a recoverable "not undone yet"; a crash after recording leaves an
+  unrecoverable false "already undone" and blocks every attempt to fix it.
+- **`undoable` is a server fact, separate from the risk class.** The client
+  offers the control only when the server said this particular execution
+  has a real undo target. Offering it on `reversible` would put a button on
+  actions Synora cannot reverse.
+
+Two capabilities create something reversible today — `conversation.create`
+and `workflow.schedule` — so those are what undo covers. Anything else
+answers `not-reversible` rather than improvising a reversal.
 
 ## Queue Architecture — not implemented (M7)
 

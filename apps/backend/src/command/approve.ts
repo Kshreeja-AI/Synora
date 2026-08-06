@@ -7,6 +7,7 @@ import {
   messageFor,
   requiresApproval,
   runBound,
+  undoColumns,
   type CommandExecutionResult,
   type ExecutionState,
 } from './execute';
@@ -393,6 +394,10 @@ export async function decideExecution(
           ? outcome.needsInput.question
           : messageFor('failed', freshDecision!.route, outcome.detail),
       completedAt: new Date(),
+      // Recorded here for the same reason as the direct path: whether an
+      // action can be reversed is a property of the ACTION, not of the
+      // route it took to run. See `undoColumns`.
+      ...undoColumns(outcome),
     },
   });
 

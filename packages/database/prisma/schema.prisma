@@ -3714,6 +3714,21 @@ model CommandExecution {
   /// Human-language reason a command did not complete, for the person to act on.
   failureReason  String?
 
+  /// What this execution CREATED, when it created something reversible, so
+  /// undo has a real target instead of parsing it back out of prose.
+  ///
+  /// Two plain columns rather than JSON: "what kind of thing" and "which
+  /// one" are the only questions undo asks, they are queryable, and a JSON
+  /// blob would invite storing the whole result — which is exactly the
+  /// payload this table promises never to hold.
+  undoKind       String?
+  undoTargetId   String?
+  /// Set once a person actually reversed it. Undo is itself an event worth
+  /// recording: "this was created then removed" and "this was never
+  /// created" are different histories.
+  undoneAt       DateTime?
+  undoneBy       String?
+
   /// Correlation, when this execution was one step of a multi-step plan.
   ///
   /// Deliberately a plain id rather than a relation with a cascade: an

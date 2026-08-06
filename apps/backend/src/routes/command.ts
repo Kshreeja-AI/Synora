@@ -7,6 +7,7 @@ import { planCommand } from '../command/plan';
 import { runPlan, getPlan } from '../command/run-plan';
 import { executeCommand } from '../command/execute';
 import { decideExecution, listExecutions, ApprovalRefused } from '../command/approve';
+import { undoExecution, UndoRefused } from '../command/undo';
 import { requireMembership } from '../services/checks';
 import { authMiddleware, type AuthRequest } from '../middleware/auth';
 import { requireWorkspaceAccess } from '../middleware/requireWorkspaceAccess';
@@ -323,6 +324,55 @@ router.get(
       });
       return res.json(createApiResponse({ items, total: items.length }));
     } catch (error) {
+      return next(error);
+    }
+  }
+);
+
+/**
+ * POST /api/command/:workspaceId/executions/:executionId/undo — reverse
+ * something Synora did.
+ *
+ * The counterpart to the risk classification the whole layer already runs
+ * on. `reversible` had been a claim the system made about actions without
+ * being able to act on it; this is the action.
+ *
+ * NOTHING THE CALLER SENDS DECIDES WHAT IS REVERSED. There is no body. The
+ * target was declared by the executor that performed the original work and
+ * stored at that moment, so there is deliberately nothing here to tamper
+ * with — the same shape as the decision route above, for the same reason.
+ *
+ * Permission is re-checked at undo time by the service that performs the
+ * reversal, not inherited from the original action. Having been allowed to
+ * create something is not standing permission to remove it later.
+ */
+router.post(
+  '/:workspaceId/executions/:executionId/undo',
+  authMiddleware,
+  searchLimiter,
+  requireWorkspaceAccess(),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const result = await undoExecution(req.params.executionId, {
+        userId: req.userId!,
+        workspaceId: req.params.workspaceId,
+      });
+      return res.json(createApiResponse(result));
+    } catch (error) {
+      if (error instanceof UndoRefused) {
+        // 200 with an explicit refusal, exactly as the decision route does.
+        // The request was well-formed and correctly handled; the ANSWER is
+        // "no, and here is why". An error status would make a legitimate
+        // refusal look like a malfunction.
+        return res.json(
+          createApiResponse({
+            executionId: req.params.executionId,
+            undone: false,
+            reason: error.reason,
+            message: error.userMessage,
+          })
+        );
+      }
       return next(error);
     }
   }

@@ -324,10 +324,28 @@ export function setScheduleEnabled(
   return schedule;
 }
 
-export function deleteSchedule(scheduleId: string, workspaceId: string): boolean {
+/**
+ * Removes a schedule from memory AND from the durable record.
+ *
+ * ASYNC FOR A REASON, and the reason is a bug this used to have: it only
+ * ever removed the in-memory entry, while `persistSchedule` had written the
+ * schedule to the store at creation. `hydrateSchedules` loads everything in
+ * that store at startup, so a deleted schedule came back the next time the
+ * process restarted — and came back silently, because nobody watches for
+ * the return of something they already deleted. A deletion that does not
+ * survive a restart is not a deletion.
+ */
+export async function deleteSchedule(
+  scheduleId: string,
+  workspaceId: string
+): Promise<boolean> {
   const schedule = getSchedule(scheduleId, workspaceId);
   if (!schedule) return false;
   schedules.delete(schedule.id);
+  // Store first-and-only-if the in-memory removal was legitimate: the
+  // workspace scoping above is what decides whether this caller may touch
+  // this id at all, and the store has no idea about workspaces.
+  await store.delete(schedule.id);
   return true;
 }
 

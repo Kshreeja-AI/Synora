@@ -8,9 +8,11 @@ import {
   useRunCommand,
   usePlanCommand,
   useRunPlan,
+  useUndoCommand,
   type CommandOutcome,
   type CommandPlan,
   type PlanRunResult,
+  type UndoOutcome,
 } from '@/lib/api/command';
 import { CommandOutcomeCard, COMMAND_STATE_LABEL } from '@/components/command/CommandOutcome';
 import { CommandPlanPreview, CommandPlanResult } from '@/components/command/CommandPlanCard';
@@ -63,6 +65,15 @@ export default function CommandPage() {
   const run = useRunCommand(workspaceId);
   const planIt = usePlanCommand(workspaceId);
   const runPlan = useRunPlan(workspaceId);
+  const undoIt = useUndoCommand(workspaceId);
+  const [undoResult, setUndoResult] = useState<UndoOutcome | null>(null);
+  /**
+   * Kept apart from `undoResult` on purpose. A request that never arrived
+   * is not one of the server's refusal reasons, and borrowing one of them
+   * would put a specific, wrong explanation in front of a person whose real
+   * situation is "nobody knows yet".
+   */
+  const [undoUnreachable, setUndoUnreachable] = useState(false);
   const { data: history } = useCommandExecutions(workspaceId);
 
   /** Only one answer is ever on screen, so nothing stale reads as current. */
@@ -70,6 +81,10 @@ export default function CommandPage() {
     setOutcome(null);
     setPlan(null);
     setPlanResult(null);
+    // An undo message left over from the previous command would sit under
+    // the next answer and read as belonging to it.
+    setUndoResult(null);
+    setUndoUnreachable(false);
   }
 
   /**
@@ -194,7 +209,31 @@ export default function CommandPage() {
         </p>
       )}
 
-      {outcome && <CommandOutcomeCard outcome={outcome} />}
+      {outcome && (
+        <CommandOutcomeCard
+          outcome={outcome}
+          onUndo={() => {
+            setUndoUnreachable(false);
+            undoIt.mutate(outcome.executionId, {
+              onSuccess: setUndoResult,
+              onError: () => setUndoUnreachable(true),
+            });
+          }}
+          undoPending={undoIt.isPending}
+          {...(undoResult ? { undoResult } : {})}
+        />
+      )}
+
+      {undoUnreachable && (
+        // Deliberately does not claim either outcome. The request may have
+        // reached the server and been carried out before the connection
+        // dropped, so "nothing was undone" would be as much of a guess as
+        // "it worked".
+        <p className="text-sm text-muted-foreground">
+          That did not reach Synora, so it is not clear whether this was undone. Check before
+          trying again.
+        </p>
+      )}
 
       {plan && (
         <CommandPlanPreview plan={plan} onRun={startPlan} running={runPlan.isPending} />

@@ -195,14 +195,14 @@ describe('collecting due schedules', () => {
     expect(getSchedule(s.id, WS)!.missedOccurrences).toBe(0);
   });
 
-  it('scopes lookups and listing to the workspace', () => {
+  it('scopes lookups and listing to the workspace', async () => {
     const s = makeInterval(HOUR);
     expect(getSchedule(s.id, 'ws_other')).toBeNull();
     expect(listSchedules('ws_other')).toEqual([]);
     expect(listSchedules(WS, 'wf_other')).toEqual([]);
     expect(listSchedules(WS, 'wf_1')).toHaveLength(1);
-    expect(deleteSchedule(s.id, 'ws_other')).toBe(false);
-    expect(deleteSchedule(s.id, WS)).toBe(true);
+    expect(await deleteSchedule(s.id, 'ws_other')).toBe(false);
+    expect(await deleteSchedule(s.id, WS)).toBe(true);
   });
 });
 
@@ -253,6 +253,23 @@ describe('schedule durability', () => {
     // A schedule nobody wrote must not fire.
     expect(await hydrateSchedules(T0)).toBe(0);
     expect(getSchedule('sched_bad', WS)).toBeNull();
+  });
+
+  it('does not resurrect a deleted schedule on the next restart', async () => {
+    // A REAL BUG this pins. `deleteSchedule` used to remove only the
+    // in-memory entry while creation had written the schedule to the store,
+    // so `hydrateSchedules` brought it back the next time the process
+    // started — silently, because nobody watches for the return of
+    // something they already deleted. A deletion that does not survive a
+    // restart is not a deletion.
+    const s = makeInterval(HOUR);
+    await persistSchedule(s.id);
+
+    expect(await deleteSchedule(s.id, WS)).toBe(true);
+
+    resetSchedules();
+    expect(await hydrateSchedules(T0 + HOUR)).toBe(0);
+    expect(getSchedule(s.id, WS)).toBeNull();
   });
 
   it('leaves a disabled schedule alone across a restart', async () => {

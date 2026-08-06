@@ -203,7 +203,7 @@ describe('declared permissions match the real surfaces', () => {
   afterAll(async () => {
     // The owner leg of the probes creates real in-memory schedules.
     for (const schedule of listSchedules(workspaceId)) {
-      deleteSchedule(schedule.id, workspaceId);
+      await deleteSchedule(schedule.id, workspaceId);
     }
     await prisma.workspace.deleteMany({ where: { id: workspaceId } });
     await prisma.user.deleteMany({ where: { email: { in: emails } } });

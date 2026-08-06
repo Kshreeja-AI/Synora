@@ -44,7 +44,23 @@ export interface CommandOutcome {
   appPath?: string;
   /** On needs-input only: the concrete choices behind the question. */
   candidates?: { id: string; name: string }[];
+  /**
+   * Whether SYNORA can take this back — not whether a person could undo it
+   * by hand somewhere. Absent unless the server recorded a real undo
+   * target, so the UI can never offer a button on a promise nobody made.
+   */
+  undoable?: true;
 }
+
+/** The answer to an undo request: it happened, or it was refused and why. */
+export type UndoOutcome =
+  | { executionId: string; undone: true; kind: string; message: string; undoneAt: string }
+  | {
+      executionId: string;
+      undone: false;
+      reason: 'not-reversible' | 'already-undone' | 'not-completed';
+      message: string;
+    };
 
 /** A decision that was not carried out, and why. */
 export interface CommandRefusal {
@@ -122,6 +138,25 @@ export function useDecideCommand(workspaceId: string) {
         `/api/command/${workspaceId}/executions/${input.executionId}/decision`,
         { decision: input.decision, ...(input.reason ? { reason: input.reason } : {}) },
       ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [COMMAND_EXECUTIONS_KEY, workspaceId] });
+    },
+  });
+}
+
+/**
+ * Reverses something Synora did.
+ *
+ * NO BODY, deliberately — the same shape as the decision call above, for
+ * the same reason. What gets reversed was declared by the executor that did
+ * the original work and stored then; there is nothing here a tampered
+ * client could point somewhere else.
+ */
+export function useUndoCommand(workspaceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (executionId: string) =>
+      api.post<UndoOutcome>(`/api/command/${workspaceId}/executions/${executionId}/undo`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [COMMAND_EXECUTIONS_KEY, workspaceId] });
     },

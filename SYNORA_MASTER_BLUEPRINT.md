@@ -711,9 +711,57 @@ test that reached a third party to prove an authorization rule would be
 doing outside Synora exactly what it is checking inside. The immediate-run
 branch is therefore exercised in production, not in the suite.
 
+**Slice 19: undo — the risk class stops being an adjective.** From slice 3
+onward `reversible` was a class the layer REASONED with: it is why creating
+a conversation runs without an approval gate, and the whole approval policy
+leans on it. Nothing in the system could actually reverse anything, so the
+word described what a person could go and do by hand somewhere else, wearing
+the costume of a property of the action. That is precisely the shape of
+thing this project keeps refusing to ship, and it had been sitting inside
+the layer's own vocabulary.
+
+Four rules the implementation is built around, each guarding a way undo
+could be worse than no undo:
+
+1. **The target is declared, never guessed.** The executor that performed
+   the work names what would reverse it, at the moment it performs it, and
+   that is what gets stored (`undoKind`, `undoTargetId`). Undo never infers
+   a target from a capability id or parses one back out of the summary
+   prose. A wrong guess here deletes the wrong thing.
+2. **Permission is re-checked at undo time**, through the same service-level
+   checks the original action went through — `conversationService.delete`
+   enforces `conversation:manage`, and a new `deleteScheduleAuthorized`
+   enforces `tool:manage` for a command path that never travels through the
+   HTTP middleware. Having once been allowed to create something is not
+   standing permission to remove it later.
+3. **Once, and only once.** The reversal is claimed with a conditional
+   update, and a second attempt is refused rather than quietly repeated.
+4. **Not available for everything.** Most actions cannot be reversed, and
+   the answer says so plainly. The UI offers the button ONLY when the server
+   declared that particular execution undoable — never from the risk class,
+   which would put a button on things Synora cannot reverse.
+
+**Reverse first, record second** — deliberately the opposite of the approval
+path's order, and chosen by asking which lie a crash in the middle leaves
+behind. Record-then-reverse would leave a record claiming "undone" for
+something still there and would refuse every later attempt to fix it;
+reverse-then-record leaves a record saying "not undone" for something
+already gone, and a retry costs at most a second reversal that is a no-op.
+A stale "not yet" is recoverable; a false "already done" is not.
+
+**A real pre-existing bug found by building this**: `deleteSchedule` removed
+only the in-memory entry, while creation had written the schedule to the
+durable store — so `hydrateSchedules` brought every deleted schedule back on
+the next restart. Silently, because nobody watches for the return of
+something they already deleted. The HTTP delete route had the same bug. Both
+are fixed at the source, with a regression test that persists, deletes,
+restarts and asserts nothing comes back.
+
 **Not yet built**: no voice or accessibility input path, no learned
-personalization, no undo, and no way to approve a paused plan step from
-the plan view itself (the approvals panel below it is where that happens).
+personalization, undo covers only the two capabilities that create something
+reversible (conversations and schedules), and there is no way to approve a
+paused plan step from the plan view itself (the approvals panel below it is
+where that happens).
 Bound: search,
 conversation-create, provider-metrics, approvals-waiting, activity-recent,
 agent-preview and workflow-schedule; the rest honestly report `not-bound`

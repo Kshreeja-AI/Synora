@@ -8,8 +8,9 @@
  * very last step and put the person back to guessing.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { CommandOutcomeCard } from '../CommandOutcome';
 import type { CommandOutcome, CommandState } from '@/lib/api/command';
 
@@ -103,6 +104,63 @@ describe('CommandOutcomeCard', () => {
     // Not after something ran: that would invite someone to go redo work
     // that just happened.
     expect(screen.queryByRole('link', { name: /do this yourself/i })).not.toBeInTheDocument();
+  });
+
+  describe('undo', () => {
+    it('offers undo only when the SERVER said this can be undone', async () => {
+      const onUndo = vi.fn();
+      const { unmount } = render(
+        <CommandOutcomeCard outcome={outcome({ undoable: true })} onUndo={onUndo} />,
+      );
+      expect(screen.getByRole('button', { name: /undo this/i })).toBeInTheDocument();
+      expect(onUndo).not.toHaveBeenCalled();
+      unmount();
+
+      // A completed action with no undo target. Offering the button here
+      // on the strength of "it ran" would promise a reversal that does not
+      // exist, and the person finds out by pressing it.
+      render(<CommandOutcomeCard outcome={outcome()} onUndo={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: /undo this/i })).not.toBeInTheDocument();
+    });
+
+    it('never shows undo on a surface that cannot perform it', () => {
+      // No handler means this card is being read, not acted on. A button
+      // that did nothing would be worse than no button.
+      render(<CommandOutcomeCard outcome={outcome({ undoable: true })} />);
+      expect(screen.queryByRole('button', { name: /undo this/i })).not.toBeInTheDocument();
+    });
+
+    it('undoes only when asked, exactly once', async () => {
+      const onUndo = vi.fn();
+      render(<CommandOutcomeCard outcome={outcome({ undoable: true })} onUndo={onUndo} />);
+      await userEvent.click(screen.getByRole('button', { name: /undo this/i }));
+      expect(onUndo).toHaveBeenCalledTimes(1);
+      // Gone after one press. Undo is a one-time thing and the server
+      // refuses a second attempt, so leaving the button would invite a
+      // press whose only possible outcome is a refusal.
+      expect(screen.queryByRole('button', { name: /undo this/i })).not.toBeInTheDocument();
+    });
+
+    it('reports the outcome in the server own words, not its own', () => {
+      render(
+        <CommandOutcomeCard
+          outcome={outcome({ undoable: true })}
+          onUndo={vi.fn()}
+          undoResult={{
+            executionId: 'exec_1',
+            undone: false,
+            reason: 'already-undone',
+            message: 'This was already undone, so nothing was done again.',
+          }}
+        />,
+      );
+      expect(screen.getByTestId('command-undo-result')).toHaveTextContent(
+        /already undone, so nothing was done again/i,
+      );
+      // A client-side "Undone!" would be the UI asserting something it did
+      // not verify — and here it would be asserting the opposite of true.
+      expect(screen.getByTestId('command-outcome').textContent).not.toMatch(/^Undone/m);
+    });
   });
 
   it('states no verdict about whether an outcome was good', () => {

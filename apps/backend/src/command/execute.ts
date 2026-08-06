@@ -134,6 +134,16 @@ export interface CommandExecutionResult {
    * UI can offer them rather than making the person retype a name.
    */
   candidates?: NamedCandidate[];
+  /**
+   * Whether Synora can actually take this back — declared by the executor
+   * that did the work, not inferred from the risk class.
+   *
+   * The distinction is the point. `reversible` says a person COULD undo
+   * this somewhere; `undoable` says SYNORA can, from here. A UI that
+   * offered undo on the risk class would put a button on things it cannot
+   * reverse, which is a promise broken at the moment someone relies on it.
+   */
+  undoable?: true;
 }
 
 /**
@@ -160,6 +170,15 @@ type BoundExecutor = (
 ) => Promise<{
   result: unknown;
   summary: string;
+  /**
+   * What this created, when it created something a person could reverse.
+   *
+   * Declared by the executor rather than inferred, because only the code
+   * that performed the action knows what would undo it. An undo layer
+   * guessing from a capability id would eventually guess wrong, and the
+   * cost of a wrong guess here is deleting the wrong thing.
+   */
+  undo?: { kind: 'conversation' | 'schedule'; targetId: string };
 }>;
 
 const BOUND: Readonly<Record<string, BoundExecutor>> = {
@@ -349,6 +368,7 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
       summary: `Scheduled "${resolution.entity.name}" to run ${parsed.describe}. First run ${new Date(
         schedule.nextFireAt
       ).toISOString()}. You can change or delete this on the Workflows page.`,
+      undo: { kind: 'schedule', targetId: schedule.id },
     };
   },
 
@@ -441,9 +461,33 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
     return {
       result: { id: conversation.id, title: conversation.title },
       summary: `Created the conversation "${conversation.title}".`,
+      undo: { kind: 'conversation', targetId: conversation.id },
     };
   },
 };
+
+/**
+ * The two audit columns that record what an execution created.
+ *
+ * A shared function rather than two inline expressions because there are
+ * TWO places a bound capability runs — directly, and through an approval —
+ * and both must record reversibility the same way. Today only `reversible`
+ * capabilities declare an undo target and those never reach the approval
+ * gate, so the approval path's call is a consistency guarantee rather than
+ * a live branch: the moment a capability's risk class changes, undo keeps
+ * working instead of silently going missing. The mapping is tested
+ * directly, so it is not an untested line in either caller.
+ */
+export function undoColumns(outcome: {
+  ok: boolean;
+  undo?: { kind: 'conversation' | 'schedule'; targetId: string };
+}): { undoKind: string | null; undoTargetId: string | null } {
+  // A failed or unfinished run created nothing, whatever it may have said
+  // on the way out. Recording an undo target for it would point undo at
+  // something that does not exist.
+  if (!outcome.ok || !outcome.undo) return { undoKind: null, undoTargetId: null };
+  return { undoKind: outcome.undo.kind, undoTargetId: outcome.undo.targetId };
+}
 
 /** Human-language outcome for each non-completed state. */
 export function messageFor(
@@ -552,14 +596,24 @@ export async function runBound(
   subject: string,
   rawText: string
 ): Promise<
-  | { ok: true; result: unknown; summary: string }
+  | {
+      ok: true;
+      result: unknown;
+      summary: string;
+      undo?: { kind: 'conversation' | 'schedule'; targetId: string };
+    }
   | { ok: false; detail?: string; needsInput?: { question: string; candidates: NamedCandidate[] } }
 > {
   const executor = BOUND[capabilityId];
   if (!executor) return { ok: false };
   try {
     const outcome = await executor(context, subject, rawText);
-    return { ok: true, result: outcome.result, summary: outcome.summary };
+    return {
+      ok: true,
+      result: outcome.result,
+      summary: outcome.summary,
+      ...(outcome.undo ? { undo: outcome.undo } : {}),
+    };
   } catch (error) {
     if (error instanceof NeedsInput) {
       // Not a failure: the capability worked exactly as designed and is
@@ -637,12 +691,14 @@ export async function executeCommand(
   let result: unknown;
   let summary: string | undefined;
   let candidates: NamedCandidate[] | undefined;
+  let undo = { undoKind: null as string | null, undoTargetId: null as string | null };
 
   if (state === 'completed') {
     const outcome = await runBound(route!.capabilityId, context, understanding.subject, commandText);
     if (outcome.ok) {
       result = outcome.result;
       summary = outcome.summary;
+      undo = undoColumns(outcome);
     } else if (outcome.needsInput) {
       // Distinct from failed on purpose: the capability is fine, the
       // sentence is missing one thing, and blaming a bug would send the
@@ -679,6 +735,7 @@ export async function executeCommand(
       completedAt: state === 'completed' ? new Date() : null,
       planId: correlation?.planId ?? null,
       planStepIndex: correlation?.planStepIndex ?? null,
+      ...undo,
     },
   });
 
@@ -695,5 +752,8 @@ export async function executeCommand(
     ...(route?.appPath ? { appPath: route.appPath } : {}),
     // The choices behind a needs-input question, as data a UI can offer.
     ...(candidates && candidates.length > 0 ? { candidates } : {}),
+    // Absent unless this execution recorded a real undo target, so a client
+    // cannot read "reversible risk class" as "there is an undo button".
+    ...(undo.undoKind ? { undoable: true as const } : {}),
   };
 }

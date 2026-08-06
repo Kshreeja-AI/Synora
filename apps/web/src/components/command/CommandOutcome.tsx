@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import type { CommandOutcome, CommandState } from '@/lib/api/command';
+import { useState } from 'react';
+import type { CommandOutcome, CommandState, UndoOutcome } from '@/lib/api/command';
 
 /**
  * What Synora did, or did not do, and why.
@@ -65,7 +66,53 @@ function toneFor(state: CommandState): string {
   return 'border-l-4 border-l-muted-foreground';
 }
 
-export function CommandOutcomeCard({ outcome }: { outcome: CommandOutcome }) {
+/**
+ * Take it back.
+ *
+ * Offered ONLY when the server said this particular execution has a real
+ * undo target — never from the risk class, which says a person could undo
+ * it somewhere, not that Synora can from here. A button that appeared on
+ * "reversible" would be a promise broken exactly when someone leaned on it.
+ *
+ * It disappears once used. Undo is a one-time thing and the server refuses
+ * a second attempt anyway; leaving the button there would invite a press
+ * whose only possible outcome is a refusal message.
+ */
+function UndoControl({
+  onUndo,
+  pending,
+}: {
+  onUndo: () => void;
+  pending?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onUndo}
+      disabled={pending}
+      className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+    >
+      {pending ? 'Undoing…' : 'Undo this'}
+    </button>
+  );
+}
+
+export function CommandOutcomeCard({
+  outcome,
+  onUndo,
+  undoPending,
+  undoResult,
+}: {
+  outcome: CommandOutcome;
+  /** Absent on surfaces that only read outcomes; the button then never appears. */
+  onUndo?: () => void;
+  undoPending?: boolean;
+  undoResult?: UndoOutcome;
+}) {
+  // Local, because it is about this card's own history: once a person has
+  // pressed undo here, offering it again on the same card is offering a
+  // refusal.
+  const [pressed, setPressed] = useState(false);
   return (
     <section
       className={`space-y-2 rounded-md border p-4 ${toneFor(outcome.state)}`}
@@ -117,6 +164,27 @@ export function CommandOutcomeCard({ outcome }: { outcome: CommandOutcome }) {
           <Link href={outcome.appPath} className="underline underline-offset-2">
             Do this yourself in the app
           </Link>
+        </p>
+      )}
+
+      {/* The counterpart to the sentence above. "This ran" is a much easier
+          thing to read when the next line offers a way back. */}
+      {outcome.undoable && onUndo && !pressed && !undoResult && (
+        <UndoControl
+          onUndo={() => {
+            setPressed(true);
+            onUndo();
+          }}
+          pending={undoPending}
+        />
+      )}
+
+      {/* The server's own words for what undo did or refused, rendered
+          verbatim like every other message on this card. A client-side
+          "Undone!" would be the UI asserting something it did not verify. */}
+      {undoResult && (
+        <p className="text-sm" data-testid="command-undo-result">
+          {undoResult.message}
         </p>
       )}
 
