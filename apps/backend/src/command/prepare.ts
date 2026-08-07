@@ -69,8 +69,12 @@ function prepareCapability(route: CommandRoute, role: WorkspaceRole): PreparedCa
   };
 }
 
-export function prepareCommand(rawInput: string, role: WorkspaceRole): PreparedCommand {
-  const understanding = understandCommand(rawInput);
+export function prepareCommand(
+  rawInput: string,
+  role: WorkspaceRole,
+  opts: { textProviderConfigured?: boolean } = {}
+): PreparedCommand {
+  const understanding = understandCommand(rawInput, opts);
   const capabilities = understanding.routes.map((route) => prepareCapability(route, role));
 
   // First actionable candidate, in catalogue order — the catalogue is

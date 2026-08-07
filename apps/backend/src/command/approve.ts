@@ -11,7 +11,7 @@ import {
   type CommandExecutionResult,
   type ExecutionState,
 } from './execute';
-import { isRunnableHere } from './availability';
+import { isRunnableHere, anyTextProviderConfigured } from './availability';
 import { hasPermission, type Permission, type WorkspaceRole } from '../services/permissions';
 import { requireMembership } from '../services/checks';
 import { resumePlanAfterStep, type PlanRunResult } from './run-plan';
@@ -200,8 +200,13 @@ export async function decideExecution(
   // requester's role is what decides whether the action is permitted. The
   // approver's own authority is checked separately, below.
   const requester = await requireMembership(record.userId, record.workspaceId).catch(() => null);
+  // Same live availability as the direct path: an approval decided after a
+  // model was connected must not be refused on a stale static answer.
+  const approvalTextProviderConfigured = await anyTextProviderConfigured();
   const freshDecision = requester
-    ? decideCommand(record.commandText, requester.role)
+    ? decideCommand(record.commandText, requester.role, {
+        textProviderConfigured: approvalTextProviderConfigured,
+      })
     : null;
 
   if (decision === 'approved') {

@@ -1,5 +1,5 @@
 import { routesForIntent } from './capabilities';
-import { isRunnableHere, unavailableReason } from './availability';
+import { isRunnableHere, unavailableReason, withLiveAvailability } from './availability';
 import type {
   CommandIntent,
   CommandTextObservation,
@@ -202,7 +202,17 @@ function extractSubject(normalized: string, matched: RegExp | null): string {
  * never throws on hostile input — a command layer that can be crashed by a
  * sentence is a denial-of-service surface.
  */
-export function understandCommand(rawInput: string): CommandUnderstanding {
+export function understandCommand(
+  rawInput: string,
+  /**
+   * Deployment facts the sync grammar cannot look up itself. Callers with
+   * an async context compute `textProviderConfigured` once (network-free)
+   * and pass it in, so `needs-model` capabilities read as available where
+   * a model is genuinely connected. Absent = static catalogue answers,
+   * which only ever UNDER-claims — the safe direction for a default.
+   */
+  opts: { textProviderConfigured?: boolean } = {}
+): CommandUnderstanding {
   const raw = typeof rawInput === 'string' ? rawInput : '';
   // Truncate BEFORE matching so a megabyte of text cannot drive regex work.
   const normalized = raw.slice(0, MAX_COMMAND_LENGTH).trim().replace(/\s+/g, ' ');
@@ -257,11 +267,13 @@ export function understandCommand(rawInput: string): CommandUnderstanding {
   // first. Stable otherwise, so the catalogue's best-first order still
   // decides when nothing claims the sentence — a hint can promote a
   // capability, never hide one.
-  const routes = [...routesForIntent(rule.intent)].sort((a, b) => {
-    const aClaims = a.hint?.test(normalized) ? 1 : 0;
-    const bClaims = b.hint?.test(normalized) ? 1 : 0;
-    return bClaims - aClaims;
-  });
+  const routes = [...routesForIntent(rule.intent)]
+    .map((route) => withLiveAvailability(route, opts.textProviderConfigured ?? false))
+    .sort((a, b) => {
+      const aClaims = a.hint?.test(normalized) ? 1 : 0;
+      const bClaims = b.hint?.test(normalized) ? 1 : 0;
+      return bClaims - aClaims;
+    });
   const unknowns: string[] = [];
 
   if (subject.length === 0) {

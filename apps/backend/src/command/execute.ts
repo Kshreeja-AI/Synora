@@ -1,6 +1,6 @@
 import { prisma } from '@synora/database';
 import { prepareCommand, type PreparedCommand } from './prepare';
-import { unavailableReason, isRunnableHere } from './availability';
+import { unavailableReason, isRunnableHere, anyTextProviderConfigured } from './availability';
 import { privacyConsentService } from '../services/privacyConsent.service';
 import { getTextProviderMetrics } from '../ai/textResilience';
 import { searchService } from '../services/search.service';
@@ -552,8 +552,12 @@ export interface CommandDecision {
   detail?: string;
 }
 
-export function decideCommand(commandText: string, role: WorkspaceRole): CommandDecision {
-  const prepared = prepareCommand(commandText, role);
+export function decideCommand(
+  commandText: string,
+  role: WorkspaceRole,
+  opts: { textProviderConfigured?: boolean } = {}
+): CommandDecision {
+  const prepared = prepareCommand(commandText, role, opts);
   const { understanding } = prepared;
   const candidate = prepared.capabilities[0] ?? null;
   const route = candidate?.route ?? null;
@@ -691,7 +695,11 @@ export async function executeCommand(
    */
   correlation?: PlanCorrelation
 ): Promise<CommandExecutionResult> {
-  const decision = decideCommand(commandText, context.role);
+  // Computed ONCE per command (network-free registry scan), so the
+  // catalogue's static `needs-model` becomes a live deployment answer and
+  // the persisted `available` column tells the truth about THIS moment.
+  const textProviderConfigured = await anyTextProviderConfigured();
+  const decision = decideCommand(commandText, context.role, { textProviderConfigured });
   const { understanding, route } = decision;
   let { state, detail } = decision;
 

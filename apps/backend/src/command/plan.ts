@@ -164,7 +164,12 @@ function summarize(steps: PlannedStep[]): string {
  * from the same role always produces the same plan. Never throws on hostile
  * input — a planner a sentence can crash is a denial-of-service surface.
  */
-export function planCommand(commandText: string, role: WorkspaceRole): CommandPlan {
+export function planCommand(
+  commandText: string,
+  role: WorkspaceRole,
+  opts: { textProviderConfigured?: boolean } = {}
+): CommandPlan {
+  const textProviderConfigured = opts.textProviderConfigured ?? false;
   const originalText = typeof commandText === 'string' ? commandText : '';
   const decomposition = decomposeCommand(originalText);
 
@@ -184,7 +189,7 @@ export function planCommand(commandText: string, role: WorkspaceRole): CommandPl
     // The SAME decision function a single command goes through. Every
     // question is asked again for this step: what capability, may this
     // person, is it available here, does it need approval, can we drive it.
-    const decision = decideCommand(segment.text, role);
+    const decision = decideCommand(segment.text, role, { textProviderConfigured });
     observations.push(...decision.understanding.observations);
 
     steps.push({

@@ -31,6 +31,7 @@
  */
 
 import { prisma } from '@synora/database';
+import { anyTextProviderConfigured } from './availability';
 import { planCommand, type PlannedStep } from './plan';
 import { executeCommand, type ExecutionContext } from './execute';
 import { requireMembership } from '../services/checks';
@@ -122,7 +123,9 @@ export async function runPlan(
   commandText: string,
   context: ExecutionContext
 ): Promise<PlanRunResult> {
-  const plan = planCommand(commandText, context.role);
+  const plan = planCommand(commandText, context.role, {
+    textProviderConfigured: await anyTextProviderConfigured(),
+  });
 
   if (plan.status === 'cannot-plan') {
     // Deliberately NOT persisted: nothing was planned and nothing ran, so

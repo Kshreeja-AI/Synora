@@ -11,8 +11,14 @@
  * vocabulary nearly introduced.
  */
 
-import { describe, it, expect } from 'vitest';
-import { isRunnableHere, unavailableReason } from '../availability';
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  isRunnableHere,
+  unavailableReason,
+  withLiveAvailability,
+  anyTextProviderConfigured,
+} from '../availability';
+import { initConfig, __resetConfigForTests } from '../../config';
 import { routesForIntent } from '../capabilities';
 import { understandCommand } from '../understand';
 import type { CommandIntent, CommandRoute } from '../types';
@@ -85,5 +91,60 @@ describe('capability availability', () => {
     // slice adds a value, it must add a capability that uses it.
     const used = new Set(allRoutes().map((r) => r.availability));
     expect([...used].sort()).toEqual(['available', 'needs-credentials', 'needs-model']);
+  });
+});
+
+describe('live availability — needs-model becomes a deployment answer', () => {
+  afterEach(async () => {
+    delete process.env.OLLAMA_BASE_URL;
+    __resetConfigForTests();
+    await initConfig();
+  });
+
+  it('reports no text provider configured in a bare deployment', async () => {
+    __resetConfigForTests();
+    await initConfig();
+    await expect(anyTextProviderConfigured()).resolves.toBe(false);
+  });
+
+  it('flips ai.generate to available once an endpoint is REALLY configured', async () => {
+    // End to end through env → config → registry → understander, no mocks:
+    // the same wiring a real deployment uses.
+    process.env.OLLAMA_BASE_URL = 'http://gpu.example.com/v1';
+    __resetConfigForTests();
+    await initConfig();
+
+    await expect(anyTextProviderConfigured()).resolves.toBe(true);
+    const result = understandCommand('Explain how our billing works', {
+      textProviderConfigured: true,
+    });
+    expect(result.routes[0].availability).toBe('available');
+    // The "needs a language model" unknown is gone — the person is no
+    // longer warned away from a capability that would work.
+    expect(result.unknowns.join(' ')).not.toMatch(/language model/i);
+  });
+
+  it('keeps the static under-claiming default when no flag is passed', () => {
+    // Sync callers with no async context get catalogue answers, which only
+    // ever UNDER-claim — the safe direction for a default.
+    const result = understandCommand('Explain how our billing works');
+    expect(result.routes[0].availability).toBe('needs-model');
+  });
+
+  it('flips ONLY needs-model — never credentials, never not-implemented', () => {
+    const credentialRoute = allRoutes().find((r) => r.availability === 'needs-credentials')!;
+    // A configured MODEL is not a configured SMTP server; flipping a
+    // credential-gated capability on the strength of a model would promise
+    // email nobody can send.
+    expect(withLiveAvailability(credentialRoute, true)).toBe(credentialRoute);
+    const available = allRoutes().find((r) => r.availability === 'available')!;
+    expect(withLiveAvailability(available, true)).toBe(available);
+  });
+
+  it('never mutates the shared catalogue entry', () => {
+    const route = allRoutes().find((r) => r.capabilityId === 'ai.generate')!;
+    const flipped = withLiveAvailability(route, true);
+    expect(flipped).not.toBe(route);
+    expect(route.availability).toBe('needs-model');
   });
 });

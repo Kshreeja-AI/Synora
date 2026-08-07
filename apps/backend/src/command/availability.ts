@@ -1,4 +1,5 @@
 import type { CommandRoute, CapabilityAvailability } from './types';
+import { PROVIDER_REGISTRY } from '../ai/registry';
 
 /**
  * WHY A CAPABILITY CANNOT RUN HERE, in words that name the actual next step.
@@ -58,4 +59,40 @@ export function unavailableReason(availability: CapabilityAvailability): string 
  */
 export function isRunnableHere(route: Pick<CommandRoute, 'availability'>): boolean {
   return route.availability === 'available';
+}
+
+/**
+ * Whether ANY registered text-generation provider is configured in this
+ * deployment right now.
+ *
+ * This is what turns the catalogue's static `needs-model` into a live
+ * answer. The catalogue is a description of Synora and cannot know what a
+ * particular deployment has connected; a person whose GPU box is
+ * configured and waiting must not be told "needs a language model" by a
+ * page that never looked.
+ *
+ * `isConfigured()` is network-free by descriptor contract, so this is
+ * cheap enough for every command. It deliberately proves CONFIGURED, not
+ * REACHABLE — a dead endpoint fails at generation time with the failure
+ * classification (and the health probes report it); pre-flighting a
+ * network call on every command would make the common path pay for the
+ * rare failure.
+ */
+export async function anyTextProviderConfigured(): Promise<boolean> {
+  for (const descriptor of PROVIDER_REGISTRY) {
+    if (!descriptor.capabilities.includes('text-generation')) continue;
+    if (await descriptor.isConfigured()) return true;
+  }
+  return false;
+}
+
+/**
+ * Live availability for one route: `needs-model` flips to `available` when
+ * a text provider is configured; every other value passes through
+ * untouched. The flip is a NEW object — the catalogue's own entries are
+ * never mutated, because they are shared across requests.
+ */
+export function withLiveAvailability(route: CommandRoute, textProviderConfigured: boolean): CommandRoute {
+  if (route.availability !== 'needs-model' || !textProviderConfigured) return route;
+  return { ...route, availability: 'available' };
 }

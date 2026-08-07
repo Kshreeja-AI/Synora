@@ -2,6 +2,7 @@ import { Router, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { createApiResponse, NotFoundException } from '@synora/shared';
 import { understandCommand } from '../command/understand';
+import { anyTextProviderConfigured } from '../command/availability';
 import { prepareCommand } from '../command/prepare';
 import { planCommand } from '../command/plan';
 import { runPlan, getPlan } from '../command/run-plan';
@@ -50,7 +51,11 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { command } = understandRequestSchema.parse(req.body);
-      return res.json(createApiResponse(understandCommand(command)));
+      return res.json(
+        createApiResponse(
+          understandCommand(command, { textProviderConfigured: await anyTextProviderConfigured() })
+        )
+      );
     } catch (error) {
       return next(error);
     }
@@ -84,7 +89,13 @@ router.post(
     try {
       const { command } = understandRequestSchema.parse(req.body);
       const membership = await requireMembership(req.userId!, req.params.workspaceId);
-      return res.json(createApiResponse(prepareCommand(command, membership.role)));
+      return res.json(
+        createApiResponse(
+          prepareCommand(command, membership.role, {
+            textProviderConfigured: await anyTextProviderConfigured(),
+          })
+        )
+      );
     } catch (error) {
       return next(error);
     }
@@ -120,7 +131,13 @@ router.post(
     try {
       const { command } = understandRequestSchema.parse(req.body);
       const membership = await requireMembership(req.userId!, req.params.workspaceId);
-      return res.json(createApiResponse(planCommand(command, membership.role)));
+      return res.json(
+        createApiResponse(
+          planCommand(command, membership.role, {
+            textProviderConfigured: await anyTextProviderConfigured(),
+          })
+        )
+      );
     } catch (error) {
       return next(error);
     }
