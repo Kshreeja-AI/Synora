@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { OpenAICompatibleStreamProvider } from './openaiCompatible';
 import { TextGenerationStreamProvider } from '../types';
 import { DeepSeekStreamProvider } from './deepseek';
+import { OpenRouterStreamProvider } from './openrouter';
 
 interface VendorCase {
   id: string;
@@ -23,6 +24,11 @@ const VENDORS: VendorCase[] = [
     id: 'deepseek',
     envVar: 'DEEPSEEK_API_KEY',
     make: (apiKey) => new DeepSeekStreamProvider(apiKey),
+  },
+  {
+    id: 'openrouter',
+    envVar: 'OPENROUTER_API_KEY',
+    make: (apiKey) => new OpenRouterStreamProvider(apiKey),
   },
 ];
 

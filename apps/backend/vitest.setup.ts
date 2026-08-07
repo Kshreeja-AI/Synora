@@ -12,6 +12,7 @@ delete process.env.OLLAMA_BASE_URL;
 delete process.env.OLLAMA_API_KEY;
 delete process.env.OLLAMA_MODELS;
 delete process.env.DEEPSEEK_API_KEY;
+delete process.env.OPENROUTER_API_KEY;
 delete process.env.SELF_HOSTED_TEXT_BASE_URL;
 delete process.env.SELF_HOSTED_TEXT_API_KEY;
 delete process.env.SELF_HOSTED_TEXT_MODEL;
