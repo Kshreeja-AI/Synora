@@ -16,6 +16,7 @@ import {
 } from '../monitoring/metrics';
 import { Redis } from 'ioredis';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+import { assertAiBudget, recordAiSpend, AiBudgetExceededError } from '../ai/spend-guard';
 import { isCaptureActive } from '../eos/case-capture';
 import { privacyConsentService } from '../services/privacyConsent.service';
 
@@ -143,6 +144,14 @@ export function createGenerateResponseWorker() {
             workspaceId: conversation.workspaceId,
           });
 
+          // The budget gate, BEFORE a provider is even resolved. Chat is the
+          // one generation path that bypasses instrumentedGenerate entirely
+          // (it streams through a separate stack), so without this check the
+          // most-used path in the product would be the one path no cap
+          // binds. A budget refusal is not a provider failure and must not
+          // be retried — the retry would just re-refuse.
+          await assertAiBudget({ workspaceId: conversation.workspaceId });
+
           // Get provider
           const providerInstance = await resolver.resolve(provider);
 
@@ -177,6 +186,7 @@ export function createGenerateResponseWorker() {
 
           const timeToFirstToken = Date.now();
           let firstTokenReceived = false;
+          let providerReportedUsage = false;
           const providerCallTimer = aiProviderCallDuration.startTimer({ provider });
 
           for await (const chunk of providerInstance.generateStream({
@@ -215,6 +225,13 @@ export function createGenerateResponseWorker() {
                 })
               );
             } else if (chunk.type === 'usage') {
+              // Only real numbers count as "the provider reported usage".
+              // Ollama-style endpoints often send no usage at all, and the
+              // spend guard must see that as UNKNOWN (estimated floor), never
+              // as zero — zero would read as free.
+              if ((chunk.inputTokens ?? 0) > 0 || (chunk.outputTokens ?? 0) > 0) {
+                providerReportedUsage = true;
+              }
               accountant.setInputTokens(chunk.inputTokens || 0);
               accountant.incrementOutputTokens(chunk.outputTokens || 0);
 
@@ -321,6 +338,22 @@ export function createGenerateResponseWorker() {
             costCents: accounting.estimatedCostCents
           });
 
+          // Charge the spend AFTER the message transaction, never inside it:
+          // accounting failure must not roll back a persisted message (the
+          // tokens are spent either way). Raw-or-undefined counts keep
+          // unknown distinguishable from free on exactly the self-hosted
+          // path where usage reporting is unreliable.
+          await recordAiSpend({
+            workspaceId: conversation.workspaceId,
+            provider,
+            model,
+            inputTokens: providerReportedUsage ? accounting.inputTokens : undefined,
+            outputTokens: providerReportedUsage ? accounting.outputTokens : undefined,
+            fallbackChars:
+              finalText.length +
+              messageHistory.reduce((sum, m) => sum + m.content.length, 0),
+          });
+
           // Feed EOS/CIEP: provider matrix, prompt regression detection, and
           // evaluation case capture. Interaction text is only attached when
           // the user has consented to evaluation use; the consent lookup is
@@ -362,6 +395,21 @@ export function createGenerateResponseWorker() {
 
           return { success: true, messageId };
         } catch (err: any) {
+          // A budget refusal is policy, not malfunction: skip the failure
+          // telemetry that would page someone toward a provider dashboard,
+          // record the honest reason on the job, and abort the retry loop —
+          // retrying a refusal just refuses again.
+          if (err instanceof AiBudgetExceededError) {
+            await prisma.streamingJob.update({
+              where: { id: jobId },
+              data: { lastError: err.message, status: StreamingJobStatus.FAILED },
+            });
+            await redis.publish(
+              `job:${jobId}:stream`,
+              JSON.stringify({ type: 'error', payload: { message: err.message, code: 'AI_BUDGET_EXCEEDED' } })
+            );
+            throw err;
+          }
           aiProviderCallsTotal.inc({ provider, outcome: 'failed' });
 
           // A failure is the most valuable signal the observatory and prompt

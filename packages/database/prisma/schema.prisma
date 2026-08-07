@@ -256,6 +256,7 @@ model Workspace {
   toolDefinitions     ToolDefinition[]
   toolExecutions      ToolExecution[]
   toolQuota           ToolQuota?
+  aiSpendBudget       AiSpendBudget?
   toolSecrets         ToolSecret[]
   toolSecretAuditLogs ToolSecretAuditLog[]
 
@@ -2237,6 +2238,42 @@ model ToolWebhook {
 }
 
 // Tool workspace quota (limits per workspace)
+/// Hard AI spend/usage ceilings for one workspace.
+///
+/// WHY THIS EXISTS BEFORE ANY PAID PROVIDER IS CONNECTED: cost is already
+/// OBSERVED (pricing tables, the EOS cost monitor) but nothing anywhere
+/// STOPS spend. An uncapped metered credential in a public-facing app is
+/// an unbounded liability, so the cap ships first and the credential
+/// second — never the other way around.
+///
+/// Nullable maxima mean "no cap set", distinct from a cap of zero, which
+/// means "refuse everything". Token caps exist separately from cost caps
+/// because locally-served models have no per-token price: their cost
+/// reads as zero forever, and a cost cap alone would never bind them.
+///
+/// Counters are denormalized and reset LAZILY on access (the same
+/// converge-on-read discipline the approval deadlines use), with separate
+/// daily and monthly stamps so the two windows cannot corrupt each other.
+model AiSpendBudget {
+  id                   String    @id @default(cuid())
+  workspaceId          String    @unique
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  maxCostPerDayCents   Int?
+  maxCostPerMonthCents Int?
+  maxTokensPerDay      Int?
+
+  usedCostTodayCents   Int       @default(0)
+  usedCostMonthCents   Int       @default(0)
+  usedTokensToday      Int       @default(0)
+
+  lastDailyResetAt     DateTime  @default(now())
+  lastMonthlyResetAt   DateTime  @default(now())
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
 model ToolQuota {
   id                String          @id @default(cuid())
   workspaceId       String          @unique

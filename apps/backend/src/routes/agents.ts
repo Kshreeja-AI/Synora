@@ -260,7 +260,7 @@ router.get('/:workspaceId/agents/runs/:runId', async (req: AuthRequest, res, nex
  */
 router.post('/:workspaceId/agents/runs/:runId/steps/:stepId/approve', async (req: AuthRequest, res, next) => {
   try {
-    const runtime = await resolveAgentRuntime(req.userId!);
+    const runtime = await resolveAgentRuntime(req.userId!, req.params.workspaceId);
     const run = await approveStep(
       {
         runId: req.params.runId,
@@ -391,7 +391,7 @@ router.post('/:workspaceId/agents/:agentId/runs/preview', async (req: AuthReques
     const agent = getAgent(req.params.agentId, req.params.workspaceId);
     if (!agent) return next(new NotFoundException('Agent'));
 
-    const runtime = await resolveAgentRuntime(req.userId!);
+    const runtime = await resolveAgentRuntime(req.userId!, req.params.workspaceId);
     const report = await previewAgentPlan(
       {
         agent,
@@ -440,7 +440,7 @@ router.post('/:workspaceId/agents/:agentId/runs', async (req: AuthRequest, res, 
     // already done, which is too late for a budget to mean anything.
     await assertRunBudget(req.params.workspaceId);
 
-    const runtime = await resolveAgentRuntime(req.userId!);
+    const runtime = await resolveAgentRuntime(req.userId!, req.params.workspaceId);
 
     // Recall happens BEFORE the run and only if the agent declares it.
     // Retrieval runs as the requesting user, so an agent can never surface

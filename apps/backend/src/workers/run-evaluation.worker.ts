@@ -2,6 +2,7 @@ import { prisma } from '@synora/database'
 import { EvaluationStatus } from '@prisma/client'
 import { logger } from '../utils/logger'
 import { resolveProvider } from '../ai/resolver'
+import { assertAiBudget, recordAiSpend } from '../ai/spend-guard'
 
 export interface RunEvaluationJobData {
   evaluationRunId: string
@@ -35,7 +36,7 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
       throw new Error(`Evaluation run not found: ${evaluationRunId}`)
     }
 
-    const { datasetId, modelId, metrics } = evaluationRun
+    const { datasetId, modelId, metrics, workspaceId } = evaluationRun
 
     logger.info(`[worker] Starting evaluation run ${evaluationRunId}`, {
       datasetId,
@@ -51,6 +52,12 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
     if (!model) {
       throw new Error(`Model not found: ${modelId}`)
     }
+
+    // The budget gate, up front for the same reason as the provider check
+    // below: an evaluation run is a LOOP of generations, and the honest
+    // moment to refuse an over-budget workspace is before sample one, not
+    // after sample forty of a hundred.
+    await assertAiBudget({ workspaceId })
 
     // Resolve the provider once, up front — if it isn't configured, fail the
     // whole run honestly now rather than fail every sample individually.
@@ -105,6 +112,16 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
         const generation = await provider.generateText({
           prompt: sample.input,
           model: model.modelName,
+        })
+        // This path bypasses instrumentedGenerate (it holds its own provider
+        // instance), so it charges its own spend — raw counts, never ?? 0.
+        await recordAiSpend({
+          workspaceId,
+          provider: generation.provider,
+          model: generation.model,
+          inputTokens: generation.usage?.inputTokens,
+          outputTokens: generation.usage?.outputTokens,
+          fallbackChars: sample.input.length + generation.text.length,
         })
         const prediction = generation.text
 

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createApiResponse, TooManyRequestsException } from '@synora/shared';
 import { AIRateLimitedError } from '../ai';
 import { instrumentedGenerate } from '../ai/instrumentedGenerate';
+import { AiBudgetExceededError } from '../ai/spend-guard';
 import { listAvailableModels } from '../ai/models';
 import { checkProviderReadiness } from '../ai/verification';
 import { getTextProviderMetrics } from '../ai/textResilience';
@@ -120,6 +121,13 @@ router.post('/generate', authMiddleware, aiGenerationLimiter, async (req: AuthRe
     // a 429 with the same envelope the inbound limiters use, so clients
     // need exactly one back-off handler. Distinct from a vendor 429, which
     // surfaces as a provider error after a real call.
+    // A spend-cap refusal: policy, not malfunction. Same 429 envelope as
+    // the pacing refusal above, and the message already names the limit and
+    // when it resets — composed server-side by the guard, rendered verbatim.
+    if (error instanceof AiBudgetExceededError) {
+      next(new TooManyRequestsException(error.message));
+      return;
+    }
     if (error instanceof AIRateLimitedError) {
       next(new TooManyRequestsException(error.message));
       return;

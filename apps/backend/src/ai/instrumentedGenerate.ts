@@ -2,6 +2,7 @@ import { generateText } from './index';
 import { AIProviderError, AIRateLimitedError } from './types';
 import type { TextGenerationRequest, TextGenerationResult } from './types';
 import { recordAiInteraction } from '../eos/instrumentation';
+import { assertAiBudget, recordAiSpend } from './spend-guard';
 
 /**
  * Wraps `generateText()` so a call site reports to EOS under its OWN
@@ -19,8 +20,15 @@ import { recordAiInteraction } from '../eos/instrumentation';
  */
 export async function instrumentedGenerate(
   promptId: string,
-  request: TextGenerationRequest
+  request: TextGenerationRequest,
+  opts: { workspaceId?: string } = {}
 ): Promise<TextGenerationResult> {
+  // The budget gate runs BEFORE the try block on purpose: a budget refusal
+  // is not a provider failure, and letting it fall into the catch below
+  // would record it as one — sending an operator to a provider dashboard
+  // for a limit the founder set.
+  await assertAiBudget({ workspaceId: opts.workspaceId });
+
   const startedAt = Date.now();
 
   try {
@@ -33,6 +41,18 @@ export async function instrumentedGenerate(
       latencyMs: Date.now() - startedAt,
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
+    });
+    // RAW usage across this boundary — never `?? 0`. Absent counts trigger
+    // the guard's estimated floor, keeping unknown distinguishable from
+    // free (which matters exactly on the self-hosted path, where usage
+    // reporting is unreliable).
+    await recordAiSpend({
+      workspaceId: opts.workspaceId,
+      provider: result.provider,
+      model: result.model,
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      fallbackChars: request.prompt.length + result.text.length,
     });
     return result;
   } catch (error) {

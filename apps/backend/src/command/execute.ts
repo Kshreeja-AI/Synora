@@ -291,7 +291,7 @@ const BOUND: Readonly<Record<string, BoundExecutor>> = {
 
     // The same preview the Agents page runs: same planner, same validation,
     // same per-step checks. Never a re-implementation.
-    const runtime = await resolveAgentRuntime(context.userId);
+    const runtime = await resolveAgentRuntime(context.userId, context.workspaceId);
     const report = await previewAgentPlan(
       {
         agent: resolution.entity,

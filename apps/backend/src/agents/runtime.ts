@@ -86,7 +86,15 @@ const MODEL_NOTICE =
  * executes tools AS the human who started it, never with ambient authority,
  * so a cached runner would let one user's run inherit another's permissions.
  */
-export async function resolveAgentRuntime(requestedBy: string): Promise<ResolvedAgentRuntime> {
+export async function resolveAgentRuntime(
+  requestedBy: string,
+  /**
+   * The workspace whose AI budget this run spends against. Optional only
+   * for compatibility at the seam — every real caller has one, and passing
+   * it is what makes the spend guard's per-workspace layer bind agent runs.
+   */
+  workspaceId?: string
+): Promise<ResolvedAgentRuntime> {
   const toolRunner = createWorkspaceToolRunner({ requestedBy });
 
   let provider: string;
@@ -113,9 +121,11 @@ export async function resolveAgentRuntime(requestedBy: string): Promise<Resolved
 
   return {
     deps: {
-      planner: createModelPlanner((request) => instrumentedGenerate('agent.plan', request)),
+      planner: createModelPlanner((request) =>
+        instrumentedGenerate('agent.plan', request, { workspaceId })
+      ),
       toolRunner,
-      generate: (request) => instrumentedGenerate('agent.step.generate', request),
+      generate: (request) => instrumentedGenerate('agent.step.generate', request, { workspaceId }),
     },
     mode: 'model',
     provider,

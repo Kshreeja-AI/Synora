@@ -96,6 +96,16 @@ export const AppConfigSchema = z.object({
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),
     /**
+     * Process-wide hard ceilings on AI usage, enforced by ai/spend-guard.ts
+     * BEFORE any generation runs. Deployment-level kill switches: they bind
+     * every workspace at once, on top of any per-workspace AiSpendBudget
+     * row. Absent means no global cap — the development default. Token caps
+     * exist separately because locally-served models have no per-token
+     * price, so a cost cap alone would never bind them.
+     */
+    globalMaxCostPerDayCents: z.number().int().positive().optional(),
+    globalMaxTokensPerDay: z.number().int().positive().optional(),
+    /**
      * Synora's own outbound pacing toward text-generation vendors, keyed
      * per provider — the text-path twin of `embeddings.rateLimit`. `redis`
      * backend is required for multi-instance deployments (an in-memory

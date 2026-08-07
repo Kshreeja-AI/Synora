@@ -145,6 +145,12 @@ export async function loadConfig(
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
+      globalMaxCostPerDayCents: env.AI_GLOBAL_MAX_COST_PER_DAY_CENTS
+        ? readNumber(env, 'AI_GLOBAL_MAX_COST_PER_DAY_CENTS', 0)
+        : undefined,
+      globalMaxTokensPerDay: env.AI_GLOBAL_MAX_TOKENS_PER_DAY
+        ? readNumber(env, 'AI_GLOBAL_MAX_TOKENS_PER_DAY', 0)
+        : undefined,
       rateLimit: {
         backend: readString(
           env,

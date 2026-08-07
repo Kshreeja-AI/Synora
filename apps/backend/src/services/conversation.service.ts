@@ -374,7 +374,7 @@ export class ConversationService {
         prompt: `Based on this conversation, generate a concise 5-10 word title. Reply with ONLY the title, no punctuation.\n\n${messageContent}`,
         model: conversation.model,
         maxTokens: 20,
-      })
+      }, { workspaceId: conversation.workspaceId })
 
       const title = result.text || ''
       const cleanTitle = title
