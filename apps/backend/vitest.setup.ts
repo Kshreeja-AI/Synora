@@ -11,6 +11,7 @@ process.env.TOOL_SECRET_MASTER_KEY ||= 'test-only-not-a-real-secret-tool-master-
 delete process.env.OLLAMA_BASE_URL;
 delete process.env.OLLAMA_API_KEY;
 delete process.env.OLLAMA_MODELS;
+delete process.env.DEEPSEEK_API_KEY;
 delete process.env.SELF_HOSTED_TEXT_BASE_URL;
 delete process.env.SELF_HOSTED_TEXT_API_KEY;
 delete process.env.SELF_HOSTED_TEXT_MODEL;
