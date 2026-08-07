@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { secretsManager } from './secrets';
+import { encryptionService } from './crypto/encryption.service';
 import { initConfig } from './config';
 import { assertProductionLaunchGates } from './config/productionGates';
 import { createApp } from './app';
@@ -18,6 +19,14 @@ export async function initializeApp() {
   // Fail fast: secrets before config (config's DATABASE_URL/provider flags
   // depend on SecretsManager), config before anything else touches env vars.
   await secretsManager.validateRequired();
+  // Hand the tool-secret master key to the (sync, env-reading) encryption
+  // service from the full source chain, so a key mounted as a docker/k8s
+  // secret file works the same as a plain env var. Real values only —
+  // priming a placeholder would encrypt user secrets under a key that
+  // vanishes when a real one arrives.
+  encryptionService.prime(
+    await secretsManager.tryGetReal('TOOL_SECRET_MASTER_KEY', 'boot-prime')
+  );
   const config = await initConfig();
   // A metered AI credential with no global spend cap must not boot in
   // staging/production — the cap comes BEFORE the paid key, always.

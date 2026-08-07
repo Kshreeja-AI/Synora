@@ -209,6 +209,19 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     environments: ['staging', 'production'],
     requiredIn: [],
   },
+  {
+    key: 'TOOL_SECRET_MASTER_KEY',
+    description:
+      'Master key for AES-256-GCM encryption of stored tool secrets (crypto/encryption.service.ts). ' +
+      'Required where secrets hard-fail: tools are a shipped feature, and without this key the first ' +
+      'user who stores a tool secret hits a runtime failure that boot validation should have caught. ' +
+      'The encryption service is primed from the SecretsManager chain at boot, so file-mounted ' +
+      'docker/kubernetes secrets work as well as plain env vars.',
+    owner: 'backend',
+    environments: ['development', 'testing', 'qa', 'staging', 'production'],
+    requiredIn: ['staging', 'production'],
+    minLength: 32,
+  },
 ];
 
 /**

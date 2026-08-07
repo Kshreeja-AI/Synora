@@ -30,13 +30,34 @@ export class EncryptionService {
   // that actually handles secrets ran.
   private encryptionKey: Buffer | null = null
 
+  // Boot-time value handed over from the SecretsManager source chain (see
+  // prime()). Wins over the raw env read so that a key mounted as a
+  // docker/kubernetes secret file — which validateRequired() sees but
+  // process.env does not — cannot pass boot validation and then miss at
+  // runtime.
+  private primedMasterKey: string | null = null
+
   /**
-   * Get master encryption key from environment.
+   * Hand this service the master key the SecretsManager chain resolved at
+   * boot. Pass only REAL values (tryGetReal) — priming with a generated
+   * placeholder would encrypt real user secrets under a key that vanishes
+   * the moment a real one is configured. Undefined is a no-op: the raw
+   * env read below stays as the fallback, which is what development uses.
+   */
+  prime(masterKey: string | undefined): void {
+    if (masterKey) {
+      this.primedMasterKey = masterKey
+      this.encryptionKey = null
+    }
+  }
+
+  /**
+   * Master key: boot-primed value first, raw env var as fallback.
    * In production this should come from HashiCorp Vault, AWS KMS, or similar;
-   * the env var is the current source (see SecretsManager).
+   * the SecretsManager chain (primed at boot) / env var is the current source.
    */
   private getMasterKey(): string {
-    const key = process.env.TOOL_SECRET_MASTER_KEY
+    const key = this.primedMasterKey ?? process.env.TOOL_SECRET_MASTER_KEY
     if (!key) {
       throw new Error('TOOL_SECRET_MASTER_KEY environment variable is required for secret encryption')
     }
@@ -52,7 +73,7 @@ export class EncryptionService {
 
   /** Whether a master key is present, without throwing. For health checks. */
   isConfigured(): boolean {
-    return Boolean(process.env.TOOL_SECRET_MASTER_KEY)
+    return Boolean(this.primedMasterKey ?? process.env.TOOL_SECRET_MASTER_KEY)
   }
 
   /**

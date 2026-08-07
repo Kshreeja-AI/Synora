@@ -37,6 +37,7 @@ function goodProductionEnv(): Record<string, string> {
     JWT_SECRET: GOOD_SECRET,
     NEXTAUTH_SECRET: GOOD_SECRET,
     DATABASE_URL: 'postgresql://synora:realpass@db.internal:5432/synora',
+    TOOL_SECRET_MASTER_KEY: GOOD_SECRET,
   };
 }
 
@@ -57,6 +58,9 @@ describe('validateRequired', () => {
     expect(error!.message).toContain('JWT_SECRET');
     expect(error!.message).toContain('NEXTAUTH_SECRET');
     expect(error!.message).toContain('DATABASE_URL');
+    // Tools are a shipped feature — a boot without the key that encrypts
+    // their stored secrets must fail HERE, not at a user's first save.
+    expect(error!.message).toContain('TOOL_SECRET_MASTER_KEY');
     expect(error!.message).not.toContain('STRIPE_SECRET_KEY');
   });
 
