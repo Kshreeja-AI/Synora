@@ -1,7 +1,28 @@
 import OpenAI from 'openai';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
-import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
+import {
+  OpenAICompatibleTextProvider,
+  verifyOpenAICompatibleKey,
+} from './openaiCompatible.provider';
+
+/**
+ * Bare Ollama checks no API key — but a REMOTE deployment must never be
+ * exposed raw, and the token its fronting proxy checks arrives here as
+ * `OLLAMA_API_KEY`, sent as a standard Bearer header. The placeholder is
+ * kept for the unprotected local case because the SDK requires a non-empty
+ * string; Ollama itself ignores it.
+ */
+function ollamaClient(): OpenAI {
+  const { ollamaBaseUrl, ollamaApiKey } = getConfig().ai;
+  if (!ollamaBaseUrl) {
+    throw new Error('Ollama requires OLLAMA_BASE_URL to be set.');
+  }
+  return new OpenAI({
+    apiKey: ollamaApiKey || 'ollama-does-not-require-an-api-key',
+    baseURL: ollamaBaseUrl,
+  });
+}
 
 /**
  * Ollama (self-hosted local/on-prem models). Ollama exposes an
@@ -28,14 +49,16 @@ export const ollamaDescriptor: AIProviderDescriptor = {
     return Boolean(getConfig().ai.ollamaBaseUrl);
   },
   async create() {
-    const { ollamaBaseUrl, ollamaModel } = getConfig().ai;
-    if (!ollamaBaseUrl) {
-      throw new Error('Ollama requires OLLAMA_BASE_URL to be set.');
-    }
-    return new OpenAICompatibleTextProvider(
-      'ollama',
-      new OpenAI({ apiKey: 'ollama-does-not-require-an-api-key', baseURL: ollamaBaseUrl }),
-      ollamaModel
-    );
+    const { ollamaModel } = getConfig().ai;
+    return new OpenAICompatibleTextProvider('ollama', ollamaClient(), ollamaModel);
+  },
+  /**
+   * `models.list` costs no tokens and returns 401 through a token-checking
+   * proxy — so a wrong or missing OLLAMA_API_KEY is caught at readiness
+   * time, not on a user's first message. Verifies through the same client
+   * construction the generation path uses; a separate check could drift.
+   */
+  async verifyCredential() {
+    return verifyOpenAICompatibleKey(ollamaClient(), 'Ollama');
   },
 };

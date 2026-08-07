@@ -33,9 +33,38 @@ vi.mock('openai', () => ({
 import { ollamaDescriptor } from './ollama.provider';
 import { OpenAICompatibleTextProvider } from './openaiCompatible.provider';
 
-function config(ai: { ollamaBaseUrl?: string; ollamaModel?: string }): void {
+function config(ai: { ollamaBaseUrl?: string; ollamaModel?: string; ollamaApiKey?: string }): void {
   getConfigMock.mockReturnValue({ ai: { ollamaModel: 'llama3.1', ...ai } });
 }
+
+describe('ollama endpoint authentication', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends the configured token — a protected remote endpoint is usable', async () => {
+    config({ ollamaBaseUrl: 'https://gpu.example.com/v1', ollamaApiKey: 'proxy-token' });
+    const provider = (await ollamaDescriptor.create()) as OpenAICompatibleTextProvider & {
+      client?: unknown;
+    };
+    // The mocked OpenAI class records its constructor options; the token
+    // must be the apiKey, which the SDK sends as a Bearer header.
+    const client = (provider as unknown as { client: { apiKey: string; baseURL: string } }).client;
+    expect(client.apiKey).toBe('proxy-token');
+    expect(client.baseURL).toBe('https://gpu.example.com/v1');
+  });
+
+  it('keeps the ignored placeholder when no token is configured — bare local Ollama', async () => {
+    config({ ollamaBaseUrl: 'http://localhost:11434/v1' });
+    const provider = await ollamaDescriptor.create();
+    const client = (provider as unknown as { client: { apiKey: string } }).client;
+    expect(client.apiKey).toBe('ollama-does-not-require-an-api-key');
+  });
+
+  it('exposes verifyCredential so a wrong token is caught at readiness, not on a user message', () => {
+    expect(typeof ollamaDescriptor.verifyCredential).toBe('function');
+  });
+});
 
 describe('ollama provider descriptor', () => {
   beforeEach(() => {

@@ -96,6 +96,14 @@ export const AppConfigSchema = z.object({
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),
     /**
+     * Optional Bearer token for a PROTECTED Ollama endpoint. Bare local
+     * Ollama checks no key; a remote deployment must sit behind a
+     * token-checking TLS proxy, and this is the token that proxy checks.
+     * Mirrors `embeddings.selfHostedApiKey` — plain config, sent as a
+     * standard Bearer header by the OpenAI SDK.
+     */
+    ollamaApiKey: z.string().optional(),
+    /**
      * Process-wide hard ceilings on AI usage, enforced by ai/spend-guard.ts
      * BEFORE any generation runs. Deployment-level kill switches: they bind
      * every workspace at once, on top of any per-workspace AiSpendBudget
@@ -231,6 +239,8 @@ export const AppConfigSchema = z.object({
     voyageModel: z.string().min(1).default('voyage-3'),
     cohereModel: z.string().min(1).default('embed-english-v3.0'),
     ollamaBaseUrl: z.string().url().optional(),
+    /** Optional Bearer token for a protected endpoint — see ai.ollamaApiKey. */
+    ollamaApiKey: z.string().optional(),
     ollamaModel: z.string().min(1).default('nomic-embed-text'),
     ollamaMaxBatchSize: z.number().int().positive().optional(),
     selfHostedBaseUrl: z.string().url().optional(),

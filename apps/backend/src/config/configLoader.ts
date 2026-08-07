@@ -144,6 +144,7 @@ export async function loadConfig(
       bedrockRegion: env.BEDROCK_REGION || undefined,
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
+      ollamaApiKey: env.OLLAMA_API_KEY || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
       globalMaxCostPerDayCents: env.AI_GLOBAL_MAX_COST_PER_DAY_CENTS
         ? readNumber(env, 'AI_GLOBAL_MAX_COST_PER_DAY_CENTS', 0)
@@ -276,6 +277,7 @@ export async function loadConfig(
       voyageModel: readString(env, 'EMBEDDING_VOYAGE_MODEL', defaults.embeddings.voyageModel),
       cohereModel: readString(env, 'EMBEDDING_COHERE_MODEL', defaults.embeddings.cohereModel),
       ollamaBaseUrl: env.EMBEDDING_OLLAMA_BASE_URL || undefined,
+      ollamaApiKey: env.EMBEDDING_OLLAMA_API_KEY || undefined,
       ollamaModel: readString(env, 'EMBEDDING_OLLAMA_MODEL', defaults.embeddings.ollamaModel),
       ollamaMaxBatchSize: env.EMBEDDING_OLLAMA_MAX_BATCH_SIZE
         ? readNumber(env, 'EMBEDDING_OLLAMA_MAX_BATCH_SIZE', 64)
