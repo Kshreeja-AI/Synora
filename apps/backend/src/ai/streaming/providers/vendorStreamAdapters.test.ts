@@ -12,6 +12,7 @@ import { OpenAICompatibleStreamProvider } from './openaiCompatible';
 import { TextGenerationStreamProvider } from '../types';
 import { DeepSeekStreamProvider } from './deepseek';
 import { OpenRouterStreamProvider } from './openrouter';
+import { GroqStreamProvider } from './groq';
 
 interface VendorCase {
   id: string;
@@ -29,6 +30,11 @@ const VENDORS: VendorCase[] = [
     id: 'openrouter',
     envVar: 'OPENROUTER_API_KEY',
     make: (apiKey) => new OpenRouterStreamProvider(apiKey),
+  },
+  {
+    id: 'groq',
+    envVar: 'GROQ_API_KEY',
+    make: (apiKey) => new GroqStreamProvider(apiKey),
   },
 ];
 

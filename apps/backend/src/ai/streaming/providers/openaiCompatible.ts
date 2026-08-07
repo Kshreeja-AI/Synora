@@ -1,8 +1,8 @@
 /**
  * Generic streaming provider for ANY OpenAI-compatible endpoint — remote
- * Ollama, vLLM, TGI, llama.cpp server. One implementation instead of a
- * fourth copy of the ~120-line body openai.ts / deepseek.ts / openrouter.ts
- * each carry.
+ * Ollama, vLLM, TGI, llama.cpp server. Also the base the deepseek /
+ * openrouter / groq vendor adapters are named instances of; only
+ * openai.ts still carries the original duplicated body.
  *
  * Two deliberate departures from the existing streaming adapters:
  *
