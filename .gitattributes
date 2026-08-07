@@ -1,0 +1,5 @@
+# Shell scripts must check out with LF everywhere: a script copied from a
+# Windows checkout to a Linux box with CRLF endings fails on its first
+# line ("\r: command not found"). The GPU-box setup script is exactly
+# that copy path — see infrastructure/gpu-box/README.md.
+*.sh text eol=lf
