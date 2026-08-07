@@ -234,4 +234,7 @@ export const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
   'test-jwt-secret-key-for-testing-only',
   'test-only-not-a-real-secret-tool-master-key-000000',
   'sk_test_fake_key_for_testing',
+  // .env.example's JWT_SECRET line — 40 characters, so it sails past the
+  // length floor; a copied example file must still not boot production.
+  'your-jwt-secret-key-change-in-production',
 ]);

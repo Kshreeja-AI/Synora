@@ -13,7 +13,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { SecretsManager } from '../secretsManager';
 import { EnvVarSecretSource } from '../sources/envVarSource';
 import { SecretsValidationError } from '../errors';
-import { SECRET_CATALOG } from '../registry';
+import { SECRET_CATALOG, KNOWN_DEV_SECRET_VALUES } from '../registry';
 import type { SecretEnvironment, SecretDescriptor } from '../types';
 
 const GOOD_SECRET = 'wJalrXUtnFEMIrealLookingGeneratedValue44char';
@@ -64,19 +64,26 @@ describe('validateRequired', () => {
     expect(error!.message).not.toContain('STRIPE_SECRET_KEY');
   });
 
-  it('refuses a production JWT_SECRET copied from this repository, without echoing it', async () => {
-    const env = goodProductionEnv();
-    env.JWT_SECRET = 'test-jwt-secret-key-for-testing-only';
-    const error = await manager(env).validateRequired().then(
-      () => null,
-      (e: unknown) => e as SecretsValidationError
-    );
-    expect(error).toBeInstanceOf(SecretsValidationError);
-    expect(error!.message).toContain('JWT_SECRET');
-    expect(error!.message).toContain('known development value');
-    // The refusal must never put the value itself into a message that
-    // will be logged.
-    expect(error!.message).not.toContain('test-jwt-secret-key-for-testing-only');
+  it('refuses EVERY known repo dev value as a production JWT_SECRET, without echoing it', async () => {
+    // Sweep the whole denylist: each entry earned its place by actually
+    // appearing in this repository (test setup, .env.example), and each
+    // must individually refuse a production boot.
+    for (const devValue of KNOWN_DEV_SECRET_VALUES) {
+      const env = goodProductionEnv();
+      env.JWT_SECRET = devValue;
+      const error = await manager(env).validateRequired().then(
+        () => null,
+        (e: unknown) => e as SecretsValidationError
+      );
+      expect(error, `denylisted value not refused: ${devValue.slice(0, 12)}…`).toBeInstanceOf(
+        SecretsValidationError
+      );
+      expect(error!.message).toContain('JWT_SECRET');
+      expect(error!.message).toContain('known development value');
+      // The refusal must never put the value itself into a message that
+      // will be logged.
+      expect(error!.message).not.toContain(devValue);
+    }
   });
 
   it('refuses an unfilled .env.example template value', async () => {
