@@ -36,7 +36,8 @@ S3-compatible, OpenAI-compatible AI endpoints. No host-specific code.
 | `JWT_SECRET`, `NEXTAUTH_SECRET` | REQUIRED_PRODUCTION · AUTH · SECRET | fresh, generated; never dev values |
 | `REDIS_URL` | REQUIRED_PRODUCTION · CACHE · SECRET | BullMQ + pub/sub + cache |
 | `NODE_ENV=production`, `PORT` | REQUIRED_PRODUCTION · DEPLOYMENT | |
-| `AI_GLOBAL_MAX_COST_PER_DAY_CENTS`, `AI_GLOBAL_MAX_TOKENS_PER_DAY` | REQUIRED_PRODUCTION · AI_PROVIDER | the kill switch; set BEFORE any paid key |
+| `AI_GLOBAL_MAX_COST_PER_DAY_CENTS`, `AI_GLOBAL_MAX_TOKENS_PER_DAY` | REQUIRED_PRODUCTION · AI_PROVIDER | the kill switch; set BEFORE any paid key — now BOOT-ENFORCED: staging/production refuse to start with a real metered key and no cap (config/productionGates.ts) |
+| `TOOL_SECRET_MASTER_KEY` | REQUIRED_PRODUCTION · SECURITY · SECRET | AES-256-GCM master key for stored tool secrets; min 32 chars, boot-validated |
 | `OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `OLLAMA_MODEL`, `OLLAMA_MODELS` | OPTIONAL_PRODUCTION · AI_PROVIDER | remote GPU box; API_KEY is SECRET |
 | `SELF_HOSTED_TEXT_BASE_URL/_API_KEY/_MODEL/_MODELS` | OPTIONAL_PRODUCTION · AI_PROVIDER | vLLM/TGI seam; swap runtimes with env only |
 | `EMBEDDING_OLLAMA_BASE_URL/_API_KEY/_MODEL` | OPTIONAL_PRODUCTION · AI_PROVIDER | local embeddings |
@@ -45,11 +46,17 @@ S3-compatible, OpenAI-compatible AI endpoints. No host-specific code.
 | `SMTP_*`, `MAIL_*` | OPTIONAL_PRODUCTION · EMAIL | console transport until set |
 | `STORAGE_*` (S3) | OPTIONAL_PRODUCTION · STORAGE · SECRET | filesystem until multi-instance |
 | `AI_RATE_LIMIT_*` | OBSERVABILITY/limits | redis backend required multi-instance |
-| `STRIPE_API_KEY`, `TOOL_SECRET_MASTER_KEY` | as applicable · SECRET | |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | OPTIONAL until billing ships · SECRET | billing resolver degrades honestly without them; become REQUIRED_PRODUCTION when payments launch |
 | `DATABASE_URL` (localhost), test JWT | DEVELOPMENT_ONLY / TEST_ONLY | never production |
 
 Rules: secrets only via environment/secret manager; never in git, logs, or
 `NEXT_PUBLIC_*`; `.env.example` holds placeholders only.
+
+Boot gates (enforced, with tests): staging/production refuse to start when
+a required secret is missing, is a known dev value copied from this
+repository, is an unfilled `<template>`, or is shorter than its minimum
+(secrets/registry.ts + validateRequired); and when a real metered AI key
+resolves with no global spend cap (config/productionGates.ts).
 
 ## 3. FOUNDER ACTIONS (everything only you can do)
 
@@ -107,5 +114,8 @@ backpressure, not by registrations.
 
 - `SB-013` (no secrets in logs) is advisory — no scanning test yet.
 - Malware-scanning seam for uploads: interface only, no scanner wired.
-- Dependency audit not run since CI outage began.
+- ~~Dependency audit not run since CI outage began~~ — run locally
+  2026-08-07: `pnpm audit` clean; the seven security override floors were
+  silently inactive under pnpm 10 (wrong manifest location) and are
+  re-activated in pnpm-workspace.yaml.
 - CSRF/cookie/CORS values need a real-domain pass at deploy time.
