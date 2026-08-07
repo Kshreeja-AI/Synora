@@ -8,6 +8,7 @@ import { realtimeService } from './services/realtime.service';
 import { initObservability, shutdownObservability } from './monitoring';
 import { markBootStart, emitBootComplete } from './eos/boot-collector.js';
 import { registerDependencyProbes } from './eos/dependency-probes.js';
+import { registerModelEndpointProbes } from './eos/model-endpoint-probes.js';
 import { startErrorRateMonitor } from './eos/error-rate-monitor.js';
 import { startLatencyTracker } from './eos/latency-tracker.js';
 import { startMemoryCollector } from './eos/memory-collector.js';
@@ -53,6 +54,9 @@ async function bootstrap() {
   await bootAgentStores();
   httpServer = await startServer(app, config);
   registerDependencyProbes();
+  // Active probes for the remote model endpoints (GPU box) — the passive
+  // observatory only sees endpoints that were actually called.
+  registerModelEndpointProbes();
   registerEgressPaths();
   startErrorRateMonitor();
   startLatencyTracker();
