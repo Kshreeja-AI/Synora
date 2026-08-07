@@ -16,6 +16,9 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     environments: ['development', 'testing', 'qa', 'staging', 'production'],
     requiredIn: ['staging', 'production'],
     rotationDays: 90,
+    // openssl rand -base64 32 (the documented generator) yields 44 chars;
+    // anything shorter than 32 was typed by hand, not generated.
+    minLength: 32,
   },
   {
     key: 'NEXTAUTH_SECRET',
@@ -24,6 +27,7 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     environments: ['development', 'testing', 'qa', 'staging', 'production'],
     requiredIn: ['staging', 'production'],
     rotationDays: 90,
+    minLength: 32,
   },
   {
     key: 'DATABASE_URL',
@@ -180,18 +184,41 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     environments: ['staging', 'production'],
     requiredIn: [],
   },
+  // Payments are not part of the launch scope: the billing resolver reads
+  // these lazily and answers "not configured" honestly without them, so a
+  // production boot must not demand Stripe credentials the launch doesn't
+  // use. Move both back to requiredIn: ['production'] when billing ships.
   {
     key: 'STRIPE_SECRET_KEY',
     description: 'Stripe secret API key used by the billing/subscription service for charging and managing payments.',
     owner: 'backend',
     environments: ['staging', 'production'],
-    requiredIn: ['production'],
+    requiredIn: [],
   },
   {
     key: 'STRIPE_WEBHOOK_SECRET',
     description: 'Stripe webhook signing secret used to verify webhook events from Stripe (payment confirmations, subscription updates, etc.).',
     owner: 'backend',
     environments: ['staging', 'production'],
-    requiredIn: ['production'],
+    requiredIn: [],
+  },
+  {
+    key: 'GROQ_API_KEY',
+    description: 'Groq API key used by the Groq text-generation provider (OpenAI-compatible endpoint).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
   },
 ];
+
+/**
+ * Literal development/test secret values that appear in this repository
+ * (test setup, examples, docs). A staging/production boot that resolves
+ * one of these has copied a development environment file — a value anyone
+ * can read from git is not a secret, and validateRequired() refuses it.
+ */
+export const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
+  'test-jwt-secret-key-for-testing-only',
+  'test-only-not-a-real-secret-tool-master-key-000000',
+  'sk_test_fake_key_for_testing',
+]);

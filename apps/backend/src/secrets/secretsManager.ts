@@ -4,6 +4,28 @@ import { ISecretAuditLog } from './interfaces/auditLog';
 import { SecretDescriptor, SecretEnvironment, SecretMetadata, SecretRecord } from './types';
 import { SecretNotFoundError, SecretsValidationError } from './errors';
 import { PlaceholderSecretSource } from './sources/placeholderSource';
+import { KNOWN_DEV_SECRET_VALUES } from './registry';
+
+/**
+ * Why a resolved value is not acceptable where secrets hard-fail, or
+ * undefined when it is. The returned reason is operator-facing and must
+ * never contain the value itself.
+ */
+function notProductionGrade(
+  value: string,
+  descriptor: SecretDescriptor
+): string | undefined {
+  if (KNOWN_DEV_SECRET_VALUES.has(value)) {
+    return 'a known development value from this repository';
+  }
+  if (value.startsWith('<') && value.endsWith('>')) {
+    return 'an unfilled template from .env.example';
+  }
+  if (descriptor.minLength !== undefined && value.length < descriptor.minLength) {
+    return `shorter than the ${descriptor.minLength}-character minimum for a real value`;
+  }
+  return undefined;
+}
 
 export interface SecretsManagerOptions {
   environment: SecretEnvironment;
@@ -155,7 +177,14 @@ export class SecretsManager {
 
   /**
    * Startup validation: for every catalog entry required in the current
-   * environment, confirm a value resolves. Call this once during app boot.
+   * environment, confirm a value resolves AND looks like a real value —
+   * not a literal development secret copied out of this repository, not an
+   * unfilled `<generate-me>` template from .env.example, not something
+   * shorter than the descriptor's minLength. "A value resolves" and "this
+   * deployment is actually secured" are different claims, and a production
+   * boot signing JWTs with a string everyone can read from git is the gap
+   * between them. Call this once during app boot.
+   *
    * Throws SecretsValidationError (fail-fast) in staging/production;
    * development/testing/qa only warn — matching which stages get the
    * placeholder fallback (see factory.ts#createSourceChain), so "use
@@ -170,6 +199,13 @@ export class SecretsManager {
       const value = await this.tryGet(descriptor.key, 'startup-validation');
       if (value === undefined) {
         missing.push(descriptor.key);
+        continue;
+      }
+      const reason = notProductionGrade(value, descriptor);
+      if (reason) {
+        // Annotate rather than invent a second error channel: the operator
+        // reads one list of what blocked the boot. Never echo the value.
+        missing.push(`${descriptor.key} (present but ${reason})`);
       }
     }
 

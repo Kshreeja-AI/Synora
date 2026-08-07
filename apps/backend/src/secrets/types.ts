@@ -63,4 +63,11 @@ export interface SecretDescriptor {
   requiredIn: SecretEnvironment[];
   /** Recommended rotation cadence; undefined means "no policy yet". */
   rotationDays?: number;
+  /**
+   * Minimum plausible length of a REAL value. Enforced by
+   * validateRequired() only where the secret is required AND the stage
+   * hard-fails (staging/production): a resolved value shorter than this is
+   * "present but not production-grade" — present is not the same as usable.
+   */
+  minLength?: number;
 }
