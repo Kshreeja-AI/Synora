@@ -4,7 +4,7 @@ import { AICapability } from './types';
 
 describe('PROVIDER_REGISTRY', () => {
   it('contains at least 10 providers', () => {
-    expect(PROVIDER_REGISTRY.length).toBeGreaterThanOrEqual(10);
+    expect(PROVIDER_REGISTRY.length).toBeGreaterThanOrEqual(12);
   });
 
   it('has unique provider IDs', () => {
@@ -56,6 +56,8 @@ describe('PROVIDER_REGISTRY', () => {
       'gemini',
       'bedrock',
       'ollama',
+      'groq',
+      'self-hosted',
     ];
     expectedProviders.forEach((id) => {
       expect(providerIds).toContain(id);

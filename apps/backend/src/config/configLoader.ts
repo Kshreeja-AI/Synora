@@ -146,6 +146,18 @@ export async function loadConfig(
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
       ollamaApiKey: env.OLLAMA_API_KEY || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
+      ollamaModels: (env.OLLAMA_MODELS || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      selfHostedTextBaseUrl: env.SELF_HOSTED_TEXT_BASE_URL || undefined,
+      selfHostedTextApiKey: env.SELF_HOSTED_TEXT_API_KEY || undefined,
+      selfHostedTextModel: env.SELF_HOSTED_TEXT_MODEL || undefined,
+      selfHostedTextModels: (env.SELF_HOSTED_TEXT_MODELS || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      groqModel: readString(env, 'GROQ_MODEL', defaults.ai.groqModel),
       globalMaxCostPerDayCents: env.AI_GLOBAL_MAX_COST_PER_DAY_CENTS
         ? readNumber(env, 'AI_GLOBAL_MAX_COST_PER_DAY_CENTS', 0)
         : undefined,

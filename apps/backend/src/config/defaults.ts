@@ -42,6 +42,7 @@ export interface StageDefaults {
     openrouterModel: string;
     deepseekModel: string;
     togetherModel: string;
+    groqModel: string;
     azureOpenAIApiVersion: string;
     bedrockModelId: string;
     ollamaModel: string;
@@ -186,6 +187,9 @@ const BASE_DEFAULTS: StageDefaults = {
     openrouterModel: 'anthropic/claude-3.5-sonnet',
     deepseekModel: 'deepseek-chat',
     togetherModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    // Groq's stable workhorse for open-source inference; overridable via
+    // GROQ_MODEL without a code change like every other default here.
+    groqModel: 'llama-3.3-70b-versatile',
     azureOpenAIApiVersion: '2024-10-21',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',

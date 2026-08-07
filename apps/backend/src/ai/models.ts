@@ -15,6 +15,7 @@
  */
 
 import { PROVIDER_REGISTRY } from './registry';
+import { getConfig } from '../config';
 import type { AICapability } from './types';
 
 export interface ModelCard {
@@ -227,15 +228,74 @@ const BEDROCK_MODELS: readonly ModelCard[] = [
   },
 ];
 
-const OLLAMA_MODELS: readonly ModelCard[] = [
+const GROQ_MODELS: readonly ModelCard[] = [
   {
-    id: 'llama3.3',
-    label: 'Llama 3.3 (local Ollama)',
-    description: 'Local inference via Ollama — no external cost.',
-    contextWindow: 32_000,
-    capabilities: { streaming: true },
+    id: 'llama-3.3-70b-versatile',
+    label: 'Llama 3.3 70B (Groq)',
+    description: 'Open-source model on Groq hardware — very fast, with a free tier.',
+    contextWindow: 128_000,
+    capabilities: { toolUse: true, streaming: true },
   },
 ];
+
+/**
+ * Ollama and self-hosted cards are built FROM CONFIGURATION at call time,
+ * not hand-maintained: which models a GPU box serves is a deployment fact
+ * only the deployment knows. The previous hardcoded single card ('llama3.3')
+ * did not even match the config default ('llama3.1') — a curated list for
+ * an endpoint someone else operates is stale by construction.
+ *
+ * Read lazily (never at module import) because tests mock config after
+ * importing this module, and a deployment's env is not final at import
+ * time either.
+ */
+function configuredEndpointModels(
+  defaultModel: string | undefined,
+  extraModels: readonly string[],
+  origin: string
+): readonly ModelCard[] {
+  const ids = [...new Set([defaultModel, ...extraModels].filter((id): id is string => Boolean(id)))];
+  return ids.map((id) => ({
+    id,
+    label: id,
+    description: `Open-source model served from ${origin} — no per-token cost.`,
+    // Conservative: the true limit belongs to the serving endpoint and is
+    // not knowable from here. Understating a context window degrades
+    // gracefully; overstating one truncates someone's document.
+    contextWindow: 8_000,
+    capabilities: { streaming: true },
+  }));
+}
+
+function ollamaCatalog(): readonly ModelCard[] {
+  try {
+    const { ollamaModel, ollamaModels } = getConfig().ai;
+    return configuredEndpointModels(ollamaModel, ollamaModels, 'your Ollama endpoint');
+  } catch {
+    // Config not initialized (unit tests, early boot): fall back to the
+    // default-model card so the catalog is never empty for a registered id.
+    return configuredEndpointModels('llama3.1', [], 'your Ollama endpoint');
+  }
+}
+
+function selfHostedCatalog(): readonly ModelCard[] {
+  try {
+    const { selfHostedTextModel, selfHostedTextModels } = getConfig().ai;
+    const cards = configuredEndpointModels(
+      selfHostedTextModel,
+      selfHostedTextModels,
+      'your self-hosted endpoint'
+    );
+    // Unconfigured self-hosted has no default model by design; a
+    // placeholder card keeps the catalog non-empty (the picker greys the
+    // provider out via configured=false anyway).
+    return cards.length > 0
+      ? cards
+      : configuredEndpointModels('(set SELF_HOSTED_TEXT_MODEL)', [], 'your self-hosted endpoint');
+  } catch {
+    return configuredEndpointModels('(set SELF_HOSTED_TEXT_MODEL)', [], 'your self-hosted endpoint');
+  }
+}
 
 /**
  * Maps a provider id to its curated model list. Extend when adding providers.
@@ -256,8 +316,19 @@ const CATALOG_BY_PROVIDER: Readonly<Record<string, readonly ModelCard[]>> = {
   openrouter: OPENROUTER_MODELS,
   'azure-openai': AZURE_MODELS,
   bedrock: BEDROCK_MODELS,
-  ollama: OLLAMA_MODELS,
+  groq: GROQ_MODELS,
 };
+
+/** The two config-driven catalogs, resolved at call time — see above. */
+function dynamicCatalog(providerId: string): readonly ModelCard[] | undefined {
+  if (providerId === 'ollama') return ollamaCatalog();
+  if (providerId === 'self-hosted') return selfHostedCatalog();
+  return undefined;
+}
+
+function catalogFor(providerId: string): readonly ModelCard[] {
+  return dynamicCatalog(providerId) ?? CATALOG_BY_PROVIDER[providerId] ?? [];
+}
 
 /**
  * Provider ids with a real adapter in `ai/streaming/providers/`. Streaming
@@ -319,9 +390,9 @@ export function negotiateModelSupport(
 export function modelCatalogGaps(): { providersWithoutModels: string[]; orphanedCatalogKeys: string[] } {
   const registeredIds = new Set(PROVIDER_REGISTRY.map((p) => p.id));
   return {
-    providersWithoutModels: PROVIDER_REGISTRY.filter(
-      (p) => (CATALOG_BY_PROVIDER[p.id] ?? []).length === 0
-    ).map((p) => p.id),
+    providersWithoutModels: PROVIDER_REGISTRY.filter((p) => catalogFor(p.id).length === 0).map(
+      (p) => p.id
+    ),
     orphanedCatalogKeys: Object.keys(CATALOG_BY_PROVIDER).filter((key) => !registeredIds.has(key)),
   };
 }
@@ -338,7 +409,7 @@ export async function listAvailableModels(): Promise<ProviderCatalog[]> {
       providerId: descriptor.id,
       providerName: descriptor.displayName,
       configured: await descriptor.isConfigured(),
-      models: (CATALOG_BY_PROVIDER[descriptor.id] ?? []).map((model) => ({
+      models: catalogFor(descriptor.id).map((model) => ({
         ...model,
         // Negotiated per model AND per provider: the same model reached
         // through two providers can be usable differently, because the
@@ -351,5 +422,5 @@ export async function listAvailableModels(): Promise<ProviderCatalog[]> {
 
 /** Test seam: sync accessor for use by unit tests that mock provider registry. */
 export function getModelsForProvider(providerId: string): readonly ModelCard[] {
-  return CATALOG_BY_PROVIDER[providerId] ?? [];
+  return catalogFor(providerId);
 }

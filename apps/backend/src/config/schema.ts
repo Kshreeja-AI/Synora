@@ -104,6 +104,26 @@ export const AppConfigSchema = z.object({
      */
     ollamaApiKey: z.string().optional(),
     /**
+     * The named models this deployment's Ollama endpoint serves, for the
+     * catalog and for benchmarking several models side by side. Selection
+     * stays per-request (`TextGenerationRequest.model`); this list only
+     * declares what exists. The default model need not be repeated here.
+     */
+    ollamaModels: z.array(z.string().min(1)).default([]),
+    /**
+     * Any OpenAI-compatible text server from env alone — vLLM, TGI,
+     * llama.cpp server, a second Ollama. BOTH url and model are required
+     * to count as configured: a generic endpoint's model id cannot be
+     * guessed, and guessing would recreate the placeholder dishonesty
+     * slice 13 eliminated.
+     */
+    selfHostedTextBaseUrl: z.string().url().optional(),
+    selfHostedTextApiKey: z.string().optional(),
+    selfHostedTextModel: z.string().optional(),
+    selfHostedTextModels: z.array(z.string().min(1)).default([]),
+    /** Groq-hosted open-source models (OpenAI-compatible; key in SecretsManager). */
+    groqModel: z.string().min(1),
+    /**
      * Process-wide hard ceilings on AI usage, enforced by ai/spend-guard.ts
      * BEFORE any generation runs. Deployment-level kill switches: they bind
      * every workspace at once, on top of any per-workspace AiSpendBudget
