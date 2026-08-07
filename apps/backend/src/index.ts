@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { secretsManager } from './secrets';
 import { initConfig } from './config';
+import { assertProductionLaunchGates } from './config/productionGates';
 import { createApp } from './app';
 import { initializeWorkers } from './workers/manager';
 import { logger } from './utils/logger';
@@ -18,6 +19,9 @@ export async function initializeApp() {
   // depend on SecretsManager), config before anything else touches env vars.
   await secretsManager.validateRequired();
   const config = await initConfig();
+  // A metered AI credential with no global spend cap must not boot in
+  // staging/production — the cap comes BEFORE the paid key, always.
+  await assertProductionLaunchGates(config, secretsManager);
   const app = createApp(config);
 
   // Initialize background workers for async task processing
