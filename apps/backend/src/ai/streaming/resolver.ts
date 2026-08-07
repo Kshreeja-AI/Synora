@@ -12,6 +12,8 @@ import { OpenRouterStreamProvider } from './providers/openrouter';
 import { GroqStreamProvider } from './providers/groq';
 import { DeepSeekStreamProvider } from './providers/deepseek';
 import { MockStreamProvider } from './providers/mock';
+import { OpenAICompatibleStreamProvider } from './providers/openaiCompatible';
+import { getConfig } from '../../config';
 
 type ProviderFactory = () => TextGenerationStreamProvider;
 
@@ -32,6 +34,40 @@ export class StreamingProviderResolver {
     this.registerFactory('gemini', () => new GeminiStreamProvider());
     this.registerFactory('openrouter', () => new OpenRouterStreamProvider());
     this.registerFactory('groq', () => new GroqStreamProvider());
+    // The two endpoint-driven providers stream through the shared
+    // OpenAI-compatible implementation, with settings resolved from
+    // getConfig() AT STREAM TIME — the first streaming adapters to go
+    // through the config layer instead of raw process.env. The callback
+    // returning null is what "not configured" means here.
+    this.registerFactory(
+      'ollama',
+      () =>
+        new OpenAICompatibleStreamProvider('ollama', () => {
+          try {
+            const { ollamaBaseUrl, ollamaApiKey } = getConfig().ai;
+            return ollamaBaseUrl ? { baseURL: ollamaBaseUrl, apiKey: ollamaApiKey } : null;
+          } catch {
+            return null;
+          }
+        })
+    );
+    this.registerFactory(
+      'self-hosted',
+      () =>
+        new OpenAICompatibleStreamProvider('self-hosted', () => {
+          try {
+            const { selfHostedTextBaseUrl, selfHostedTextApiKey, selfHostedTextModel } =
+              getConfig().ai;
+            // Same both-or-nothing rule as the descriptor: a URL without a
+            // model is half a configuration, and half is not configured.
+            return selfHostedTextBaseUrl && selfHostedTextModel
+              ? { baseURL: selfHostedTextBaseUrl, apiKey: selfHostedTextApiKey }
+              : null;
+          } catch {
+            return null;
+          }
+        })
+    );
     this.registerFactory('deepseek', () => new DeepSeekStreamProvider());
     this.registerFactory('mock', () => new MockStreamProvider());
 

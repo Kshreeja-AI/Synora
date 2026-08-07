@@ -342,6 +342,15 @@ const STREAMING_PROVIDER_IDS: ReadonlySet<string> = new Set([
   'gemini',
   'openrouter',
   'deepseek',
+  // Added atomically with their streaming adapters (the shared
+  // OpenAI-compatible stream provider); an invariant test now pins this
+  // set against the streaming resolver so the duplication can never
+  // silently drift again.
+  'ollama',
+  'self-hosted',
+  // Streaming adapter predates the descriptor (added in the multi-model
+  // slice); with both present it finally belongs here.
+  'groq',
 ]);
 
 /**
@@ -419,6 +428,13 @@ export async function listAvailableModels(): Promise<ProviderCatalog[]> {
     }))
   );
 }
+
+/**
+ * Test seam: the streaming-capable id set, exported ONLY so the lockstep
+ * invariant test can pin it against the streaming resolver's real factory
+ * keys. Production code must keep using negotiateModelSupport.
+ */
+export const STREAMING_PROVIDER_IDS_FOR_TESTS: ReadonlySet<string> = STREAMING_PROVIDER_IDS;
 
 /** Test seam: sync accessor for use by unit tests that mock provider registry. */
 export function getModelsForProvider(providerId: string): readonly ModelCard[] {
