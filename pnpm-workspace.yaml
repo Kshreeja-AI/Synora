@@ -9,3 +9,16 @@ packages:
 # prompt.
 onlyBuiltDependencies:
   - argon2
+
+# Security floors for transitive dependencies, moved here from the root
+# package.json's `pnpm.overrides` field — pnpm 10 stopped reading that
+# location and was silently ignoring these pins. This file is where pnpm 10
+# actually enforces them.
+overrides:
+  vitest: ^3.2.7
+  vite: ">=6.4.3"
+  esbuild: ">=0.28.1"
+  brace-expansion: ">=5.0.8"
+  minimatch: ">=9.0.3"
+  sharp: ">=0.35.0"
+  postcss: ">=8.5.12"
