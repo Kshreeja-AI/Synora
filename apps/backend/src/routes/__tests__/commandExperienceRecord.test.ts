@@ -55,6 +55,32 @@ describe('command execution experience fields', () => {
       .send({ command });
   }
 
+  function decide(executionId: string, decision: 'approved' | 'rejected') {
+    return request(app)
+      .post(`/api/command/${workspaceId}/executions/${executionId}/decision`)
+      .set('Cookie', ownerCookie)
+      .send({ decision });
+  }
+
+  async function makeTool(name: string, inputSchema: object) {
+    return prisma.toolDefinition.create({
+      data: {
+        workspaceId,
+        name,
+        displayName: name,
+        category: 'UTILITY',
+        description: 'test tool',
+        type: 'HTTP',
+        config: { url: 'https://example.invalid/hook', method: 'POST' },
+        inputSchema,
+        // requiresApproval keeps this hermetic — see commandToolExecute's
+        // own header. No test here fires a real webhook.
+        requiresApproval: true,
+        createdBy: ownerId,
+      },
+    });
+  }
+
   async function row(executionId: string) {
     return prisma.commandExecution.findUnique({ where: { id: executionId } });
   }
@@ -141,5 +167,86 @@ describe('command execution experience fields', () => {
     expect(res.body.data.state).toBe('completed');
     expect((await row(res.body.data.executionId))!.trainingEligibleAtCapture).toBe(false);
     spy.mockRestore();
+  });
+
+  describe('the approval/resume path', () => {
+    // `tool.execute` is the one bound capability that always stops for
+    // approval (`sensitive` risk, `mayNeedApproval: true`), so it is the
+    // only real producer for these two fields on the RESUMED run rather
+    // than the direct one. `approve.ts` writes latencyMs and
+    // clarificationQuestion in a SEPARATE update from `execute.ts`'s — this
+    // is the only place that second write path is exercised at all.
+
+    it('records latency for the RESUMED run only — null while waiting, real once approved', async () => {
+      await makeTool('Latency Probe', {});
+      const asked = await execute('run the Latency Probe tool').expect(200);
+      expect(asked.body.data.state).toBe('waiting-approval');
+
+      // Nothing ran yet, so there is nothing to time. A row that recorded a
+      // number here would be timing the wait for a human, not the work.
+      const waiting = await row(asked.body.data.executionId);
+      expect(waiting!.latencyMs).toBeNull();
+
+      const decided = await decide(asked.body.data.executionId, 'approved').expect(200);
+      expect(decided.body.data.state).toBe('completed');
+
+      // Written by approve.ts's own measurement — a genuinely different
+      // code path from execute.ts's, and this is the only test that
+      // exercises it.
+      const resumed = await row(asked.body.data.executionId);
+      expect(resumed!.latencyMs).toBeGreaterThanOrEqual(0);
+    });
+
+    it('records the clarification question discovered ONLY on approval, not before', async () => {
+      // Required fields the sentence cannot supply — needs-input is
+      // discoverable only once the tool actually runs, which for a
+      // sensitive capability happens on approval, never before.
+      await makeTool('Clarify Probe', {
+        type: 'object',
+        required: ['targetEnvironment'],
+      });
+      const asked = await execute('run the Clarify Probe tool').expect(200);
+      expect(asked.body.data.state).toBe('waiting-approval');
+
+      // The capability had not been asked to run yet, so there is no
+      // question to have stored.
+      expect((await row(asked.body.data.executionId))!.clarificationQuestion).toBeNull();
+
+      const decided = await decide(asked.body.data.executionId, 'approved').expect(200);
+      expect(decided.body.data.state).toBe('needs-input');
+
+      // Stored EXACTLY as the person received it — the same identity
+      // property the direct path's test pins, proven here on the second
+      // write site.
+      const stored = (await row(asked.body.data.executionId))!.clarificationQuestion;
+      expect(stored).toBe(decided.body.data.message);
+      expect(stored).toContain('targetEnvironment');
+    });
+
+    it('does not rewrite confidence or training eligibility on resume — they describe the ASK, not the decision', async () => {
+      // Both are captured once, at creation, by execute.ts. approve.ts's
+      // update must never touch them — a demoted-or-promoted consent
+      // state between ask and decision must not retroactively change what
+      // the ORIGINAL interaction was eligible for.
+      await privacyConsentService.setUserConsent(ownerId, workspaceId, { useForTraining: true });
+      await makeTool('Consent Probe', {});
+      const asked = await execute('run the Consent Probe tool').expect(200);
+      const atAsk = await row(asked.body.data.executionId);
+      expect(atAsk!.trainingEligibleAtCapture).toBe(true);
+      expect(atAsk!.confidence).not.toBeNull();
+
+      // Revoke BETWEEN the ask and the decision.
+      await privacyConsentService.setUserConsent(ownerId, workspaceId, { useForTraining: false });
+      await decide(asked.body.data.executionId, 'approved').expect(200);
+
+      const afterDecision = await row(asked.body.data.executionId);
+      // Unchanged by the revocation that happened after the ask — the
+      // record describes the moment of the interaction, not the moment of
+      // the decision.
+      expect(afterDecision!.trainingEligibleAtCapture).toBe(true);
+      expect(afterDecision!.confidence).toBe(atAsk!.confidence);
+
+      await privacyConsentService.setUserConsent(ownerId, workspaceId, { useForTraining: false });
+    });
   });
 });
