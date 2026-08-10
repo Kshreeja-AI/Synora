@@ -97,6 +97,10 @@ Everything else — optional AI providers, object storage, payments, error
 tracking — stays blank until you actually want that feature. **A blank
 optional value is not a problem and never blocks launch.**
 
+A per-variable walkthrough — what each founder-managed setting means, where
+each credential comes from, and how local and production addresses differ —
+is in `docs/operations/FOUNDER_ENVIRONMENT_GUIDE.md`.
+
 ---
 
 ## 4. Rotating a credential
