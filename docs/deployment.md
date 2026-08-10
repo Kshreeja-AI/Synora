@@ -81,11 +81,58 @@ configuration of something already there.
 
 ## Hosting the frontend
 
-`apps/web` is a standard Next.js 15 app — deploy it wherever you'd deploy
-any Next.js app (Vercel is the path of least resistance; a Node server or
-static export are also options depending on what the app actually needs
-once its state-management gap, see `PROJECT_HANDOVER.md` §11, is closed).
-There is no Synora-specific frontend deployment tooling to document yet.
+`Dockerfile.web` at the repository root builds `apps/web` into a
+production image, the companion to `Dockerfile` (the backend API).
+
+```bash
+# From the REPOSITORY ROOT — not apps/web. The app imports
+# @synora/design-system and @synora/shared from sibling directories, and a
+# build context scoped to apps/web cannot see them.
+docker build -f Dockerfile.web \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+  -t synora-web:local .
+
+docker run --rm -p 3000:3000 synora-web:local
+curl -f http://localhost:3000/api/health   # {"status":"ok","service":"web"}
+```
+
+**`NEXT_PUBLIC_API_URL` is baked in at BUILD time and cannot be changed
+afterwards.** It is substituted into the JavaScript the browser downloads,
+and into the `connect-src` of the Content-Security-Policy. A build made
+without the real address produces a site that tries to reach
+`localhost:3001` from the visitor's own machine, behind a CSP that forbids
+the real domain — while the server itself looks perfectly healthy. One
+image per environment, rebuilt when the address changes.
+
+It is passed as a build argument because it is **public** — a URL every
+visitor reads out of the page source. Build arguments are recoverable from
+a finished image, so a real secret must never be passed this way. The
+frontend needs no secrets at all, and a test in
+`apps/web/src/app/__tests__/productionDeployment.test.ts` fails if a
+secret-looking build argument is ever added.
+
+The image uses Next's `output: 'standalone'`: the build traces the files
+actually reached at run time and copies the real ones (symlinks resolved)
+into a self-contained tree — measured at 69 MB against 1.1 GB for the full
+workspace `node_modules`, which matters on a small VPS shared with
+Postgres, Redis and the API. `outputFileTracingRoot` points at the
+repository root so the workspace packages are traced too; the entry point
+is therefore `apps/web/server.js`, not `server.js`.
+
+Standalone deliberately omits `.next/static` and `public/` (it assumes a
+CDN serves them). Nothing here uses a CDN, so the image copies both
+explicitly — omitting either yields a site that renders with no styling
+and no images.
+
+**Alternatives** if you'd rather not self-host: `apps/web` is a standard
+Next.js 15 app and Vercel remains the path of least resistance. A static
+export is NOT an option — the app has server-rendered routes
+(`/invite/[token]`, `/share/[token]`) and an API route.
+
+**Not implemented**: no CD pipeline builds or pushes either image
+automatically (see "CI/CD Pipeline" below), and there is no
+`docker-compose.prod.yml` running the two together — the runbook wires
+them up with a reverse proxy instead.
 
 ## CI/CD Pipeline
 

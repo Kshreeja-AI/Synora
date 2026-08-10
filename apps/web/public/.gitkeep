@@ -1,0 +1,7 @@
+Kept so `apps/web/public/` exists even while empty.
+
+Dockerfile.web copies this directory into the runtime image, and a COPY of
+a path that does not exist fails the build. Committing the directory means
+the first person to drop a favicon or an image in here gets it served
+automatically, instead of discovering that the production build has been
+silently ignoring it.

@@ -1,0 +1,99 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------------
+# Synora web frontend — production image.
+#
+# The companion to `Dockerfile` (the backend API). Until this existed there
+# was no way to ship the user-facing site at all: a deployment could stand up
+# a working API with nothing in front of it.
+#
+# THE BUILD CONTEXT IS THE WHOLE REPOSITORY, not `apps/web`. The app imports
+# `@synora/design-system` and `@synora/shared`, which live in sibling
+# directories, and pnpm links them from the workspace root. A context scoped
+# to `apps/web` cannot see them. Build from the repository root:
+#
+#   docker build -f Dockerfile.web --build-arg NEXT_PUBLIC_API_URL=https://… .
+#
+# bookworm-slim (glibc) to match the backend image — one base image family
+# across both services, one set of OS-level surprises rather than two.
+# ---------------------------------------------------------------------------
+
+ARG NODE_IMAGE=node:22-bookworm-slim
+
+# --- Builder ---------------------------------------------------------------
+FROM ${NODE_IMAGE} AS builder
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+WORKDIR /app
+
+# THE PUBLIC BACKEND ADDRESS, and the one argument this build genuinely
+# needs. `NEXT_PUBLIC_*` values are substituted into the JavaScript the
+# browser downloads, so this is fixed at BUILD time — there is nothing left
+# to configure once the server starts. It also lands in the
+# Content-Security-Policy, which tells the browser which hosts the page may
+# contact.
+#
+# Get it wrong and the failure is quiet and total: the site tries to reach
+# `localhost:3001` from the visitor's own laptop, and its own CSP forbids
+# the real domain. The server looks perfectly healthy the whole time.
+#
+# SAFE AS A BUILD ARGUMENT ONLY BECAUSE IT IS PUBLIC — a URL every visitor
+# reads out of the page source. Build arguments are recoverable from a
+# finished image, so a real secret must never be passed this way. The
+# frontend needs no secrets at all, which is why this is the only one.
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+
+# The whole workspace (node_modules/.next/dist excluded via .dockerignore),
+# installed from the committed lockfile for a reproducible dependency tree.
+COPY . .
+RUN pnpm install --frozen-lockfile
+
+# Build the web app and only the workspace packages it depends on.
+RUN pnpm run build --filter=@synora/web...
+
+# --- Runtime ---------------------------------------------------------------
+FROM ${NODE_IMAGE} AS runtime
+ENV NODE_ENV=production
+ENV PORT=3000
+# Bind all interfaces: the default binds loopback inside the container,
+# which no port mapping or reverse proxy can then reach.
+ENV HOSTNAME=0.0.0.0
+WORKDIR /app
+
+# The traced, self-contained server — real files, no workspace symlinks.
+# This is what `output: 'standalone'` produces, and the reason this image
+# does not have to carry the whole dependency forest the way the backend
+# image does.
+#
+# Ownership is set on copy rather than by a later `chown -R`: a recursive
+# chown duplicates every file into a new layer, roughly doubling the image.
+COPY --from=builder --chown=node:node /app/apps/web/.next/standalone ./
+
+# THE TWO DIRECTORIES `standalone` DELIBERATELY LEAVES OUT.
+#
+# Next assumes a CDN serves them. Nothing here uses a CDN, so they are
+# copied in by hand. Skipping either produces a site that renders with no
+# styling and no images — which reads as a broken application rather than a
+# missing copy step, and is the single commonest way a standalone
+# deployment goes wrong.
+#
+# The paths mirror the workspace layout because the traced output preserves
+# it (the tracing root is the repository root, so the server lands at
+# apps/web/server.js, not at /app/server.js).
+COPY --from=builder --chown=node:node /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=node:node /app/apps/web/public ./apps/web/public
+
+USER node
+
+EXPOSE 3000
+
+# Probes the web server's own liveness only — never the backend. A check
+# that also called the API would report the frontend as down during a
+# backend restart, and the supervisor would then restart a healthy web
+# server, turning one outage into two.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "require('http').get('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+
+CMD ["node", "apps/web/server.js"]
