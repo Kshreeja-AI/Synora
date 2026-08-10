@@ -34,7 +34,14 @@
 
 [CmdletBinding()]
 param(
-    [string] $EnvFile = "apps/backend/.env.local"
+    [string] $EnvFile = "apps/backend/.env.local",
+
+    # Force every AUTO-GENERATED secret to be replaced with a fresh CSPRNG
+    # value, even though one is already present. Used after an exposure: a
+    # secret that has been seen is spent, and the only fix is a new one.
+    # Deliberately opt-in -- silently rotating JWT_SECRET on an ordinary run
+    # would log out every signed-in user and look like an outage.
+    [switch] $Rotate
 )
 
 $ErrorActionPreference = 'Stop'
@@ -254,9 +261,10 @@ if (Test-Path -LiteralPath $Target) {
 
 $PlaceholderPattern = '^(PASTE_|CHANGE_ME|YOUR_|REPLACE_|<)'
 
-$stats = [ordered]@{ Preserved = 0; Placeholder = 0; Generated = 0; Defaulted = 0 }
+$stats = [ordered]@{ Preserved = 0; Placeholder = 0; Generated = 0; Defaulted = 0; Rotated = 0 }
 $resolved = [ordered]@{}
 $generatedNames = @()
+$rotatedNames = @()
 
 foreach ($item in $Spec) {
     $name = $item.N
@@ -264,7 +272,13 @@ foreach ($item in $Spec) {
     $cur  = if ($had) { [string]$existing[$name] } else { '' }
     $real = $had -and -not [string]::IsNullOrWhiteSpace($cur) -and ($cur -notmatch $PlaceholderPattern)
 
-    if ($real) {
+    # Rotation is checked BEFORE preservation: an exposed secret is exactly the
+    # case where "a real value is already here" must NOT mean "leave it alone".
+    if ($Rotate -and $item.K -eq 'generated') {
+        $resolved[$name] = New-GeneratedSecret
+        $rotatedNames += $name
+        $stats.Rotated++
+    } elseif ($real) {
         $resolved[$name] = $cur                 # untouched, byte for byte
         $stats.Preserved++
     } elseif ($item.K -eq 'generated') {
@@ -358,6 +372,10 @@ Write-Host "    preserved unknown    : $($unknown.Count)"
 if ($generatedNames.Count -gt 0) {
     Write-Host "    generated (names only):"
     foreach ($n in $generatedNames) { Write-Host "      $n" -ForegroundColor Green }
+}
+if ($rotatedNames.Count -gt 0) {
+    Write-Host "    ROTATED - previous values are now dead (names only):" -ForegroundColor Cyan
+    foreach ($n in $rotatedNames) { Write-Host "      $n" -ForegroundColor Cyan }
 }
 Write-Host ""
 Write-Host "  File permissions: $aclNote"
