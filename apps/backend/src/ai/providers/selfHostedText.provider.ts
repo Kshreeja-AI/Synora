@@ -48,11 +48,28 @@ export const selfHostedTextDescriptor: AIProviderDescriptor = {
   id: 'self-hosted',
   displayName: 'Self-hosted (OpenAI-compatible)',
   capabilities: ['text-generation', 'code-generation'],
-  // A runtime the operator already owns, so tokens cost nothing and a COST
-  // cap can never bind it. The daily TOKEN cap is what bounds this provider
-  // — including if this endpoint is ever pointed at something that does
-  // bill, which the operator, not this file, would know.
-  metering: 'unmetered' as const,
+  /**
+   * DECLARED BY CONFIGURATION, not hardcoded — because this one descriptor
+   * serves two opposite economics.
+   *
+   * Pointed at an Ollama the operator already runs, tokens genuinely cost
+   * nothing and only the TOKEN cap can bound it. Pointed at a hosted
+   * OpenAI-compatible router, every token is billed. This file cannot tell
+   * those apart: both are "an OpenAI-compatible base URL".
+   *
+   * It used to answer `unmetered` for both, and the consequence was not
+   * theoretical — a deployment billing real money recorded 0 cents on every
+   * request, so `AI_GLOBAL_MAX_COST_PER_DAY_CENTS` could never trigger. The
+   * operator had configured a spending limit the code silently ignored.
+   *
+   * Now it asks. The default is `metered`, which fails closed on money: a
+   * wrong "metered" over-charges a free runtime and refuses slightly early —
+   * visible, and recoverable. A wrong "unmetered" removes the dollar cap
+   * entirely and is discovered on an invoice.
+   */
+  get metering(): 'metered' | 'unmetered' {
+    return getConfig().ai.selfHostedTextMetered ? 'metered' : 'unmetered';
+  },
   async isConfigured() {
     const { baseUrl, model } = settings();
     return Boolean(baseUrl && model);

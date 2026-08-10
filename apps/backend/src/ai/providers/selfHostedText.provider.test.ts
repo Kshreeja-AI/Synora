@@ -87,3 +87,39 @@ describe('self-hosted text descriptor', () => {
     await expect(selfHostedTextDescriptor.create()).rejects.toThrow(/SELF_HOSTED_TEXT_BASE_URL/);
   });
 });
+
+describe('metering is declared by configuration, not assumed', () => {
+  // Regression for a spend-safety hole found by running a REAL generation:
+  // this descriptor answered `unmetered` unconditionally, so a deployment
+  // pointed at a PAID OpenAI-compatible router recorded 0 cents on every
+  // request and AI_GLOBAL_MAX_COST_PER_DAY_CENTS could never trigger. The
+  // operator had configured a spending limit the code silently ignored.
+  const configure = (selfHostedTextMetered: boolean) =>
+    getConfigMock.mockReturnValue({
+      ai: {
+        selfHostedTextBaseUrl: 'https://router.example/v1',
+        selfHostedTextModel: 'some-model',
+        selfHostedTextApiKey: 'irrelevant-for-this-assertion',
+        selfHostedTextMetered,
+      },
+    });
+
+  it('reports metered when configuration says the endpoint bills', () => {
+    configure(true);
+    expect(selfHostedTextDescriptor.metering).toBe('metered');
+  });
+
+  it('reports unmetered only when explicitly told the runtime is free', () => {
+    configure(false);
+    expect(selfHostedTextDescriptor.metering).toBe('unmetered');
+  });
+
+  it('is read per call, so it cannot be frozen at module load', () => {
+    // The value is a getter rather than a literal precisely so a descriptor
+    // imported before config initialises still answers correctly afterwards.
+    configure(true);
+    expect(selfHostedTextDescriptor.metering).toBe('metered');
+    configure(false);
+    expect(selfHostedTextDescriptor.metering).toBe('unmetered');
+  });
+});

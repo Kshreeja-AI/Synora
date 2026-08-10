@@ -121,6 +121,11 @@ export const AppConfigSchema = z.object({
     selfHostedTextApiKey: z.string().optional(),
     selfHostedTextModel: z.string().optional(),
     selfHostedTextModels: z.array(z.string().min(1)).default([]),
+    // Does this endpoint bill per token? Defaults to TRUE -- fail closed on
+    // money. A wrong `false` silently disables the cost cap; a wrong `true`
+    // merely charges a self-hosted runtime that is actually free, which shows
+    // up as an early refusal rather than an unbounded bill.
+    selfHostedTextMetered: z.boolean().default(true),
     /** Groq-hosted open-source models (OpenAI-compatible; key in SecretsManager). */
     groqModel: z.string().min(1),
     /**

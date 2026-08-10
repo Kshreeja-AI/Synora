@@ -153,6 +153,12 @@ export async function loadConfig(
       selfHostedTextBaseUrl: env.SELF_HOSTED_TEXT_BASE_URL || undefined,
       selfHostedTextApiKey: env.SELF_HOSTED_TEXT_API_KEY || undefined,
       selfHostedTextModel: env.SELF_HOSTED_TEXT_MODEL || undefined,
+      // Defaults to TRUE — fail closed on money. The `self-hosted` slot serves
+      // both a free local runtime and a paid OpenAI-compatible router, and only
+      // the operator knows which. Assuming "free" makes the cost cap silently
+      // unenforceable against a real bill; assuming "paid" merely refuses a
+      // free runtime early, which is visible and recoverable.
+      selfHostedTextMetered: readString(env, 'SELF_HOSTED_TEXT_METERED', 'true') === 'true',
       selfHostedTextModels: (env.SELF_HOSTED_TEXT_MODELS || '')
         .split(',')
         .map((entry) => entry.trim())
