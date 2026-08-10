@@ -34,12 +34,49 @@ const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-1.5-flash': { inputPer1k: 0.000075, outputPer1k: 0.0003 },
 };
 
+/**
+ * Reduce a provider's model identifier to this table's key shape.
+ *
+ * WHY THIS IS NEEDED. There is no cross-vendor convention for model ids.
+ * Anthropic's own API says `claude-sonnet-5`; an OpenAI-compatible gateway
+ * may present the very same model as `Claude Sonnet 5`, and a gateway is
+ * free to prefix it (`anthropic/claude-sonnet-5`) or suffix a dated
+ * snapshot. All of those are the same priced model, and a lookup keyed on
+ * the raw string prices only one of them.
+ *
+ * That gap is not cosmetic. An unpriced model is treated as unpriceable by
+ * the spend guard, so with a cost cap configured the deployment either
+ * refuses to generate or charges a pessimistic ceiling -- for a model whose
+ * price is sitting right there in the table, unreachable behind punctuation.
+ *
+ * Deliberately conservative, and deliberately NOT vendor-aware: it lowercases
+ * and unifies separators, nothing more. It never invents a price, never maps
+ * one model onto another's rate, and never strips a version -- `Claude Opus
+ * 4.8` must not silently resolve to `claude-opus-4`, because quietly pricing
+ * a model at a cheaper sibling's rate is exactly the uncapped-bill failure
+ * this module exists to prevent. A genuinely unknown model stays unknown.
+ */
+export function normalizeModelId(model: string): string {
+  return model
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z0-9]+\//, '') // drop a gateway's `vendor/` routing prefix
+    .replace(/[\s._]+/g, '-') // spaces, dots and underscores all mean "-"
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+/** The table entry for a model id in any of its spellings, or undefined. */
+function lookupPricing(model: string): ModelPricing | undefined {
+  return MODEL_PRICING[model] ?? MODEL_PRICING[normalizeModelId(model)];
+}
+
 export function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number
 ): number {
-  const pricing = MODEL_PRICING[model];
+  const pricing = lookupPricing(model);
   if (!pricing) return 0;
 
   return (
@@ -77,7 +114,7 @@ export function priceModelUsd(
   inputTokens: number,
   outputTokens: number
 ): ModelPriceResult {
-  const pricing = MODEL_PRICING[model];
+  const pricing = lookupPricing(model);
   if (!pricing) return { known: false };
 
   return {

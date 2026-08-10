@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { estimateCost, estimateCostOrUnknown, isPriceKnown } from './pricing'
+import { estimateCost, estimateCostOrUnknown, isPriceKnown, normalizeModelId } from './pricing'
 
 describe('estimateCost', () => {
   it('computes cost from input/output token counts for a known model', () => {
@@ -48,5 +48,58 @@ describe('unknown price is distinguishable from free', () => {
     // A price of genuinely zero would still be KNOWN — the question is
     // about the table, not about the amount.
     expect(isPriceKnown('gpt-4o-mini')).toBe(true)
+  })
+})
+
+describe('gateway model-id spellings', () => {
+  // The configured production router presents Anthropic's models under
+  // display-style ids — `Claude Sonnet 5`, verified against its live /models
+  // endpoint — while this table is keyed the way Anthropic's own API spells
+  // them. Same model, same price, different punctuation; before normalisation
+  // the deployment's own default model was unpriceable, which with a cost cap
+  // set is the difference between generating and refusing.
+  it('prices the router spelling of the configured production model', () => {
+    expect(isPriceKnown('Claude Sonnet 5')).toBe(true)
+    expect(estimateCostOrUnknown('Claude Sonnet 5', 1000, 1000)).toBe(
+      estimateCostOrUnknown('claude-sonnet-5', 1000, 1000)
+    )
+  })
+
+  it('still prices the canonical api spelling', () => {
+    expect(isPriceKnown('claude-sonnet-5')).toBe(true)
+  })
+
+  it('sees through a gateway vendor prefix', () => {
+    expect(isPriceKnown('anthropic/claude-sonnet-5')).toBe(true)
+  })
+
+  it('treats dots and hyphens in a version as the same thing', () => {
+    // Router says `Claude Haiku 4.5`; the table says `claude-haiku-4-5`.
+    expect(isPriceKnown('Claude Haiku 4.5')).toBe(true)
+  })
+
+  it('is unaffected by surrounding whitespace or casing', () => {
+    expect(isPriceKnown('  CLAUDE   SONNET   5  ')).toBe(true)
+  })
+
+  // The safety boundary. Normalisation must never widen into guessing.
+  it('does NOT collapse a newer version onto an older sibling price', () => {
+    // `Claude Opus 4.8` normalises to claude-opus-4-8, which is absent.
+    // Resolving it to `claude-opus-4` would silently bill a different model
+    // at a stale rate — precisely the uncapped-bill failure this guards.
+    expect(isPriceKnown('Claude Opus 4.8')).toBe(false)
+    expect(estimateCostOrUnknown('Claude Opus 4.8', 1000, 1000)).toBeNull()
+  })
+
+  it('leaves a genuinely unknown model unknown', () => {
+    expect(isPriceKnown('router/mystery-7b')).toBe(false)
+    expect(isPriceKnown('GPT 5.6 Luna')).toBe(false)
+  })
+
+  it('normalises without inventing, so the mapping stays inspectable', () => {
+    expect(normalizeModelId('Claude Sonnet 5')).toBe('claude-sonnet-5')
+    expect(normalizeModelId('anthropic/Claude Sonnet 5')).toBe('claude-sonnet-5')
+    expect(normalizeModelId('Claude Haiku 4.5')).toBe('claude-haiku-4-5')
+    expect(normalizeModelId('GPT 5.6 Luna')).toBe('gpt-5-6-luna')
   })
 })
