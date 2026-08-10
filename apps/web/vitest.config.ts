@@ -19,6 +19,18 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     exclude: ['node_modules', 'dist', '.next', 'e2e'],
+    // Files run one at a time, matching apps/backend's config.
+    //
+    // Run in parallel this suite failed NON-DETERMINISTICALLY: a first run
+    // failed two Sidebar cases and a canvas case, an immediate second run
+    // passed all 108, and every failing test passed in isolation. Failures
+    // that move between runs are a property of the harness, not of the code
+    // under test — and a suite that cries wolf on healthy code is a suite
+    // people learn to re-run instead of read.
+    //
+    // The cost is wall-clock on a suite that already finishes in seconds. The
+    // benefit is that a red result means something.
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
