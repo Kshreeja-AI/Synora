@@ -237,4 +237,25 @@ export const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
   // .env.example's JWT_SECRET line — 40 characters, so it sails past the
   // length floor; a copied example file must still not boot production.
   'your-jwt-secret-key-change-in-production',
+  // THE SIBLINGS THIS LIST MISSED. Written for JWT_SECRET, and the same
+  // placeholder pattern in the other templates went unblocked for as long
+  // as they have existed:
+  //   .env.example        NEXTAUTH_SECRET (41 chars)
+  //   apps/web/.env.example NEXTAUTH_SECRET (36 chars)
+  // Both clear the 32-character floor, so nothing else would have stopped
+  // them — and NEXTAUTH_SECRET encrypts sessions, so booting production
+  // with a value anyone can read out of this repository means anyone who
+  // can read this repository can forge a session.
+  //
+  // A hand-maintained list falling behind the files it guards is the
+  // failure mode, not an accident. `templatePlaceholders.test.ts` now
+  // derives every uncommented secret assignment from the templates
+  // themselves and fails if one is not blocked here, so this list cannot
+  // silently fall behind again.
+  'your-secret-key-here-change-in-production',
+  'your-secret-key-change-in-production',
+  // The development database URL every template ships. Harmless locally
+  // and correct there; in production it is a localhost address carrying a
+  // password published in git.
+  'postgresql://synora:synora@localhost:5432/synora',
 ]);
