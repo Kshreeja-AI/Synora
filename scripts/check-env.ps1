@@ -76,8 +76,13 @@ $Rules = @(
     @{ N='JWT_SECRET';                  R=$true;  T='secret32' }
     @{ N='TOOL_SECRET_MASTER_KEY';      R=$true;  T='secret32' }
     @{ N='NEXTAUTH_SECRET';             R=$false; T='secret32' }
-    @{ N='JWT_EXPIRY';                  R=$true;  T='opaque' }
-    @{ N='JWT_REFRESH_EXPIRY';          R=$true;  T='opaque' }
+    # Absent is CORRECT for these: defaults.ts supplies 15m / 7d / console, and
+    # readString() treats a missing key and a blank one identically. Marking
+    # them required made the validator disagree with the application it
+    # validates -- and a check that fails on a healthy system trains you to
+    # ignore it.
+    @{ N='JWT_EXPIRY';                  R=$false; T='opaque' }
+    @{ N='JWT_REFRESH_EXPIRY';          R=$false; T='opaque' }
     @{ N='AI_PROVIDER';                 R=$true;  T='opaque' }
     @{ N='SELF_HOSTED_TEXT_BASE_URL';   R=$true;  T='url' }
     @{ N='SELF_HOSTED_TEXT_API_KEY';    R=$true;  T='opaque' }
@@ -86,14 +91,12 @@ $Rules = @(
     @{ N='AI_USER_MAX_COST_PER_DAY_CENTS';   R=$true; T='int' }
     @{ N='BACKEND_URL';                 R=$true;  T='url' }
     @{ N='FRONTEND_URL';                R=$true;  T='url' }
-    @{ N='NEXT_PUBLIC_API_URL';         R=$true;  T='url' }
-    @{ N='NEXT_PUBLIC_SITE_URL';        R=$true;  T='url' }
     @{ N='CORS_ORIGINS';                R=$true;  T='csvurl' }
     @{ N='SYNORA_DOMAIN';               R=$true;  T='opaque' }
     @{ N='HOSTINGER_API_TOKEN';         R=$false; T='opaque' }
     @{ N='VPS_IP';                      R=$false; T='opaque' }
     @{ N='POSTGRES_PASSWORD';           R=$false; T='opaque' }
-    @{ N='MAIL_TRANSPORT';              R=$true;  T='enum'; E=@('console','smtp') }
+    @{ N='MAIL_TRANSPORT';              R=$false; T='enum'; E=@('console','smtp') }
     @{ N='SENTRY_DSN';                  R=$false; T='opaque' }
     @{ N='METRICS_TOKEN';               R=$false; T='opaque' }
     @{ N='STRIPE_SECRET_KEY';           R=$false; T='opaque' }
@@ -177,6 +180,33 @@ if ($crlf) {
     Write-Host "           Re-run scripts\init-env.ps1 to rewrite with LF." -ForegroundColor Yellow
     Write-Host ""
 }
+
+# --- The browser-facing file --------------------------------------------------
+# Next.js reads NEXT_PUBLIC_* from the app's OWN directory. Validating them
+# against apps/backend/.env.local checked a file Next never opens, which is how
+# a missing NEXT_PUBLIC_SITE_URL survived undetected.
+$WebEnv = Join-Path $RepoRoot 'apps/web/.env.local'
+Write-Host ""
+Write-Host "  apps/web/.env.local (browser-facing)" -ForegroundColor Cyan
+if (-not (Test-Path -LiteralPath $WebEnv)) {
+    Write-Host "    MISSING - the web app has no local env file" -ForegroundColor Red
+    $fail++
+} else {
+    $webVars = @{}
+    foreach ($line in [System.IO.File]::ReadAllLines($WebEnv)) {
+        if ($line -match '^\s*#') { continue }
+        $eq = $line.IndexOf('='); if ($eq -lt 1) { continue }
+        $webVars[$line.Substring(0,$eq).Trim()] = $line.Substring($eq+1).TrimEnd("`r")
+    }
+    foreach ($n in @('NEXT_PUBLIC_API_URL','NEXT_PUBLIC_SITE_URL')) {
+        $v = if ($webVars.ContainsKey($n)) { [string]$webVars[$n] } else { '' }
+        $ok = $v -and (Test-Shape -Type 'url' -Value $v -Enum @())
+        if (-not $ok) { $fail++ }
+        $col = if ($ok) { 'Green' } else { 'Red' }
+        Write-Host ("    {0,-30} {1,-10} len={2}" -f $n, $(if($ok){'OK'}else{'MISSING/INVALID'}), $v.Length) -ForegroundColor $col
+    }
+}
+Write-Host ""
 
 Write-Host "  ------------------------------------------------------------"
 Write-Host "  required failing : $fail" -ForegroundColor $(if ($fail) { 'Red' } else { 'Green' })

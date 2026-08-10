@@ -234,9 +234,13 @@ export const KNOWN_DEV_SECRET_VALUES: ReadonlySet<string> = new Set([
   'test-jwt-secret-key-for-testing-only',
   'test-only-not-a-real-secret-tool-master-key-000000',
   'sk_test_fake_key_for_testing',
-  // .env.example's JWT_SECRET line — 40 characters, so it sails past the
-  // length floor; a copied example file must still not boot production.
-  'your-jwt-secret-key-change-in-production',
+  // (Removed 2026-08-10: `your-jwt-secret-key-change-in-production` was
+  // apps/backend/.env.example's JWT_SECRET line. That template now ships
+  // JWT_SECRET empty and marked [AUTO], so nothing can copy the placeholder
+  // and the entry became unreachable. Kept out rather than kept around: a
+  // denylist padded with values no template ships reads as more thorough than
+  // it is, which is the impression that let the real gaps sit unnoticed.)
+  //
   // THE SIBLINGS THIS LIST MISSED. Written for JWT_SECRET, and the same
   // placeholder pattern in the other templates went unblocked for as long
   // as they have existed:
