@@ -224,13 +224,22 @@ something looks broken.
 
 ## 10. Backups
 
-> **NOT YET CONFIGURED.** No backups exist. This is honest rather than
-> reassuring: claiming a backup that has never been tested is worse than
-> having none, because it removes the urgency to make one.
+**WRITTEN, NEVER RUN.** `docker-compose.production.yml` defines a `backup`
+service: a daily `pg_dump` into `./backups`, keeping the newest 14 and
+deleting older ones.
 
-Before real users arrive, the database needs a scheduled dump, stored off the
-server, with a restore that has actually been tested. **A backup nobody has
-restored is a hope, not a backup.**
+That is a real design, and it is *not* the same as having backups. Two gaps
+remain, and both matter:
+
+1. **It has never executed.** Nothing has been deployed, so no dump exists.
+2. **The dumps stay on the same server as the database.** A disk failure or a
+   destroyed VPS takes the database and every backup with it. Backups need to
+   leave the machine they protect.
+
+A restore has also never been tested. **A backup nobody has restored is a
+hope, not a backup** — the failure mode is discovering the dump was empty on
+the day you need it. Before real users arrive: move copies off the server, and
+perform one restore into a scratch database to prove the file works.
 
 ---
 
