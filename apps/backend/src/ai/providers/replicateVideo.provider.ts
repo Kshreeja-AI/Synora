@@ -1,4 +1,5 @@
 import { secretsManager } from '../../secrets';
+import { safeFetch, SsrfBlockedError } from '../../net/ssrf';
 import {
   AICapability,
   AIProviderError,
@@ -114,8 +115,31 @@ export class ReplicateVideoProvider implements VideoGenerationProvider {
     }
   }
 
+  /**
+   * `url` arrives inside the provider's own JSON response, so it is the one
+   * value on this path Synora did not choose. Fetched through `safeFetch`
+   * rather than `fetch`: from inside the production network this call can
+   * reach `postgres:5432`, `redis:6379` and the cloud metadata endpoint, none
+   * of which are reachable from the internet. A compromised provider response
+   * would otherwise borrow Synora's network position.
+   */
   async downloadVideo(url: string): Promise<Buffer> {
-    const response = await fetch(url);
+    let response: Response;
+    try {
+      response = await safeFetch(url);
+    } catch (error) {
+      if (error instanceof SsrfBlockedError) {
+        // Deliberately does not echo the blocked URL back to the caller: the
+        // response is the one place an attacker reliably reads, and confirming
+        // which internal addresses are refused is itself a probe result.
+        throw new AIProviderError(
+          `Refused to download video from a non-public address (${error.reason})`,
+          this.id,
+          error
+        );
+      }
+      throw error;
+    }
     if (!response.ok) {
       throw new AIProviderError(`Failed to download video: HTTP ${response.status}`, this.id);
     }
