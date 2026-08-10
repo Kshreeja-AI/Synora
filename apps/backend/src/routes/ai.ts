@@ -1,4 +1,5 @@
 import { Router, type Response, type NextFunction } from 'express';
+import { requireMembership } from '../services/checks';
 import { z } from 'zod';
 import { createApiResponse, TooManyRequestsException } from '@synora/shared';
 import { AIRateLimitedError } from '../ai';
@@ -100,20 +101,46 @@ const generateTextRequestSchema = z.object({
   maxTokens: z.number().int().min(1).max(100000).optional(),
   temperature: z.number().min(0).max(2).optional(),
   systemPrompt: z.string().optional(),
+  /**
+   * Which workspace to bill this to. Optional for backward compatibility —
+   * this endpoint has never been workspace-scoped — but supplying it is
+   * what makes a per-workspace spend cap bind, so clients should.
+   * Membership is verified below; a caller cannot bill a workspace they
+   * are not in.
+   */
+  workspaceId: z.string().min(1).optional(),
 });
 
 router.post('/generate', authMiddleware, aiGenerationLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const body = generateTextRequestSchema.parse(req.body);
 
-    const result = await instrumentedGenerate('api.generate.direct', {
-      prompt: body.prompt,
-      mode: body.mode,
-      model: body.model,
-      maxTokens: body.maxTokens,
-      temperature: body.temperature,
-      systemPrompt: body.systemPrompt,
-    });
+    // A client-supplied workspace id decides whose budget pays, so it is
+    // VERIFIED, never trusted: without this check any authenticated user
+    // could charge their generation to someone else's workspace — or, more
+    // subtly, discover which workspace ids exist by watching which ones
+    // were accepted. `requireMembership` answers 404 for a non-member, so
+    // a stranger's id is indistinguishable from one that does not exist.
+    if (body.workspaceId) {
+      await requireMembership(req.userId!, body.workspaceId);
+    }
+
+    const result = await instrumentedGenerate(
+      'api.generate.direct',
+      {
+        prompt: body.prompt,
+        mode: body.mode,
+        model: body.model,
+        maxTokens: body.maxTokens,
+        temperature: body.temperature,
+        systemPrompt: body.systemPrompt,
+      },
+      // The user is ALWAYS passed, workspace only when supplied and
+      // verified. Previously neither was, so this — the most directly
+      // exposed generation endpoint in the product — was bound by the
+      // global cap alone and contributed to no workspace's ledger at all.
+      { userId: req.userId!, ...(body.workspaceId ? { workspaceId: body.workspaceId } : {}) }
+    );
 
     res.json(createApiResponse(result));
   } catch (error) {

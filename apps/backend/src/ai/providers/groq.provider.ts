@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
@@ -26,6 +27,7 @@ export const groqDescriptor: AIProviderDescriptor = {
   id: 'groq',
   displayName: 'Groq',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('GROQ_API_KEY', 'ai:groq');
@@ -34,12 +36,12 @@ export const groqDescriptor: AIProviderDescriptor = {
     const apiKey = await secretsManager.get('GROQ_API_KEY', 'ai:groq');
     return new OpenAICompatibleTextProvider(
       'groq',
-      new OpenAI({ apiKey, baseURL: GROQ_BASE_URL }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey, baseURL: GROQ_BASE_URL }),
       getConfig().ai.groqModel
     );
   },
   async verifyCredential() {
     const apiKey = await secretsManager.get('GROQ_API_KEY', 'ai:groq');
-    return verifyOpenAICompatibleKey(new OpenAI({ apiKey, baseURL: GROQ_BASE_URL }), 'Groq');
+    return verifyOpenAICompatibleKey(new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey, baseURL: GROQ_BASE_URL }), 'Groq');
   },
 };

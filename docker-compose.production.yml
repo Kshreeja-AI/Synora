@@ -1,0 +1,109 @@
+# Synora — single-VPS production topology.
+#
+# One box, four containers: Caddy (TLS), the app (backend+workers), Postgres
+# (pgvector), Redis. The simplest architecture that is real: every service
+# healthchecked, restarts on failure, survives reboot, and nothing listens on
+# the public interface except Caddy.
+#
+# Usage (documented end-to-end in docs/production/DEPLOYMENT.md):
+#   1. Copy .env.production.example → .env.production, fill REQUIRED values.
+#   2. docker compose -f docker-compose.production.yml --env-file .env.production up -d
+#   3. docker compose -f docker-compose.production.yml exec app node scripts/migrate.js   (or the documented migrate command)
+#
+# The app image is the repo's own Dockerfile — the same image a PaaS would
+# build, so moving hosts later is a config change, not a rewrite.
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # The public hostname Caddy provisions TLS for. REQUIRED.
+      SYNORA_DOMAIN: ${SYNORA_DOMAIN:?set SYNORA_DOMAIN in .env.production}
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://synora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/synora
+      REDIS_URL: redis://redis:6379
+    expose:
+      - "3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # /health is liveness (no dependencies); /ready checks the database.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>{if(r.status!==200)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: synora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: synora
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # NOT exposed to the host network. Only containers reach it.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U synora"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "300", "10"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Nightly logical backups, kept 14 days. A deletion that only exists on
+  # one disk is one disk failure away from being permanent.
+  backup:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h postgres -U synora -d synora -F c -f /backups/synora-$$(date +%Y%m%d-%H%M).dump &&
+        ls -1t /backups/synora-*.dump | tail -n +15 | xargs -r rm --;
+        sleep 86400;
+      done'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

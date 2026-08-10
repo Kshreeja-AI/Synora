@@ -1,4 +1,7 @@
-import 'dotenv/config';
+// FIRST IMPORT, deliberately: ESM evaluates imports before any body
+// statement, so the environment must be loaded by an import rather than a
+// call. See ./bootstrap-env.
+import './bootstrap-env';
 import { secretsManager } from './secrets';
 import { encryptionService } from './crypto/encryption.service';
 import { initConfig } from './config';

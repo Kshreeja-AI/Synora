@@ -34,7 +34,7 @@ describe('RealtimeService integration', () => {
   const secret = process.env.JWT_SECRET || 'test-secret';
 
   beforeAll(async () => {
-    service = new RealtimeService();
+    service = new RealtimeService(() => ['http://localhost:3000']);
     httpServer = createServer();
     service.initialize(httpServer);
     await new Promise<void>((resolve) => httpServer.listen(0, resolve));

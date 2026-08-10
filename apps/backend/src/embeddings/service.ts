@@ -5,7 +5,8 @@ import { EmbeddingMetricsCollector } from './metrics';
 import { UsageAccountant } from './usage';
 import { RetryPolicyConfig, withRetry } from './retry';
 import { EmbeddingSecurityLimits, validateBatch, validateText, validateWorkspaceId, redactTextForLogging } from './security';
-import { estimateEmbeddingCost } from './pricing';
+import { embeddingCostCentsForCap, estimateEmbeddingCost } from './pricing';
+import { assertAiBudget, recordAiSpend } from '../ai/spend-guard';
 import { withSpan } from './tracing';
 import { chunkText } from './chunking';
 import { resolveEmbeddingProvider } from './resolver';
@@ -205,6 +206,12 @@ export class EmbeddingService {
       throw new EmbeddingRateLimitExceededError(provider.id, workspaceId);
     }
 
+    // The budget gate, at the single real provider-call chokepoint — the
+    // same place the metrics chokepoint already lives, and for the same
+    // reason: cache hits never reach here, so a cached embedding is never
+    // refused or charged, while every REAL provider call is both.
+    await assertAiBudget({ workspaceId });
+
     const start = Date.now();
     try {
       const batch = await withRetry(
@@ -226,6 +233,19 @@ export class EmbeddingService {
         });
         const cost = estimateEmbeddingCost(result.model, result.usage.tokens);
         this.usage.recordUsage(workspaceId, provider.id, result.usage.tokens, cost);
+
+        // The CAP's ledger, beside the display ledger above and priced by
+        // this stack's own table (caller-computed channel) — never by the
+        // guard's text-token rates, which run 100–1000× an embedding's real
+        // price. Unknown embedding models charge this table's own ceiling.
+        const capped = embeddingCostCentsForCap(result.model, result.usage.tokens);
+        await recordAiSpend({
+          workspaceId,
+          provider: provider.id,
+          model: result.model,
+          inputTokens: result.usage.tokens,
+          knownCostCents: capped.costCents,
+        });
       }
 
       // Instrumented here, at the single real provider-call chokepoint, so

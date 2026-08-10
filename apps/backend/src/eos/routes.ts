@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { createApiResponse, createApiError } from '@synora/shared';
+import { authMiddleware } from '../middleware/auth.js';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
 import { engineeringEventBus } from './event-bus.js';
 import { runHealthProbes } from './health-collector.js';
@@ -25,6 +26,15 @@ import { listProposals, getProposal, decideProposal, type ProposalStatus } from 
 
 const router: Router = Router();
 
+// AUTHENTICATE, then authorize. `requireAdminRole` reads `req.userId` and
+// rejects when it is absent — which is safe, but it means the ONLY thing
+// standing between an anonymous request and this router was a field that
+// nothing on this path was populating. Every other admin router mounts
+// authMiddleware first; this one did not, and relying on "undefined userId
+// happens to fail closed" is a property of today's implementation rather
+// than a stated guarantee. EOS exposes cost, provider and health telemetry
+// — it must never be the one admin surface reachable without a session.
+router.use(authMiddleware);
 router.use(requireAdminRole);
 
 router.get('/events/recent', (_req: Request, res: Response) => {

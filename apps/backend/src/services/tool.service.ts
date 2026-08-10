@@ -1,4 +1,6 @@
 import { prisma } from '@synora/database';
+import { isIP } from 'node:net';
+import { isPublicAddress } from './tool-transport';
 import { ToolDefinition, ToolExecution, ExecutionStatus, ToolType } from '@prisma/client';
 import { NotFoundException, ValidationException } from '@synora/shared';
 import { logger } from '../utils/logger';
@@ -110,6 +112,22 @@ function validateHttpConfig(type: ToolType, config: unknown): void {
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ValidationException(`${type} tool config "url" must use http or https`);
+  }
+  // Refuse an obviously-internal IP literal at CONFIGURATION time, so a
+  // person gets a clear message now instead of a mysterious failure later.
+  //
+  // Reuses `isPublicAddress` from the transport rather than reimplementing
+  // range checks: two copies of a security predicate eventually disagree,
+  // and the more permissive copy wins by accident. The AUTHORITATIVE check
+  // remains in the transport, which resolves DNS through a lookup hook at
+  // connect time — a hostname's answer can change between saving a tool
+  // and running it, so only the transport can see the address that is
+  // actually dialled.
+  const host = parsed.hostname;
+  if (isIP(host) && !isPublicAddress(host)) {
+    throw new ValidationException(
+      `${type} tool config "url" points inside Synora's own network, which is not allowed`
+    );
   }
 }
 

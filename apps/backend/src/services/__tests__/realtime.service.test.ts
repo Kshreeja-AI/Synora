@@ -7,7 +7,9 @@ describe('RealtimeService', () => {
   let httpServer: HTTPServer;
 
   beforeEach(() => {
-    realtimeService = new RealtimeService();
+    // Origins injected explicitly: these tests exercise presence and lifecycle,
+    // not CORS, and should not depend on global config being initialised.
+    realtimeService = new RealtimeService(() => ['http://localhost:3000']);
     httpServer = createServer();
   });
 

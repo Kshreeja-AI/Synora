@@ -164,6 +164,9 @@ export async function loadConfig(
       globalMaxTokensPerDay: env.AI_GLOBAL_MAX_TOKENS_PER_DAY
         ? readNumber(env, 'AI_GLOBAL_MAX_TOKENS_PER_DAY', 0)
         : undefined,
+      userMaxCostPerDayCents: env.AI_USER_MAX_COST_PER_DAY_CENTS
+        ? readNumber(env, 'AI_USER_MAX_COST_PER_DAY_CENTS', 0)
+        : undefined,
       rateLimit: {
         backend: readString(
           env,

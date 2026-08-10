@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { secretsManager } from '../secrets';
+import { getConfig } from '../config';
 
 interface PresenceEvent {
   userId: string;
@@ -41,10 +42,31 @@ export class RealtimeService {
   private presence: Map<string, PresenceEvent> = new Map();
   private subscriptions: Map<string, Set<string>> = new Map();
 
+  /**
+   * Realtime reads the SAME validated origin list as the HTTP layer
+   * (`config.server.corsOrigins`, sourced from CORS_ORIGINS).
+   *
+   * It previously read `process.env.CORS_ORIGIN` — a singular name nothing in
+   * the project ever sets. That did not merely disagree with the HTTP config;
+   * it meant the `||` fallback ALWAYS won, pinning WebSocket origins to
+   * http://localhost:3000 in every environment. In production the browser
+   * origin is https://trysynora.com, so every realtime handshake would have
+   * been rejected while HTTP requests succeeded — the kind of split-brain that
+   * looks like a broken socket server rather than a config typo.
+   *
+   * The resolver is injected so tests can state an origin list explicitly.
+   * The default deliberately calls getConfig(), which THROWS when config has
+   * not been initialised: a realtime server that cannot learn its allowed
+   * origins must fail loudly at boot, never quietly serve a guessed default.
+   */
+  constructor(
+    private readonly resolveCorsOrigins: () => string[] = () => getConfig().server.corsOrigins
+  ) {}
+
   initialize(httpServer: HTTPServer): SocketIOServer {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        origin: this.resolveCorsOrigins(),
         methods: ['GET', 'POST'],
         credentials: true,
       },

@@ -4,12 +4,19 @@ import { resolveImageProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
-import { priceMediaUsage } from '../eos/media-pricing';
+import { mediaCostCentsForCap, priceMediaUsage } from '../eos/media-pricing';
+import { assertAiBudget, recordAiSpend } from '../ai/spend-guard';
 
 declareAiPath('image.generate');
 
 export interface GenerateImageInput {
   userId: string;
+  /**
+   * Optional because the image routes are not workspace-scoped yet. Absent
+   * means the GLOBAL spend caps still bind (a system path is not a free
+   * path); present binds the workspace's own budget too.
+   */
+  workspaceId?: string;
   prompt: string;
   size?: string;
   projectId?: string;
@@ -53,6 +60,10 @@ export class ImageGenerationService {
 
     const startedAt = Date.now();
 
+    // The budget gate, BEFORE the provider call. Image generation was one
+    // of the paths that could spend with no cap consulted at all.
+    await assertAiBudget({ workspaceId: input.workspaceId });
+
     try {
       const result = await provider.generateImages({
         prompt: input.prompt,
@@ -87,6 +98,23 @@ export class ImageGenerationService {
         costCents: priced?.costCents,
         pricingBasis: priced?.basis,
         costProvenance: priced?.provenance,
+      });
+
+      // The CAP's ledger. Reporting above may honestly show nothing for an
+      // unpriced model; the cap must charge SOMETHING for every metered
+      // call, so an unpriced image charges the documented per-image
+      // ceiling. Real published prices win when on record.
+      const capped = mediaCostCentsForCap({
+        providerId: result.provider,
+        modelId: result.model,
+        basis: 'per-image',
+        units: result.images.length,
+      });
+      await recordAiSpend({
+        workspaceId: input.workspaceId,
+        provider: result.provider,
+        model: result.model,
+        knownCostCents: capped.costCents,
       });
 
       return await prisma.generatedImage.update({

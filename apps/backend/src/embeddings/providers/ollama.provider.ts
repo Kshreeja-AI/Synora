@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from '../../ai/providers/sdk-options';
 import { getConfig } from '../../config';
 import type { EmbeddingProviderDescriptor } from '../descriptor';
 import { OpenAICompatibleEmbeddingProvider } from './openaiCompatible.provider';
@@ -30,12 +31,10 @@ export const ollamaEmbeddingDescriptor: EmbeddingProviderDescriptor = {
     }
     return new OpenAICompatibleEmbeddingProvider(
       'ollama',
-      new OpenAI({
-        // Same rule as the text twin: a remote endpoint sits behind a
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, // Same rule as the text twin: a remote endpoint sits behind a
         // token-checking proxy, and this is that token as a Bearer header.
         apiKey: ollamaApiKey || 'ollama-does-not-require-an-api-key',
-        baseURL: ollamaBaseUrl,
-      }),
+        baseURL: ollamaBaseUrl, }),
       ollamaModel,
       ollamaMaxBatchSize ?? OLLAMA_DEFAULT_MAX_BATCH_SIZE
     );

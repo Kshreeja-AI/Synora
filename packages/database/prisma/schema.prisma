@@ -2254,6 +2254,22 @@ model ToolWebhook {
 /// Counters are denormalized and reset LAZILY on access (the same
 /// converge-on-read discipline the approval deadlines use), with separate
 /// daily and monthly stamps so the two windows cannot corrupt each other.
+/// The deployment-wide AI spend ledger, one row per UTC day.
+///
+/// The global cap was an in-process counter — fine as a single-instance
+/// kill switch, but N instances would each admit the full cap, and a
+/// restart forgot the day's spend entirely. Production financial controls
+/// must not live in process memory. Increments are SQL-atomic; the row is
+/// keyed by the UTC day string so a new day is simply a new row and no
+/// reset logic can race.
+model AiGlobalSpendDay {
+  /// UTC day, e.g. "2026-08-09".
+  dayUtc     String  @id
+  costCents  Int     @default(0)
+  tokens     Int     @default(0)
+  updatedAt  DateTime @updatedAt
+}
+
 model AiSpendBudget {
   id                   String    @id @default(cuid())
   workspaceId          String    @unique

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import {
@@ -173,6 +174,7 @@ export const openaiDescriptor: AIProviderDescriptor = {
   id: 'openai',
   displayName: 'OpenAI',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai');
@@ -181,13 +183,13 @@ export const openaiDescriptor: AIProviderDescriptor = {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai');
     return new OpenAICompatibleTextProvider(
       'openai',
-      new OpenAI({ apiKey }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey }),
       getConfig().ai.openaiModel
     );
   },
   async verifyCredential() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai');
-    return verifyOpenAICompatibleKey(new OpenAI({ apiKey }), 'OpenAI');
+    return verifyOpenAICompatibleKey(new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey }), 'OpenAI');
   },
 };
 

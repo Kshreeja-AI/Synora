@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import {
@@ -153,13 +154,14 @@ export const anthropicDescriptor: AIProviderDescriptor = {
   id: 'anthropic',
   displayName: 'Anthropic Claude',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('ANTHROPIC_API_KEY', 'ai:anthropic');
   },
   async create() {
     const apiKey = await secretsManager.get('ANTHROPIC_API_KEY', 'ai:anthropic');
-    return new AnthropicTextProvider(new Anthropic({ apiKey }), getConfig().ai.anthropicModel);
+    return new AnthropicTextProvider(new Anthropic({ ...SDK_CLIENT_OPTIONS, apiKey }), getConfig().ai.anthropicModel);
   },
   /**
    * `models.list` is the cheapest authenticated call Anthropic exposes: it
@@ -168,7 +170,7 @@ export const anthropicDescriptor: AIProviderDescriptor = {
    */
   async verifyCredential() {
     const apiKey = await secretsManager.get('ANTHROPIC_API_KEY', 'ai:anthropic');
-    await new Anthropic({ apiKey }).models.list({ limit: 1 });
+    await new Anthropic({ ...SDK_CLIENT_OPTIONS, apiKey }).models.list({ limit: 1 });
     return {
       status: 'verified' as const,
       detail: 'Anthropic accepted the API key.',

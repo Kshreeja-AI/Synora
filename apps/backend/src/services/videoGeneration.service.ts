@@ -4,6 +4,8 @@ import { resolveVideoProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+import { mediaCostCentsForCap } from '../eos/media-pricing';
+import { assertAiBudget, recordAiSpend } from '../ai/spend-guard';
 
 declareAiPath('video.generate');
 
@@ -24,6 +26,8 @@ function elapsedSinceCreated(createdAt: Date | null | undefined): number {
 }
 
 export interface GenerateVideoInput {
+  /** Optional until video routes are workspace-scoped; global caps always bind. */
+  workspaceId?: string;
   userId: string;
   prompt: string;
   duration?: number;
@@ -56,6 +60,10 @@ export class VideoGenerationService {
         status: 'PROCESSING',
       },
     });
+
+    // Gate BEFORE the job starts: video is the most expensive media class,
+    // and a started prediction bills whether or not anyone polls it.
+    await assertAiBudget({ workspaceId: input.workspaceId });
 
     try {
       const handle = await provider.startGeneration({
@@ -187,6 +195,24 @@ export class VideoGenerationService {
         modelId: modelName || 'unknown',
         success: true,
         latencyMs: elapsedSinceCreated(video.createdAt),
+      });
+
+      // The CAP's ledger, charged at completion when the real seconds are
+      // known. Per-second ceiling for unpriced models; a stated price wins.
+      // Falls back to the REQUESTED duration when the provider reports
+      // none — a video that exists has a length, and zero would read as
+      // free.
+      const billedSeconds = result.durationSeconds ?? video.duration ?? 0;
+      const capped = mediaCostCentsForCap({
+        providerId: providerName || provider.id,
+        modelId: modelName || 'unknown',
+        basis: 'per-second',
+        units: billedSeconds,
+      });
+      await recordAiSpend({
+        provider: providerName || provider.id,
+        model: modelName || 'unknown',
+        knownCostCents: capped.costCents,
       });
 
       return await prisma.generatedVideo.update({

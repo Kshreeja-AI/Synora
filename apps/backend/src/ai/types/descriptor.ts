@@ -56,6 +56,25 @@ export interface AIProviderDescriptor<TProvider = TextGenerationProvider> {
    */
   isConfigured(): Promise<boolean>;
   /**
+   * Whether calls to this provider cost money per token.
+   *
+   * REQUIRED, and deliberately not optional with a default. A new provider
+   * must state its own economics, because the alternative — inferring
+   * "free" from the absence of a price-table entry — cannot tell a
+   * genuinely free local runtime apart from a paid model nobody has priced
+   * yet. Those two look identical to a cost calculation and are opposites
+   * to a bill. Declared, never guessed, for the same reason an executor
+   * declares its own undo target rather than letting a caller infer one.
+   *
+   *  - `unmetered`: a local or self-hosted runtime the operator already
+   *    owns (Ollama and friends). Tokens are genuinely free, so a cost cap
+   *    can never bind it and the TOKEN cap is what bounds it.
+   *  - `metered`: a hosted service that bills. Its spend must be charged
+   *    even when this deployment cannot price the exact model, so an
+   *    unknown price is charged a ceiling rather than nothing.
+   */
+  readonly metering: 'metered' | 'unmetered';
+  /**
    * Construct a working provider instance. Only called after isConfigured()
    * has returned true.
    */

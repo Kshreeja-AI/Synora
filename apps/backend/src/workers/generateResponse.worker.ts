@@ -137,20 +137,22 @@ export function createGenerateResponseWorker() {
           // outage (embedding provider down, vector store unreachable) must
           // degrade to an unaugmented reply rather than cost the user their
           // message.
+          // The budget gate FIRST — before prompt augmentation, not after.
+          // Its own comment used to claim "before a provider is even
+          // resolved" while buildAugmentedSystemPrompt, thirteen lines
+          // earlier, had already made an EMBEDDING provider call. An
+          // over-budget workspace was still spending on retrieval for a
+          // reply it would never be allowed to generate. A budget refusal
+          // is not a provider failure and must not be retried — the retry
+          // would just re-refuse.
+          await assertAiBudget({ workspaceId: conversation.workspaceId });
+
           const systemPrompt = await buildAugmentedSystemPrompt({
             jobId,
             conversationId,
             userId,
             workspaceId: conversation.workspaceId,
           });
-
-          // The budget gate, BEFORE a provider is even resolved. Chat is the
-          // one generation path that bypasses instrumentedGenerate entirely
-          // (it streams through a separate stack), so without this check the
-          // most-used path in the product would be the one path no cap
-          // binds. A budget refusal is not a provider failure and must not
-          // be retried — the retry would just re-refuse.
-          await assertAiBudget({ workspaceId: conversation.workspaceId });
 
           // Get provider
           const providerInstance = await resolver.resolve(provider);
