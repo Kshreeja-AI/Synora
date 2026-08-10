@@ -10,7 +10,13 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
+import {
+  resolveSystemPrompt,
+  resolveConversationTurns,
+  DEFAULT_MAX_TOKENS,
+  classifyEmptyGeneration,
+  emptyGenerationMessage,
+} from '../shared';
 import type { AIProviderDescriptor, CredentialVerification } from '../types/descriptor';
 
 /**
@@ -54,9 +60,26 @@ export class OpenAICompatibleTextProvider implements TextGenerationProvider {
 
       const choice = response.choices[0];
       const toolCalls = this.readToolCalls(choice?.message?.tool_calls);
+      const text = choice?.message?.content ?? '';
+
+      // An empty body is not a reply. Returning it would let a 200 with no
+      // text travel all the way to the person as a blank message, with the
+      // tokens already paid for and no reason given anywhere. Empty WITH
+      // tool calls is entirely legitimate — the model chose to act rather
+      // than speak — so only the no-text-and-no-tools case is refused.
+      if (text.trim() === '' && toolCalls.length === 0) {
+        throw new AIProviderError(
+          emptyGenerationMessage(
+            this.id,
+            classifyEmptyGeneration(choice?.finish_reason ?? undefined),
+            { reasonedWithoutAnswering: hasReasoningWithoutContent(choice?.message) }
+          ),
+          this.id
+        );
+      }
 
       return {
-        text: choice?.message?.content ?? '',
+        text,
         provider: this.id,
         model: response.model,
         usage: {
@@ -107,6 +130,24 @@ export class OpenAICompatibleTextProvider implements TextGenerationProvider {
         return { id: call.id, name: call.function.name, input };
       });
   }
+}
+
+/**
+ * Whether the model wrote internal reasoning but no answer.
+ *
+ * `reasoning_content` (DeepSeek and the servers that copied it) and
+ * `reasoning` (OpenRouter) are extensions to the OpenAI-compatible schema,
+ * so they are absent from the SDK's types and have to be read off the
+ * object. Detection is by SHAPE, never by model name: any endpoint that
+ * reports reasoning this way is understood, and one that does not simply
+ * yields a slightly less specific message. Purely for the wording of the
+ * error — no control tokens are injected and no behaviour changes.
+ */
+function hasReasoningWithoutContent(message: unknown): boolean {
+  if (typeof message !== 'object' || message === null) return false;
+  const extended = message as { reasoning_content?: unknown; reasoning?: unknown };
+  const reasoning = extended.reasoning_content ?? extended.reasoning;
+  return typeof reasoning === 'string' && reasoning.trim() !== '';
 }
 
 /** Tool parameters in OpenAI's spelling. All three choices map directly. */

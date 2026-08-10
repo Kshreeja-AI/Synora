@@ -17,6 +17,7 @@ import {
 import { Redis } from 'ioredis';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
 import { assertAiBudget, recordAiSpend, AiBudgetExceededError } from '../ai/spend-guard';
+import { emptyGenerationMessage } from '../ai/shared';
 import { isCaptureActive } from '../eos/case-capture';
 import { privacyConsentService } from '../services/privacyConsent.service';
 
@@ -80,6 +81,38 @@ export async function buildAugmentedSystemPrompt(params: {
     });
     return undefined;
   }
+}
+
+/**
+ * THE BACKSTOP: no provider may persist a blank reply as a success.
+ *
+ * A stream can finish cleanly, report real token usage, and never have
+ * emitted a single character. Before this, the worker wrote that to the
+ * database as the assistant's message and marked the job COMPLETED — the
+ * person saw an empty bubble, having paid for the tokens, with nothing
+ * anywhere saying why.
+ *
+ * The OpenAI-compatible stream adapter already refuses this case with a
+ * precise reason, because it can see `finish_reason` and reasoning deltas.
+ * This guard exists for every OTHER streaming adapter, present and future,
+ * and sits in the one place that writes the message — so a new adapter
+ * cannot reintroduce the failure by omission.
+ *
+ * It deliberately reports `no-output` rather than guessing at an exhausted
+ * budget: stream chunks carry no finish reason, so the worker genuinely
+ * does not know why, and inventing the likeliest cause would send someone
+ * to change a setting that may have nothing to do with it.
+ *
+ * Cancellation is not a failure. Stopping a generation is the person's own
+ * decision, and whatever text arrived first is theirs to keep.
+ */
+export function assertStreamProducedAnAnswer(args: {
+  provider: string;
+  text: string;
+  cancelled: boolean;
+}): void {
+  if (args.cancelled || args.text.trim() !== '') return;
+  throw new Error(emptyGenerationMessage(args.provider, 'no-output'));
 }
 
 export function createGenerateResponseWorker() {
@@ -252,6 +285,12 @@ export function createGenerateResponseWorker() {
           // Persist complete message
           const finalText = accumulator.getText();
           const accounting = accountant.getSummary();
+
+          assertStreamProducedAnAnswer({
+            provider,
+            text: finalText,
+            cancelled: abortController.signal.aborted,
+          });
 
           // Spend metrics: one observation per completed provider call, plus
           // token counters split by direction so cost dashboards can separate

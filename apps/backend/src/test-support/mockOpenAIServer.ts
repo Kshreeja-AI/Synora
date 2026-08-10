@@ -34,6 +34,18 @@ export interface MockOpenAIServerOptions {
   /** SSE token deltas for streaming completions, one chunk each. */
   streamTokens?: string[];
   /**
+   * SSE deltas carrying `reasoning_content` instead of `content` — how
+   * DeepSeek-style servers report a model's internal reasoning. Combined
+   * with `streamTokens: []` and `finishReason: 'length'` this reproduces
+   * the exact reasoning-model failure: real tokens billed, real usage
+   * reported, and not one word of answer.
+   */
+  streamReasoningTokens?: string[];
+  /** `finish_reason` on the final chunk / choice. Defaults to `stop`. */
+  finishReason?: string;
+  /** `reasoning_content` on a non-streaming completion's message. */
+  completionReasoning?: string;
+  /**
    * Token usage reported by the server. `null` means OMIT the usage object
    * entirely — the Ollama-typical case the spend guard must survive.
    * (For streaming, a usage chunk is only sent when the request asked for
@@ -164,6 +176,21 @@ export async function startMockOpenAIServer(
           'cache-control': 'no-cache',
           connection: 'keep-alive',
         });
+        // Reasoning deltas first, exactly as a reasoning model emits them:
+        // the thinking is streamed before any answer, and when the budget
+        // runs out mid-thought the answer never arrives at all.
+        for (const reasoning of options.streamReasoningTokens ?? []) {
+          res.write(
+            `data: ${JSON.stringify({
+              id: 'chatcmpl-mock',
+              object: 'chat.completion.chunk',
+              model,
+              choices: [
+                { index: 0, delta: { reasoning_content: reasoning }, finish_reason: null },
+              ],
+            })}\n\n`
+          );
+        }
         const tokens = options.streamTokens ?? DEFAULTS.streamTokens;
         for (const token of tokens) {
           res.write(
@@ -180,7 +207,7 @@ export async function startMockOpenAIServer(
             id: 'chatcmpl-mock',
             object: 'chat.completion.chunk',
             model,
-            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+            choices: [{ index: 0, delta: {}, finish_reason: options.finishReason ?? 'stop' }],
           })}\n\n`
         );
         // Usage arrives as its own final chunk ONLY when the client asked
@@ -211,8 +238,11 @@ export async function startMockOpenAIServer(
             message: {
               role: 'assistant',
               content: options.completionText ?? DEFAULTS.completionText,
+              ...(options.completionReasoning !== undefined
+                ? { reasoning_content: options.completionReasoning }
+                : {}),
             },
-            finish_reason: 'stop',
+            finish_reason: options.finishReason ?? 'stop',
           },
         ],
         ...(usage ? { usage } : {}),

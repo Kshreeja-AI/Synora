@@ -24,6 +24,7 @@
 
 import OpenAI from 'openai';
 import { logger } from '../../../utils/logger';
+import { classifyEmptyGeneration, emptyGenerationMessage } from '../../shared';
 import {
   TextGenerationStreamProvider,
   GenerateStreamInput,
@@ -41,6 +42,25 @@ export interface OpenAICompatibleStreamSettings {
 }
 
 const STREAM_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Whether this delta carried internal reasoning rather than answer text.
+ *
+ * `reasoning_content` (DeepSeek and the servers that copied it) and
+ * `reasoning` (OpenRouter) are extensions to the OpenAI-compatible schema,
+ * so they are absent from the SDK's types and have to be read off the
+ * object. Detection is by SHAPE, never by model name: any endpoint
+ * reporting reasoning this way is understood, and one that does not simply
+ * gets a slightly less specific message. This only sharpens the wording of
+ * the empty-response error — the stream itself is unchanged, and reasoning
+ * is never forwarded as if it were an answer.
+ */
+function hasReasoningDelta(delta: unknown): boolean {
+  if (typeof delta !== 'object' || delta === null) return false;
+  const extended = delta as { reasoning_content?: unknown; reasoning?: unknown };
+  const reasoning = extended.reasoning_content ?? extended.reasoning;
+  return typeof reasoning === 'string' && reasoning !== '';
+}
 
 export class OpenAICompatibleStreamProvider implements TextGenerationStreamProvider {
   constructor(
@@ -107,10 +127,17 @@ export class OpenAICompatibleStreamProvider implements TextGenerationStreamProvi
 
       let inputTokens = 0;
       let usageReported = false;
+      // Whether a single character of ANSWER was produced — see the
+      // empty-stream check after the loop.
+      let contentEmitted = false;
+      let reasonedWithoutAnswering = false;
+      let finishReason: string | undefined;
+      let aborted = false;
 
       for await (const chunk of stream) {
         if (input.abortSignal?.aborted) {
           logger.info(`[${this.name}Stream] Aborted`, { model: input.model });
+          aborted = true;
           break;
         }
 
@@ -120,6 +147,15 @@ export class OpenAICompatibleStreamProvider implements TextGenerationStreamProvi
             token: chunk.choices[0].delta.content,
           };
           outputTokens++;
+          contentEmitted = true;
+        }
+
+        if (hasReasoningDelta(chunk.choices[0]?.delta)) {
+          reasonedWithoutAnswering = true;
+        }
+
+        if (chunk.choices[0]?.finish_reason) {
+          finishReason = chunk.choices[0].finish_reason;
         }
 
         if (chunk.usage) {
@@ -127,6 +163,35 @@ export class OpenAICompatibleStreamProvider implements TextGenerationStreamProvi
           outputTokens = chunk.usage.completion_tokens;
           usageReported = true;
         }
+      }
+
+      // A STREAM THAT SAID NOTHING IS NOT A REPLY.
+      //
+      // The stream ends normally, the usage chunk reports real tokens, and
+      // not one content token was ever emitted. Downstream this used to be
+      // saved as a blank assistant message marked COMPLETED — the person
+      // saw an empty bubble, having paid for the tokens, with no reason
+      // given anywhere in the product or the logs.
+      //
+      // The usual cause is a reasoning model spending the entire output
+      // budget thinking before writing any answer, which `finish_reason`
+      // reports as `length`. That is a configuration problem with a
+      // one-line fix, so the error says so. Nothing here knows any model's
+      // name, and no control token is injected to suppress reasoning —
+      // both would be a vendor behaviour hidden inside a generic adapter.
+      //
+      // Cancellation is NOT this: the person stopped it on purpose, and
+      // whatever arrived first is theirs to keep.
+      if (!contentEmitted && !aborted) {
+        throw new StreamingError(
+          'EMPTY_RESPONSE',
+          emptyGenerationMessage(this.name, classifyEmptyGeneration(finishReason), {
+            reasonedWithoutAnswering,
+          }),
+          // Not retryable: an identical request produces an identical empty
+          // result, so a retry only spends the budget a second time.
+          false
+        );
       }
 
       // Server-reported numbers when they came; otherwise the per-token
@@ -142,6 +207,11 @@ export class OpenAICompatibleStreamProvider implements TextGenerationStreamProvi
       logger.error(`[${this.name}Stream] Error`, { error: err.message });
 
       if (error instanceof TimeoutError) throw error;
+      // Ours already, and already precisely classified. Falling through
+      // would relabel the empty-response refusal above as a generic
+      // PROVIDER_ERROR *and* mark it retryable — re-running a request that
+      // deterministically produces nothing, at full token cost.
+      if (error instanceof StreamingError) throw error;
       if (err.status === 429) throw new RateLimitError();
       if (err.status === 401 || err.status === 403) {
         throw new StreamingError(

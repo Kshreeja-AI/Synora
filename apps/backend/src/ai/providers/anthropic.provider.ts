@@ -10,7 +10,13 @@ import {
   TextGenerationRequest,
   TextGenerationResult,
 } from '../types';
-import { resolveSystemPrompt, resolveConversationTurns, DEFAULT_MAX_TOKENS } from '../shared';
+import {
+  resolveSystemPrompt,
+  resolveConversationTurns,
+  DEFAULT_MAX_TOKENS,
+  classifyEmptyGeneration,
+  emptyGenerationMessage,
+} from '../shared';
 import type { AIProviderDescriptor } from '../types/descriptor';
 
 /**
@@ -58,6 +64,21 @@ export class AnthropicTextProvider implements TextGenerationProvider {
           input: (block.input ?? {}) as Record<string, unknown>,
         }));
 
+      // Same rule as every other adapter: a 200 with no text is not a
+      // reply. Anthropic reaches it the same way — thinking blocks consume
+      // the output budget, `stop_reason` comes back `max_tokens`, and the
+      // text blocks this filters for are simply absent. Empty alongside
+      // tool calls stays legitimate.
+      if (text.trim() === '' && toolCalls.length === 0) {
+        throw new AIProviderError(
+          emptyGenerationMessage(
+            this.id,
+            classifyEmptyGeneration(response.stop_reason ?? undefined)
+          ),
+          this.id
+        );
+      }
+
       return {
         text,
         provider: this.id,
@@ -72,6 +93,14 @@ export class AnthropicTextProvider implements TextGenerationProvider {
         ...(toolCalls.length > 0 ? { toolCalls } : {}),
       };
     } catch (error) {
+      // Already ours — rethrow as-is. Wrapping it would bury a precise,
+      // actionable message ("raise the response length limit") inside a
+      // generic "text generation failed", which reads like a provider
+      // outage and sends the reader to the wrong place. The
+      // OpenAI-compatible adapter has always done this; Anthropic did not,
+      // and the empty-response check above is the first error raised here
+      // that the wrapper would have damaged.
+      if (error instanceof AIProviderError) throw error;
       throw new AIProviderError(
         `Anthropic text generation failed: ${error instanceof Error ? error.message : String(error)}`,
         this.id,
