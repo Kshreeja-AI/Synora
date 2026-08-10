@@ -1910,6 +1910,13 @@ never delete a row.
 
 *Merged from `SYNORA_UI_SYSTEM.md` on 2026-08-10. Headings demoted one level; content otherwise unchanged.*
 
+> **File references inside this merged section are historical.** They name
+> documents that existed when it was written; those were consolidated on
+> 2026-08-10 into `SYNORA_MASTER_BLUEPRINT.md`, `SYNORA_OPERATIONS.md` and
+> `SYNORA_LEARNING.md`. The text is preserved unedited rather than rewritten,
+> because editing an archived record to look current is how a record stops
+> being evidence.
+
 ## SYNORA — UI System
 
 **Created**: 2026-08-05
@@ -2071,6 +2078,13 @@ them is a bug in the documentation.
 # Part VII — Intelligence architecture
 
 *Merged from `SYNORA_INTELLIGENCE_ARCHITECTURE.md` on 2026-08-10. Headings demoted one level; content otherwise unchanged.*
+
+> **File references inside this merged section are historical.** They name
+> documents that existed when it was written; those were consolidated on
+> 2026-08-10 into `SYNORA_MASTER_BLUEPRINT.md`, `SYNORA_OPERATIONS.md` and
+> `SYNORA_LEARNING.md`. The text is preserved unedited rather than rewritten,
+> because editing an archived record to look current is how a record stops
+> being evidence.
 
 ## Synora Intelligence Architecture
 
@@ -2303,6 +2317,13 @@ Written as future work on purpose. None of this exists.
 # Part VIII — Product specification
 
 *Merged from `PRODUCT_SPEC.md` on 2026-08-10. Headings demoted one level; content otherwise unchanged.*
+
+> **File references inside this merged section are historical.** They name
+> documents that existed when it was written; those were consolidated on
+> 2026-08-10 into `SYNORA_MASTER_BLUEPRINT.md`, `SYNORA_OPERATIONS.md` and
+> `SYNORA_LEARNING.md`. The text is preserved unedited rather than rewritten,
+> because editing an archived record to look current is how a record stops
+> being evidence.
 
 ## PRODUCT SPEC — Synora AI Platform
 
@@ -4040,6 +4061,13 @@ principles above. Append updates; never remove.*
 
 *Merged from `SYNORA_BRAIN.md` on 2026-08-10. Headings demoted one level; content otherwise unchanged.*
 
+> **File references inside this merged section are historical.** They name
+> documents that existed when it was written; those were consolidated on
+> 2026-08-10 into `SYNORA_MASTER_BLUEPRINT.md`, `SYNORA_OPERATIONS.md` and
+> `SYNORA_LEARNING.md`. The text is preserved unedited rather than rewritten,
+> because editing an archived record to look current is how a record stops
+> being evidence.
+
 ## SYNORA BRAIN
 
 **Created:** 2026-07-25
@@ -5499,3 +5527,116 @@ neither was caught by lint/typecheck/unit tests):**
 - Next task: M5 (read `NEXT_TASK.md`) — project management UI, document
   editor, AI playground with a real provider selector, generation
   history, prompt library, all workspace-scoped
+
+---
+
+# Part X — Architectural immunity
+
+Rules that keep Synora replaceable. Added 2026-08-10. These describe what is
+**already implemented**; they are recorded so the property is defended rather
+than rediscovered.
+
+## X.1 The rule
+
+> Business logic must never learn a vendor's name.
+
+Business logic depends on a **capability**, never on a provider. A provider is
+selected by configuration and reached through an adapter. Replacing one is a
+configuration change; it is never a rewrite.
+
+```
+Synora business logic
+      ↓
+Capability interface        ai · embeddings · vectordb · storage · mail
+      ↓                     billing · queue · tools · crypto · secrets
+Provider registry + resolver
+      ↓
+Provider adapter            one file, owns its SDK and wire format
+      ↓
+External provider
+```
+
+Ten capability layers exist in `apps/backend/src/`. Sixteen AI provider
+adapters exist under `ai/providers/`. No business-logic module imports a
+vendor SDK.
+
+## X.2 What every provider must declare
+
+`AIProviderDescriptor` (`ai/types/descriptor.ts`) is the contract. The registry
+and resolver interact **only** with this shape — never with a provider's SDK,
+auth mechanism, or wire format.
+
+| Field | Purpose |
+|---|---|
+| `id`, `displayName` | Identity |
+| `capabilities` | What it can do |
+| `isConfigured()` | Are its secrets present? Network-free — it runs on every request |
+| `verifyCredential?()` | Cheapest authenticated call proving the credential works |
+| `metering` | **Required.** `metered` or `unmetered` |
+| `create()` | Builds the adapter |
+
+Two deliberate design decisions worth preserving:
+
+**Credential verification has four states, never a boolean.** `verified`,
+`rejected`, `unreachable`, `not-verifiable`. Collapsing `unreachable` into
+`rejected` sends an operator hunting a credential fault that does not exist;
+collapsing it into `verified` hides a real one. A provider with no cheap check
+reports `not-verifiable` honestly rather than faking a pass.
+
+**`metering` is required and never defaulted.** Inferring "free" from a missing
+price entry cannot distinguish a genuinely free local runtime from a paid model
+nobody has priced. Those look identical to a cost calculation and opposite to a
+bill.
+
+## X.3 Every external dependency must have
+
+interface · adapter · capability declaration · configuration boundary ·
+failure semantics · observability · cost metadata where applicable · security
+requirements · a replacement strategy.
+
+If any is missing, the dependency is not yet abstracted — it is merely wrapped.
+
+## X.4 The future Synora model
+
+A future Synora-trained model enters through the **same descriptor** as every
+external provider, and is a peer to them. No module outside the provider layer
+learns which one is "ours."
+
+Nothing about a proprietary model is built today. The seam already exists;
+building the model before there is a reason to would be architecture theatre.
+
+> The goal is to make model replacement **boring**.
+
+## X.5 The future physical-action seam
+
+Synora may eventually observe and act on physical systems. That capability is
+**not built**, and must not be built speculatively. What is recorded here is
+the shape it must take when a validated reason exists.
+
+```
+observe() → sense() → plan() → requestAction() → authorizeAction()
+         → executeAction() → verifyOutcome() → stop()
+```
+
+**A model never receives actuator credentials.** The model *proposes*; a
+policy-controlled execution layer *decides*. Every physical action must pass
+identity, authentication, authorization, capability scope, rate limits,
+simulation where possible, human approval where risk requires it, audit log,
+telemetry, outcome verification, and fail-safe defaults — with an emergency
+stop that does not depend on the model.
+
+This mirrors a boundary Synora already enforces: the internal engineering
+platform's execution layer can open a pull request and nothing more. It has no
+merge, deploy, or push operation — **the capability is absent, not guarded.**
+That is the pattern physical action must inherit.
+
+## X.6 What must not be built
+
+No fake AGI, no fake autonomy, no fake self-training, no speculative robotics,
+no unused microservices, no abstraction without a named reason.
+
+Every future-facing seam needs a documented justification. Every
+implementation needs current value, or an architectural seam that is explicitly
+justified.
+
+> **Optionality without bloat.**

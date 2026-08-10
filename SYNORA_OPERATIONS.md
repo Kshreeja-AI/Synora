@@ -278,6 +278,13 @@ process simpler.
 
 *Merged from `PROJECT_HANDOVER.md` on 2026-08-10. Retained for the zero-context onboarding detail it carries; sections above supersede it wherever they disagree.*
 
+> **File references inside this merged section are historical.** They name
+> documents that existed when it was written; those were consolidated on
+> 2026-08-10 into `SYNORA_MASTER_BLUEPRINT.md`, `SYNORA_OPERATIONS.md` and
+> `SYNORA_LEARNING.md`. The text is preserved unedited rather than rewritten,
+> because editing an archived record to look current is how a record stops
+> being evidence.
+
 ## Synora — Project Handover
 
 **As of:** 2026-07-28 — **Release 2 COMPLETE and PRODUCTION-READY**. All
