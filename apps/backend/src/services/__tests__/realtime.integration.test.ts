@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { io as ioClient, type Socket as ClientSocket } from 'socket.io-client';
 import { prisma } from '@synora/database';
 import { RealtimeService } from '../realtime.service';
+import { initConfig } from '../../config';
 
 /**
  * Realtime handshake + room-authorization integration tests, run
@@ -34,6 +35,9 @@ describe('RealtimeService integration', () => {
   const secret = process.env.JWT_SECRET || 'test-secret';
 
   beforeAll(async () => {
+    // See realtime.service.test.ts: config is initialised before the
+    // realtime layer in production, and the service now depends on it.
+    await initConfig();
     service = new RealtimeService();
     httpServer = createServer();
     service.initialize(httpServer);

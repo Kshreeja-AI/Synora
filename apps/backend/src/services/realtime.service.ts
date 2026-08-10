@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { secretsManager } from '../secrets';
+import { getConfig } from '../config';
 
 interface PresenceEvent {
   userId: string;
@@ -44,7 +45,20 @@ export class RealtimeService {
   initialize(httpServer: HTTPServer): SocketIOServer {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        // THE CANONICAL LIST, not a second env var of its own.
+        //
+        // This read `process.env.CORS_ORIGIN` — singular, and a name the
+        // config layer does not define. In production it therefore always
+        // fell through to the localhost default, so every browser
+        // WebSocket handshake from the real domain would be rejected while
+        // ordinary HTTP requests (which DO use the canonical list) worked
+        // fine. A realtime layer that fails only in production, only for
+        // browsers, and only after everything else looks healthy is the
+        // worst shape a configuration bug can take.
+        //
+        // `getConfig()` is the same source `app.ts` uses for HTTP CORS, so
+        // the two can no longer disagree.
+        origin: getConfig().server.corsOrigins,
         methods: ['GET', 'POST'],
         credentials: true,
       },
