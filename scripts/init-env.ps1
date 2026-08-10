@@ -185,7 +185,11 @@ $Spec = @(
     @{ S='HOSTINGER VPS'; N='VPS_ID';              K='config'; D='Hostinger VPS identifier (hostname srv1891213.hstgr.cloud). Deployment tooling only.'; V='PASTE_VPS_ID_HERE' }
     @{ S='HOSTINGER VPS'; N='VPS_SSH_USER';        K='config'; D='SSH login user. Not a secret; the private key is, and stays outside this file.'; V='root' }
     @{ S='HOSTINGER VPS'; N='VPS_SSH_PORT';        K='config'; D='SSH port'; V='22' }
-    @{ S='HOSTINGER VPS'; N='POSTGRES_PASSWORD';   K='secret'; D='Password for the Postgres container in docker-compose.production.yml'; V='PASTE_POSTGRES_PASSWORD_HERE' }
+    # Generated, not asked for. Nobody outside this deployment ever types this
+    # password -- the API and Postgres containers are the only readers, and
+    # they read it from here. Asking a human to invent it adds a weak secret
+    # and a support question, and buys nothing.
+    @{ S='HOSTINGER VPS'; N='POSTGRES_PASSWORD';   K='generated'; D='Password for the Postgres container in docker-compose.production.yml.' }
 
     @{ S='DOMAIN / NETWORK'; N='SYNORA_DOMAIN';        K='config'; D='Apex domain used by the production compose file and reverse proxy'; V='trysynora.com' }
     @{ S='DOMAIN / NETWORK'; N='BACKEND_URL';          K='config'; D='Public origin of the API'; V='https://api.trysynora.com' }
