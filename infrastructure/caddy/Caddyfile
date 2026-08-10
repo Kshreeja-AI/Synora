@@ -11,10 +11,14 @@
 		reverse_proxy app:3001
 	}
 
-	# Frontend. If the Next.js app is hosted elsewhere (e.g. Vercel), delete
-	# this block and point that host's rewrite at https://{$SYNORA_DOMAIN}/api.
+	# Frontend. Points at the `web` container, NOT `app` — the backend listens
+	# only on 3001, so the previous `app:3000` target was a closed port and
+	# every page request would have failed while /api kept working.
+	#
+	# If the Next.js app is hosted elsewhere (e.g. Vercel), delete this block
+	# and point that host's rewrite at https://{$SYNORA_DOMAIN}/api.
 	handle {
-		reverse_proxy app:3000
+		reverse_proxy web:3000
 	}
 
 	header {

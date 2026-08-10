@@ -1,16 +1,17 @@
 # Synora — single-VPS production topology.
 #
-# One box, four containers: Caddy (TLS), the app (backend+workers), Postgres
-# (pgvector), Redis. The simplest architecture that is real: every service
-# healthchecked, restarts on failure, survives reboot, and nothing listens on
-# the public interface except Caddy.
+# One box, six containers: Caddy (TLS + routing), web (Next.js), app
+# (backend + workers), Postgres (pgvector), Redis, and a nightly backup.
+# Every service healthchecked, restarts on failure, survives reboot, and
+# nothing listens on the public interface except Caddy.
 #
 # Usage (documented end-to-end in docs/production/DEPLOYMENT.md):
 #   1. Copy .env.production.example → .env.production, fill REQUIRED values.
 #   2. docker compose -f docker-compose.production.yml --env-file .env.production up -d
-#   3. docker compose -f docker-compose.production.yml exec app node scripts/migrate.js   (or the documented migrate command)
 #
-# The app image is the repo's own Dockerfile — the same image a PaaS would
+# Migrations run automatically as a one-shot `migrate` service; see below.
+#
+# Both images are the repo's own Dockerfiles — the same images a PaaS would
 # build, so moving hosts later is a config change, not a rewrite.
 
 services:
@@ -30,9 +31,62 @@ services:
     depends_on:
       app:
         condition: service_healthy
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Schema gate. Runs ONCE, to completion, before anything that assumes a
+  # schema starts.
+  #
+  # A one-shot service rather than an entrypoint step in `app`: with an
+  # entrypoint, every replica races to migrate the same database on every
+  # restart, and a crash-looping container re-runs migrations on each loop.
+  # Here `app` waits on service_completed_successfully, so a failed migration
+  # means the backend never starts — instead of starting and reporting healthy
+  # against a schema that was never applied.
+  #
+  # `migrate deploy` only applies committed migrations. It never resets, never
+  # generates, and is not `db push` — history is preserved.
+  migrate:
+    # Same image as `app`, named explicitly so Compose builds it once rather
+    # than exporting a second identical 1.7GB copy for the migration step.
+    build: .
+    image: synora-app:latest
+    restart: "no"
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://synora:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/synora
+    # `entrypoint: sh -c` on purpose, two reasons:
+    #  - the Node base image's docker-entrypoint.sh execs `node "$@"` for an
+    #    unrecognised first argument, so passing the CLI path directly made
+    #    node try to REQUIRE the binary ("Cannot find module .../prisma").
+    #  - pnpm's .bin entries are shell shims, not JS, so `node <shim>` fails
+    #    even with the right path.
+    # The CLI lives under the workspace package, not the workspace root: this
+    # repo's pnpm layout has no /app/node_modules/.bin/prisma.
+    entrypoint: ["sh", "-c"]
+    command:
+      - "packages/database/node_modules/.bin/prisma migrate deploy --schema packages/database/prisma/schema.prisma"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The image bakes in a liveness probe against :3001. This container never
+    # serves anything, so that probe would report unhealthy for the whole of
+    # its short life and muddy `docker compose ps` during a deploy.
+    healthcheck:
+      disable: true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   app:
     build: .
+    image: synora-app:latest
     restart: unless-stopped
     env_file: .env.production
     environment:
@@ -47,6 +101,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       # /health is liveness (no dependencies); /ready checks the database.
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>{if(r.status!==200)process.exit(1)}).catch(()=>process.exit(1))"]
@@ -54,6 +110,42 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # The frontend. Previously absent: Caddy routed page traffic to app:3000
+  # while `app` only ever listened on 3001, so every non-/api request would
+  # have met a closed port. Dockerfile.web already existed and was correct —
+  # nothing built it.
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: synora-web:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      # Baked into the browser bundle at BUILD time by Dockerfile.web; repeated
+      # here only so server-side rendering agrees with it. Public by
+      # definition — a secret must never appear behind a NEXT_PUBLIC_ name.
+      NEXT_PUBLIC_API_URL: https://${SYNORA_DOMAIN}/api
+      NEXT_PUBLIC_SITE_URL: https://${SYNORA_DOMAIN}
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(r.status!==200)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   postgres:
     image: pgvector/pgvector:pg16
@@ -70,11 +162,28 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--save", "300", "10"]
+    # maxmemory is set BELOW the container limit on purpose: Redis evicting a
+    # cache key is a normal Tuesday, Redis being OOM-killed by the kernel takes
+    # the queue with it.
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--save"
+      - "300"
+      - "10"
+      - "--maxmemory"
+      - "192mb"
+      - "--maxmemory-policy"
+      - "noeviction"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -82,9 +191,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
-  # Nightly logical backups, kept 14 days. A deletion that only exists on
-  # one disk is one disk failure away from being permanent.
+  # Nightly logical backups, kept 14 days.
+  #
+  # HONEST SCOPE: this is a LOCAL backup. The dump lands on the same disk as
+  # the database it protects, so it survives `DROP TABLE` and does not survive
+  # losing the VPS. Off-host copying is deliberately absent rather than faked —
+  # see SYNORA_OPERATIONS.md §10.
   backup:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
@@ -101,6 +218,31 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+# MEMORY BUDGET — 4 GB VPS
+#
+#   postgres  1024M   the one that must not be squeezed; it is the only
+#                     service whose failure loses data rather than availability
+#   app       1024M   Node + BullMQ workers in one process
+#   web        512M   Next.js standalone is light once built
+#   migrate    512M   runs to completion, then releases everything
+#   redis      256M   maxmemory 192M inside it
+#   caddy      128M
+#   backup     128M   idle except during the nightly dump
+#   ----------------
+#   steady     ~3.1G  (migrate has exited by then)
+#   leaving    ~0.9G  for the kernel, dockerd, sshd and headroom
+#
+# CPU is deliberately NOT capped. On a single vCPU a hard quota cannot create
+# capacity, it can only add scheduling latency to whichever container is doing
+# real work. Memory is the actual OOM risk here; CPU is contention, which the
+# scheduler already handles.
+#
+# To scale after a VPS upgrade, raise these numbers; nothing else changes.
 
 volumes:
   postgres_data:
