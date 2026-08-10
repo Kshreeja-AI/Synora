@@ -36,6 +36,7 @@ S3-compatible, OpenAI-compatible AI endpoints. No host-specific code.
 | `JWT_SECRET`, `NEXTAUTH_SECRET` | REQUIRED_PRODUCTION · AUTH · SECRET | fresh, generated; never dev values |
 | `REDIS_URL` | REQUIRED_PRODUCTION · CACHE · SECRET | BullMQ + pub/sub + cache |
 | `NODE_ENV=production`, `PORT` | REQUIRED_PRODUCTION · DEPLOYMENT | |
+| `CORS_ORIGINS`, `FRONTEND_URL`, `BACKEND_URL` | REQUIRED_PRODUCTION · DEPLOYMENT · PUBLIC | all three default to `http://localhost:300x` and production does NOT override them. Unset, the site's browser requests and realtime connections are rejected, every reset/verification/invitation email links to the recipient's own machine, and uploaded files resolve to an unreachable address — with the server reporting itself perfectly healthy. Now BOOT-ENFORCED: staging/production refuse to start when these are still loopback (config/productionGates.ts) |
 | `AI_GLOBAL_MAX_COST_PER_DAY_CENTS`, `AI_GLOBAL_MAX_TOKENS_PER_DAY` | REQUIRED_PRODUCTION · AI_PROVIDER | the kill switch; set BEFORE any paid key — now BOOT-ENFORCED: staging/production refuse to start with a real metered key and no cap (config/productionGates.ts) |
 | `TOOL_SECRET_MASTER_KEY` | REQUIRED_PRODUCTION · SECURITY · SECRET | AES-256-GCM master key for stored tool secrets; min 32 chars, boot-validated |
 | `OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `OLLAMA_MODEL`, `OLLAMA_MODELS` | OPTIONAL_PRODUCTION · AI_PROVIDER | remote GPU box; API_KEY is SECRET |
@@ -55,8 +56,12 @@ Rules: secrets only via environment/secret manager; never in git, logs, or
 Boot gates (enforced, with tests): staging/production refuse to start when
 a required secret is missing, is a known dev value copied from this
 repository, is an unfilled `<template>`, or is shorter than its minimum
-(secrets/registry.ts + validateRequired); and when a real metered AI key
-resolves with no global spend cap (config/productionGates.ts).
+(secrets/registry.ts + validateRequired); when a real metered AI key
+resolves with no global spend cap; and when `CORS_ORIGINS`, `FRONTEND_URL`
+or `BACKEND_URL` is still pointing at loopback (both
+config/productionGates.ts). A localhost entry ALONGSIDE the real domain in
+`CORS_ORIGINS` is allowed — pointing a local frontend at staging is
+deliberate; only having nothing but localhost is the unset default.
 
 ## 3. FOUNDER ACTIONS (everything only you can do)
 

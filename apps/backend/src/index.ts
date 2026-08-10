@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { secretsManager } from './secrets';
 import { encryptionService } from './crypto/encryption.service';
 import { initConfig } from './config';
-import { assertProductionLaunchGates } from './config/productionGates';
+import { assertProductionLaunchGates, assertNoLocalhostInProduction } from './config/productionGates';
 import { createApp } from './app';
 import { initializeWorkers } from './workers/manager';
 import { logger } from './utils/logger';
@@ -31,6 +31,12 @@ export async function initializeApp() {
   // A metered AI credential with no global spend cap must not boot in
   // staging/production — the cap comes BEFORE the paid key, always.
   await assertProductionLaunchGates(config, secretsManager);
+  // A browser-facing address still pointing at localhost must not boot in
+  // staging/production either. Production does not override those defaults,
+  // so an unset variable here produces a deployment that passes every health
+  // check and is broken for every visitor — see the gate for what each one
+  // costs.
+  assertNoLocalhostInProduction(config);
   const app = createApp(config);
 
   // Initialize background workers for async task processing

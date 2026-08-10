@@ -55,6 +55,123 @@ export class ProductionGateError extends Error {
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * A LOCALHOST DEFAULT MUST NOT REACH PRODUCTION
+ * ------------------------------------------------------------------ */
+
+/**
+ * `CORS_ORIGINS`, `FRONTEND_URL` and `BACKEND_URL` all default to
+ * `http://localhost:300x`, and — verified by booting the real config with
+ * `DEPLOYMENT_STAGE=production` and those variables unset — **production
+ * does not override them**. `STAGE_OVERRIDES` in defaults.ts touches only
+ * logging and rate limits.
+ *
+ * So a production deployment that forgets any one of them starts cleanly,
+ * passes every health check, logs nothing unusual, and is broken:
+ *
+ *  - `CORS_ORIGINS` — the browser at the real domain has its API calls
+ *    rejected, because the only permitted origin is localhost. Since the
+ *    realtime layer was unified onto this same list, presence and live
+ *    updates fail with it. The site loads and nothing works.
+ *  - `FRONTEND_URL` — every email verification, password reset and
+ *    workspace invitation link points at the RECIPIENT'S OWN MACHINE.
+ *    Every email Synora sends is unusable, and the send itself succeeds.
+ *  - `BACKEND_URL` — every uploaded file's public URL points at localhost,
+ *    so no avatar or attachment loads for anyone.
+ *
+ * None of the three is ever legitimately loopback in production: all three
+ * are consumed by a REMOTE BROWSER, not by a server-to-server call on the
+ * box. (A loopback value for an internal service-to-service address would
+ * be reasonable — that is simply not what these are for.) So this gate can
+ * refuse without a configuration escape hatch.
+ *
+ * Development, testing and qa are untouched: localhost is the correct
+ * answer there, and the same soft/hard stage split the credential gate
+ * above uses applies here.
+ *
+ * NOT CHECKED: whether the scheme is https. A deployment terminating TLS
+ * at a proxy can have legitimate reasons for plain http on an internal
+ * hop, and refusing on that would be an opinion rather than a fact. The
+ * loopback host is the fact.
+ */
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '[::1]']);
+
+/** True when this URL would send a browser back to its own machine. */
+export function isLoopbackUrl(value: string): boolean {
+  try {
+    return LOOPBACK_HOSTS.has(new URL(value).hostname.toLowerCase());
+  } catch {
+    // Unparseable is not this gate's problem — the schema validates shape.
+    // Reporting it as loopback would blame the wrong thing.
+    return false;
+  }
+}
+
+export class LocalhostInProductionError extends Error {
+  constructor(offenders: { name: string; value: string; consequence: string }[]) {
+    super(
+      'Refusing to start: production is configured with localhost addresses that only ' +
+        'work on the machine itself.\n' +
+        offenders.map((o) => `  - ${o.name}=${o.value} — ${o.consequence}`).join('\n') +
+        '\nSet each to the real public address (for example https://synora.example.com). ' +
+        'These have development defaults on purpose, and a default that survives to ' +
+        'production breaks the product silently — nothing else would have reported it.'
+    );
+    this.name = 'LocalhostInProductionError';
+  }
+}
+
+/**
+ * Refuse a staging/production boot whose browser-facing addresses are
+ * still pointing at the machine itself.
+ *
+ * Checks the RESOLVED configuration, not whether an environment variable
+ * was present: the value can legitimately arrive from any secret source,
+ * and what matters is the address the product will actually hand to a
+ * browser.
+ */
+export function assertNoLocalhostInProduction(
+  config: Pick<AppConfig, 'stage'> & {
+    server: Pick<AppConfig['server'], 'corsOrigins'>;
+    urls: Pick<AppConfig['urls'], 'frontendUrl' | 'backendUrl'>;
+  }
+): void {
+  if (config.stage !== 'staging' && config.stage !== 'production') return;
+
+  const offenders: { name: string; value: string; consequence: string }[] = [];
+
+  const loopbackOrigins = config.server.corsOrigins.filter(isLoopbackUrl);
+  if (loopbackOrigins.length > 0 && loopbackOrigins.length === config.server.corsOrigins.length) {
+    // Only when EVERY origin is loopback. A real deployment may keep a
+    // localhost entry alongside the real domain so a developer can point a
+    // local frontend at staging; that is deliberate and harmless. Having
+    // nothing BUT localhost is the unset default.
+    offenders.push({
+      name: 'CORS_ORIGINS',
+      value: config.server.corsOrigins.join(','),
+      consequence: 'the real site\'s browser requests and realtime connections are all rejected',
+    });
+  }
+  if (isLoopbackUrl(config.urls.frontendUrl)) {
+    offenders.push({
+      name: 'FRONTEND_URL',
+      value: config.urls.frontendUrl,
+      consequence: 'password reset, email verification and invitation links point at the recipient\'s own machine',
+    });
+  }
+  if (isLoopbackUrl(config.urls.backendUrl)) {
+    offenders.push({
+      name: 'BACKEND_URL',
+      value: config.urls.backendUrl,
+      consequence: 'uploaded files and avatars resolve to an address no visitor can reach',
+    });
+  }
+
+  if (offenders.length > 0) {
+    throw new LocalhostInProductionError(offenders);
+  }
+}
+
 /** The one SecretsManager capability this gate needs — keeps tests honest and small. */
 interface RealCredentialCheck {
   hasReal(key: string, actor?: string): Promise<boolean>;
