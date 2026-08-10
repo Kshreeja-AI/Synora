@@ -14,7 +14,7 @@ A unified platform that integrates AI-powered tools for content creation, automa
 - **Authentication**: Custom JWT + rotating refresh tokens (`next-auth` is a declared frontend dependency for a possible future OAuth2 flow, not yet wired in)
 - **ORM**: Prisma
 - **Design System**: React components with Tailwind CSS, shadcn/ui
-- **Testing**: Vitest (Jest and Playwright are named here as an original intent; the actual test suite is Vitest + Supertest, no Playwright E2E suite exists yet — see `RELEASE_2_PLAN.md`, R2-h)
+- **Testing**: Vitest (Jest and Playwright are named here as an original intent; the actual test suite is Vitest + Supertest, no Playwright E2E suite exists yet — no Playwright E2E suite yet)
 - **Package Manager**: pnpm workspaces (monorepo)
 - **Build Tool**: Turbo
 - **Deployment**: Docker, Vercel, Railway, or self-hosted
@@ -62,16 +62,17 @@ synora/
 ├── turbo.json                # Turbo configuration
 ├── package.json               # Root workspace config, packageManager pin
 ├── .env.example               # Environment variables template
-├── PROJECT_HANDOVER.md        # Zero-context entry point
-├── RELEASE_1_FINAL.md         # Authoritative Release 1 snapshot
+├── SYNORA_MASTER_BLUEPRINT.md # Architecture source of truth
+├── SYNORA_OPERATIONS.md       # How to run/deploy/recover
+├── SYNORA_LEARNING.md         # Engineering concepts, explained
 └── README.md                  # Project overview
 ```
 
-The repository root holds only living documents — the entry points above,
-the roadmap and per-release plans, `PRODUCT_SPEC.md`, `CURRENT_STATE.md`,
-`NEXT_TASK.md`, `SYNORA_BRAIN.md`, and the Supabase setup guides. A
-finished report is not a living document: archive it under `docs/archive/`
-rather than adding it here.
+Synora keeps exactly three authoritative documents:
+`SYNORA_MASTER_BLUEPRINT.md` (what Synora is and how it is architected),
+`SYNORA_OPERATIONS.md` (how to run, configure, deploy and recover it), and
+`SYNORA_LEARNING.md` (the engineering concepts behind those choices).
+Do not add a fourth: put permanent knowledge in one of these three.
 
 ## Environment Setup
 
@@ -103,8 +104,8 @@ cp apps/backend/.env.example apps/backend/.env.local
 cp apps/web/.env.example apps/web/.env.local
 
 # Start PostgreSQL (Docker) — docker-compose.dev.yml also provisions Redis
-# for future use; it isn't consumed by the app yet (see RELEASE_2_PLAN.md,
-# R2-c), so starting just postgres is enough for local development today
+# for future use; it isn't consumed by the app yet, so starting just
+# postgres is enough for local development today
 docker-compose -f docker-compose.dev.yml up -d postgres
 
 # Run database migrations
@@ -353,10 +354,13 @@ See `docs/security.md` for comprehensive security guidelines.
 
 ## Documentation
 
-Start at `PROJECT_HANDOVER.md` (zero-context entry point) or
-`RELEASE_1_FINAL.md` (the authoritative Release 1 snapshot). See
-`docs/README.md` for the full hierarchy. The five core reference docs
-below live in `docs/` and are kept in sync with code — update the
+Synora keeps exactly three authoritative documents:
+`SYNORA_MASTER_BLUEPRINT.md` (what Synora is and how it is architected),
+`SYNORA_OPERATIONS.md` (how to run, configure, deploy and recover it), and
+`SYNORA_LEARNING.md` (the engineering concepts behind those choices).
+Do not add a fourth: put permanent knowledge in one of these three.
+
+The engineering reference under `docs/` stays in sync with code — update the
 relevant one whenever a change touches it:
 
 - **`docs/architecture.md`**: System design and component relationships
@@ -365,9 +369,8 @@ relevant one whenever a change touches it:
 - **`docs/deployment.md`**: Deployment procedures
 - **`docs/security.md`**: Security practices and guidelines
 
-There is no `changelog.md` — release-level history lives in
-`RELEASE_ROADMAP.md` and the per-release summary docs
-(`RELEASE_1_FINAL.md`, etc.) instead.
+There is no `changelog.md`. Release history lives in
+`SYNORA_MASTER_BLUEPRINT.md`.
 
 ## Contributing
 
@@ -397,4 +400,4 @@ For questions or issues:
 ---
 
 **Last Updated**: 2026-07-23
-**Status**: Release 1 complete — see `RELEASE_1_FINAL.md` and `RELEASE_ROADMAP.md`
+**Status**: Release 1 complete — see `SYNORA_MASTER_BLUEPRINT.md`

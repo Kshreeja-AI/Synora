@@ -1,4 +1,275 @@
-# Synora — Project Handover
+# Synora — Operations
+
+**The operational source of truth.** How to run Synora, configure it, deploy
+it, check it is healthy, and recover when it is not.
+
+Written for a founder who is not an engineer. Every command says where it
+belongs. Nothing here assumes you already understand Docker, DNS, or
+PostgreSQL — where a concept matters, `SYNORA_LEARNING.md` explains it.
+
+For what Synora *is* and how it is architected, see `SYNORA_MASTER_BLUEPRINT.md`.
+
+---
+
+## 1. The one rule about secrets
+
+A secret is anything that would let someone act as you: API keys, database
+passwords, tokens. Synora's rule, without exception:
+
+**Secrets live in `apps/backend/.env.local` and nowhere else.**
+
+That file is git-ignored and untracked, so it cannot be committed or pushed.
+Never paste a secret into a chat window, an issue, a commit message, or a
+screenshot. If a secret is ever seen by anyone, it is *spent* — replace it
+rather than hoping.
+
+Anything Synora can generate for itself, it does. You are only ever asked for
+credentials that an outside company issued to you.
+
+---
+
+## 2. Running Synora on your laptop
+
+### Prerequisites
+
+| Software | Why |
+|---|---|
+| Node.js 20+ | Runs the application |
+| pnpm 10+ | Installs dependencies (`corepack enable` picks the pinned version) |
+| PostgreSQL 16+ | The database |
+| Redis 7+ | Background job queue |
+| Git | Version control |
+
+### First-time setup
+
+**RUN IN POWERSHELL**, from `F:\Synora-SYNORA`:
+
+```powershell
+pnpm install
+pnpm run db:generate
+powershell -ExecutionPolicy Bypass -File scripts\init-env.ps1
+```
+
+`init-env.ps1` builds `apps/backend/.env.local`. It **merges, never
+overwrites** — real values you already set are preserved byte-for-byte, and it
+generates any missing internal secrets itself.
+
+### Check the configuration is valid
+
+**RUN IN POWERSHELL:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check-env.ps1
+```
+
+Reports `PASS` or `FAIL` per variable. It shows **status and length only** —
+never a value. Exit code 0 means every required variable is present and
+well-formed.
+
+### Start it
+
+```powershell
+pnpm run dev
+```
+
+---
+
+## 3. What you must provide, and what Synora provides itself
+
+| You provide | Why only you can |
+|---|---|
+| `SELF_HOSTED_TEXT_API_KEY` | Issued by your AI router |
+| `HOSTINGER_API_TOKEN` | Issued by Hostinger |
+
+| Synora generates | Notes |
+|---|---|
+| `JWT_SECRET` | Signs login sessions. Changing it logs everyone out. |
+| `TOOL_SECRET_MASTER_KEY` | Encrypts stored tool credentials. **After launch, changing it makes stored credentials permanently unreadable.** |
+| `NEXTAUTH_SECRET` | Reserved for a future sign-in flow |
+| `POSTGRES_PASSWORD` | Only the containers ever read it |
+
+| Discovered automatically | Source |
+|---|---|
+| `VPS_ID`, `VPS_IP` | The Hostinger API |
+| Model identifiers | The AI router's own model list |
+
+Everything else — optional AI providers, object storage, payments, error
+tracking — stays blank until you actually want that feature. **A blank
+optional value is not a problem and never blocks launch.**
+
+---
+
+## 4. Rotating a credential
+
+Do this whenever a secret has been seen by anyone, or on a schedule.
+
+**Secrets Synora generates** — **RUN IN POWERSHELL:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\init-env.ps1 -Rotate
+```
+
+Replaces every auto-generated secret with a fresh one. Values are written
+straight to the file and never displayed.
+
+**Secrets someone else issued** (AI router, Hostinger) — only the issuer can
+replace them:
+
+1. **DO THIS IN HOSTINGER** (or your router's dashboard): delete the old
+   token, create a new one.
+2. **RUN IN POWERSHELL:** `notepad apps\backend\.env.local`
+3. Replace the value on that one line, save, close.
+4. **RUN IN POWERSHELL:** `powershell -File scripts\check-env.ps1`
+
+Deleting the old token at the issuer is the step that actually revokes it.
+Replacing your copy alone leaves the old one working for whoever has it.
+
+---
+
+## 5. Verifying a build before deployment
+
+**RUN IN POWERSHELL**, from the repository root:
+
+```powershell
+pnpm run type-check     # every package compiles
+pnpm run lint           # code standards
+pnpm run test           # the test suite
+pnpm audit              # known vulnerabilities in dependencies
+powershell -File scripts\check-env.ps1
+```
+
+All five must be clean before deploying. **A test that cannot run is not a
+test that passed** — if something is skipped, it is `NOT VERIFIED`, and that
+is a different thing from `PASS`.
+
+---
+
+## 6. Production architecture
+
+```
+Internet
+   │
+   ▼  HTTPS (443)
+Reverse proxy  ──────────── the only thing exposed to the internet
+   │
+   ├──▶ Synora Web      (Next.js frontend)
+   └──▶ Synora API      (Express backend)
+              │
+              ├──▶ PostgreSQL   ─┐  private network only,
+              ├──▶ Redis        ─┘  never reachable from the internet
+              └──▶ AI Router    (external, over HTTPS)
+```
+
+The server is a Hostinger VPS: **1 vCPU, 4 GB RAM, 50 GB disk, AlmaLinux 9**,
+`id=1891213`, IP `200.234.32.93`.
+
+**AI inference never runs on this machine.** One CPU cannot serve a language
+model at usable speed. Inference is always an outbound call to the configured
+router, which is also why swapping AI providers is a configuration change
+rather than a rewrite.
+
+Only ports **80** and **443** are public, plus SSH. PostgreSQL and Redis
+listen on the private network only.
+
+---
+
+## 7. Deployment
+
+> Not yet performed. This section describes the intended procedure; it will be
+> marked verified once it has actually run end to end.
+
+Deployment is reproducible from the repository: the same steps on a fresh
+server produce the same result, so recovery never depends on remembering what
+was typed once.
+
+**Never deployed by hand.** Manual server edits drift from the repository and
+become undiagnosable.
+
+---
+
+## 8. Domain and DNS
+
+**Current state** — `trysynora.com` points at Hostinger's shared hosting and
+CDN, *not* at your VPS. That is why the placeholder page appears.
+
+| Record | Now | Required |
+|---|---|---|
+| `trysynora.com` A | `88.222.243.226`, `93.127.173.230` | `200.234.32.93` |
+| `www` CNAME | `...cdn.hstgr.net` | `200.234.32.93` |
+| Nameservers | `lunar`/`solar.dns-parking.com` | unchanged |
+
+**DNS is changed last, only after the application is confirmed healthy on the
+VPS, and only with your explicit approval.** Until then the placeholder page
+stays up, which means a failed deployment breaks nothing that is currently
+working.
+
+**Rollback:** restore the original A records. Propagation is minutes to a few
+hours — the old values are recorded above precisely so rollback needs no
+research.
+
+---
+
+## 9. Health checks
+
+| Endpoint | Answers |
+|---|---|
+| `/health` | Is the process alive? |
+| `/ready` | Can it reach the database and Redis? |
+
+`/health` passing while `/ready` fails means the application is running but a
+dependency is down — that distinction is the first thing to check when
+something looks broken.
+
+---
+
+## 10. Backups
+
+> **NOT YET CONFIGURED.** No backups exist. This is honest rather than
+> reassuring: claiming a backup that has never been tested is worse than
+> having none, because it removes the urgency to make one.
+
+Before real users arrive, the database needs a scheduled dump, stored off the
+server, with a restore that has actually been tested. **A backup nobody has
+restored is a hope, not a backup.**
+
+---
+
+## 11. When something breaks
+
+| Symptom | Likely cause |
+|---|---|
+| Site loads, live updates don't | `CORS_ORIGINS` missing the real domain |
+| "Nothing was generated" | AI router unreachable, or model has no price and a cost cap is set |
+| Everyone logged out at once | `JWT_SECRET` changed |
+| Startup refuses with a config error | Production configured with a `localhost` address — deliberate, not a bug |
+| Uploads or jobs stuck | Redis unreachable |
+
+Check `/ready` first: it names which dependency is down and saves guessing.
+
+---
+
+## 12. Safety rules
+
+Actions that are never taken automatically, and always need your approval:
+
+- Changing DNS
+- Deleting or resetting a database
+- Rebooting or destroying the VPS
+- Rotating a credential issued by someone else
+- Force-pushing or rewriting git history
+- Anything that costs money
+
+Your uncommitted work is preserved on the branch
+`founder-wip/pre-reconcile-2026-08-10`. Nothing is ever discarded to make a
+process simpler.
+
+---
+
+## 13. Appendix — original project handover
+
+*Merged from `PROJECT_HANDOVER.md` on 2026-08-10. Retained for the zero-context onboarding detail it carries; sections above supersede it wherever they disagree.*
+
+## Synora — Project Handover
 
 **As of:** 2026-07-28 — **Release 2 COMPLETE and PRODUCTION-READY**. All
 milestones M1–M6 complete (design system + frontend infrastructure; marketing
@@ -21,7 +292,7 @@ duplicating. Companion documents:
 
 ---
 
-## 1. Vision and long-term goals
+### 1. Vision and long-term goals
 
 Synora is to become **one of the world's best AI creation platforms**: a
 premium, enterprise-grade SaaS where creators generate text, code,
@@ -38,7 +309,7 @@ Non-negotiable principles (founder-set, restated at every release):
 - Launch requires only: set env vars → configure payment/AI/email keys →
   deploy. Everything else already works.
 
-## 2. Current architecture (summary)
+### 2. Current architecture (summary)
 
 Monorepo SaaS: Next.js 15 frontend, Express 4/TypeScript backend REST
 API, PostgreSQL 16 via Prisma, one pnpm workspace built with Turbo.
@@ -61,7 +332,7 @@ Full detail: `docs/architecture.md` (kept current; includes request
 lifecycle, security layers, scaling, and future queue/memory/agent
 sections explicitly marked not-implemented).
 
-## 3. Folder structure
+### 3. Folder structure
 
 ```
 synora/
@@ -123,7 +394,7 @@ synora/
 └── package.json                # Workspace root, packageManager pin (pnpm 10.33.0)
 ```
 
-## 4. Tech stack
+### 4. Tech stack
 
 | Layer | Technology |
 |---|---|
@@ -143,7 +414,7 @@ synora/
 | CI | GitHub Actions: `test`, `security`, `docker` — all blocking |
 | Container | Docker multi-stage, `node:22-bookworm-slim` |
 
-## 5. Completed milestones
+### 5. Completed milestones
 
 **Release 1 (complete — see `RELEASE_1_FINAL.md`):** R1-a..R1-h — auth
 with rotating refresh tokens + lockout, user/project/document CRUD, AI
@@ -268,7 +539,7 @@ founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
   shifted down one slot (old M4→M5, …, M9→M10) — see `RELEASE_2_PLAN.md`
   §3.
 
-## 6. Current branch / PR / CI / Git status
+### 6. Current branch / PR / CI / Git status
 
 - **Branch**: `claude/synora-ai-platform-h5q0k2` (all Release 2 work, now complete)
 - **PR**: #37 → base `SYNORA`, **MERGED** ✅. Contains all Release 2 M1–M6 work.
@@ -276,7 +547,7 @@ founder decision 2026-07-25 — see `CURRENT_STATE.md`):**
 - **Working tree**: clean — Release 2 fully committed and pushed
 - Session git credentials are scoped to push only this branch.
 
-## 7. Database models
+### 7. Database models
 
 20 models in `packages/database/prisma/schema.prisma` (full column docs:
 `docs/database.md`):
@@ -301,7 +572,7 @@ Migrations applied (6): `init`, `add_refresh_token`,
 `add_password_reset_token`,
 `add_email_verification_and_session_metadata`. No seed script.
 
-## 8. Authentication flow
+### 8. Authentication flow
 
 Register/login → `{ accessToken (15m JWT, carries a `sid` session
 claim), refreshToken (7d opaque, rotating — 30d with `rememberMe`),
@@ -317,7 +588,7 @@ refresh → retry cycle single-flight. Bearer-not-cookies is deliberate
 response alias was removed in M3.
 Detail: `docs/api.md`, `docs/production/R1-c_REFRESH_TOKENS.md`.
 
-## 9. AI provider architecture
+### 9. AI provider architecture
 
 `apps/backend/src/ai/` — descriptor registry + resolver + facade
 (`generateText()`). 10 providers: Anthropic, OpenAI, Gemini, xAI,
@@ -330,7 +601,7 @@ silently activate a billable provider. Vendor errors wrapped in
 (Ollama already proves the path). Detail:
 `docs/production/R1-e_AI_PROVIDER_ABSTRACTION.md`.
 
-## 10. API routes
+### 10. API routes
 
 Envelope: success `{ success: true, data, meta }`; error
 `{ success: false, error: { code, message, details? } }`. Detail with
@@ -355,7 +626,7 @@ examples: `docs/api.md`.
 | `/api/images` `/`, `/generate`, `/:id` | GET/POST/GET | Bearer | `/generate` is a **placeholder** (hardcoded URL, no provider call) until M7 |
 | `/api/ai/generate` | POST | Bearer | real text/code generation, synchronous |
 
-## 11. Frontend architecture & design system
+### 11. Frontend architecture & design system
 
 See `docs/architecture.md` §Frontend and §Design System for the full
 description. Key points: dark-first token theming (`data-theme`
@@ -371,7 +642,7 @@ deprecated `token` alias could be dropped from the backend. The design
 system is the only sanctioned way to build UI; do not hand-roll one-off
 styled controls.
 
-## 12. Current deployment strategy
+### 12. Current deployment strategy
 
 Manual, backend-only Docker image (the web app is not yet part of the
 deploy story — that decision lands with M10/CD):
@@ -391,7 +662,7 @@ no `pnpm prune --prod` (corrupts workspace symlinks), explicit OpenSSL
 install (Prisma on bookworm-slim), non-root user, `0.0.0.0` bind — all
 documented in `docs/archive/RELEASE_1_VERIFICATION_REPORT.md`.
 
-## 13. Environment variables
+### 13. Environment variables
 
 Authoritative list: `.env.example` (root + per-app) and
 `docs/archive/RELEASE_1_LAUNCH_READINESS.md` §2. Summary:
@@ -413,7 +684,7 @@ Authoritative list: `.env.example` (root + per-app) and
   `STORAGE_MAX_UPLOAD_BYTES`
 - Secret catalog with owners/rotation: `apps/backend/src/secrets/registry.ts`
 
-## 14. Security architecture
+### 14. Security architecture
 
 Layered: helmet → CORS allowlist → IP rate limiting → zod validation →
 pinned-algorithm JWT (now carrying a `sid` session claim) → per-account
@@ -425,7 +696,7 @@ security gates (audit high+, gitleaks, Snyk best-effort) → non-root
 Docker, no `.env` in layers. Deliberately not yet: MFA (M6), CSRF/cookies
 (M6), Redis-shared limits (M7). Full doc: `docs/security.md`.
 
-## 15. Testing status
+### 15. Testing status
 
 - **Backend**: 361 tests (vitest + supertest, real Postgres) — includes
   M3's mail (console transport log, SMTP transport mocked, registry/
@@ -445,7 +716,7 @@ Docker, no `.env` in layers. Deliberately not yet: MFA (M6), CSRF/cookies
   `apps/web/vitest.setup.ts`'s `ResizeObserver` polyfill (jsdom doesn't
   implement it; Radix Checkbox/Switch construct one on mount).
 
-## 16. Documentation hierarchy
+### 16. Documentation hierarchy
 
 `docs/README.md` is the index. Living reference docs (update with code):
 `docs/architecture.md`, `api.md`, `database.md`, `deployment.md`,
@@ -457,7 +728,7 @@ Docker, no `.env` in layers. Deliberately not yet: MFA (M6), CSRF/cookies
 reports. There is no changelog file — release history lives in the
 roadmap + release docs.
 
-## 17. Known limitations
+### 17. Known limitations
 
 - MFA not wired (code on `recover/mfa` + 4 dead mainline services under
   `services/mfa/`) — M6
@@ -482,7 +753,7 @@ roadmap + release docs.
   palette, workspace switching) shipped in M4.
 - `infrastructure/k8s/` is an unused placeholder — R4
 
-## 18. Production readiness
+### 18. Production readiness
 
 Backend is production-ready **for a single-instance, text/code-only
 launch** (that was Release 1's bar — see `docs/archive/PRODUCTION_READINESS_AUDIT.md`),
@@ -496,7 +767,7 @@ launch-ready: real product surfaces, billing, teams, media generation,
 admin, observability remain ahead. Track precise per-area status in
 `CURRENT_STATE.md`.
 
-## 19. Exact next task
+### 19. Exact next task
 
 **M7 — Media Generation, Asset Manager, Async Queue.** Always read `NEXT_TASK.md`
 (single source of truth for the next task); it currently specifies this in full:
@@ -505,7 +776,7 @@ existing AI abstraction), gallery UI, usage tracking integration (M6 credits), a
 workspace-scoped with proper permissions. Milestone gate: lint/typecheck/test/build
 → commit → push → green CI before M8.
 
-## 20. Things that must never be changed
+### 20. Things that must never be changed
 
 1. **Provider-agnosticism**: no route, service, or UI may import a vendor
    AI SDK directly — everything goes through `apps/backend/src/ai/`.
@@ -534,7 +805,7 @@ workspace-scoped with proper permissions. Milestone gate: lint/typecheck/test/bu
    lockout behavior) are preserved unless a release plan explicitly
    changes them.
 
-## 21. Coding standards
+### 21. Coding standards
 
 Per `CLAUDE.md` (authoritative): TypeScript strict, explicit return
 types, no `any` (use `unknown`); conventional commits
@@ -545,7 +816,7 @@ accessibility required (the design system's Radix base helps but
 doesn't absolve page-level semantics); update the relevant `docs/*` file
 whenever a change touches it.
 
-## 22. Architectural decisions and reasons
+### 22. Architectural decisions and reasons
 
 Consolidated with rationale in `docs/architecture.md` §"Architectural
 Decisions" — monorepo, REST-first, Prisma, custom JWT over NextAuth,
@@ -555,7 +826,7 @@ design system, config/secrets separation, sync-text/async-media split,
 mailer/storage as descriptor-registry abstractions mirroring the AI
 provider pattern (M3).
 
-## 23. Release roadmap / future roadmap
+### 23. Release roadmap / future roadmap
 
 - **R1** ✅ launchable core (frozen: `RELEASE_1_FINAL.md`)
 - **R2** ▶ complete customer-facing platform. `RELEASE_2_PLAN.md`'s
