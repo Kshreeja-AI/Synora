@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from '../../ai/providers/sdk-options';
 import { getConfig } from '../../config';
 import type { EmbeddingProviderDescriptor } from '../descriptor';
 import { OpenAICompatibleEmbeddingProvider } from './openaiCompatible.provider';
@@ -34,10 +35,8 @@ export const selfHostedEmbeddingDescriptor: EmbeddingProviderDescriptor = {
     }
     return new OpenAICompatibleEmbeddingProvider(
       'self-hosted',
-      new OpenAI({
-        apiKey: selfHostedApiKey || 'self-hosted-does-not-require-an-api-key',
-        baseURL: selfHostedBaseUrl,
-      }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey: selfHostedApiKey || 'self-hosted-does-not-require-an-api-key',
+        baseURL: selfHostedBaseUrl, }),
       selfHostedModel,
       selfHostedMaxBatchSize ?? SELF_HOSTED_DEFAULT_MAX_BATCH_SIZE
     );

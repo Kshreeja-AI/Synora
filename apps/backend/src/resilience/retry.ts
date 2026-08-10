@@ -52,6 +52,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const attemptsByError = new WeakMap<object, number>();
+
 /**
  * Runs `fn`, retrying on retryable errors with exponential/fixed backoff up
  * to `config.attempts` total attempts. Non-retryable errors (a validation
@@ -74,6 +76,11 @@ export async function withRetry<T>(
 
       const isLastAttempt = attempt >= config.attempts;
       if (isLastAttempt || !isRetryableError(error)) {
+        // Tagged before rethrowing so a spend guard upstream can charge for
+        // the invocations that may already have billed. See attemptsMadeFor.
+        if (typeof error === 'object' && error !== null) {
+          attemptsByError.set(error, attempt);
+        }
         throw error;
       }
 
@@ -90,5 +97,31 @@ export async function withRetry<T>(
     }
   }
 
+  if (typeof lastError === 'object' && lastError !== null) {
+    attemptsByError.set(lastError, config.attempts);
+  }
   throw lastError;
+}
+
+/**
+ * How many provider invocations a failed call actually made.
+ *
+ * WHY THIS IS RECORDED. `withTimeout` stops Synora WAITING; it cannot
+ * cancel the upstream HTTP request (its own header says so), so a timed-out
+ * generation may still complete and bill. The retry loop then tries again.
+ * Three attempts can therefore bill three times while the caller sees one
+ * failure — and a spend guard that charges nothing for failures would treat
+ * all of it as free, which is the one direction a cost cap must never err.
+ *
+ * A WeakMap rather than a property on the error: errors get logged,
+ * serialized and compared, and adding a field to them changes shapes that
+ * other code already depends on. This keeps the accounting fact beside the
+ * error without altering the error itself.
+ */
+export function attemptsMadeFor(error: unknown): number | undefined {
+  return typeof error === 'object' && error !== null ? attemptsByError.get(error) : undefined;
+}
+
+export function recordAttemptsForTesting(error: object, attempts: number): void {
+  attemptsByError.set(error, attempts);
 }

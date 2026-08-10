@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
@@ -14,6 +15,7 @@ export const togetherDescriptor: AIProviderDescriptor = {
   id: 'together',
   displayName: 'Together AI',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('TOGETHER_API_KEY', 'ai:together');
@@ -22,12 +24,12 @@ export const togetherDescriptor: AIProviderDescriptor = {
     const apiKey = await secretsManager.get('TOGETHER_API_KEY', 'ai:together');
     return new OpenAICompatibleTextProvider(
       'together',
-      new OpenAI({ apiKey, baseURL: TOGETHER_BASE_URL }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey, baseURL: TOGETHER_BASE_URL }),
       getConfig().ai.togetherModel
     );
   },
   async verifyCredential() {
     const apiKey = await secretsManager.get('TOGETHER_API_KEY', 'ai:together');
-    return verifyOpenAICompatibleKey(new OpenAI({ apiKey, baseURL: TOGETHER_BASE_URL }), 'Together AI');
+    return verifyOpenAICompatibleKey(new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey, baseURL: TOGETHER_BASE_URL }), 'Together AI');
   },
 };

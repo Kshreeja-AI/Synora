@@ -1,24 +1,22 @@
 /**
- * Per-model cost estimates, USD per 1,000 tokens. An approximation for
- * display and for spend enforcement, never for billing/invoicing —
- * Release 2's billing system prices by credits per capability-use, not by
- * token, and is entirely separate from this.
+ * Per-model cost estimates, USD per 1,000 tokens.
  *
- * THE TABLE IS INCOMPLETE BY NATURE and always will be. It cannot
- * enumerate every model behind an OpenAI-compatible router, and a
- * self-hosted model has no per-token price at all. So the important
- * question is not "what does this cost?" but "do we know?" — and the two
- * exports below keep those apart:
+ * TWO CALLERS WITH OPPOSITE NEEDS, so this file exposes two functions and
+ * they must not be confused:
  *
- *  - `estimateCostOrUnknown` returns `null` for a model with no price.
- *    Anything that GATES on cost must use this and handle the null.
- *  - `estimateCost` collapses that null to `0`. Safe for reporting only:
- *    an unrecognized model must never block a real conversation, so a
- *    display total degrades to what it can account for.
+ *  - `estimateCost` populates `ConversationUsage.estimatedCost` — a figure
+ *    for display, never for billing/invoicing (Release 2's billing prices
+ *    by credits per capability-use and is entirely separate). An
+ *    unrecognized model returns `0` rather than throwing, because a missing
+ *    price entry must never break a working conversation.
  *
- * Collapsing the two — which is what this module used to do — makes an
- * unpriced model indistinguishable from a free one, and a spend cap fed
- * zeros never trips.
+ *  - `priceModelUsd` answers the SPENDING CAP's question, and reports
+ *    "unknown" as its own outcome. For a cap, "unrecognized model" costing
+ *    zero is not a harmless approximation — it is an uncapped bill.
+ *
+ * This table is best-effort and will always lag the providers. That is
+ * precisely why the metered path is built to fail closed on absence rather
+ * than to trust the table's completeness.
  */
 
 interface ModelPricing {
@@ -36,38 +34,13 @@ const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-1.5-flash': { inputPer1k: 0.000075, outputPer1k: 0.0003 },
 };
 
-/**
- * Whether this deployment can price the model at all.
- *
- * Exported so callers can ask BEFORE spending rather than discovering
- * afterwards that the answer was zero. See `estimateCostOrUnknown`.
- */
-export function isPriceKnown(model: string): boolean {
-  return MODEL_PRICING[model] !== undefined;
-}
-
-/**
- * Cost in USD, or `null` when this deployment has no price for the model.
- *
- * THE DISTINCTION THAT MATTERS. `estimateCost` below returns 0 for an
- * unknown model, and 0 is indistinguishable from "this was genuinely free".
- * A spend cap fed zeros never trips — so the cap silently stopped applying
- * to exactly the models most likely to be used here: anything served
- * through `SELF_HOSTED_TEXT_MODEL` or an OpenAI-compatible router, whose
- * names are not in the table above and never will be, because the table
- * cannot enumerate every model a router might expose.
- *
- * `null` forces every caller to decide what unknown means for them.
- * Returning a guessed price instead would be worse: an invented number
- * that looks authoritative in a billing ledger.
- */
-export function estimateCostOrUnknown(
+export function estimateCost(
   model: string,
   inputTokens: number,
   outputTokens: number
-): number | null {
+): number {
   const pricing = MODEL_PRICING[model];
-  if (!pricing) return null;
+  if (!pricing) return 0;
 
   return (
     (inputTokens / 1000) * pricing.inputPer1k +
@@ -76,17 +49,83 @@ export function estimateCostOrUnknown(
 }
 
 /**
- * Cost in USD, treating an unknown model as 0.
+ * The same arithmetic, but SAYING SO when the price is unknown.
  *
- * SAFE ONLY FOR REPORTING, never for enforcement. Kept because the usage
- * ledger legitimately wants "what we can account for" and a null there
- * would break arithmetic across a mixed set of models. Anything that GATES
- * on cost must use `estimateCostOrUnknown` and handle the null.
+ * WHY THIS EXISTS SEPARATELY FROM `estimateCost`. That function answers a
+ * display question — "roughly what did this conversation cost?" — and
+ * returning 0 for an unrecognized model is the right answer there, because
+ * a missing price entry must never break a working conversation.
+ *
+ * A SPENDING CAP ASKS A DIFFERENT QUESTION, and the same answer is
+ * catastrophic for it: a model absent from the table would cost 0 cents
+ * forever, so a dollar cap would never bind it. That is not hypothetical —
+ * `ANTHROPIC_MODEL` is free-form env configuration, and a perfectly normal
+ * value like a dated snapshot (`claude-sonnet-5-20250514`) is not a key in
+ * this table. Someone who set a $5/day cap and a real model name would have
+ * no cap at all.
+ *
+ * So the caller is forced to handle "unknown" rather than being handed a
+ * number that silently means "free". Callers that meter money must fail
+ * closed; callers that render a figure may keep showing zero.
  */
-export function estimateCost(
+export type ModelPriceResult =
+  | { known: true; costUsd: number }
+  | { known: false };
+
+export function priceModelUsd(
   model: string,
   inputTokens: number,
   outputTokens: number
-): number {
-  return estimateCostOrUnknown(model, inputTokens, outputTokens) ?? 0;
+): ModelPriceResult {
+  const pricing = MODEL_PRICING[model];
+  if (!pricing) return { known: false };
+
+  return {
+    known: true,
+    costUsd:
+      (inputTokens / 1000) * pricing.inputPer1k +
+      (outputTokens / 1000) * pricing.outputPer1k,
+  };
+}
+
+/**
+ * `priceModelUsd` in the two shapes callers actually want.
+ *
+ * Both are thin wrappers rather than separate arithmetic, so there is exactly
+ * one place where a price is computed and exactly one table to keep correct.
+ * They exist because "is this priceable?" and "what does it cost, or nothing
+ * if I cannot say?" are the two questions the spend guard and its tests ask,
+ * and expressing them through the tagged union at every call site obscured
+ * what was being asked.
+ */
+export function estimateCostOrUnknown(
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): number | null {
+  const priced = priceModelUsd(model, inputTokens, outputTokens);
+  return priced.known ? priced.costUsd : null;
+}
+
+/** Whether this deployment can put a number on the model at all. */
+export function isPriceKnown(model: string): boolean {
+  return priceModelUsd(model, 0, 0).known;
+}
+
+/**
+ * The most expensive rate this table knows, used as the ceiling charged to
+ * a metered model whose price is unknown.
+ *
+ * DERIVED, never hardcoded: a hardcoded ceiling silently stops being a
+ * ceiling the day a pricier model is added, and nothing would fail to say
+ * so. Deliberately pessimistic — over-charging an unpriced model refuses a
+ * caller slightly early, which is recoverable, while under-charging it
+ * spends money that is not.
+ */
+export function maxKnownRatePer1k(): { inputPer1k: number; outputPer1k: number } {
+  const entries = Object.values(MODEL_PRICING);
+  return {
+    inputPer1k: Math.max(...entries.map((p) => p.inputPer1k)),
+    outputPer1k: Math.max(...entries.map((p) => p.outputPer1k)),
+  };
 }

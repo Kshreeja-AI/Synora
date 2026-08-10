@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import {
@@ -77,6 +78,7 @@ export const openaiTextToSpeechDescriptor: AIProviderDescriptor<TextToSpeechProv
   id: 'openai',
   displayName: 'OpenAI Text-to-Speech',
   capabilities: ['text-to-speech'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai-tts');
@@ -86,7 +88,7 @@ export const openaiTextToSpeechDescriptor: AIProviderDescriptor<TextToSpeechProv
     const config = getConfig();
     return new OpenAITextToSpeechProvider(
       'openai',
-      new OpenAI({ apiKey }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey }),
       config.ai.openaiTtsModel,
       config.ai.openaiTtsVoice
     );

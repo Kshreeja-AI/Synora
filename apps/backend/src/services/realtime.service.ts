@@ -42,23 +42,31 @@ export class RealtimeService {
   private presence: Map<string, PresenceEvent> = new Map();
   private subscriptions: Map<string, Set<string>> = new Map();
 
+  /**
+   * Realtime reads the SAME validated origin list as the HTTP layer
+   * (`config.server.corsOrigins`, sourced from CORS_ORIGINS).
+   *
+   * It previously read `process.env.CORS_ORIGIN` — a singular name nothing in
+   * the project ever sets. That did not merely disagree with the HTTP config;
+   * it meant the `||` fallback ALWAYS won, pinning WebSocket origins to
+   * http://localhost:3000 in every environment. In production the browser
+   * origin is https://trysynora.com, so every realtime handshake would have
+   * been rejected while HTTP requests succeeded — the kind of split-brain that
+   * looks like a broken socket server rather than a config typo.
+   *
+   * The resolver is injected so tests can state an origin list explicitly.
+   * The default deliberately calls getConfig(), which THROWS when config has
+   * not been initialised: a realtime server that cannot learn its allowed
+   * origins must fail loudly at boot, never quietly serve a guessed default.
+   */
+  constructor(
+    private readonly resolveCorsOrigins: () => string[] = () => getConfig().server.corsOrigins
+  ) {}
+
   initialize(httpServer: HTTPServer): SocketIOServer {
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        // THE CANONICAL LIST, not a second env var of its own.
-        //
-        // This read `process.env.CORS_ORIGIN` — singular, and a name the
-        // config layer does not define. In production it therefore always
-        // fell through to the localhost default, so every browser
-        // WebSocket handshake from the real domain would be rejected while
-        // ordinary HTTP requests (which DO use the canonical list) worked
-        // fine. A realtime layer that fails only in production, only for
-        // browsers, and only after everything else looks healthy is the
-        // worst shape a configuration bug can take.
-        //
-        // `getConfig()` is the same source `app.ts` uses for HTTP CORS, so
-        // the two can no longer disagree.
-        origin: getConfig().server.corsOrigins,
+        origin: this.resolveCorsOrigins(),
         methods: ['GET', 'POST'],
         credentials: true,
       },

@@ -20,6 +20,13 @@ describe('health and readiness endpoints', () => {
   beforeAll(async () => {
     const config = await initConfig();
     app = createApp(config);
+    // Warm the Prisma engine before asserting readiness. /ready's contract
+    // is "ready when the database is reachable", enforced with a 2s probe
+    // timeout that assumes a warm pool — which production has, because the
+    // server connects at boot. A cold first connection on a slow machine
+    // can exceed 2s on its own, and without this warm-up the test measures
+    // engine start-up time instead of the contract.
+    await prisma.$queryRaw`SELECT 1`;
   });
 
   afterAll(async () => {

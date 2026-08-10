@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import {
@@ -78,12 +79,13 @@ export const openaiImageDescriptor: AIProviderDescriptor<ImageGenerationProvider
   id: 'openai',
   displayName: 'OpenAI Images',
   capabilities: ['image-generation'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('OPENAI_API_KEY', 'ai:openai-image');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'ai:openai-image');
-    return new OpenAIImageProvider('openai', new OpenAI({ apiKey }), getConfig().ai.openaiImageModel);
+    return new OpenAIImageProvider('openai', new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey }), getConfig().ai.openaiImageModel);
   },
 };

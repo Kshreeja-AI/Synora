@@ -1,3 +1,7 @@
+// FIRST IMPORT, deliberately: ESM evaluates imports before any body
+// statement, so the environment must be loaded by an import rather than a
+// call. See ./bootstrap-env.
+import './bootstrap-env';
 import type { Server } from 'node:http';
 import { Express } from 'express';
 import { logger } from './utils/logger';
@@ -49,6 +53,17 @@ async function bootstrap() {
   // Both are credential-gated no-ops when unconfigured.
   initObservability();
   const { app, config } = await initializeApp();
+  // Open the database connection BEFORE accepting traffic.
+  //
+  // Prisma connects lazily, so without this the first query in the process
+  // is also the first CONNECTION — and `/ready` bounds its probe at 2s on
+  // the assumption of a warm pool. An orchestrator's very first readiness
+  // check could therefore time out on connection setup alone and delay or
+  // fail a rollout, on an instance that was in fact healthy. Failing here
+  // instead is the honest outcome: an instance that cannot reach its
+  // database should not start, rather than start and report not-ready
+  // forever.
+  await prisma.$connect();
   // Awaited before the server accepts traffic: an unhydrated registry would
   // answer 404 for agents that exist, which is a confident wrong answer.
   await bootAgentStores();

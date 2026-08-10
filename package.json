@@ -36,16 +36,20 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "pnpm": {
+    "comment": "Targeted transitive security overrides. Each pins the MINIMUM patched version inside the SAME major, so no direct dependency changes API. Ranges are version-scoped (pkg@<x) so the override lapses automatically once a parent ships the fix itself.",
+    "overrides": {
+      "nanoid@<3.3.17": "^3.3.17",
+      "postcss@<8.5.23": "^8.5.23",
+      "sharp@<0.35.0": "^0.35.0",
+      "esbuild@<0.28.1": "^0.28.1"
+    }
+  },
   "license": "BUSL-1.1",
   "dependencies": {
     "@elastic/elasticsearch": "^9.4.3",
     "@types/socket.io": "^3.0.2",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
-  },
-  "pnpm": {
-    "overrides": {
-      "nanoid": "^3.3.18"
-    }
   }
 }

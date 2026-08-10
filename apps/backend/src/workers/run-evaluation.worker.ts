@@ -2,7 +2,7 @@ import { prisma } from '@synora/database'
 import { EvaluationStatus } from '@prisma/client'
 import { logger } from '../utils/logger'
 import { resolveProvider } from '../ai/resolver'
-import { assertAiBudget, recordAiSpend } from '../ai/spend-guard'
+import { assertAiBudget, recordAiSpend, AiBudgetExceededError } from '../ai/spend-guard'
 
 export interface RunEvaluationJobData {
   evaluationRunId: string
@@ -109,6 +109,19 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
       const progress = 5 + (i / samples.length) * 90
 
       try {
+        // RE-CHECKED EVERY SAMPLE, not only before sample one.
+        //
+        // The up-front check above is still right — refusing an already
+        // over-budget workspace before any work is the honest moment — but
+        // it is not sufficient on its own. This loop calls a provider once
+        // per sample, so a workspace sitting at 99% of its cap passed that
+        // single gate and then burned an entire dataset: one check,
+        // N generations, and a limit that could be exceeded by the whole
+        // run. Re-asking here is what makes the cap bind DURING the job, so
+        // an evaluation stops mid-run instead of finishing on money the
+        // workspace did not have.
+        await assertAiBudget({ workspaceId })
+
         const generation = await provider.generateText({
           prompt: sample.input,
           model: model.modelName,
@@ -159,6 +172,23 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
           })
         }
       } catch (sampleError) {
+        // A budget refusal STOPS the run rather than failing every
+        // remaining sample one at a time. Continuing would write N
+        // "PREDICTION_FAILED" rows for a limit the workspace set — blaming
+        // the model for a decision the founder made — and would leave an
+        // operator reading a broken-looking evaluation instead of a
+        // budget message.
+        if (sampleError instanceof AiBudgetExceededError) {
+          logger.warn('[worker] Evaluation stopped: AI budget reached mid-run', {
+            evaluationRunId,
+            stoppedAtSample: i,
+            totalSamples: samples.length,
+            scope: sampleError.scope,
+            limit: sampleError.limit,
+          })
+          break
+        }
+
         errorCount++
         logger.warn(`[worker] Failed to evaluate sample ${sample.id}`, {
           evaluationRunId,

@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
 import {
@@ -37,18 +38,21 @@ function settings(): { baseUrl?: string; apiKey?: string; model?: string } {
 }
 
 function client(baseUrl: string, apiKey?: string): OpenAI {
-  return new OpenAI({
-    // Optional Bearer token, exactly as the Ollama descriptor: bare local
+  return new OpenAI({ ...SDK_CLIENT_OPTIONS, // Optional Bearer token, exactly as the Ollama descriptor: bare local
     // servers ignore it; a protected remote endpoint's proxy checks it.
     apiKey: apiKey || 'self-hosted-does-not-require-an-api-key',
-    baseURL: baseUrl,
-  });
+    baseURL: baseUrl, });
 }
 
 export const selfHostedTextDescriptor: AIProviderDescriptor = {
   id: 'self-hosted',
   displayName: 'Self-hosted (OpenAI-compatible)',
   capabilities: ['text-generation', 'code-generation'],
+  // A runtime the operator already owns, so tokens cost nothing and a COST
+  // cap can never bind it. The daily TOKEN cap is what bounds this provider
+  // — including if this endpoint is ever pointed at something that does
+  // bill, which the operator, not this file, would know.
+  metering: 'unmetered' as const,
   async isConfigured() {
     const { baseUrl, model } = settings();
     return Boolean(baseUrl && model);

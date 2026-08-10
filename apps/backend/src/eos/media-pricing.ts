@@ -111,3 +111,42 @@ export function priceAgeDays(price: MediaPrice, now = Date.now()): number | null
   if (!Number.isFinite(stated)) return null;
   return Math.floor((now - stated) / 86_400_000);
 }
+
+/**
+ * The SPEND CAP's view of a media generation, which must always be a
+ * number — "no price on record" cannot mean free when the provider bills.
+ *
+ * `priceMediaUsage` above deliberately returns null for unpriced usage so
+ * that REPORTING never shows an invented figure. A cap has the opposite
+ * duty: it must charge SOMETHING for every metered call, and the honest
+ * something is an explicitly conservative ceiling for the workload class.
+ *
+ * CEILINGS, deliberately above every mainstream published rate at the time
+ * of writing, and in the workload's own unit — never a text-token rate:
+ *  - image: 25¢/image      (DALL·E 3 HD tops out ~12–19¢; Imagen similar)
+ *  - per-1k-chars TTS: 5¢  (OpenAI tts-1 ≈ 1.5¢/1k, tts-1-hd ≈ 3¢/1k)
+ *  - per-second video: 50¢ (Replicate video models commonly 5–50¢/s)
+ *
+ * Over-charging refuses a caller slightly early, which is recoverable;
+ * under-charging spends money that is not. A real published price on
+ * record always wins over the ceiling.
+ */
+const CAP_CEILING_CENTS_PER_UNIT: Readonly<Record<Exclude<PricingBasis, 'token'>, number>> = {
+  'per-image': 25,
+  'per-character': 0.005, // 5¢ per 1,000 characters
+  'per-second': 50,
+};
+
+export function mediaCostCentsForCap(params: {
+  providerId: string;
+  modelId: string;
+  basis: Exclude<PricingBasis, 'token'>;
+  units: number;
+}): { costCents: number; unpriced: boolean } {
+  const units = Number.isFinite(params.units) && params.units > 0 ? params.units : 0;
+  const price = getMediaPrice(params.providerId, params.modelId);
+  if (price) {
+    return { costCents: Math.ceil(price.centsPerUnit * units), unpriced: false };
+  }
+  return { costCents: Math.ceil(CAP_CEILING_CENTS_PER_UNIT[params.basis] * units), unpriced: true };
+}

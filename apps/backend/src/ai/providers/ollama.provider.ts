@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from './sdk-options';
 import { getConfig } from '../../config';
 import type { AIProviderDescriptor } from '../types/descriptor';
 import {
@@ -18,10 +19,8 @@ function ollamaClient(): OpenAI {
   if (!ollamaBaseUrl) {
     throw new Error('Ollama requires OLLAMA_BASE_URL to be set.');
   }
-  return new OpenAI({
-    apiKey: ollamaApiKey || 'ollama-does-not-require-an-api-key',
-    baseURL: ollamaBaseUrl,
-  });
+  return new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey: ollamaApiKey || 'ollama-does-not-require-an-api-key',
+    baseURL: ollamaBaseUrl, });
 }
 
 /**
@@ -45,6 +44,11 @@ export const ollamaDescriptor: AIProviderDescriptor = {
   id: 'ollama',
   displayName: 'Ollama',
   capabilities: ['text-generation', 'code-generation'],
+  // A runtime the operator already owns, so tokens cost nothing and a COST
+  // cap can never bind it. The daily TOKEN cap is what bounds this provider
+  // — including if this endpoint is ever pointed at something that does
+  // bill, which the operator, not this file, would know.
+  metering: 'unmetered' as const,
   async isConfigured() {
     return Boolean(getConfig().ai.ollamaBaseUrl);
   },

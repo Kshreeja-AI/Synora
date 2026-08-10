@@ -20,6 +20,22 @@ import request from 'supertest';
 // `allow` lets a single test assert the gate is actually mounted.
 const gate = vi.hoisted(() => ({ allow: true }));
 
+// EOS now AUTHENTICATES before authorizing (see eos/routes.ts). These
+// tests exercise the admin gate and the handlers, not session parsing, so
+// authentication is stubbed to a fixed signed-in admin — the same shape the
+// real middleware produces. Without this stub every test here would fail on
+// "no session", which would say nothing about what they are testing.
+vi.mock('../../middleware/auth.js', () => ({
+  authMiddleware: (
+    req: express.Request & { userId?: string },
+    _res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    req.userId = 'admin-user';
+    next();
+  },
+}));
+
 vi.mock('../../middleware/requireAdminRole.js', () => ({
   requireAdminRole: (
     _req: express.Request,

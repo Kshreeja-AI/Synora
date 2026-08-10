@@ -4,12 +4,15 @@ import { resolveTextToSpeechProvider } from '../ai';
 import { resolveStorageProvider } from '../storage';
 import { logger } from '../utils/logger';
 import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
-import { priceMediaUsage } from '../eos/media-pricing';
+import { mediaCostCentsForCap, priceMediaUsage } from '../eos/media-pricing';
+import { assertAiBudget, recordAiSpend } from '../ai/spend-guard';
 
 declareAiPath('audio.generate');
 
 export interface GenerateAudioInput {
   userId: string;
+  /** Optional until audio routes are workspace-scoped; global caps always bind. */
+  workspaceId?: string;
   text: string;
   voice?: string;
   format?: 'mp3' | 'wav' | 'ogg' | 'flac' | 'aac';
@@ -52,6 +55,10 @@ export class AudioGenerationService {
 
     const startedAt = Date.now();
 
+    // The budget gate, BEFORE the provider call — TTS could previously
+    // spend with no cap consulted at all.
+    await assertAiBudget({ workspaceId: input.workspaceId });
+
     try {
       const result = await provider.synthesize({
         text: input.text,
@@ -85,6 +92,21 @@ export class AudioGenerationService {
         costCents: priced?.costCents,
         pricingBasis: priced?.basis,
         costProvenance: priced?.provenance,
+      });
+
+      // The CAP's ledger: per input character, the one unit available.
+      // Unpriced models charge the documented per-1k-chars ceiling.
+      const capped = mediaCostCentsForCap({
+        providerId: result.provider,
+        modelId: result.model,
+        basis: 'per-character',
+        units: input.text.length,
+      });
+      await recordAiSpend({
+        workspaceId: input.workspaceId,
+        provider: result.provider,
+        model: result.model,
+        knownCostCents: capped.costCents,
       });
 
       return await prisma.generatedAudio.update({

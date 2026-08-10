@@ -71,6 +71,7 @@ export const geminiDescriptor: AIProviderDescriptor = {
   id: 'gemini',
   displayName: 'Google Gemini',
   capabilities: ['text-generation', 'code-generation'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     return secretsManager.hasReal('GOOGLE_AI_API_KEY', 'ai:gemini');

@@ -20,6 +20,7 @@ export const azureOpenAIDescriptor: AIProviderDescriptor = {
   id: 'azure-openai',
   displayName: 'Azure OpenAI',
   capabilities: ['text-generation', 'code-generation', 'tool-calling'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     const hasKey = await secretsManager.hasReal('AZURE_OPENAI_API_KEY', 'ai:azure-openai');

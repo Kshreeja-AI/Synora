@@ -89,6 +89,7 @@ export const bedrockDescriptor: AIProviderDescriptor = {
   id: 'bedrock',
   displayName: 'AWS Bedrock',
   capabilities: ['text-generation', 'code-generation'],
+  metering: 'metered' as const,
   async isConfigured() {
     // hasReal, not tryGet: a generated placeholder is not a credential.
     const hasAccessKeyId = await secretsManager.hasReal('AWS_ACCESS_KEY_ID', 'ai:bedrock');

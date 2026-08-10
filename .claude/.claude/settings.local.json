@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git ls-remote *)",
+      "Bash(awk '{print $2}')",
+      "Bash(awk -F/ '{print $1\"/\"$2}')",
+      "Bash(cd /f/Synora-SYNORA && pwd && ls -la .claude 2>&1)",
+      "Bash(awk '/async \\\\\\(req/{file=$0; getline a; getline b; getline c; if \\(a !~ /try \\\\{/ && b !~ /try \\\\{/ && c !~ /try \\\\{/\\) print file \"\\\\n   >> \" a \"\\\\n   >> \" b}')"
+    ]
+  }
+}

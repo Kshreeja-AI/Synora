@@ -134,6 +134,13 @@ export const AppConfigSchema = z.object({
     globalMaxCostPerDayCents: z.number().int().positive().optional(),
     globalMaxTokensPerDay: z.number().int().positive().optional(),
     /**
+     * Per-USER daily AI cost ceiling, uniform across users. Optional; when
+     * set, enforced through Redis (shared across instances) wherever the
+     * calling path knows which user is asking. Stops one account from
+     * draining a whole workspace's budget.
+     */
+    userMaxCostPerDayCents: z.number().int().positive().optional(),
+    /**
      * Synora's own outbound pacing toward text-generation vendors, keyed
      * per provider — the text-path twin of `embeddings.rateLimit`. `redis`
      * backend is required for multi-instance deployments (an in-memory
