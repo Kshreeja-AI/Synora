@@ -63,10 +63,25 @@ describe('instrumentedGenerate budget wiring', () => {
 
     await instrumentedGenerate('agent.plan', { prompt: 'p' }, { workspaceId: 'ws1' });
 
-    expect(assertMock).toHaveBeenCalledWith({ workspaceId: 'ws1' });
+    expect(assertMock).toHaveBeenCalledWith({ workspaceId: 'ws1', model: undefined });
     expect(recordMock).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: 'ws1', inputTokens: 3, outputTokens: 4 })
     );
+  });
+
+  it('forwards the requested model to the gate, so an unpriceable one is refused up front', async () => {
+    // Without this the guard can only learn the model AFTER the first call
+    // has already spent. `toHaveBeenCalledWith` treats a missing key and an
+    // explicit `undefined` as equal, so asserting the whole argument object
+    // is what actually pins the forwarding.
+    generateTextMock.mockResolvedValue({ text: 'out', provider: 'p', model: 'm' });
+
+    await instrumentedGenerate('agent.plan', { prompt: 'p', model: 'router/mystery-7b' });
+
+    expect(assertMock).toHaveBeenCalledWith({
+      workspaceId: undefined,
+      model: 'router/mystery-7b',
+    });
   });
 
   it('passes ABSENT usage through as undefined — never coerced to zero', async () => {

@@ -1,6 +1,6 @@
 import { prisma } from '@synora/database';
 import { getConfig } from '../config';
-import { estimateCost } from './pricing';
+import { estimateCostOrUnknown, isPriceKnown } from './pricing';
 import { logger } from '../utils/logger';
 
 /**
@@ -33,6 +33,17 @@ import { logger } from '../utils/logger';
  * `estimated: true`. The OpenAI-compatible self-hosted path is exactly
  * where usage goes missing, and a guard that counted "unreported" as
  * "free" would leak precisely where it matters most.
+ *
+ * AND AN UNKNOWN PRICE IS NOT ZERO EITHER. The same rule, one level up.
+ * A model this deployment cannot price used to score 0 cents per call, so
+ * a cost cap simply never tripped for it — silently, and specifically for
+ * the models most likely to be configured here: anything behind an
+ * OpenAI-compatible router, whose names no local table can enumerate. A
+ * cost cap is a promise that spending stops at a number, and that promise
+ * cannot be kept for a model with no price. So when a cost cap is set and
+ * the price is unknown, this module REFUSES rather than pretending. See
+ * `unpricedModels` below for how a price that only becomes knowable after
+ * the call is handled.
  *
  * CHECK-THEN-RECORD, NOT A TRANSACTION. `assertAiBudget` runs before the
  * generation; `recordAiSpend` after. In-flight requests can each overshoot
@@ -92,9 +103,46 @@ function rolledGlobalWindow(now: Date): typeof globalWindow {
   return globalWindow;
 }
 
+/**
+ * Models this process has actually spent on and cannot price, plus the
+ * workspaces that spent on them.
+ *
+ * WHY THIS EXISTS AT ALL. The authoritative model name is the one the
+ * provider says it used, and that is only known AFTER the call returns —
+ * a caller may pass no model (letting the provider choose its default), or
+ * pass an alias the provider resolves server-side to something else. So a
+ * pre-flight check on the requested name cannot be complete on its own.
+ * This is the other half: the first unpriceable call is remembered, and
+ * every call after it is refused while a cost cap is set.
+ *
+ * ONE CALL CAN THEREFORE SLIP THROUGH before the fact is known. That is
+ * the same single-call overshoot the check-then-record design already
+ * accepts and documents above, for the same reason — the alternative is
+ * pre-flighting information that does not exist yet.
+ *
+ * WHY THESE ARE NOT PART OF THE DAILY WINDOW. The counters above roll at
+ * UTC midnight because a budget is a per-window quantity. This is not a
+ * quantity; it is the standing fact that a cost cap here cannot be
+ * honoured, and midnight does not make an unpriceable model priceable.
+ * Rolling it would quietly re-open the hole every single day — the exact
+ * failure shape this module exists to prevent. Clearing it needs a real
+ * change: add a price for the model, or drop the cost cap. Both are
+ * configuration, configuration is read at boot, so a restart clears this
+ * and nothing else does. That is the intended escape, not an oversight.
+ *
+ * KEPT SEPARATE, GLOBAL FROM WORKSPACE, on purpose. The global cap is
+ * deployment-wide, so any unpriceable spend anywhere breaks it. A
+ * workspace cap is not: refusing workspace B because workspace A ran an
+ * unpriceable model would be a limit B never hit.
+ */
+let unpricedModels = new Set<string>();
+let unpricedWorkspaces = new Set<string>();
+
 /** Test seam — the global window survives between tests otherwise. */
 export function resetGlobalSpendForTesting(): void {
   globalWindow = { dayKeyUtc: '', costCents: 0, tokens: 0 };
+  unpricedModels = new Set();
+  unpricedWorkspaces = new Set();
 }
 
 const budgetMessage = (scope: SpendScope, limit: SpendLimit): string =>
@@ -107,6 +155,18 @@ const budgetMessage = (scope: SpendScope, limit: SpendLimit): string =>
           : 'The limit resets at midnight UTC.'
       }`
     : 'This deployment has reached its AI usage limit for today, so nothing was generated. The limit resets at midnight UTC.';
+
+/**
+ * A cost cap is set but cannot be honoured. Deliberately NOT phrased as
+ * "limit reached" — nothing was overspent; the limit is unenforceable, and
+ * an operator sent to look at usage graphs would find nothing wrong. It
+ * names both real ways out instead.
+ */
+const unpriceableMessage = (scope: SpendScope): string =>
+  `A spending limit is set for this ${
+    scope === 'workspace' ? 'workspace' : 'deployment'
+  }, but Synora has no price for the model that would run, so it cannot hold that ` +
+  'limit. Nothing was generated. Either add a price for the model, or remove the cost limit.';
 
 /**
  * Refuse BEFORE any generation runs, or return quietly.
@@ -132,9 +192,37 @@ function globalCaps(): { globalMaxCostPerDayCents?: number; globalMaxTokensPerDa
   }
 }
 
-export async function assertAiBudget(check: { workspaceId?: string }): Promise<void> {
+export async function assertAiBudget(check: {
+  workspaceId?: string;
+  /**
+   * The model about to run, when the caller knows it. Supplied so an
+   * unpriceable model can be refused BEFORE it spends anything rather
+   * than after — see the fail-closed check below.
+   */
+  model?: string;
+}): Promise<void> {
   const now = new Date();
   const { globalMaxCostPerDayCents, globalMaxTokensPerDay } = globalCaps();
+
+  // FAIL CLOSED ON AN UNKNOWN PRICE.
+  //
+  // Two ways the price can be unknown, and both must refuse:
+  //  - the caller named a model that is not in the pricing table, or
+  //  - a previous call in this process already spent on one (`unpricedModels`),
+  //    which is the only way to catch a model the caller could not name.
+  //
+  // Deliberately NOT refused when no cost cap is configured. A deployment
+  // that never asked for a cost ceiling was never promised one, and
+  // blocking there would break local and self-hosted use for no safety
+  // gain whatsoever — the whole point of running your own model is that it
+  // has no per-token price. The TOKEN cap is unaffected either way, since
+  // tokens are counted without needing to know a price, and the token cap
+  // is what genuinely bounds local inference.
+  const namedModelUnpriceable = check.model !== undefined && !isPriceKnown(check.model);
+
+  if (globalMaxCostPerDayCents !== undefined && (namedModelUnpriceable || unpricedModels.size > 0)) {
+    throw new AiBudgetExceededError('global', 'daily-cost', unpriceableMessage('global'));
+  }
 
   const window = rolledGlobalWindow(now);
   if (globalMaxCostPerDayCents !== undefined && window.costCents >= globalMaxCostPerDayCents) {
@@ -152,6 +240,23 @@ export async function assertAiBudget(check: { workspaceId?: string }): Promise<v
   // No row = not opted into workspace capping. The global layer above
   // still applied. Same shape as agents/metering.ts's assertRunBudget.
   if (!budget) return;
+
+  // The same fail-closed rule at workspace scope. Checked BEFORE the window
+  // resets below because it is window-independent — midnight does not make
+  // the model priceable — and refusing early saves a pointless write. Only
+  // a COST cap is broken by a missing price; a workspace that set only a
+  // token cap is still fully enforced and must not be refused.
+  const workspaceCostCap = budget.maxCostPerDayCents ?? budget.maxCostPerMonthCents;
+  if (
+    workspaceCostCap !== null &&
+    (namedModelUnpriceable || unpricedWorkspaces.has(check.workspaceId))
+  ) {
+    throw new AiBudgetExceededError(
+      'workspace',
+      budget.maxCostPerDayCents !== null ? 'daily-cost' : 'monthly-cost',
+      unpriceableMessage('workspace')
+    );
+  }
 
   // Lazy conditional resets: keyed on the STORED stamp so two concurrent
   // callers cannot both zero a window (the loser's updateMany matches 0
@@ -213,6 +318,14 @@ export interface AiSpendOutcome {
   costCents: number;
   /** True when the provider reported nothing and the floor estimate was charged. */
   estimated: boolean;
+  /**
+   * False when this deployment has no price for the model, in which case
+   * `costCents` is 0 because there was no honest number to charge — NOT
+   * because the call was free. Anything reading `costCents` for a total
+   * has to read this too, or it will publish a figure that silently
+   * excludes an unknown amount of real spending.
+   */
+  priceKnown: boolean;
 }
 
 /**
@@ -224,12 +337,33 @@ export async function recordAiSpend(record: AiSpendRecord): Promise<AiSpendOutco
   const tokens = estimated
     ? Math.ceil((record.fallbackChars ?? 0) / 4)
     : (record.inputTokens ?? 0) + (record.outputTokens ?? 0);
-  const costUsd = estimateCost(
+  const costUsd = estimateCostOrUnknown(
     record.model,
     record.inputTokens ?? (estimated ? tokens : 0),
     record.outputTokens ?? 0
   );
-  const costCents = Math.ceil(costUsd * 100);
+  // Unknown price contributes 0 to the COST window — there is no honest
+  // number to add, and inventing one would put a fabricated figure in a
+  // ledger. Zero would be a lie by itself, so it never travels alone:
+  // the model is remembered as unpriceable, which is what makes the next
+  // `assertAiBudget` refuse while a cost cap is set. Tokens are still
+  // counted below, so the token cap stays fully effective throughout.
+  const priceKnown = costUsd !== null;
+  const costCents = costUsd === null ? 0 : Math.ceil(costUsd * 100);
+
+  if (!priceKnown) {
+    // Logged once per model, not once per call: an entirely self-hosted
+    // deployment hits this on every single generation, and a warning that
+    // fires thousands of times a day is a warning nobody reads.
+    if (!unpricedModels.has(record.model)) {
+      logger.warn(
+        '[SpendGuard] No price for this model — its spend cannot be counted towards any cost cap',
+        { provider: record.provider, model: record.model }
+      );
+    }
+    unpricedModels.add(record.model);
+    if (record.workspaceId) unpricedWorkspaces.add(record.workspaceId);
+  }
 
   const now = new Date();
   const window = rolledGlobalWindow(now);
@@ -267,5 +401,5 @@ export async function recordAiSpend(record: AiSpendRecord): Promise<AiSpendOutco
     }
   }
 
-  return { tokens, costCents, estimated };
+  return { tokens, costCents, estimated, priceKnown };
 }

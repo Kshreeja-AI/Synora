@@ -240,3 +240,175 @@ describe('recordAiSpend durability contract', () => {
     expect(updateData.usedTokensToday).toEqual({ increment: 10 });
   });
 });
+
+/**
+ * THE HOLE THIS CLOSES. `estimateCost` returned 0 for any model not in the
+ * pricing table, and 0 is indistinguishable from "genuinely free". So a
+ * cost cap silently stopped applying to exactly the models most likely to
+ * be configured here — anything behind an OpenAI-compatible router, whose
+ * names no local table can enumerate — and the deployment believed it had
+ * a spending ceiling that could never trip, however much was really spent.
+ *
+ * Fail-closed means: if a cost cap is set and the price is unknown, refuse.
+ * Nothing in here asserts a *price*; every test asserts a *decision*.
+ */
+describe('unknown price is fail-closed, known price is unaffected', () => {
+  it('refuses a named unpriceable model BEFORE it spends anything', async () => {
+    caps({ globalMaxCostPerDayCents: 500 });
+    // Nothing has been recorded — the window is empty and the old code
+    // would have sailed straight through, then charged 0 and never tripped.
+    await expect(assertAiBudget({ model: 'some-router/mystery-7b' })).rejects.toMatchObject({
+      scope: 'global',
+      limit: 'daily-cost',
+    });
+  });
+
+  it('says the limit cannot be HELD, not that it was reached', async () => {
+    // An operator told "limit reached" goes looking at usage graphs and
+    // finds nothing wrong. The distinction is the whole value of the
+    // message, so it is pinned.
+    caps({ globalMaxCostPerDayCents: 500 });
+    await expect(assertAiBudget({ model: 'mystery-7b' })).rejects.toThrow(
+      /no price for the model/i
+    );
+    await expect(assertAiBudget({ model: 'mystery-7b' })).rejects.toThrow(
+      /add a price for the model, or remove the cost limit/i
+    );
+  });
+
+  it('lets a PRICED model through the same cap — no false refusal', async () => {
+    caps({ globalMaxCostPerDayCents: 500 });
+    await expect(assertAiBudget({ model: 'claude-sonnet-5' })).resolves.toBeUndefined();
+  });
+
+  it('does NOT refuse an unpriceable model when no cost cap was ever asked for', async () => {
+    // The local-model case, and the reason this is not simply "block
+    // unknown models". A deployment running its own model has no per-token
+    // price by definition; refusing it would break self-hosting to enforce
+    // a ceiling nobody set.
+    caps({});
+    await expect(assertAiBudget({ model: 'llama3.1' })).resolves.toBeUndefined();
+    await recordAiSpend({ provider: 'ollama', model: 'llama3.1', inputTokens: 9_000, outputTokens: 9_000 });
+    await expect(assertAiBudget({ model: 'llama3.1' })).resolves.toBeUndefined();
+  });
+
+  it('leaves the TOKEN cap fully enforcing for an unpriceable model', async () => {
+    // Tokens are counted without needing a price, so the token cap is the
+    // one that genuinely bounds local inference. Fail-closed on cost must
+    // not have quietly swapped one working cap for one refusal.
+    caps({ globalMaxTokensPerDay: 1000 });
+    await expect(assertAiBudget({ model: 'llama3.1' })).resolves.toBeUndefined();
+    await recordAiSpend({ provider: 'ollama', model: 'llama3.1', inputTokens: 600, outputTokens: 500 });
+    await expect(assertAiBudget({ model: 'llama3.1' })).rejects.toMatchObject({
+      limit: 'daily-tokens',
+    });
+  });
+
+  it('reports priceKnown so a total can never silently omit real spend', async () => {
+    const unpriced = await recordAiSpend({
+      provider: 'self-hosted', model: 'mystery-7b', inputTokens: 1000, outputTokens: 1000,
+    });
+    expect(unpriced.priceKnown).toBe(false);
+    expect(unpriced.costCents).toBe(0); // zero because unknown, NOT because free
+
+    const priced = await recordAiSpend({
+      provider: 'anthropic', model: 'claude-sonnet-5', inputTokens: 1000, outputTokens: 1000,
+    });
+    expect(priced.priceKnown).toBe(true);
+    expect(priced.costCents).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The half a pre-flight check cannot cover. The authoritative model name is
+ * whatever the provider says it used, known only AFTER the call: a caller
+ * may name no model at all (letting the provider pick its default), or name
+ * an alias the provider resolves server-side to something else.
+ */
+describe('unknown price discovered after the fact', () => {
+  it('refuses every later call once an unpriceable model has actually spent', async () => {
+    caps({ globalMaxCostPerDayCents: 500 });
+
+    // Call one: the caller cannot name the model, so nothing refuses it.
+    await expect(assertAiBudget({})).resolves.toBeUndefined();
+    await recordAiSpend({ provider: 'self-hosted', model: 'router/whatever', inputTokens: 10, outputTokens: 10 });
+
+    // Call two onwards: the fact is now known, and the cap is honest about
+    // being unenforceable rather than sitting at a comfortable zero.
+    await expect(assertAiBudget({})).rejects.toMatchObject({
+      scope: 'global',
+      limit: 'daily-cost',
+    });
+  });
+
+  it('does NOT forget at midnight — a new day does not make a model priceable', async () => {
+    // THE PROPERTY THAT MATTERS MOST HERE. The cost/token counters roll at
+    // UTC midnight because a budget is a per-window quantity. This is not a
+    // quantity, and rolling it would re-open the hole every single day —
+    // one silent unpriced call per day, forever, which is precisely the
+    // shape of bug this module exists to prevent.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-07T23:50:00Z'));
+    caps({ globalMaxCostPerDayCents: 500 });
+
+    await recordAiSpend({ provider: 'self-hosted', model: 'router/whatever', inputTokens: 10, outputTokens: 10 });
+    await expect(assertAiBudget({})).rejects.toBeInstanceOf(AiBudgetExceededError);
+
+    vi.setSystemTime(new Date('2026-08-08T00:01:00Z'));
+    await expect(assertAiBudget({})).rejects.toBeInstanceOf(AiBudgetExceededError);
+  });
+
+  it('stays quiet when the deployment never asked for a cost ceiling', async () => {
+    caps({});
+    await recordAiSpend({ provider: 'ollama', model: 'llama3.1', inputTokens: 10, outputTokens: 10 });
+    await expect(assertAiBudget({})).resolves.toBeUndefined();
+  });
+});
+
+describe('unknown price at workspace scope', () => {
+  it('refuses when the workspace has a cost cap it could not hold', async () => {
+    caps({}); // no global cap — proves the workspace layer refuses on its own
+    findUniqueMock.mockResolvedValue(budgetRow({ maxCostPerDayCents: 1000 }));
+    await expect(
+      assertAiBudget({ workspaceId: 'ws1', model: 'mystery-7b' })
+    ).rejects.toMatchObject({ scope: 'workspace', limit: 'daily-cost' });
+  });
+
+  it('reports monthly-cost when that is the cap actually set', async () => {
+    caps({});
+    findUniqueMock.mockResolvedValue(budgetRow({ maxCostPerMonthCents: 1000 }));
+    await expect(
+      assertAiBudget({ workspaceId: 'ws1', model: 'mystery-7b' })
+    ).rejects.toMatchObject({ scope: 'workspace', limit: 'monthly-cost' });
+  });
+
+  it('does NOT refuse a workspace whose only cap is on tokens', async () => {
+    // A token cap is not broken by a missing price — it is still fully
+    // enforced — so refusing here would deny a workspace a limit it never
+    // exceeded.
+    caps({});
+    findUniqueMock.mockResolvedValue(budgetRow({ maxTokensPerDay: 100_000 }));
+    await expect(
+      assertAiBudget({ workspaceId: 'ws1', model: 'mystery-7b' })
+    ).resolves.toBeUndefined();
+  });
+
+  it('never punishes one workspace for another workspace\'s unpriced spend', async () => {
+    // The global cap is deployment-wide, so any unpriced spend anywhere
+    // breaks it. A workspace cap is not, and blaming a neighbour would be
+    // a limit this workspace never hit.
+    caps({});
+    await recordAiSpend({
+      workspaceId: 'wsA', provider: 'self-hosted', model: 'router/whatever',
+      inputTokens: 10, outputTokens: 10,
+    });
+
+    findUniqueMock.mockResolvedValue(budgetRow({ workspaceId: 'wsB', maxCostPerDayCents: 1000 }));
+    await expect(assertAiBudget({ workspaceId: 'wsB' })).resolves.toBeUndefined();
+
+    findUniqueMock.mockResolvedValue(budgetRow({ workspaceId: 'wsA', maxCostPerDayCents: 1000 }));
+    await expect(assertAiBudget({ workspaceId: 'wsA' })).rejects.toMatchObject({
+      scope: 'workspace',
+    });
+  });
+});

@@ -57,7 +57,7 @@ export async function processRunEvaluation(data: RunEvaluationJobData): Promise<
     // below: an evaluation run is a LOOP of generations, and the honest
     // moment to refuse an over-budget workspace is before sample one, not
     // after sample forty of a hundred.
-    await assertAiBudget({ workspaceId })
+    await assertAiBudget({ workspaceId, model: model.modelName })
 
     // Resolve the provider once, up front — if it isn't configured, fail the
     // whole run honestly now rather than fail every sample individually.

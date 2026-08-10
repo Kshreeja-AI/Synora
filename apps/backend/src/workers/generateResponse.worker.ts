@@ -150,7 +150,7 @@ export function createGenerateResponseWorker() {
           // most-used path in the product would be the one path no cap
           // binds. A budget refusal is not a provider failure and must not
           // be retried — the retry would just re-refuse.
-          await assertAiBudget({ workspaceId: conversation.workspaceId });
+          await assertAiBudget({ workspaceId: conversation.workspaceId, model });
 
           // Get provider
           const providerInstance = await resolver.resolve(provider);

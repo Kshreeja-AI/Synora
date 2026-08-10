@@ -27,7 +27,13 @@ export async function instrumentedGenerate(
   // is not a provider failure, and letting it fall into the catch below
   // would record it as one — sending an operator to a provider dashboard
   // for a limit the founder set.
-  await assertAiBudget({ workspaceId: opts.workspaceId });
+  //
+  // `request.model` is passed so an unpriceable model is refused before it
+  // spends anything. It is optional — when absent, the provider picks its
+  // own default and the name is not knowable until the call returns. The
+  // guard covers that case from the recording side instead; see
+  // `unpricedModels` in spend-guard.ts.
+  await assertAiBudget({ workspaceId: opts.workspaceId, model: request.model });
 
   const startedAt = Date.now();
 
