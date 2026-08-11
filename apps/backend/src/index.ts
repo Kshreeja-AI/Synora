@@ -5,7 +5,11 @@ import './bootstrap-env';
 import { secretsManager } from './secrets';
 import { encryptionService } from './crypto/encryption.service';
 import { initConfig } from './config';
-import { assertProductionLaunchGates, assertNoLocalhostInProduction } from './config/productionGates';
+import {
+  assertProductionLaunchGates,
+  assertNoLocalhostInProduction,
+  assertNoDevelopmentModesInProduction,
+} from './config/productionGates';
 import { createApp } from './app';
 import { initializeWorkers } from './workers/manager';
 import { logger } from './utils/logger';
@@ -40,6 +44,10 @@ export async function initializeApp() {
   // check and is broken for every visitor — see the gate for what each one
   // costs.
   assertNoLocalhostInProduction(config);
+  // Refuses a production boot whose modes would fabricate model output or
+  // suppress outbound calls. Checked alongside the localhost gate because it
+  // is the same failure shape: correct in development, invisible in production.
+  assertNoDevelopmentModesInProduction(config);
   const app = createApp(config);
 
   // Initialize background workers for async task processing

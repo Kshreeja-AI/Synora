@@ -205,3 +205,47 @@ export async function assertProductionLaunchGates(
     throw new ProductionGateError(metered);
   }
 }
+
+export class DevelopmentModeInProductionError extends Error {
+  constructor(readonly modes: string[]) {
+    super(
+      `Refusing to start: production has development modes active (${modes.join(', ')}). ` +
+        'Mock mode answers with fabricated output instead of a model, and offline mode ' +
+        'suppresses outbound calls — either one silently turns a production deployment ' +
+        'into a demo. Unset them, or run this configuration in a development stage.'
+    );
+    this.name = 'DevelopmentModeInProductionError';
+  }
+}
+
+/**
+ * Call once at boot, after initConfig(). Refuses staging/production when mock
+ * or offline mode is active.
+ *
+ * WHY A GATE AND NOT A COMMENT. `MOCK_MODE` and `OFFLINE_MODE` are ordinary
+ * environment booleans, and a mock provider is registered in the streaming
+ * resolver. Nothing else in the codebase stops a stray variable — copied from
+ * a development file, set by a platform's UI, inherited from a shell — from
+ * putting a production deployment into a state where every "AI answer" is
+ * fabricated and no outbound request is ever made. That failure is invisible
+ * from the outside: the app is healthy, requests return 200, the text looks
+ * plausible, and the only symptom is that none of it came from a model.
+ *
+ * This is the same shape as `assertNoLocalhostInProduction`: a configuration
+ * that is correct in development and catastrophic in production, refused at
+ * boot rather than discovered by a customer. Development, testing and qa are
+ * untouched — mock and offline are the point there.
+ */
+export function assertNoDevelopmentModesInProduction(
+  config: Pick<AppConfig, 'stage' | 'modes'>
+): void {
+  if (config.stage !== 'staging' && config.stage !== 'production') return;
+
+  const active: string[] = [];
+  if (config.modes.mock) active.push('MOCK_MODE');
+  if (config.modes.offline) active.push('OFFLINE_MODE');
+
+  if (active.length > 0) {
+    throw new DevelopmentModeInProductionError(active);
+  }
+}

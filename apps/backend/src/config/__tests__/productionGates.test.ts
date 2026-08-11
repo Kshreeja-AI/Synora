@@ -11,6 +11,7 @@ import {
   assertProductionLaunchGates,
   ProductionGateError,
   METERED_AI_CREDENTIALS,
+  assertNoDevelopmentModesInProduction,
 } from '../productionGates';
 
 function secretsWithReal(...realKeys: string[]) {
@@ -106,5 +107,41 @@ describe('assertProductionLaunchGates', () => {
     ]) {
       expect(METERED_AI_CREDENTIALS, `${key} missing from the metered list`).toContain(key);
     }
+  });
+});
+
+describe('development modes are refused in production', () => {
+  const cfg = (stage: string, modes: Record<string, boolean>) =>
+    ({ stage, modes: { offline: false, mock: false, enterprise: false, government: false, selfHosted: false, ...modes } }) as never;
+
+  it('refuses production when mock mode is active', () => {
+    // The failure this prevents is invisible from outside: healthy app, HTTP
+    // 200, plausible text, and not one word of it from a model.
+    expect(() => assertNoDevelopmentModesInProduction(cfg('production', { mock: true })))
+      .toThrow(/MOCK_MODE/);
+  });
+
+  it('refuses production when offline mode is active', () => {
+    expect(() => assertNoDevelopmentModesInProduction(cfg('production', { offline: true })))
+      .toThrow(/OFFLINE_MODE/);
+  });
+
+  it('names every offending mode, not just the first', () => {
+    expect(() => assertNoDevelopmentModesInProduction(cfg('production', { mock: true, offline: true })))
+      .toThrow(/MOCK_MODE.*OFFLINE_MODE/);
+  });
+
+  it('refuses staging too — it is the rehearsal for production', () => {
+    expect(() => assertNoDevelopmentModesInProduction(cfg('staging', { mock: true })))
+      .toThrow(/MOCK_MODE/);
+  });
+
+  it('allows a clean production configuration', () => {
+    expect(() => assertNoDevelopmentModesInProduction(cfg('production', {}))).not.toThrow();
+  });
+
+  it('leaves development alone — mock and offline are the point there', () => {
+    expect(() => assertNoDevelopmentModesInProduction(cfg('development', { mock: true, offline: true })))
+      .not.toThrow();
   });
 });

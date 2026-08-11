@@ -179,15 +179,66 @@ listen on the private network only.
 
 ## 7. Deployment
 
-> Not yet performed. This section describes the intended procedure; it will be
-> marked verified once it has actually run end to end.
+> **NOT YET PERFORMED on the VPS.** Every step below has been executed against
+> the identical stack locally. TLS is the one step that cannot be rehearsed —
+> it needs DNS pointing at the server.
 
 Deployment is reproducible from the repository: the same steps on a fresh
 server produce the same result, so recovery never depends on remembering what
-was typed once.
+was typed once. **Never deployed by hand** — manual server edits drift from
+the repository and become undiagnosable.
 
-**Never deployed by hand.** Manual server edits drift from the repository and
-become undiagnosable.
+### Release manifest — Release 1
+
+| | |
+|---|---|
+| Repository state | clean |
+| Backend tests | 77/77 files |
+| Web tests | 108/108 files |
+| Typecheck | 8/8 packages |
+| Lint | 0 errors (213 pre-existing warnings) |
+| Dependency audit | 0 vulnerabilities |
+| Guardrails | 8/8 |
+| Migrations | 40, applied and gate-proven |
+| Backup → restore | proven (121 tables, 40 migrations, row-level integrity) |
+| AI generation | proven against the real router |
+| Spend accounting | proven (cost and tokens recorded) |
+| Provider independence | verified |
+| TLS | NOT VERIFIED — deploy-time only |
+| Off-host backup | DOES NOT EXIST |
+
+### Runbook
+
+Steps 1–14 are **safe before DNS**: they touch only the VPS, and the live site
+keeps serving from its current host throughout. Step 15 onward **changes
+production** and needs explicit approval.
+
+**SAFE BEFORE DNS**
+
+1. Preflight: confirm VPS reachable, `docker --version`, `docker compose version`, free disk.
+2. Clone the repository to the VPS.
+3. Create `.env.production` **on the VPS**. It never travels from a laptop.
+4. Generate production secrets on the VPS; they must not match any development value.
+5. Validate: every required variable present, no loopback address, no placeholder.
+6. `docker compose -f docker-compose.production.yml --env-file .env.production build`
+7. `up -d postgres redis` — wait for both healthy.
+8. `up -d migrate` — **must exit 0.** A non-zero exit stops the deployment here.
+9. Verify: `prisma migrate status` reports the schema up to date.
+10. `up -d app` — wait for healthy; check `/health` and `/ready`.
+11. `up -d web` — wait for healthy.
+12. Smoke test internally: register, log in, one AI generation.
+13. Confirm the spend ledger recorded cost and tokens.
+14. Confirm logs contain no secret material.
+
+**REQUIRES FOUNDER APPROVAL — CHANGES PRODUCTION**
+
+15. DNS cutover (§8). This is the irreversible-in-practice step.
+16. `up -d caddy` — issues TLS. Requires DNS already pointing here.
+17. Verify HTTPS, the HTTP→HTTPS redirect, and the certificate.
+18. Public smoke test, then watch logs and the spend ledger.
+
+**Rollback decision point** is after step 17: if HTTPS or the smoke test fails,
+restore the DNS records in §8 and the previous site returns.
 
 ---
 
