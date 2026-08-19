@@ -209,11 +209,32 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - ./backups:/backups
+    # WRITE TO A TEMP NAME, RENAME ONLY ON SUCCESS, AND RETRY SOON IF IT FAILS.
+    #
+    # Both halves are fixes for failures observed on this host after a reboot.
+    # `pg_dump -f` creates its output file before it connects, so a dump that
+    # then fails leaves a ZERO-BYTE file sitting in /backups looking exactly
+    # like a backup -- and counting as one in the retention window below, where
+    # it can push a real backup out. Renaming only after a clean exit means a
+    # file with a backup's name is always a backup.
+    #
+    # The retry matters as much. On a reboot every container starts at once and
+    # `depends_on` no longer sequences them, so the first dump can hit a
+    # Postgres that is not accepting connections yet. The old loop slept the
+    # full 86400s on failure, turning one lost race into a day with no backup
+    # at all. It now retries in 5 minutes and only settles into the daily
+    # rhythm once a dump has actually succeeded.
     entrypoint: >
       sh -c 'while true; do
-        pg_dump -h postgres -U synora -d synora -F c -f /backups/synora-$$(date +%Y%m%d-%H%M).dump &&
-        ls -1t /backups/synora-*.dump | tail -n +15 | xargs -r rm --;
-        sleep 86400;
+        if pg_dump -h postgres -U synora -d synora -F c -f /backups/.in-progress.dump; then
+          mv /backups/.in-progress.dump /backups/synora-$$(date +%Y%m%d-%H%M).dump;
+          ls -1t /backups/synora-*.dump | tail -n +15 | xargs -r rm --;
+          sleep 86400;
+        else
+          rm -f /backups/.in-progress.dump;
+          echo "backup failed; retrying in 300s";
+          sleep 300;
+        fi;
       done'
     depends_on:
       postgres:
