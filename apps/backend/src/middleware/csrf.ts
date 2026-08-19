@@ -22,8 +22,25 @@ export function generateCsrfToken(): string {
  * For mutating requests (POST/PUT/PATCH/DELETE): validates token
  *
  * Token is stored in both:
- * - HttpOnly secure cookie (prevents XSS from reading it)
- * - Custom header (sent by frontend on mutations)
+ * - A cookie the PAGE'S OWN JAVASCRIPT CAN READ (see below)
+ * - A custom header the frontend echoes back on mutations
+ *
+ * WHY THIS COOKIE IS NOT HttpOnly, deliberately. Double-submit works by
+ * asking the caller to prove it can READ a cookie for this origin. Only
+ * same-origin script can; a cross-site attacker can force the browser to
+ * SEND cookies but can never read them back to copy into a header. That
+ * asymmetry is the entire mechanism.
+ *
+ * Marking this cookie HttpOnly therefore does not harden it -- it disables
+ * it. The legitimate page loses the same access the attacker never had, so
+ * it can never produce the header, and every mutating request from the real
+ * UI fails 403. That was the live state before this change: a user could
+ * register and log in (those routes are exempt) and then do nothing at all.
+ *
+ * This token is not a credential. It authorises nothing and identifies
+ * nobody; handing it to the page that already holds the session grants an
+ * attacker nothing. The SESSION cookie stays HttpOnly, and this one keeps
+ * `secure` and `sameSite: strict`.
  *
  * This validates they match, preventing CSRF attacks while allowing
  * stateless operation (no server-side token storage needed).
@@ -58,7 +75,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
     if (!existingToken) {
       const newToken = generateCsrfToken();
       res.cookie(CSRF_COOKIE_NAME, newToken, {
-        httpOnly: true,
+        httpOnly: false, // readable by same-origin script on purpose -- see note above
         secure: process.env.NODE_ENV === 'production',
         sameSite: 'strict',
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -113,7 +130,7 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction):
   // Token is valid; regenerate for next request
   const newToken = generateCsrfToken();
   res.cookie(CSRF_COOKIE_NAME, newToken, {
-    httpOnly: true,
+    httpOnly: false, // readable by same-origin script on purpose -- see note above
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
