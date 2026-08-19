@@ -12,6 +12,8 @@ import {
   ProductionGateError,
   METERED_AI_CREDENTIALS,
   assertNoDevelopmentModesInProduction,
+  assertQuantumLaunchGates,
+  QuantumGateError,
 } from '../productionGates';
 
 function secretsWithReal(...realKeys: string[]) {
@@ -143,5 +145,58 @@ describe('development modes are refused in production', () => {
   it('leaves development alone — mock and offline are the point there', () => {
     expect(() => assertNoDevelopmentModesInProduction(cfg('development', { mock: true, offline: true })))
       .not.toThrow();
+  });
+});
+
+describe('paid quantum hardware needs a ceiling before it needs anything else', () => {
+  const cfg = (
+    stage: 'development' | 'staging' | 'production',
+    quantum: { paidQpuEnabled?: boolean; maxCostPerExecutionCents?: number; maxExecutionLevel?: 0 | 1 | 2 | 3 }
+  ) =>
+    ({
+      stage,
+      quantum: {
+        paidQpuEnabled: false,
+        maxCostPerExecutionCents: 0,
+        maxExecutionLevel: 0,
+        ...quantum,
+      },
+    }) as never;
+
+  it('refuses production with paid QPU enabled and no per-execution ceiling', () => {
+    // The failure this prevents is worse per incident than an uncapped text
+    // key: a single QPU task can cost more than a month of generation.
+    expect(() =>
+      assertQuantumLaunchGates(cfg('production', { paidQpuEnabled: true, maxExecutionLevel: 3 }))
+    ).toThrow(QuantumGateError);
+    expect(() =>
+      assertQuantumLaunchGates(cfg('production', { paidQpuEnabled: true, maxExecutionLevel: 3 }))
+    ).toThrow(/QUANTUM_MAX_COST_PER_EXECUTION_CENTS/);
+  });
+
+  it('refuses staging too — it bills the same account', () => {
+    expect(() =>
+      assertQuantumLaunchGates(cfg('staging', { paidQpuEnabled: true, maxExecutionLevel: 3 }))
+    ).toThrow(QuantumGateError);
+  });
+
+  it('boots when the ceiling is set alongside the enablement', () => {
+    expect(() =>
+      assertQuantumLaunchGates(
+        cfg('production', { paidQpuEnabled: true, maxCostPerExecutionCents: 500, maxExecutionLevel: 3 })
+      )
+    ).not.toThrow();
+  });
+
+  it('boots the default configuration, which reaches nothing but the free simulator', () => {
+    // The out-of-the-box state: no enablement, no ceiling, level 0. It must
+    // never be the thing that stops a deployment starting.
+    expect(() => assertQuantumLaunchGates(cfg('production', {}))).not.toThrow();
+  });
+
+  it('never blocks development', () => {
+    expect(() =>
+      assertQuantumLaunchGates(cfg('development', { paidQpuEnabled: true, maxExecutionLevel: 3 }))
+    ).not.toThrow();
   });
 });

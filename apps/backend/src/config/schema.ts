@@ -81,6 +81,17 @@ export const AppConfigSchema = z.object({
     anthropicModel: z.string().min(1),
     openaiModel: z.string().min(1),
     openaiImageModel: z.string().min(1),
+    /**
+     * The Replicate model a video job runs on, e.g. `minimax/video-01`.
+     *
+     * Every other provider in this section already takes its model from an
+     * env var; the video adapter alone had its model hardcoded, so choosing a
+     * different one — Seedance, Wan, or anything else Replicate hosts —
+     * required editing source. That is the difference between "swap the model"
+     * being configuration and being a code change, which is the whole
+     * property the provider abstraction exists to give.
+     */
+    replicateVideoModel: z.string().min(1),
     openaiTtsModel: z.string().min(1),
     openaiTtsVoice: z.string().min(1),
     geminiModel: z.string().min(1),
@@ -156,6 +167,59 @@ export const AppConfigSchema = z.object({
       requestsPerSecond: z.number().positive().default(10),
       redisUrl: z.string().url().optional(),
     }),
+  }),
+
+  /**
+   * Provider-agnostic quantum execution (src/quantum/**). Every default here
+   * is the SAFE one, and the two that govern money default to refusing.
+   *
+   * `maxExecutionLevel: 0` means auto-selection — and explicit selection —
+   * never leaves the free in-process simulator. `paidQpuEnabled: false` and
+   * `maxCostPerExecutionCents: 0` mean paid hardware cannot run even if the
+   * ceiling is raised, until a human sets both. Two independent gates rather
+   * than one, because raising a ceiling to reach an open-access QPU is a very
+   * different act from authorising a bill.
+   */
+  quantum: z.object({
+    /**
+     * Statevector memory is 2^n × 16 bytes: 16 MB at 20 qubits, 268 MB at 24,
+     * 4 GB at 28. The cap is enforced BEFORE allocation, because an
+     * out-of-memory kill inside a worker takes the queue with it.
+     */
+    localMaxQubits: z.number().int().min(1).max(26).default(20),
+    /** Hard ceiling on EVERY execution path, explicit or automatic. */
+    maxExecutionLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).default(0),
+    /** Level 3 (paid hardware) additionally requires this. No default sets it. */
+    paidQpuEnabled: z.boolean().default(false),
+    /** Per-execution spend ceiling in cents. 0 refuses any non-zero cost. */
+    maxCostPerExecutionCents: z.number().int().nonnegative().default(0),
+    defaultShots: z.number().int().positive().max(1_000_000).default(1024),
+    defaultTimeoutMs: z.number().int().positive().default(60_000),
+    /**
+     * RESOURCE CEILINGS, separate from the money ceilings above.
+     *
+     * A free local simulation costs no money and can still take a machine
+     * down: 2^26 amplitudes is a gigabyte, a million shots is a long CPU
+     * burn, and a 100,000-gate circuit submitted to a QPU is a queue slot
+     * spent on noise. These bound the RESOURCE regardless of the price, and
+     * they apply to every rung including level 0.
+     */
+    maxShots: z.number().int().positive().default(100_000),
+    maxCircuitDepth: z.number().int().positive().default(10_000),
+    /** Applies to every backend. `localMaxQubits` bounds the simulator further. */
+    maxQubits: z.number().int().positive().default(64),
+    maxRuntimeMs: z.number().int().positive().default(300_000),
+    /** IBM Quantum Runtime REST base. Operator-configurable; SSRF-validated on use. */
+    ibmBaseUrl: z.string().url().default('https://quantum.cloud.ibm.com/api/v1'),
+    /** IBM service instance (CRN), where the account requires one. */
+    ibmInstance: z.string().optional(),
+    /**
+     * Declares that this IBM account's devices are OPEN ACCESS (free tier).
+     * Defaults to false, which classifies real devices as level 3 — the
+     * pessimistic direction, because mistaking paid hardware for free is the
+     * expensive error and mistaking free for paid costs one config line.
+     */
+    ibmOpenAccess: z.boolean().default(false),
   }),
 
   /**

@@ -40,7 +40,7 @@ describe('resolveEmbeddingProvider', () => {
   it('throws a clear, source-labeled error for an unknown explicit provider id', async () => {
     await expect(
       resolveEmbeddingProvider({ explicitProviderId: 'not-a-real-provider' })
-    ).rejects.toThrow(/which is not a known embedding provider/i);
+    ).rejects.toThrow(/is set to a value that is not a known embedding provider/i);
   });
 
   it('throws EmbeddingProviderUnsupportedError when explicitly requesting claude', async () => {

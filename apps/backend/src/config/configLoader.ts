@@ -120,6 +120,7 @@ export async function loadConfig(
       anthropicModel: readString(env, 'ANTHROPIC_MODEL', defaults.ai.anthropicModel),
       openaiModel: readString(env, 'OPENAI_MODEL', defaults.ai.openaiModel),
       openaiImageModel: readString(env, 'OPENAI_IMAGE_MODEL', defaults.ai.openaiImageModel),
+      replicateVideoModel: readString(env, 'REPLICATE_VIDEO_MODEL', defaults.ai.replicateVideoModel),
       openaiTtsModel: readString(env, 'OPENAI_TTS_MODEL', defaults.ai.openaiTtsModel),
       openaiTtsVoice: readString(env, 'OPENAI_TTS_VOICE', defaults.ai.openaiTtsVoice),
       geminiModel: readString(env, 'GEMINI_MODEL', defaults.ai.geminiModel),
@@ -186,6 +187,31 @@ export async function loadConfig(
         ),
         redisUrl: env.AI_RATE_LIMIT_REDIS_URL || undefined,
       },
+    },
+    // Quantum execution. Read directly from env with literal defaults rather
+    // than through StageDefaults, matching `selfHostedTextMetered` above: the
+    // safe value is the SAME in every stage, and routing it through per-stage
+    // defaults would create four places a production ceiling could be raised
+    // by accident.
+    quantum: {
+      localMaxQubits: readNumber(env, 'QUANTUM_LOCAL_MAX_QUBITS', 20),
+      // 0 = the free in-process simulator only. Every higher rung is a
+      // deliberate act, in every stage including development.
+      maxExecutionLevel: readNumber(env, 'QUANTUM_MAX_EXECUTION_LEVEL', 0) as 0 | 1 | 2 | 3,
+      // Fail closed on money, twice: an unset value and any value other than
+      // the exact string "true" both mean disabled.
+      paidQpuEnabled: readString(env, 'QUANTUM_PAID_QPU_ENABLED', 'false') === 'true',
+      maxCostPerExecutionCents: readNumber(env, 'QUANTUM_MAX_COST_PER_EXECUTION_CENTS', 0),
+      defaultShots: readNumber(env, 'QUANTUM_DEFAULT_SHOTS', 1024),
+      defaultTimeoutMs: readNumber(env, 'QUANTUM_DEFAULT_TIMEOUT_MS', 60_000),
+      // Resource ceilings, independent of cost: free compute is still compute.
+      maxShots: readNumber(env, 'QUANTUM_MAX_SHOTS', 100_000),
+      maxCircuitDepth: readNumber(env, 'QUANTUM_MAX_CIRCUIT_DEPTH', 10_000),
+      maxQubits: readNumber(env, 'QUANTUM_MAX_QUBITS', 64),
+      maxRuntimeMs: readNumber(env, 'QUANTUM_MAX_RUNTIME_MS', 300_000),
+      ibmBaseUrl: readString(env, 'IBM_QUANTUM_BASE_URL', 'https://quantum.cloud.ibm.com/api/v1'),
+      ibmInstance: env.IBM_QUANTUM_INSTANCE || undefined,
+      ibmOpenAccess: readString(env, 'IBM_QUANTUM_OPEN_ACCESS', 'false') === 'true',
     },
     mail: {
       transport: readString(env, 'MAIL_TRANSPORT', defaults.mail.transport) as AppConfig['mail']['transport'],

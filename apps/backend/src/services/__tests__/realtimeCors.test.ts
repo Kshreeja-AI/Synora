@@ -89,16 +89,33 @@ describe('realtime CORS uses the canonical origin list', () => {
       resolve(dirname(fileURLToPath(import.meta.url)), '../realtime.service.ts'),
       'utf8',
     );
-    const corsBlock = src.slice(src.indexOf('cors: {'), src.indexOf('transports:'));
-    // Comments are stripped first: the block deliberately DOCUMENTS the old
+    // Comments are stripped first: the file deliberately DOCUMENTS the old
     // `process.env` bug, and a test that banned the explanation along with
     // the code would push the next person to delete the warning instead of
     // heeding it. Only executable lines are checked.
-    const code = corsBlock
+    const code = src
       .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*');
+      })
       .join('\n');
-    expect(code).toContain('getConfig()');
+
+    // WIDENED FROM A SLICE TO THE WHOLE FILE, on purpose.
+    //
+    // This previously read only the text between `cors: {` and `transports:`
+    // and required the literal `getConfig()` inside it. The service was later
+    // refactored so the origin list arrives through an injected resolver
+    // (`this.resolveCorsOrigins()`) whose DEFAULT is
+    // `getConfig().server.corsOrigins` — a strictly better design, and one
+    // that moved the config read a few lines above the slice. The assertion
+    // failed while the property it protects was intact.
+    //
+    // A fixed-offset slice is the wrong shape for a structural guard: it
+    // fails on refactors and would equally MISS a `process.env` read placed
+    // just outside its window. Reading the whole file removes both faults,
+    // and naming the exact config path is stricter than the original.
+    expect(code).toContain('getConfig().server.corsOrigins');
     expect(code).not.toMatch(/process\.env/);
   });
 });

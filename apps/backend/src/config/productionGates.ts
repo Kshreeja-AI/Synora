@@ -206,6 +206,63 @@ export async function assertProductionLaunchGates(
   }
 }
 
+/* ------------------------------------------------------------------ *
+ * PAID QUANTUM HARDWARE MUST NOT BE REACHABLE WITHOUT A CEILING
+ * ------------------------------------------------------------------ */
+
+export class QuantumGateError extends Error {
+  constructor(reason: string) {
+    super(
+      `Refusing to start: ${reason} Paid QPU execution is billed per task and per shot, ` +
+        'and a task can cost more than a month of text generation. Set ' +
+        'QUANTUM_MAX_COST_PER_EXECUTION_CENTS to a real ceiling, or unset ' +
+        'QUANTUM_PAID_QPU_ENABLED. See SYNORA_MASTER_BLUEPRINT.md, Part XI.'
+    );
+    this.name = 'QuantumGateError';
+  }
+}
+
+/**
+ * The quantum twin of `assertProductionLaunchGates`, and a separate function
+ * for a reason: the AI gate asks "is there a metered credential without a
+ * cap?", which is the right question for token billing. Quantum billing is
+ * not token-shaped — a single QPU task has a price of its own — so the
+ * equivalent question is "is the paid rung switched on without a
+ * per-execution ceiling?".
+ *
+ * Folding quantum into `METERED_AI_CREDENTIALS` would have been shorter and
+ * wrong: it would force an AI token cap to be set before a quantum
+ * credential could exist, and it would leave the actual failure — paid QPU
+ * enabled, ceiling still zero — completely unchecked.
+ *
+ * Development and testing are untouched: neither can reach level 3 anyway
+ * without the same two flags, and refusing a developer's boot for a rung
+ * they have deliberately enabled locally would be noise.
+ */
+export function assertQuantumLaunchGates(
+  config: Pick<AppConfig, 'stage'> & {
+    quantum: Pick<
+      AppConfig['quantum'],
+      'paidQpuEnabled' | 'maxCostPerExecutionCents' | 'maxExecutionLevel'
+    >;
+  }
+): void {
+  if (config.stage !== 'staging' && config.stage !== 'production') return;
+  if (!config.quantum.paidQpuEnabled) return;
+
+  if (config.quantum.maxCostPerExecutionCents <= 0) {
+    throw new QuantumGateError(
+      'QUANTUM_PAID_QPU_ENABLED is set while QUANTUM_MAX_COST_PER_EXECUTION_CENTS is 0.'
+    );
+  }
+  if (config.quantum.maxExecutionLevel < 3) {
+    // Not an error — the two flags simply disagree, and the stricter one
+    // wins at runtime. Saying so at boot beats an operator concluding the
+    // enablement flag is broken.
+    return;
+  }
+}
+
 export class DevelopmentModeInProductionError extends Error {
   constructor(readonly modes: string[]) {
     super(

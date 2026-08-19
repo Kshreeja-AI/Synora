@@ -97,6 +97,22 @@ Everything else — optional AI providers, object storage, payments, error
 tracking — stays blank until you actually want that feature. **A blank
 optional value is not a problem and never blocks launch.**
 
+### Quantum computing needs nothing from you
+
+Synora has a quantum capability layer (blueprint Part XI). Its default
+configuration reaches only a free simulator that runs inside the Synora
+process — no account, no credential, no bill, nothing to set up.
+
+It stays that way unless someone deliberately changes three things at once:
+raise `QUANTUM_MAX_EXECUTION_LEVEL` above 0, set
+`QUANTUM_PAID_QPU_ENABLED=true`, and set a non-zero
+`QUANTUM_MAX_COST_PER_EXECUTION_CENTS`. Any two of the three without the
+third refuses to run, and in production the server refuses to START if the
+paid switch is on without a cost ceiling.
+
+**If you do nothing, nothing costs anything.** That is the intended
+permanent state until there is a reason to change it.
+
 A per-variable walkthrough — what each founder-managed setting means, where
 each credential comes from, and how local and production addresses differ —
 is in `docs/operations/FOUNDER_ENVIRONMENT_GUIDE.md`.

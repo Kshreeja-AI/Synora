@@ -66,6 +66,19 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     requiredIn: [],
   },
   {
+    key: 'IBM_QUANTUM_API_TOKEN',
+    // Optional everywhere and required nowhere: without it the quantum layer
+    // runs entirely on the free in-process simulator, which is the default
+    // and the only rung any stage reaches unless an operator raises
+    // QUANTUM_MAX_EXECUTION_LEVEL.
+    description:
+      'IBM Quantum Runtime API token used by the IBM quantum execution provider. ' +
+      'Optional — the quantum layer defaults to the local simulator and needs no credential.',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
     key: 'XAI_API_KEY',
     description: 'xAI API key used by the Grok text-generation provider.',
     owner: 'backend',

@@ -1,0 +1,103 @@
+{
+  "name": "synora-control-center",
+  "displayName": "Synora Control Center",
+  "description": "Developer-only control plane for the Synora repository. Runs existing repository commands and shows their real output. Not part of the Synora application.",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "synora",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "synora",
+          "title": "Synora",
+          "icon": "media/synora.svg"
+        }
+      ]
+    },
+    "views": {
+      "synora": [
+        {
+          "type": "webview",
+          "id": "synora.dashboard",
+          "name": "Control Center"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "synora.refresh",
+        "title": "Synora: Refresh Status"
+      },
+      {
+        "command": "synora.runTests",
+        "title": "Synora: Run Backend Tests"
+      },
+      {
+        "command": "synora.runWebTests",
+        "title": "Synora: Run Web Tests"
+      },
+      {
+        "command": "synora.typecheck",
+        "title": "Synora: Typecheck"
+      },
+      {
+        "command": "synora.lint",
+        "title": "Synora: Lint"
+      },
+      {
+        "command": "synora.audit",
+        "title": "Synora: Dependency Audit"
+      },
+      {
+        "command": "synora.guardrails",
+        "title": "Synora: Security Guardrails"
+      },
+      {
+        "command": "synora.capabilities",
+        "title": "Synora: Capability Report"
+      },
+      {
+        "command": "synora.checkDocker",
+        "title": "Synora: Check Docker"
+      },
+      {
+        "command": "synora.checkEnv",
+        "title": "Synora: Check Environment"
+      },
+      {
+        "command": "synora.smokeTest",
+        "title": "Synora: Local Smoke Test"
+      },
+      {
+        "command": "synora.launchReport",
+        "title": "Synora: Generate Launch Report"
+      },
+      {
+        "command": "synora.providerHealth",
+        "title": "Synora: Check Providers"
+      },
+      {
+        "command": "synora.smokeText",
+        "title": "Synora: Text Smoke Test"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}

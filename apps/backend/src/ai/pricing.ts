@@ -56,7 +56,25 @@ const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
  * a model at a cheaper sibling's rate is exactly the uncapped-bill failure
  * this module exists to prevent. A genuinely unknown model stays unknown.
  */
-export function normalizeModelId(model: string): string {
+/**
+ * ACCEPTS AN ABSENT ID, and this is a fix for a real crash rather than
+ * defensive decoration.
+ *
+ * `TextGenerationResult.model` is a required field, so this function was
+ * typed `string` and reasonably so. In practice a provider adapter can
+ * return a result without one — a stub, an unusual vendor response, a bug
+ * — and the value then travels all the way into `recordAiSpend`, where
+ * `.trim()` on `undefined` threw. That exception surfaced from the
+ * ACCOUNTING path, AFTER a generation had already succeeded and already
+ * cost money, and it failed the caller's request: precisely the outcome
+ * `spend-guard.ts` states must never happen.
+ *
+ * An absent id normalises to the empty string, which is in no price table,
+ * so the spend guard treats it as an UNKNOWN model on a metered provider
+ * and charges its ceiling. Fail-closed on money, and the request survives.
+ */
+export function normalizeModelId(model: string | undefined | null): string {
+  if (typeof model !== 'string') return '';
   return model
     .trim()
     .toLowerCase()
@@ -67,7 +85,8 @@ export function normalizeModelId(model: string): string {
 }
 
 /** The table entry for a model id in any of its spellings, or undefined. */
-function lookupPricing(model: string): ModelPricing | undefined {
+function lookupPricing(model: string | undefined | null): ModelPricing | undefined {
+  if (typeof model !== 'string' || model.length === 0) return undefined;
   return MODEL_PRICING[model] ?? MODEL_PRICING[normalizeModelId(model)];
 }
 
@@ -110,7 +129,10 @@ export type ModelPriceResult =
   | { known: false };
 
 export function priceModelUsd(
-  model: string,
+  // `string | undefined` for the same reason `normalizeModelId` is: a
+  // provider that returns no model id must produce an UNKNOWN price, not an
+  // exception on the accounting path of a generation that already billed.
+  model: string | undefined | null,
   inputTokens: number,
   outputTokens: number
 ): ModelPriceResult {
@@ -136,7 +158,7 @@ export function priceModelUsd(
  * what was being asked.
  */
 export function estimateCostOrUnknown(
-  model: string,
+  model: string | undefined | null,
   inputTokens: number,
   outputTokens: number
 ): number | null {
@@ -145,7 +167,7 @@ export function estimateCostOrUnknown(
 }
 
 /** Whether this deployment can put a number on the model at all. */
-export function isPriceKnown(model: string): boolean {
+export function isPriceKnown(model: string | undefined | null): boolean {
   return priceModelUsd(model, 0, 0).known;
 }
 

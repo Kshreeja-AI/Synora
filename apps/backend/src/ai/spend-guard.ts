@@ -428,7 +428,33 @@ export async function recordAiSpend(record: AiSpendRecord): Promise<AiSpendOutco
   const tokens = estimated
     ? Math.ceil((record.fallbackChars ?? 0) / 4)
     : (record.inputTokens ?? 0) + (record.outputTokens ?? 0);
-  const { costCents, unpriced } = costCentsFor(record, tokens);
+  // BELT AND BRACES, because this module's contract is "never throws" and a
+  // throw here has already happened once in real life: a provider returned a
+  // result with no model id, `normalizeModelId` threw on it, and the
+  // exception surfaced from the ACCOUNTING path of a generation that had
+  // already succeeded and already cost money — failing the caller's request
+  // for a reason that had nothing to do with their request.
+  //
+  // `pricing.ts` now tolerates an absent id directly, so this catch should be
+  // unreachable. It stays because "should be unreachable" is exactly what was
+  // believed before, and because the fallback is the safe direction: charge
+  // the ceiling, shout about it, and let the request through.
+  let costCents: number;
+  let unpriced: boolean;
+  try {
+    ({ costCents, unpriced } = costCentsFor(record, tokens));
+  } catch (error) {
+    const ceiling = maxKnownRatePer1k();
+    costCents = Math.ceil(((tokens / 1000) * ceiling.outputPer1k) * 100);
+    unpriced = true;
+    logger.error('[SpendGuard] Pricing threw — charging the ceiling rather than failing the call', {
+      provider: record.provider,
+      model: record.model,
+      tokens,
+      chargedCents: costCents,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   if (unpriced) {
     // Loud on purpose. A ceiling is a safe stopgap, not a resting state:

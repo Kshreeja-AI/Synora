@@ -37,9 +37,23 @@ export async function resolveProvider(
   if (explicitId) {
     const descriptor = getProviderDescriptor(explicitId);
     if (!descriptor) {
+      // THE VALUE IS NOT ECHOED. This message used to interpolate
+      // `explicitId` directly, which is safe exactly as long as everybody
+      // puts a provider id in the selection variable. On 2026-08-12 an
+      // OpenRouter API key was found in `AI_PROVIDER` on this deployment —
+      // and this error is thrown on the request path, where it is logged, and
+      // may be surfaced to a caller. That would have written a live
+      // credential into the application log.
+      //
+      // A misconfiguration message does not need to quote the
+      // misconfiguration to be actionable: naming the VARIABLE and listing
+      // the valid values tells an operator everything, and they can read
+      // their own env file.
       throw new Error(
-        `${explicitSource} is set to "${explicitId}", which is not a known provider. ` +
-          `Known providers: ${PROVIDER_REGISTRY.map((p) => p.id).join(', ')}.`
+        `${explicitSource} is set to a value that is not a known provider. ` +
+          `Known providers: ${PROVIDER_REGISTRY.map((p) => p.id).join(', ')}. ` +
+          'The offending value is not shown here because a mistyped selection ' +
+          'variable has been observed to contain an API key.'
       );
     }
     if (!descriptor.capabilities.includes(capability)) {

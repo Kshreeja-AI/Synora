@@ -13,7 +13,10 @@ export async function resolveStorageProvider(): Promise<StorageProvider> {
 
   if (!descriptor) {
     throw new Error(
-      `STORAGE_PROVIDER is set to "${providerId}", which is not a known provider. ` +
+      `STORAGE_PROVIDER is set to a value that is not a known provider. ` +
+        // Value withheld: a mistyped selection variable has been observed to
+        // contain an API key, and this error is logged.
+
         `Known providers: ${STORAGE_REGISTRY.map((p) => p.id).join(', ')}.`
     );
   }

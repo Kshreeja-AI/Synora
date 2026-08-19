@@ -746,6 +746,82 @@ When a real embedding provider and vector store are added, they plug in
 behind the `IEmbeddingModel` / `IVectorDB` interfaces — pgvector ↔
 dedicated vector DB is a configuration change, not a rewrite.
 
+## Quantum Capability Layer {#quantum-capability-layer}
+
+`apps/backend/src/quantum/` (added 2026-08-11) — the same
+descriptor → registry → resolver shape as AI, embeddings, vector DB,
+mail and storage, applied to a capability that is not a model at all.
+
+- **Facade** (`index.ts`): `executeQuantumCircuit(request)` is the quantum
+  twin of `generateText()`. No caller names a backend, imports a vendor
+  client, or changes when a provider is added or removed. Nothing outside
+  `src/quantum/**` imports anything deeper than this file.
+- **Descriptor** (`descriptor.ts`): `id`, `displayName`, `metering`,
+  `min`/`maxExecutionLevel`, `unsupportedReason?`, `isConfigured()`,
+  `verifyCredential?()`, `create()`. Reuses `CredentialVerification` from
+  the AI descriptor rather than declaring a fourth four-state type.
+- **Registry order is policy**: the local simulator is first and permanent.
+  A configured IBM credential does not make IBM the default, because
+  "you configured a credential" is not "you authorised spending on every
+  request". The text registry orders itself the opposite way, correctly —
+  text providers differ by cents, quantum rungs by orders of magnitude.
+- **Resolver** (`resolver.ts`): `QUANTUM_MAX_EXECUTION_LEVEL` (default `0`)
+  bounds every path, explicit and automatic. A request may lower it and
+  may never raise it. Providers whose cheapest rung is above the ceiling
+  are excluded *before* any network call.
+- **Providers**: `local-simulator` (level 0, in-process dense statevector,
+  no dependencies, VERIFIED); `ibm-quantum` (levels 1–3, OpenQASM 3 over
+  IBM Runtime REST via `safeFetch`, IMPLEMENTED but NOT VERIFIED — no
+  credential exists); `aws-braket` (SCAFFOLDED, `unsupportedReason` set).
+- **Circuit IR + OpenQASM** (`circuit.ts`, `qasm.ts`): Synora's own gate
+  vocabulary, validated at build time, hashed for provenance, emitted as
+  OpenQASM 3 (and 2). This is why Qiskit is not a dependency — Qiskit is
+  Python, and OpenQASM is the interchange every toolchain already reads.
+- **Cost** (`budget.ts`): quantum spend flows through `ai/spend-guard.ts`'s
+  `knownCostCents` channel, so there is ONE ledger and one set of caps.
+  Four refusals, all before submission: unenabled paid QPU, UNKNOWN cost
+  on a metered backend, over the caller's authorisation, over the
+  deployment ceiling.
+- **Suitability** (`suitability.ts`): pure and synchronous, five verdicts,
+  `UNKNOWN` by default. Its job is to say no.
+- **Algorithms** (`algorithms/`): 15 registered, 3 executable (QAOA, VQE,
+  quantum kernel), each with a mandatory classical baseline.
+  `requireExecutableAlgorithm()` throws for the rest rather than returning
+  a plausible number.
+- **Benchmark** (`benchmark/`): `outcome` and `advantageClaim` are separate
+  fields. A simulator run can never produce
+  `QUANTUM_ADVANTAGE_DEMONSTRATED` — the simulator is a classical program.
+- **Hybrid orchestration** (`src/intelligence/hybrid-orchestrator.ts`):
+  sits beside the classical path and never replaces it. Every quantum step
+  is inside a boundary that degrades to `route: 'classical-only'` with the
+  failure recorded.
+
+No HTTP route exposes any of this yet; that is a separate decision.
+Full rationale: `SYNORA_MASTER_BLUEPRINT.md` Part XI.
+
+## Knowledge Acquisition {#knowledge-acquisition}
+
+`apps/backend/src/knowledge/` (added 2026-08-11) — licensed corpus
+ingestion that REUSES the existing embedding and vector stack rather than
+introducing a second one.
+
+- **The rule**: a dataset is ingested because its licence permits it, never
+  because it was downloadable. `UNKNOWN` is a real licence state and is
+  refused; CC-BY-NC is refused (Synora is commercial); CC-BY-ND is refused
+  (chunking and embedding are derivatives).
+- **Catalogue** (`catalog.ts`): assessed sources including explicitly
+  BLOCKED ones — Common Crawl (distribution is not licensing) and
+  "outputs of other AI models" (prohibited, and not a thing Synora does).
+- **Pipeline** (`pipeline.ts`): licence check → validation → deduplication
+  (SHA-256 of the NORMALISED text) → chunking (`embeddings/chunking.ts`,
+  the same splitter the document path uses) → embedding
+  (`EmbeddingService`) → indexing (`VectorDBService`, `knowledge`
+  namespace) → retrieval with mandatory citation.
+- **Ports** (`ports.ts`): the reuse boundary, ~30 lines. Going through the
+  existing services inherits caching, rate limiting, circuit breaking,
+  cost accounting, tracing and — the one that matters — workspace scoping.
+- The licence check runs FIRST because every later stage costs something.
+
 ## Database Architecture
 
 PostgreSQL 16 via Prisma 5; schema at

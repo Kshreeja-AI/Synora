@@ -5640,3 +5640,247 @@ implementation needs current value, or an architectural seam that is explicitly
 justified.
 
 > **Optionality without bloat.**
+
+---
+
+# Part XI — Hybrid classical + quantum intelligence
+
+> Added 2026-08-11. Local development only: nothing in this Part is deployed,
+> nothing in it changes DNS or infrastructure, and nothing in it costs money
+> in its default configuration.
+
+## XI.1 The principle
+
+Synora's intelligence layer routes by **capability**, never by vendor. Part X
+established that rule for models. Quantum computing is the first capability
+that is not a model at all — it is a different *kind* of computer — and it
+enters through the same door:
+
+```
+                        SYNORA
+                           |
+                 Intelligence Orchestrator
+                           |
+                  +--------+--------+
+                  |                 |
+            Classical path     Quantum path
+                  |                 |
+          AI Provider Layer   Quantum Provider Layer
+                  |                 |
+           models / providers   algorithms / backends
+                  |                 |
+                  +--------+--------+
+                           |
+                    Unified result
+```
+
+Business logic knows capabilities. It does not know vendors, and it does not
+know whether an answer came from a transformer or a statevector.
+
+## XI.2 Why Qiskit is not a dependency
+
+Qiskit is a Python library. Synora's backend is Node.js/TypeScript ESM. There
+is no import that makes `qiskit.circuit` reachable from this process, and
+manufacturing one would mean a Python runtime inside the production image — a
+permanent infrastructure change for a capability nobody has asked to run in
+production.
+
+So the coupling is inverted, which is the better direction anyway. Synora
+emits **OpenQASM 3** (`quantum/qasm.ts`), the open interchange format that
+`qiskit.qasm3`, IBM Quantum Runtime and Amazon Braket all consume. A
+Qiskit-based executor reads Synora's circuits without Synora importing Qiskit,
+and Synora reads results back through `QuantumExecutionResult` without learning
+that Qiskit was involved.
+
+**There is no quantum vendor package in `package.json`, in any layer.** That is
+asserted by a test, not by intent.
+
+## XI.3 The execution hierarchy
+
+| Level | What | Cost | Status here |
+|---|---|---|---|
+| **0** | Local statevector simulator, in-process | free | **VERIFIED** — 37 tests against known quantum states |
+| 1 | Free/low-cost cloud simulator | ~free | reachable via IBM adapter; **NOT VERIFIED** |
+| 2 | Open-access QPU (IBM free tier) | free at point of use | adapter written; **NOT VERIFIED** |
+| 3 | Paid QPU | real money | refused by default, twice over |
+
+`QUANTUM_MAX_EXECUTION_LEVEL` defaults to **0** and bounds *every* path —
+explicit and automatic. A ceiling an explicit request could step over would be
+decorative. Level 3 additionally requires `QUANTUM_PAID_QPU_ENABLED=true` AND a
+non-zero `QUANTUM_MAX_COST_PER_EXECUTION_CENTS`; no default sets either, and a
+staging/production boot with the first but not the second is refused at startup
+(`assertQuantumLaunchGates`).
+
+## XI.4 Cost control reuses the existing ledger
+
+Quantum spend flows through `ai/spend-guard.ts` via its `knownCostCents`
+channel — the same route media and embeddings already use for workloads that
+are not token-priced. One ledger, one set of daily/workspace/user caps, one
+number that means what an operator thinks it means.
+
+A second quantum budget would have been simpler to write and would have let a
+deployment with a $5/day AI cap and a $5/day quantum cap spend $10.
+
+Four refusals, all **before** submission, so a refusal costs nothing:
+
+1. Level 3 without explicit enablement.
+2. A metered execution whose cost is **UNKNOWN** — an unknown price is not a
+   zero price. `QuantumCost.estimatedCents` is `number | null` for this reason.
+3. Cost above the caller's own authorisation, which must be explicit for any
+   non-zero spend.
+4. Cost above the deployment's per-execution ceiling.
+
+## XI.5 The Quantum Suitability Analyzer
+
+`quantum/suitability.ts`. Pure, synchronous, free, and its job is to say no.
+
+Five verdicts: `NOT_SUITABLE` · `UNKNOWN` · `RESEARCH_CANDIDATE` ·
+`SIMULATOR_CANDIDATE` · `QPU_CANDIDATE`. `UNKNOWN` is the default and anything
+missing produces it.
+
+Four structural guarantees:
+
+- The strongest expressible benefit is `demonstrated-in-literature` — a
+  citation, not a result Synora reproduced. **There is no enum member meaning
+  "quantum wins",** and adding one is the single change that would turn the
+  analyzer into marketing.
+- `classicalBaselineRequired` is the literal type `true`. It cannot be switched
+  off, at compile time, by anybody.
+- `QPU_CANDIDATE` additionally requires the operator to have raised the
+  execution ceiling. Recommending hardware nobody enabled is recommending a bill.
+- Every algorithm it names exists in the registry with its assumptions,
+  limitations and research status attached.
+
+## XI.6 The algorithm registry — 15 entries, 3 of which execute
+
+**Executable on the local simulator, each with a mandatory classical baseline:**
+QAOA (vs exhaustive enumeration), VQE (vs exact diagonalisation by shifted
+power iteration), quantum kernel (vs RBF-kernel ridge with the *same* solver,
+regulariser and split).
+
+**Described, contract-compatible, deliberately not executable:** QNN, QCNN,
+QRL, QBM, quantum reservoir computing, quantum generative models, hybrid
+quantum-classical networks, the variational family.
+
+**Textbook references the analyzer names and then explains away:** Grover,
+Shor, HHL, Trotterised simulation.
+
+Every entry declares assumptions, a classical baseline, qubit requirement,
+limitations, research status, test coverage and references — all required
+fields. `requireExecutableAlgorithm()` throws for anything without a `run`
+rather than returning a plausible number, because a fabricated benchmark is
+indistinguishable from a real one once written down.
+
+## XI.7 "Did quantum actually help?"
+
+`quantum/benchmark/`. Two separate fields, and the separation is the design:
+
+- `outcome` — which side did better on this instance. A measurement.
+- `advantageClaim` — the claim. A far higher bar.
+
+**A simulator run can never yield `QUANTUM_ADVANTAGE_DEMONSTRATED`,** and not
+as a policy — as a matter of fact. The simulator is a classical program on a
+classical CPU; a win there is one classical algorithm beating another. Hardware
+must additionally win on objective *and* wall-clock *and* cost, and be
+reproducible.
+
+Every result this build can currently produce lands on
+**`QUANTUM_ADVANTAGE_NOT_DEMONSTRATED`**. That is the honest state of the field,
+not a limitation of the harness.
+
+## XI.8 Knowledge acquisition — legal, not extractive
+
+`knowledge/`. Synora does **not** attempt to acquire another model's knowledge.
+There is no code that scrapes, distils or reconstructs Claude, GPT or Gemini,
+and "outputs of other AI models" is an explicitly **blocked** catalogue entry.
+
+The rule: a dataset is ingested because its **licence** permits it, never
+because it was downloadable. Common Crawl is catalogued and blocked precisely
+because it is the most likely future suggestion — Common Crawl *distributes*
+the crawl, it does not licence the underlying pages.
+
+`UNKNOWN` is a real licence state and is refused. CC-BY-NC is refused (Synora is
+commercial). CC-BY-ND is refused (chunking and embedding *are* derivatives).
+Per-item sources like arXiv require a per-item licence; the collection's licence
+does not transfer to its items.
+
+The pipeline — policy gate, security scan, validation, normalisation,
+deduplication, quality, chunking, embedding, indexing, versioning — **reuses the
+existing stack**: `embeddings/chunking.ts`, `EmbeddingService`,
+`VectorDBService`, the queue. There is no second vector store and no second
+embedding path. A parallel system would have needed its own workspace scoping,
+and that is the one it would have got wrong.
+
+**The policy gate has five states** (`knowledge/policy.ts`):
+`ALLOWED` · `ALLOWED_WITH_ATTRIBUTION` · `REVIEW_REQUIRED` · `REFUSED` ·
+`UNKNOWN`. Only the first two permit ingestion, and `UNKNOWN` never becomes
+`ALLOWED` by any path. `REVIEW_REQUIRED` exists because government-portal and
+public-domain terms are jurisdictional and genuinely need a human — collapsing
+it into `REFUSED` would lose the difference between "not yet" and "no".
+
+**Ingested knowledge is UNTRUSTED DATA** (`knowledge/security.ts`). Markup and
+script are stripped before anything reads the text; document-supplied metadata
+is stripped of Synora's reserved provenance keys, so a document cannot ship
+`sourceName: "World Health Organization"` and forge its own citation;
+identifiers are allowlisted against path traversal and cross-tenant collision;
+archive expansion is bounded on ratio *and* absolute size; outbound fetches go
+through the existing SSRF guard. Prompt injection is **detected and labelled,
+never deleted** — a security textbook has to be able to quote the attack it
+describes — and the actual defence is `fenceUntrustedContent`, which wraps
+every retrieved passage in a per-call random delimiter and tells the model, in
+the same message, that the contents are data and not instruction.
+
+**Ingestion jobs are resumable** (`knowledge/jobs.ts`). The cursor is persisted
+after every batch, before the next fetch, so a crash costs one batch instead of
+re-embedding a whole dataset — which on a metered embedding provider is a bill
+paid twice for work already done. `running → running` is a legal transition
+*because* a process killed mid-run leaves a job in exactly that state, and
+forbidding the self-transition would make the one state a resume exists for the
+one state a resume cannot reach. Concurrency is the queue's job, not this
+module's.
+
+**Retrieval cannot lose provenance** (`knowledge/retrieval.ts`). A passage whose
+source, licence and document id cannot be reconstructed is DROPPED and counted,
+not returned bare. Hybrid ranking combines semantic similarity with keyword
+overlap, recency and source trust — all computed from indexed metadata, with no
+external search vendor — and every citation carries its `signals` breakdown so a
+ranking can be explained rather than trusted. Conflicting numbers across sources
+are **reported and never resolved**: picking the more trusted source would
+manufacture confidence out of a genuine disagreement.
+
+**Not yet durable.** The version catalogue and the job store are in-memory
+(`knowledge/ports.ts`), which means ingestion progress does not survive a
+restart. The two Prisma models required are written out in that file. This is a
+real limitation, recorded rather than discovered.
+
+## XI.9 Configuration — all optional, all safe by default
+
+| Variable | Default | Effect |
+|---|---|---|
+| `QUANTUM_MAX_EXECUTION_LEVEL` | `0` | free local simulator only |
+| `QUANTUM_PAID_QPU_ENABLED` | `false` | paid hardware unreachable |
+| `QUANTUM_MAX_COST_PER_EXECUTION_CENTS` | `0` | any non-zero cost refused |
+| `QUANTUM_LOCAL_MAX_QUBITS` | `20` | 16 MB of amplitudes |
+| `QUANTUM_DEFAULT_SHOTS` / `QUANTUM_DEFAULT_TIMEOUT_MS` | `1024` / `60000` | — |
+| `IBM_QUANTUM_API_TOKEN` | unset | IBM provider stays unconfigured |
+| `IBM_QUANTUM_BASE_URL` | IBM Runtime | SSRF-validated on every call |
+| `IBM_QUANTUM_INSTANCE` / `IBM_QUANTUM_OPEN_ACCESS` | unset / `false` | real devices classified level 3 |
+
+Deliberately **not** added to `config/envCatalog.ts`: that file is the short
+list of things a human must actually decide, and the correct quantum answer for
+every founder today is "nothing".
+
+## XI.10 Status, stated at the correct rung
+
+- **VERIFIED** — circuit IR, OpenQASM 3/2 emission, local statevector
+  simulator, suitability analyzer, budget gates, provenance, benchmark harness,
+  QAOA/VQE/quantum-kernel, licence gate and ingestion pipeline. 153 tests.
+- **IMPLEMENTED, NOT VERIFIED** — the IBM Quantum adapter. Written against
+  IBM's published REST interface and never executed against IBM, because no
+  credential exists. Its wire-format decoding is concentrated in three
+  `decode*` functions so a first credentialed run corrects a small, local area.
+- **SCAFFOLDED** — the Amazon Braket adapter. `unsupportedReason` is set; the
+  resolver skips it and says so honestly if named.
+- **RESEARCH-ONLY** — the eight described algorithms and four reference entries.
+- **NOT BUILT** — no HTTP route exposes any of this. Exposing a new public
+  surface is a separate founder decision, and Release 1 is mid-deployment.

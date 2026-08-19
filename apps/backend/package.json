@@ -17,7 +17,10 @@
     "test:coverage": "vitest --coverage",
     "db:generate": "prisma generate --schema ../../packages/database/prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema ../../packages/database/prisma/schema.prisma",
-    "db:migrate:dev": "prisma migrate dev --schema ../../packages/database/prisma/schema.prisma"
+    "db:migrate:dev": "prisma migrate dev --schema ../../packages/database/prisma/schema.prisma",
+    "capabilities:report": "tsx src/cli/capabilityReport.ts",
+    "providers:health": "tsx src/cli/providerHealth.ts",
+    "smoke:text": "tsx src/cli/textSmokeTest.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.112.5",

@@ -103,3 +103,38 @@ describe('gateway model-id spellings', () => {
     expect(normalizeModelId('GPT 5.6 Luna')).toBe('gpt-5-6-luna')
   })
 })
+
+describe('an absent model id is unknown, not a crash', () => {
+  /**
+   * REGRESSION. `TextGenerationResult.model` is a required field, so this
+   * module reasonably assumed a string. A provider adapter returned a result
+   * without one anyway, and `.trim()` on `undefined` threw — from inside
+   * `recordAiSpend`, i.e. from the ACCOUNTING path of a generation that had
+   * already succeeded and already cost money. The caller's request failed for
+   * a reason that had nothing to do with their request, and the module whose
+   * header says it never throws, threw.
+   *
+   * The fix is not a try/catch around the symptom: an absent id normalises to
+   * the empty string, which is in no price table, so the spend guard charges a
+   * metered provider its CEILING. Fail closed on money, and the request lives.
+   */
+  it('does not throw on undefined or null', () => {
+    expect(() => normalizeModelId(undefined)).not.toThrow()
+    expect(() => normalizeModelId(null)).not.toThrow()
+    expect(normalizeModelId(undefined)).toBe('')
+    expect(normalizeModelId(null)).toBe('')
+  })
+
+  it('reports an absent id as UNPRICEABLE rather than free', () => {
+    expect(isPriceKnown(undefined)).toBe(false)
+    expect(isPriceKnown(null)).toBe(false)
+    expect(isPriceKnown('')).toBe(false)
+    expect(estimateCostOrUnknown(undefined, 1000, 1000)).toBeNull()
+  })
+
+  it('never matches a price-table entry by accident', () => {
+    // The empty string must not collide with any key, or an unidentified
+    // model would silently inherit somebody else's rate.
+    expect(estimateCostOrUnknown('', 1_000_000, 1_000_000)).toBeNull()
+  })
+})

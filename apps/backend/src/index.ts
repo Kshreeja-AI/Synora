@@ -9,6 +9,7 @@ import {
   assertProductionLaunchGates,
   assertNoLocalhostInProduction,
   assertNoDevelopmentModesInProduction,
+  assertQuantumLaunchGates,
 } from './config/productionGates';
 import { createApp } from './app';
 import { initializeWorkers } from './workers/manager';
@@ -48,6 +49,10 @@ export async function initializeApp() {
   // suppress outbound calls. Checked alongside the localhost gate because it
   // is the same failure shape: correct in development, invisible in production.
   assertNoDevelopmentModesInProduction(config);
+  // Paid quantum hardware switched on with no per-execution ceiling is the
+  // quantum-shaped version of an uncapped API key, and it is worse per
+  // incident: one QPU task can cost more than a month of text generation.
+  assertQuantumLaunchGates(config);
   const app = createApp(config);
 
   // Initialize background workers for async task processing

@@ -35,6 +35,7 @@ export interface StageDefaults {
     anthropicModel: string;
     openaiModel: string;
     openaiImageModel: string;
+    replicateVideoModel: string;
     openaiTtsModel: string;
     openaiTtsVoice: string;
     geminiModel: string;
@@ -180,6 +181,10 @@ const BASE_DEFAULTS: StageDefaults = {
     anthropicModel: 'claude-sonnet-5',
     openaiModel: 'gpt-4o',
     openaiImageModel: 'gpt-image-1',
+    // Replicate's own default video model. Overridable with
+    // REPLICATE_VIDEO_MODEL so a different one (Seedance, Wan, anything
+    // else Replicate hosts) is a config change and not a code change.
+    replicateVideoModel: 'minimax/video-01',
     openaiTtsModel: 'tts-1',
     openaiTtsVoice: 'alloy',
     geminiModel: 'gemini-1.5-pro',

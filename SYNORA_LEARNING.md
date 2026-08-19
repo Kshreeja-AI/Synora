@@ -229,3 +229,86 @@ must never cost zero; a version number must never collapse onto a cheaper
 model's price. Those tests are checked by breaking the code on purpose and
 confirming they fail — a test that passes against broken code is worse than no
 test, because it manufactures confidence.
+
+---
+
+## Quantum computing: what it is, and what it is not yet
+
+A normal computer bit is 0 or 1. A **qubit** can be in a combination of both
+at once, and when you put several together they become **entangled** — a
+single shared state that cannot be described one qubit at a time. That is why
+simulating n qubits on a normal computer needs 2ⁿ numbers: 20 qubits is a
+million, 30 qubits is a billion, 50 qubits is more memory than exists.
+
+That exponential is the entire promise. A quantum computer *is* that state
+rather than storing it.
+
+**What it is not.** It is not a faster computer. It is a computer that is
+faster at a *very short list* of specific mathematical tasks, and slower or
+useless at everything else. There is no quantum advantage for writing text,
+serving a web page, or running a database. Anyone who tells you otherwise is
+selling something.
+
+**Synora example.** `quantum/suitability.ts` exists to say NO. Ask it about a
+language task and it answers `NOT_SUITABLE` with a confidence of 0.97 and the
+reason written out. Ask it about a small optimisation problem and it answers
+`SIMULATOR_CANDIDATE` — worth running to *compare*, with the expected benefit
+recorded as `none`, because at any size a laptop can simulate, ordinary
+brute-force enumeration finds the provably best answer in milliseconds.
+
+**The three states that get confused.**
+
+| | What it is | What it proves |
+|---|---|---|
+| Simulator | A normal computer pretending to be a quantum one | The maths works |
+| Real quantum hardware | Actual qubits, and actual noise | What a device does today |
+| Fault-tolerant hardware | Error-corrected qubits | Does not exist yet |
+
+Synora runs the first. It has an adapter written for the second and no
+credential to use it. The third is where Shor's famous code-breaking algorithm
+lives, and it needs millions of physical qubits — the largest machines today
+have a few hundred, with no error correction.
+
+**The trap this repository is built to avoid.** Running an algorithm on a
+simulator and reporting that it "beat" a classical method. A simulator IS a
+classical method — a normal program on a normal CPU. A win there means one
+ordinary algorithm beat another ordinary algorithm. So Synora's benchmark
+code makes `QUANTUM_ADVANTAGE_DEMONSTRATED` structurally unreachable from a
+simulator run, and every result it can currently produce says
+`QUANTUM_ADVANTAGE_NOT_DEMONSTRATED`.
+
+That is not pessimism. It is where the field actually is, and a system that
+said otherwise would be lying in a way nobody outside the field could check.
+
+---
+
+## Licences: why "you can download it" is not "you can use it"
+
+Anything published on the internet is copyrighted by default. Not "unless it
+says so" — **by default**, automatically, the moment it is written. A licence
+is the author granting permission on top of that default.
+
+So the question is never "can I get this file?" It is "what did the author say
+I may do with it?"
+
+**The three words that catch people out.**
+
+- **NC** (NonCommercial) — free for a hobby project, forbidden for a business.
+  Synora is a business, so Synora refuses NC material.
+- **ND** (NoDerivatives) — you may share it, unchanged. Splitting a document
+  into chunks and turning them into embeddings *creates* derivatives, so ND is
+  also refused.
+- **SA** (ShareAlike) — you may use it, and what you build inherits the same
+  licence. Usable, but it affects what you may publish later, so it is flagged.
+
+**Synora example.** `knowledge/catalog.ts` lists Common Crawl — a free,
+enormous, trivially downloadable archive of the web — and marks it
+**blocked**. Common Crawl distributes those pages; it does not own them and
+cannot licence them. The entry exists precisely because "we could just use
+Common Crawl" is the most likely future suggestion, and the answer should
+already be written down when it comes.
+
+`UNKNOWN` is a real licence state in Synora's code, and it is refused. Not
+knowing is the honest description of most material, and treating unknown as
+permission is how a legal problem is acquired quietly.
+

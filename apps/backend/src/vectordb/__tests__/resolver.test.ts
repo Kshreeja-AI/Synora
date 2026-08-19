@@ -40,7 +40,7 @@ describe('resolveVectorDBProvider', () => {
 
   it('throws a clear, source-labeled error for an unknown explicit provider id', async () => {
     await expect(resolveVectorDBProvider({ explicitProviderId: 'not-a-real-provider' })).rejects.toThrow(
-      /which is not a known vector DB provider/i
+      /is set to a value that is not a known vector DB provider/i
     );
   });
 

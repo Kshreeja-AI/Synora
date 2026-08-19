@@ -1,4 +1,5 @@
 import { secretsManager } from '../../secrets';
+import { getConfig } from '../../config';
 import { safeFetch, SsrfBlockedError } from '../../net/ssrf';
 import {
   AICapability,
@@ -158,6 +159,15 @@ export const replicateVideoDescriptor: AIProviderDescriptor<VideoGenerationProvi
   },
   async create() {
     const apiToken = await secretsManager.get('REPLICATE_API_KEY', 'ai:replicate-video');
-    return new ReplicateVideoProvider('replicate', apiToken, DEFAULT_MODEL);
+    // Model from config, matching every other provider in this directory.
+    // It was hardcoded, which meant running a different Replicate-hosted
+    // model — Seedance, Wan, anything else — required editing this file.
+    // `DEFAULT_MODEL` remains the fallback so behaviour is unchanged for a
+    // deployment that sets nothing.
+    return new ReplicateVideoProvider(
+      'replicate',
+      apiToken,
+      getConfig().ai.replicateVideoModel || DEFAULT_MODEL
+    );
   },
 };

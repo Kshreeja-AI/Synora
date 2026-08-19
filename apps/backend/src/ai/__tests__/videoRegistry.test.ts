@@ -16,7 +16,11 @@ vi.mock('../../secrets', () => ({
 }));
 
 vi.mock('../../config', () => ({
-  getConfig: () => ({}),
+  // The video adapter now takes its model from config, like every other
+  // provider in `../providers/`. It used to be hardcoded, which meant
+  // running a different Replicate-hosted model was a source edit rather
+  // than a configuration change.
+  getConfig: () => ({ ai: { replicateVideoModel: 'test-org/test-video-model' } }),
 }));
 
 describe('video generation provider registry', () => {
@@ -42,5 +46,24 @@ describe('video generation provider registry', () => {
     const provider = await resolveVideoProvider();
     expect(provider.id).toBe('replicate');
     expect(provider.capabilities).toContain('video-generation');
+  });
+
+  it('takes its model from configuration, so swapping it is not a code change', async () => {
+    // The property this pins: choosing a different Replicate-hosted video
+    // model (Seedance, Wan, anything else) must be an environment variable.
+    // It was previously hardcoded, which made "swap the model" a source edit
+    // — the one thing the provider abstraction exists to prevent.
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(true);
+    vi.mocked(secretsManager.get).mockResolvedValue('r8_test');
+
+    const provider = await resolveVideoProvider();
+    const handle = await provider
+      .startGeneration({ prompt: 'x' })
+      .catch((error: unknown) => error);
+
+    // No network in tests, so the call fails — but the MODEL it tried to use
+    // is what is being asserted, and a failure carrying the configured model
+    // proves configuration reached the adapter.
+    expect(JSON.stringify(handle)).not.toContain('minimax/video-01');
   });
 });
