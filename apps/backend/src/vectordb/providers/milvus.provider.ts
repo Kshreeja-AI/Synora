@@ -219,7 +219,9 @@ export const milvusVectorDBDescriptor: VectorDBProviderDescriptor = {
     if (!milvusUrl) {
       throw new Error('Milvus requires VECTORDB_MILVUS_URL to be set.');
     }
-    const token = await secretsManager.tryGet('MILVUS_TOKEN', 'vectordb:milvus');
+    // tryGetReal: the token is optional (self-hosted, no auth), and sending a
+    // generated placeholder as a real token would break exactly that case.
+    const token = await secretsManager.tryGetReal('MILVUS_TOKEN', 'vectordb:milvus');
     return new MilvusProvider(milvusUrl, token, milvusMaxUpsertBatchSize ?? MILVUS_DEFAULT_MAX_UPSERT_BATCH_SIZE);
   },
 };

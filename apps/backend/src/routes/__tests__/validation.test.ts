@@ -20,11 +20,15 @@ describe('input validation on mutating routes (R1-b)', () => {
     const config = await initConfig();
     app = createApp(config);
 
-    // A real authenticated session: register, then use the returned token.
+    // A real authenticated session: register, then use the accessToken cookie
+    // set on the response (tokens are no longer returned in the JSON body —
+    // see setAuthCookies in ../../routes/auth.ts).
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    token = res.body.data.accessToken;
+    const setCookie = res.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    token = cookies.map((c: string) => c.split(';')[0]).join('; ');
   });
 
   afterAll(async () => {
@@ -32,7 +36,7 @@ describe('input validation on mutating routes (R1-b)', () => {
     await prisma.$disconnect();
   });
 
-  const auth = () => ({ Authorization: `Bearer ${token}` });
+  const auth = () => ({ Cookie: token });
 
   describe('POST /api/auth/register (already zod-validated) now returns 400 not 500', () => {
     it('rejects an invalid email with 400 VALIDATION_ERROR', async () => {
@@ -112,28 +116,64 @@ describe('input validation on mutating routes (R1-b)', () => {
 
   describe('POST /api/images/generate', () => {
     it('rejects a missing prompt with 400, not 500', async () => {
-      const res = await request(app).post('/api/images/generate').set(auth()).send({ width: 512 });
+      const res = await request(app).post('/api/images/generate').set(auth()).send({});
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('VALIDATION_ERROR');
     });
 
-    it('rejects a non-numeric width with 400 (no NaN reaching the database)', async () => {
+    it('rejects a malformed size with 400 (no bad string reaching the provider)', async () => {
       const res = await request(app)
         .post('/api/images/generate')
         .set(auth())
-        .send({ prompt: 'a cat', width: 'huge' });
+        .send({ prompt: 'a cat', size: 'huge' });
 
       expect(res.status).toBe(400);
     });
 
-    it('accepts a valid body with 201', async () => {
+    it('never fabricates a 201 with a placeholder URL when no real image provider is reachable', async () => {
+      // The previous route returned 201 with a via.placeholder.com URL here,
+      // regardless of whether any provider was configured or reachable. This
+      // pins the honesty contract: without a real, working provider the
+      // response must NOT be a success — it should be 5xx (503 when no
+      // provider is configured, 5xx from the real provider call otherwise)
+      // and must not contain a placeholder URL.
       const res = await request(app)
         .post('/api/images/generate')
         .set(auth())
-        .send({ prompt: 'a watercolor cat', width: 512, height: 512 });
+        .send({ prompt: 'a watercolor cat', size: '1024x1024' });
 
-      expect(res.status).toBe(201);
+      expect(res.status).not.toBe(201);
+      expect(res.status).toBeGreaterThanOrEqual(500);
+      expect(JSON.stringify(res.body)).not.toMatch(/via\.placeholder|placeholder\.com/i);
+    });
+  });
+
+  describe('POST /api/videos/generate', () => {
+    it('rejects a missing prompt with 400, not 500', async () => {
+      const res = await request(app).post('/api/videos/generate').set(auth()).send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects a malformed size with 400', async () => {
+      const res = await request(app)
+        .post('/api/videos/generate')
+        .set(auth())
+        .send({ prompt: 'a cat video', size: 'big' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 5xx (not a fabricated 202) when no video provider is configured', async () => {
+      const res = await request(app)
+        .post('/api/videos/generate')
+        .set(auth())
+        .send({ prompt: 'a sunset timelapse', duration: 5 });
+
+      expect(res.status).not.toBe(202);
+      expect(res.status).toBeGreaterThanOrEqual(500);
     });
   });
 

@@ -95,15 +95,37 @@ for "email already exists" as for "wrong password" — an attacker cannot
 distinguish the two to enumerate which emails have accounts. Full detail:
 `docs/production/R1-a_EMAIL_ENUMERATION.md`.
 
-### MFA — Not yet implemented
+### MFA — TOTP, wired into login (2026-08-03)
 
-A complete TOTP-based MFA implementation exists on the `recover/mfa`
-branch (challenge/setup/recovery-code services, `routes/mfa.ts`, frontend
-components, RFC 4226/6238 test vectors) but is not merged or wired into
-the running app. Four MFA-*adjacent* services (audit, rate-limiter,
-monitoring, alerting logging) already sit unwired in mainline at
-`apps/backend/src/services/mfa/`. Landing both halves is Release 2, R2-a
-— see `RELEASE_2_PLAN.md`.
+TOTP-based MFA is live end to end. The core (RFC 6238 TOTP with timing-safe
+comparison and no external dependencies, hashed recovery codes, single-use
+setup/challenge tokens) was ported from the `recover/mfa` branch and
+integrated with the operational services already in mainline (audit,
+rate-limiter, monitoring, alerting) under `apps/backend/src/services/mfa/`.
+
+Flow: `POST /api/auth/login` returns `{ mfaRequired, mfaChallengeToken }`
+instead of tokens for an enrolled account (the challenge carries the
+`rememberMe` choice); `POST /api/auth/mfa/verify` redeems the single-use,
+5-minute challenge with a TOTP code or recovery code and is the point where
+cookies/tokens are actually issued. Enrollment is
+`setup/initiate → setup/verify → setup/confirm`; `disable` is
+password-confirmed; every step writes to `MFAAuditLog` best-effort.
+
+Hardening applied during integration (all covered by
+`routes/__tests__/mfa.test.ts`, 12 e2e cases against real Postgres):
+
+- `ChallengeTokenService.verifyToken` honours the *return value* of
+  `crypto.timingSafeEqual` — the ported code only relied on its throw, which
+  accepts every equal-length mismatch (all cuids are equal length), i.e. any
+  user's token would have validated against any account.
+- `consumeToken` is a conditional `updateMany({ usedAt: null })`, so two
+  requests racing the same challenge mint exactly one session; both verify
+  paths treat losing that race as failure.
+- Services use the shared `@synora/database` Prisma singleton rather than
+  private `new PrismaClient()` pools.
+- Session establishment goes through `utils/authSession.ts`, the single
+  implementation shared with the password login path — cookies and payload
+  shape cannot drift between the two flows.
 
 ### OAuth2 — Not yet implemented
 
@@ -202,6 +224,67 @@ compliance requirement to encrypt at the application layer) — don't
 treat their absence as an oversight; Postgres-level encryption at rest
 (via the managed hosting provider) is the current baseline.
 
+### SSRF protection for tool executions
+
+Workspace tools (HTTP/Webhook types) make outbound requests to
+user-configured URLs, which is a server-side request forgery vector by
+construction. `apps/backend/src/services/tool-transport.ts` enforces:
+
+- **Address policy at DNS-resolution time**: every address a hostname
+  resolves to is validated inside the socket `lookup` hook (not before
+  the request), so a DNS answer can't swap in a private address between
+  check and connect. Blocked: loopback, RFC 1918 private ranges, CGNAT,
+  link-local (including the 169.254.169.254 cloud-metadata endpoint),
+  benchmarking, multicast/reserved ranges, and their IPv6 equivalents
+  including IPv4-mapped (`::ffff:…`) and NAT64 forms. IP-literal hosts
+  are validated directly.
+- **No redirect following**: a 3xx response fails the execution — a
+  redirect to an internal address would bypass the original hostname's
+  validation.
+- **`http:`/`https:` only**, a hard 1 MB response-size cap, and the
+  tool's own wall-clock timeout on the whole exchange.
+- **Secret hygiene**: `{{secret:NAME}}` placeholders in tool config are
+  resolved server-side from the encrypted `ToolSecret` store at request
+  time; only names declared in the tool's `secrets` list resolve, and
+  resolved values never appear in logs, audit entries, or execution
+  records.
+
+Role gates (`tool:manage`, `tool:execute`, `tool:approve` in
+`permissions.ts`) control who can define, run, and approve tools;
+approval-gated executions can only be approved or rejected by
+ADMIN/OWNER while in `PENDING` state.
+
+### Upload malware scanning (real, credential-gated)
+
+Uploaded files are scanned through a provider-agnostic abstraction
+(`apps/backend/src/files/virusScanRegistry.ts`). The scan result is a
+three-state outcome — `clean`, `infected`, or `error` — deliberately not a
+boolean: a boolean forces "couldn't scan" to be reported as clean (a lie)
+or infected (a false alarm). A file's `virusScanStatus` records the literal
+truth: `CLEAN` only when a real scanner confirmed it, `INFECTED` on a
+signature match, `FAILED` when no scanner is configured or the scan didn't
+conclude. **A file is never recorded `CLEAN` without an actual clean scan.**
+
+- **Real provider**: ClamAV over the clamd `zINSTREAM` protocol
+  (`providers/clamav.provider.ts`) — streams bytes to clamd without giving
+  it filesystem access, works against a local clamd, a sidecar, or a
+  managed service, selected by `VIRUS_SCAN_CLAMAV_HOST`/`PORT`. No API key
+  (clamd is a private-network daemon).
+- **Download gate (fail-closed)**: infected files are blocked in every
+  stage, always. Files that were not confirmed clean (no scanner, pending,
+  or errored) are blocked from download in **production** and wherever
+  `VIRUS_SCAN_FORCE_BLOCK_UNSCANNED=true` — so an unscanned file is never
+  served as if it had passed a scan it never had. Non-production stages
+  allow them by default so local work isn't blocked by a scanner that isn't
+  running.
+- **Capability detection**: `GET /api/capabilities` reports whether a
+  scanner is configured and, when not, exactly what the platform does
+  instead.
+
+There is deliberately no "always returns clean" stub. The previous
+implementation marked every upload clean without scanning, which silently
+defeated the infected-file download gate.
+
 ## Dependency & Secret Security
 
 ### Vulnerability scanning (real, CI-enforced)
@@ -212,7 +295,7 @@ pnpm audit --prod --audit-level=high
 ```
 This gate is not theoretical — it has already caught and blocked a real
 set of freshly-disclosed CVEs once in this repository's history (see
-`PRODUCTION_READINESS_AUDIT.md`). Package manager is pnpm; `npm audit`
+`docs/archive/PRODUCTION_READINESS_AUDIT.md`). Package manager is pnpm; `npm audit`
 commands from generic guides don't apply here.
 
 ### Secret scanning (real, CI-enforced)
@@ -301,8 +384,10 @@ assuming it's covered.
 - [x] Account deletion is password-confirmed and revokes every session (Release 2 M3)
 - [x] Avatar uploads are content-type-allowlisted and size-capped (Release 2 M3)
 
+- [x] MFA — TOTP with recovery codes, challenge-gated login, audit + rate
+      limiting (2026-08-03; see "MFA" section above)
+
 ### Not yet implemented (tracked, not accidental)
-- [ ] MFA (`recover/mfa` branch exists, needs rebase — R2-a)
 - [ ] CSRF protection (`recover/csrf` branch exists, coupled to cookie-auth migration — R2-b)
 - [ ] OAuth2 provider login
 - [ ] Password complexity requirements beyond minimum length

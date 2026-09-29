@@ -127,6 +127,7 @@ describe('Sharing & Collaboration Routes', () => {
         data: {
           conversationId,
           shareToken: 'expired-token',
+          isPublic: true,
           expiresAt: new Date(Date.now() - 1000 * 60),
         },
       })
@@ -140,6 +141,73 @@ describe('Sharing & Collaboration Routes', () => {
       const response = await request(app).get('/api/shared/nonexistent-token')
 
       expect(response.status).toBe(404)
+    })
+
+    it('should return 404 for a non-public share, indistinguishable from a missing one', async () => {
+      await prisma.sharedConversation.create({
+        data: { conversationId, shareToken: 'private-token', isPublic: false },
+      })
+
+      const response = await request(app).get('/api/shared/private-token')
+
+      expect(response.status).toBe(404)
+      // Same body as the nonexistent case — a token probe must not be
+      // able to confirm that a private share exists.
+      const missing = await request(app).get('/api/shared/nonexistent-token')
+      expect(response.body).toEqual(missing.body)
+    })
+
+    it('excludes soft-deleted messages from the public view', async () => {
+      await prisma.message.create({
+        data: { conversationId, content: 'visible message', role: 'USER' },
+      })
+      await prisma.message.create({
+        data: {
+          conversationId,
+          content: 'deleted message',
+          role: 'ASSISTANT',
+          deletedAt: new Date(),
+        },
+      })
+      await prisma.sharedConversation.create({
+        data: { conversationId, shareToken: 'deletion-token', isPublic: true },
+      })
+
+      const response = await request(app).get('/api/shared/deletion-token')
+
+      expect(response.status).toBe(200)
+      const contents = response.body.data.messages.map((m: { content: string }) => m.content)
+      expect(contents).toContain('visible message')
+      expect(contents).not.toContain('deleted message')
+
+      await prisma.message.deleteMany({ where: { conversationId } })
+    })
+
+    it('never exposes billing internals on publicly shared messages', async () => {
+      await prisma.message.create({
+        data: {
+          conversationId,
+          content: 'costed message',
+          role: 'ASSISTANT',
+          inputTokens: 123,
+          outputTokens: 456,
+          costCents: 7.89,
+        },
+      })
+      await prisma.sharedConversation.create({
+        data: { conversationId, shareToken: 'billing-token', isPublic: true },
+      })
+
+      const response = await request(app).get('/api/shared/billing-token')
+
+      expect(response.status).toBe(200)
+      const message = response.body.data.messages[0]
+      expect(message.content).toBe('costed message')
+      expect(message.inputTokens).toBeUndefined()
+      expect(message.outputTokens).toBeUndefined()
+      expect(message.costCents).toBeUndefined()
+
+      await prisma.message.deleteMany({ where: { conversationId } })
     })
   })
 

@@ -6,7 +6,9 @@ import { requirePermission } from './permissions'
 export interface CreateConversationTemplateInput {
   name: string
   description?: string
-  initialMessages: Array<{ role: string; content: string }>
+  systemPrompt: string
+  initialUserMessage?: string
+  suggestedFollowUps?: string[]
   category?: string
   isPublic?: boolean
 }
@@ -14,7 +16,9 @@ export interface CreateConversationTemplateInput {
 export interface UpdateConversationTemplateInput {
   name?: string
   description?: string
-  initialMessages?: Array<{ role: string; content: string }>
+  systemPrompt?: string
+  initialUserMessage?: string
+  suggestedFollowUps?: string[]
   category?: string
   isPublic?: boolean
 }
@@ -42,9 +46,12 @@ export class ConversationTemplateService {
         workspaceId,
         name: input.name,
         description: input.description,
-        initialMessages: input.initialMessages,
+        systemPrompt: input.systemPrompt,
+        initialUserMessage: input.initialUserMessage,
+        suggestedFollowUps: input.suggestedFollowUps || [],
         category: input.category,
         isPublic: input.isPublic || false,
+        createdBy: userId,
       },
     })
   }
@@ -147,7 +154,9 @@ export class ConversationTemplateService {
       data: {
         ...(input.name && { name: input.name }),
         ...(input.description !== undefined && { description: input.description }),
-        ...(input.initialMessages !== undefined && { initialMessages: input.initialMessages }),
+        ...(input.systemPrompt !== undefined && { systemPrompt: input.systemPrompt }),
+        ...(input.initialUserMessage !== undefined && { initialUserMessage: input.initialUserMessage }),
+        ...(input.suggestedFollowUps !== undefined && { suggestedFollowUps: input.suggestedFollowUps }),
         ...(input.category !== undefined && { category: input.category }),
         ...(input.isPublic !== undefined && { isPublic: input.isPublic }),
       },

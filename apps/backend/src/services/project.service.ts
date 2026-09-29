@@ -6,6 +6,7 @@ import { requirePermission } from './permissions';
 import { recordAuditEvent } from './audit.service';
 import { deleteWorkspaceAsset } from '../storage';
 import { logger } from '../utils/logger';
+import { emitWorkflowEvent } from '../workflows/event-dispatch';
 
 /**
  * A project either belongs to a single user (personal, `workspaceId: null`
@@ -29,7 +30,7 @@ async function assertProjectAccess(
 
 export async function createProject(
   userId: string,
-  input: { name: string; description?: string; workspaceId?: string }
+  input: { name: string; description?: string; goal?: string; workspaceId?: string }
 ): Promise<Project> {
   if (input.workspaceId) {
     const membership = await requireMembership(userId, input.workspaceId);
@@ -41,6 +42,10 @@ export async function createProject(
       userId,
       name: input.name,
       description: input.description,
+      // What "done" would look like, in their words. Never required —
+      // nobody should have to articulate a goal before being allowed to
+      // start, and many projects only become clear once underway.
+      goal: input.goal,
       workspaceId: input.workspaceId,
     },
   });
@@ -48,6 +53,17 @@ export async function createProject(
   if (input.workspaceId) {
     await recordAuditEvent(input.workspaceId, userId, 'project.created', 'project', project.id, {
       name: project.name,
+    });
+    // Only workspace projects announce themselves: an event trigger is
+    // scoped to a workspace, so a personal project has nothing listening
+    // and no workspace to name.
+    emitWorkflowEvent({
+      name: 'project.created',
+      workspaceId: input.workspaceId,
+      actorId: userId,
+      subjectId: project.id,
+      subjectName: project.name,
+      projectId: project.id,
     });
   }
 
@@ -74,7 +90,7 @@ export async function getProjectForUser(userId: string, projectId: string): Prom
 export async function updateProject(
   userId: string,
   projectId: string,
-  input: { name?: string; description?: string; status?: ProjectStatus }
+  input: { name?: string; description?: string; goal?: string; status?: ProjectStatus }
 ): Promise<Project> {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) {
@@ -91,6 +107,7 @@ export async function updateProject(
     data: {
       ...(input.name !== undefined ? { name: input.name } : {}),
       ...(input.description !== undefined ? { description: input.description } : {}),
+      ...(input.goal !== undefined ? { goal: input.goal } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
     },
   });

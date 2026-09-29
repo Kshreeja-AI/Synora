@@ -20,6 +20,7 @@ import { ProviderResolver, ResolverConfig } from './resolver';
 import { HealthMonitor, RateLimiter, WorkspaceQuotaManager } from './health';
 import { HookEngine, ContextBuilder, Logger, MemoryProvider, SearchProvider, RAGProvider } from './hooks';
 import { StreamManager } from './streaming';
+import { engineeringEventBus } from '../../eos/event-bus';
 
 export interface OrchestratorConfig {
   resolver?: ResolverConfig;
@@ -294,6 +295,22 @@ class MetricsCollector {
     if (this.metrics.length > this.maxMetrics) {
       this.metrics = this.metrics.slice(-this.maxMetrics);
     }
+
+    engineeringEventBus.emit({
+      type: 'ai.provider.observation',
+      timestamp: Date.now(),
+      source: 'ai-orchestrator',
+      payload: {
+        providerId: metric.providerId,
+        modelId: metric.modelId ?? 'unknown',
+        latencyMs: metric.latencyMs,
+        inputTokens: metric.inputTokens,
+        outputTokens: metric.outputTokens,
+        costCents: metric.costCents,
+        success: metric.success,
+        errorCode: metric.errorCode,
+      },
+    });
   }
 
   getMetrics(): UsageMetrics[] {

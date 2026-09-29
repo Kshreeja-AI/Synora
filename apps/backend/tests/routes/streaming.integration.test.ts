@@ -2,7 +2,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { prisma } from '@synora/database';
 import { Redis } from 'ioredis';
 
-vi.mock('@synora/database');
+// A full vi.mock('@synora/database') auto-mock chokes on the generated
+// Prisma client's enum proxies ("Invalid enum value: __esModule"), so this
+// mocks only the specific model methods these tests actually stub.
+vi.mock('@synora/database', () => ({
+  prisma: {
+    streamingJob: { findUnique: vi.fn(), update: vi.fn() },
+    conversation: { findUnique: vi.fn() },
+    message: { update: vi.fn() },
+    conversationUsage: { upsert: vi.fn() },
+  },
+}));
 vi.mock('ioredis');
 
 describe('Streaming API Integration', () => {

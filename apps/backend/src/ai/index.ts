@@ -1,4 +1,5 @@
 import { resolveTextGenerationProvider } from './resolver';
+import { generateWithResilience } from './textResilience';
 import { TextGenerationRequest, TextGenerationResult } from './types';
 
 export type {
@@ -6,15 +7,46 @@ export type {
   TextGenerationMode,
   ConversationRole,
   ConversationMessage,
+  AIToolDefinition,
+  AIToolCall,
+  AIToolResult,
+  ToolChoice,
   TextGenerationRequest,
   TextGenerationResult,
   TextGenerationUsage,
   TextGenerationProvider,
+  ImageGenerationRequest,
+  ImageGenerationResult,
+  GeneratedImageData,
+  ImageGenerationProvider,
+  VideoGenerationRequest,
+  VideoGenerationProvider,
+  VideoJobHandle,
+  VideoJobPollResult,
+  VideoJobStatus,
+  TextToSpeechRequest,
+  TextToSpeechResult,
+  TextToSpeechProvider,
 } from './types';
-export { AIProviderError, NoProviderConfiguredError } from './types';
+export { AIProviderError, AIRateLimitedError, NoProviderConfiguredError } from './types';
 export { PROVIDER_REGISTRY, getProviderDescriptor, providersForCapability } from './registry';
 export type { AIProviderDescriptor } from './registry';
 export { resolveProvider, resolveTextGenerationProvider } from './resolver';
+export {
+  IMAGE_PROVIDER_REGISTRY,
+  resolveImageProvider,
+  isImageGenerationConfigured,
+} from './imageRegistry';
+export {
+  VIDEO_PROVIDER_REGISTRY,
+  resolveVideoProvider,
+  isVideoGenerationConfigured,
+} from './videoRegistry';
+export {
+  TTS_PROVIDER_REGISTRY,
+  resolveTextToSpeechProvider,
+  isTextToSpeechConfigured,
+} from './ttsRegistry';
 
 /**
  * The one function the rest of the application calls to generate text or
@@ -26,5 +58,8 @@ export { resolveProvider, resolveTextGenerationProvider } from './resolver';
  */
 export async function generateText(request: TextGenerationRequest): Promise<TextGenerationResult> {
   const provider = await resolveTextGenerationProvider();
-  return provider.generateText(request);
+  // Timeout, retry-with-backoff and per-provider circuit breaking — the
+  // same resilience rules the embeddings stack has always had, applied
+  // from one shared module so the two stacks can never drift apart.
+  return generateWithResilience(provider, request);
 }

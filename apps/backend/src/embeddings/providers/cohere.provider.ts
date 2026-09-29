@@ -82,7 +82,8 @@ export const cohereEmbeddingDescriptor: EmbeddingProviderDescriptor = {
   id: 'cohere',
   displayName: 'Cohere',
   async isConfigured() {
-    return (await secretsManager.tryGet('COHERE_API_KEY', 'embeddings:cohere')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('COHERE_API_KEY', 'embeddings:cohere');
   },
   async create() {
     const apiKey = await secretsManager.get('COHERE_API_KEY', 'embeddings:cohere');

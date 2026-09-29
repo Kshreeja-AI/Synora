@@ -5,6 +5,16 @@ import { requirePermission } from './permissions'
 import { requireMembership } from './checks'
 import { recordAuditEvent } from './audit.service'
 import { getProviderDescriptor } from '../ai'
+import { instrumentedGenerate } from '../ai/instrumentedGenerate'
+import { declareAiPath } from '../eos/instrumentation'
+
+/**
+ * Its own promptId, never 'chat.generate': a 20-token auto-title has an
+ * entirely different cost/latency shape from a full chat reply, and
+ * pooling the two would corrupt the baseline the chat path's cost/latency
+ * monitors compare against.
+ */
+declareAiPath('chat.title')
 
 export interface CreateConversationInput {
   title: string
@@ -19,6 +29,13 @@ export interface UpdateConversationInput {
   provider?: string
   model?: string
   tagNames?: string[]
+  /**
+   * Files this conversation into a project, or takes it out again when
+   * explicitly null. Filing is an edit to the conversation rather than a
+   * separate endpoint, because that is what it is — and it keeps one path
+   * for "change something about this conversation".
+   */
+  projectId?: string | null
 }
 
 export type ConversationSortField = 'createdAt' | 'updatedAt' | 'lastMessageAt' | 'title'
@@ -32,6 +49,13 @@ export interface ListConversationsOptions {
   search?: string
   sortBy?: ConversationSortField
   sortDirection?: SortDirection
+  /**
+   * Folder scope. A folder id lists that folder's conversations;
+   * `'none'` lists only unfiled ones. Omitted means every folder —
+   * these are three distinct answers, so an absent filter can't be
+   * conflated with "unfiled".
+   */
+  folderId?: string | 'none'
 }
 
 const MAX_TAGS_PER_CONVERSATION = 20
@@ -101,6 +125,10 @@ export class ConversationService {
       where.isPinned = options.pinned
     }
 
+    if (options.folderId !== undefined) {
+      where.folderId = options.folderId === 'none' ? null : options.folderId
+    }
+
     if (options.search) {
       where.OR = [
         { title: { contains: options.search, mode: 'insensitive' } },
@@ -143,11 +171,28 @@ export class ConversationService {
       await this.validateProvider(input.provider)
     }
 
+    if (input.projectId) {
+      // The project must belong to the SAME workspace as the conversation.
+      // Without this check, filing would move a conversation into a
+      // project somebody else owns — and the accept/reject answer would
+      // reveal which project ids exist elsewhere.
+      const project = await prisma.project.findFirst({
+        where: { id: input.projectId, workspaceId: conversation.workspaceId },
+        select: { id: true },
+      })
+      if (!project) {
+        throw new NotFoundException('Project')
+      }
+    }
+
     const updated = await prisma.conversation.update({
       where: { id },
       data: {
         ...(input.title && { title: input.title }),
         ...(input.description !== undefined && { description: input.description }),
+        // `undefined` leaves it alone; an explicit null takes it out of
+        // whatever project it was in.
+        ...(input.projectId !== undefined && { projectId: input.projectId }),
         ...(input.provider && { provider: input.provider }),
         ...(input.model && { model: input.model }),
         ...(input.tagNames && {
@@ -244,11 +289,27 @@ export class ConversationService {
     return conversation
   }
 
-  /** A conversation's provider must name a registered, currently-configured
-   * descriptor — otherwise it could never generate a reply. Model is
-   * intentionally not validated against a fixed list: models are free-form
-   * per-provider config strings throughout this codebase (see
-   * ai/types.ts), and a fixed enum here would contradict that. */
+  /** A conversation's provider must name a registered descriptor that
+   * supports text generation — those are invariants of the stored DATA
+   * (an unknown id or an image-only provider could never produce a
+   * reply). Model is intentionally not validated against a fixed list:
+   * models are free-form per-provider config strings throughout this
+   * codebase (see ai/types.ts), and a fixed enum here would contradict
+   * that.
+   *
+   * Deliberately NOT validated: whether the provider is configured right
+   * now. That is a claim about the DEPLOYMENT at one arbitrary moment,
+   * and creation cannot promise it for the conversation's lifetime —
+   * keys are added and removed while conversations persist, in both
+   * directions. A conversation is a container; the honest refusal lives
+   * where the action is: generation resolves the provider per message
+   * and records a clear failure when it is unconfigured. This check
+   * previously gated on isConfigured() and only ever passed in
+   * development because a generated placeholder counted as a credential;
+   * when that lie was removed (SecretsManager.hasReal), the gate revealed
+   * itself as blocking conversation creation entirely in credential-less
+   * deployments — including local development, which this platform
+   * promises works with zero keys. */
   private async validateProvider(provider: string): Promise<void> {
     const descriptor = getProviderDescriptor(provider)
     if (!descriptor) {
@@ -256,11 +317,6 @@ export class ConversationService {
     }
     if (!descriptor.capabilities.includes('text-generation')) {
       throw new ValidationException(`Provider "${provider}" does not support text generation.`)
-    }
-    if (!(await descriptor.isConfigured())) {
-      throw new ValidationException(
-        `Provider "${provider}" is not configured on this server — its required API key/secret is missing.`
-      )
     }
   }
 
@@ -280,6 +336,61 @@ export class ConversationService {
         })
       )
     )
+  }
+
+  async generateTitle(userId: string, conversationId: string): Promise<Conversation> {
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: {
+        messages: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' },
+          take: 10,
+        },
+      },
+    })
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found')
+    }
+
+    const membership = await requireMembership(userId, conversation.workspaceId)
+    requirePermission(membership.role, 'conversation:manage')
+
+    // Extract message content for title generation
+    const messageContent = conversation.messages
+      .map((m) => `${m.role}: ${m.content}`)
+      .join('\n')
+      .slice(0, 1000) // Limit to first 1000 chars
+
+    if (!messageContent.trim()) {
+      // Default title if no messages
+      return conversation
+    }
+
+    // Generate title using the conversation's configured provider
+    try {
+      const result = await instrumentedGenerate('chat.title', {
+        prompt: `Based on this conversation, generate a concise 5-10 word title. Reply with ONLY the title, no punctuation.\n\n${messageContent}`,
+        model: conversation.model,
+        maxTokens: 20,
+      }, { workspaceId: conversation.workspaceId })
+
+      const title = result.text || ''
+      const cleanTitle = title
+        .trim()
+        .replace(/^["']|["']$/g, '') // Remove quotes
+        .slice(0, 100) // Max 100 chars
+
+      return prisma.conversation.update({
+        where: { id: conversationId },
+        data: { title: cleanTitle || 'Untitled Conversation' },
+      })
+    } catch {
+      // If title generation fails, return conversation unchanged
+      // (better to have auto-title fail gracefully than block the user)
+      return conversation
+    }
   }
 }
 

@@ -1,0 +1,101 @@
+{
+  "title": "Synora — API & Workers",
+  "uid": "synora-core",
+  "schemaVersion": 39,
+  "tags": ["synora"],
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "title": "Request rate by route",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(synora_http_requests_total[5m]))",
+          "legendFormat": "{{route}}"
+        }
+      ]
+    },
+    {
+      "title": "p95 request latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(synora_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(synora_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        }
+      ]
+    },
+    {
+      "title": "5xx error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum (rate(synora_http_requests_total{status_code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx/s"
+        }
+      ]
+    },
+    {
+      "title": "AI provider calls by outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum by (provider, outcome) (rate(synora_ai_provider_calls_total[15m]))",
+          "legendFormat": "{{provider}} {{outcome}}"
+        }
+      ]
+    },
+    {
+      "title": "Token spend by provider and direction",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (provider, direction) (rate(synora_ai_tokens_total[15m]))",
+          "legendFormat": "{{provider}} {{direction}}"
+        }
+      ]
+    },
+    {
+      "title": "Queue jobs by outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum by (queue, outcome) (rate(synora_queue_jobs_total[15m]))",
+          "legendFormat": "{{queue}} {{outcome}}"
+        }
+      ]
+    },
+    {
+      "title": "p95 queue job duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (queue, le) (rate(synora_queue_job_duration_seconds_bucket[15m])))",
+          "legendFormat": "{{queue}}"
+        }
+      ]
+    },
+    {
+      "title": "Process memory (RSS)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "synora_process_resident_memory_bytes",
+          "legendFormat": "rss"
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,8 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
+import { metricsMiddleware, renderMetrics } from './monitoring/metrics';
+import { tracingMiddleware } from './monitoring/tracing';
 import { requestLogger } from './middleware/requestLogger';
 import { csrfProtection } from './middleware/csrf';
 import { cspMiddleware } from './middleware/csp';
@@ -15,12 +17,16 @@ import { correlationIdMiddleware } from './middleware/correlation-id';
 import { requestTimeout } from './middleware/requestTimeout';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
+import mfaRoutes from './routes/mfa';
 import userRoutes from './routes/users';
 import projectRoutes from './routes/projects';
 import documentRoutes from './routes/documents';
 import imageRoutes from './routes/images';
+import audioRoutes from './routes/audio';
 import aiRoutes from './routes/ai';
+import commandRoutes from './routes/command';
 import workspaceRoutes from './routes/workspaces';
+import activityRoutes from './routes/activity';
 import notificationRoutes from './routes/notifications';
 import invitationRoutes from './routes/invitations';
 import folderRoutes from './routes/folders';
@@ -29,7 +35,9 @@ import billingRoutes from './routes/billing';
 import billingPlansRoutes from './routes/billingPlans';
 import billingWebhookRoutes from './routes/billingWebhook';
 import adminBillingRoutes from './routes/adminBilling';
+import adminRoutes from './routes/admin';
 import conversationRoutes from './routes/conversations';
+import apiKeyRoutes from './routes/apiKeys';
 import messageRoutes from './routes/messages';
 import streamingRoutes from './routes/streaming';
 import branchRoutes from './routes/branches';
@@ -44,6 +52,23 @@ import searchRoutes from './routes/search';
 import exportImportRoutes from './routes/export-import';
 import { toolRoutes } from './routes/tools';
 import toolSecretRoutes from './routes/toolSecrets';
+import fileRoutes from './routes/files';
+import feedbackRoutes from './routes/feedback';
+import privacyConsentRoutes from './routes/privacyConsent';
+import modelRegistryRoutes from './routes/modelRegistry';
+import evaluationRoutes from './routes/evaluation';
+import datasetExportRoutes from './routes/datasetExport';
+import usageRoutes from './routes/usage';
+import videoRoutes from './routes/videos';
+import { capabilityRoutes } from './routes/capabilities';
+import agentRoutes from './routes/agents';
+import workflowRoutes from './routes/workflows';
+import workflowHookRoutes from './routes/workflowHooks';
+import templateRoutes from './routes/templates';
+import pluginRoutes from './routes/plugins';
+import canvasRoutes from './routes/canvas';
+import { eosRouter } from './eos/index';
+import { eosApiCollector } from './eos/api-collector.js';
 
 export interface CreateAppDeps {
   /**
@@ -74,6 +99,11 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(cspMiddleware);
   app.use(requestTimeout);
   app.use(correlationIdMiddleware as any);
+  // Observability: registered before the routers so every request — including
+  // 404s and rate-limited rejections — is measured and traced.
+  app.use(metricsMiddleware);
+  app.use(tracingMiddleware);
+  app.use(eosApiCollector);
   app.use(
     cors({
       origin: config.server.corsOrigins,
@@ -107,10 +137,19 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-  // Cookie Parser and CSRF Protection (only in production/staging)
-  // Skip in test environment to avoid test complications
+  // Cookie parsing must run in every environment: the access/refresh tokens
+  // (see setAuthCookies in routes/auth.ts) are httpOnly cookies the browser
+  // frontend relies on exclusively (fetch with credentials: 'include', no
+  // Authorization header) — without this, req.cookies is undefined and
+  // every authenticated request 401s.
+  app.use(cookieParser());
+
+  // CSRF Protection (only in production/staging) — the double-submit cookie
+  // pattern here isn't wired up on the frontend yet (no X-CSRF-Token header
+  // sent on mutations), so enabling it in test/development would reject
+  // every real mutating request rather than just forged ones. Tracked
+  // separately; not addressed by this change.
   if (!['test', 'development'].includes(process.env.NODE_ENV || '')) {
-    app.use(cookieParser());
     app.use(csrfProtection);
   }
 
@@ -119,6 +158,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // Public shared conversation endpoint (before auth routes)
   app.use('/api/shared', sharingPublicRoutes)
+  // Public workflow trigger endpoint: no session, the URL secret IS the
+  // authorization, exactly like the shared-conversation route above.
+  app.use('/api/hooks', workflowHookRoutes)
 
   // Liveness: process is up and serving HTTP. Deliberately checks nothing
   // else — an orchestrator uses this to decide whether to restart the
@@ -131,6 +173,24 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
       stage: config.stage,
       modes: config.modes,
     });
+  });
+
+  // Prometheus scrape endpoint. Optionally guarded: when METRICS_TOKEN is
+  // set, the scraper must send it as a bearer token — internals like route
+  // names and queue depths shouldn't be world-readable on a public host.
+  // Without the env var the endpoint stays open, which is the right default
+  // for cluster-internal scraping and local development.
+  app.get('/metrics', async (req, res) => {
+    const requiredToken = process.env.METRICS_TOKEN;
+    if (requiredToken && req.headers.authorization !== `Bearer ${requiredToken}`) {
+      return res.status(401).json({
+        success: false,
+        error: { code: 'UNAUTHORIZED', message: 'Invalid metrics token' },
+      });
+    }
+    const { contentType, body } = await renderMetrics();
+    res.setHeader('Content-Type', contentType);
+    return res.send(body);
   });
 
   // Readiness: process is up AND can actually serve traffic. Orchestrators
@@ -190,16 +250,22 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
 
   // API Routes
   app.use('/api/auth', authRoutes);
+  app.use('/api/auth/mfa', mfaRoutes);
   app.use('/api/users', userRoutes);
   app.use('/api/projects', projectRoutes);
   app.use('/api/documents', documentRoutes);
   app.use('/api/images', imageRoutes);
+  app.use('/api/audio', audioRoutes);
+  app.use('/api/videos', videoRoutes);
   app.use('/api/ai', aiRoutes);
+  app.use('/api/command', commandRoutes);
   app.use('/api/workspaces', workspaceRoutes);
+  app.use('/api/workspaces', activityRoutes);
   app.use('/api/workspaces', billingRoutes);
   app.use('/api/workspaces', folderRoutes);
   app.use('/api/workspaces', assetRoutes);
   app.use('/api/workspaces', conversationRoutes);
+  app.use('/api/workspaces', apiKeyRoutes);
   app.use('/api/workspaces', messageRoutes);
   app.use('/api/workspaces', streamingRoutes);
   app.use('/api/workspaces', branchRoutes);
@@ -213,10 +279,29 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use('/api/workspaces', exportImportRoutes);
   app.use('/api/workspaces', toolRoutes);
   app.use('/api/workspaces', toolSecretRoutes);
+  app.use('/api/workspaces', agentRoutes);
+  app.use('/api/workspaces', workflowRoutes);
+  app.use('/api/workspaces', canvasRoutes);
+  app.use('/api/workspaces', templateRoutes);
+  app.use('/api/workspaces', pluginRoutes);
+  app.use('/api/workspaces', fileRoutes);
+  app.use('/api/workspaces', feedbackRoutes);
+  app.use('/api/workspaces', privacyConsentRoutes);
+  app.use('/api/workspaces', modelRegistryRoutes);
+  app.use('/api/workspaces', evaluationRoutes);
+  app.use('/api/workspaces', datasetExportRoutes);
+  app.use('/api/workspaces', usageRoutes);
+  // Deployment-wide capability detection (not workspace-scoped).
+  app.use('/api', capabilityRoutes);
   app.use('/api/notifications', notificationRoutes);
   app.use('/api/invitations', invitationRoutes);
   app.use('/api/billing', billingPlansRoutes);
   app.use('/api/admin', adminBillingRoutes);
+  // adminRoutes lives at /api/admin/{stats,users,workspaces,audit-logs} —
+  // Express matches longest-prefix so it never collides with adminBilling's
+  // /plans, /billing/*, or /workspaces/:workspaceId/{credits,invoices}/* paths.
+  app.use('/api/admin', adminRoutes);
+  app.use('/api/eos', eosRouter);
 
   // 404 Handler
   app.use((req, res) => {

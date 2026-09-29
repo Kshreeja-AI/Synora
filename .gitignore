@@ -3,6 +3,28 @@ infrastructure/docker/secrets/
 *.secret
 .secrets/
 
+# Secret-bearing backups. A backup of a configured environment file, or a
+# database dump, carries exactly the credentials the patterns above exist to
+# keep out of the repository — the copy is no less sensitive than the
+# original. Named explicitly rather than trusted to `.env.*`, because a
+# rescued `.env.local.bak` does not match that pattern.
+*.bak
+*.backup
+*~
+.env.local.*
+env-backup/
+backups/
+*.dump
+*.sql.gz
+*.tar.gz
+
+# A nested extract of this very repository (no .git of its own) plus the
+# archive it came from. Kept on disk deliberately -- deleting founder material
+# is not this file's job -- but never committed: a copy of the repo inside the
+# repo doubles every future diff and confuses Docker build context.
+/Synora-SYNORA/
+/Synora-SYNORA.zip
+
 # Logs
 logs
 *.log
@@ -80,7 +102,10 @@ web_modules/
 # dotenv environment variable files
 .env
 .env.*
+# Templates carry placeholders only and MUST be committed — they are the
+# canonical record of what a deployment needs. Real values never are.
 !.env.example
+!.env.production.example
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -154,3 +179,14 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
 .env.local
+
+# Local Redis dump (created by a locally-run redis-server during dev/testing)
+dump.rdb
+
+# Dataset export output files written by datasetExport.service.ts during local testing
+apps/backend/exports/
+
+# Playwright test artifacts
+apps/web/e2e/.results/
+apps/web/test-results/
+apps/web/playwright-report/

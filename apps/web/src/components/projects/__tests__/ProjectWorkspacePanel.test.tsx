@@ -1,0 +1,414 @@
+/**
+ * The project workspace panel.
+ *
+ * What is defended here is restraint as much as function. The panel shows
+ * real titles, real counts and real timestamps — and deliberately does not
+ * judge the project or invent a summary of it, because those are the two
+ * things in a panel like this that can be confidently wrong.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ProjectWorkspacePanel } from '../ProjectWorkspacePanel';
+import * as api from '@/lib/api/projectWorkspace';
+import type { ProjectWorkspace } from '@/lib/api/projectWorkspace';
+
+vi.mock('@/lib/api/projectWorkspace', async () => {
+  const actual = await vi.importActual<typeof api>('@/lib/api/projectWorkspace');
+  return { ...actual, useProjectWorkspace: vi.fn(), useAddProjectNote: vi.fn() };
+});
+
+function workspace(overrides: Partial<ProjectWorkspace> = {}): ProjectWorkspace {
+  return {
+    project: {
+      id: 'p1',
+      name: 'Market research',
+      description: null,
+      goal: 'Decide whether to enter the German market by March.',
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+    counts: { conversation: 2, canvas: 0, file: 1, document: 0, image: 0, video: 0, audio: 0, agentRun: 0, note: 0 },
+    timeline: [
+      {
+        kind: 'conversation',
+        id: 'c1',
+        title: 'Competitor pricing',
+        at: new Date(Date.now() - 3_600_000).toISOString(),
+      },
+      {
+        kind: 'file',
+        id: 'f1',
+        title: 'pricing.csv',
+        at: new Date(Date.now() - 86_400_000).toISOString(),
+        detail: 'text/csv · 4 KB',
+      },
+    ],
+    resumeConversationId: 'c1',
+    lastActivityAt: new Date(Date.now() - 3_600_000).toISOString(),
+    newSinceLastVisit: null,
+    decisions: [],
+    ...overrides,
+  };
+}
+
+function renderPanel() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <ProjectWorkspacePanel projectId="p1" />
+    </QueryClientProvider>,
+  );
+}
+
+beforeEach(() => {
+  vi.mocked(api.useProjectWorkspace).mockReturnValue({
+    data: workspace(),
+    isLoading: false,
+  } as never);
+  vi.mocked(api.useAddProjectNote).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  } as never);
+});
+
+describe('ProjectWorkspacePanel', () => {
+  it('shows the goal, so the project has something to be finished against', () => {
+    renderPanel();
+    expect(screen.getByText(/Decide whether to enter the German market/)).toBeInTheDocument();
+  });
+
+  it('offers to add a goal rather than demanding one up front', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({ project: { ...workspace().project, goal: null } }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // Many projects only become clear once they are underway; nobody
+    // should be blocked from starting by a required field.
+    expect(screen.getByText(/No goal set/)).toBeInTheDocument();
+  });
+
+  it('offers to continue where you left off', () => {
+    renderPanel();
+    const resume = screen.getByRole('link', { name: /continue where you left off/i });
+    expect(resume).toHaveAttribute('href', '/conversations/c1');
+  });
+
+  it('does not offer to continue when there is nothing to continue', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({ resumeConversationId: null }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.queryByRole('link', { name: /continue where/i })).not.toBeInTheDocument();
+  });
+
+  it('lists the work in one chronology, newest first', () => {
+    renderPanel();
+    const items = screen.getAllByRole('listitem');
+    // Counts come first in the DOM, so the timeline entries are the ones
+    // carrying titles.
+    expect(screen.getByText('Competitor pricing')).toBeInTheDocument();
+    expect(screen.getByText('pricing.csv')).toBeInTheDocument();
+    expect(items.length).toBeGreaterThan(1);
+  });
+
+  it('links a conversation to its page and leaves a file unlinked', () => {
+    renderPanel();
+    expect(screen.getByRole('link', { name: /Competitor pricing/ })).toHaveAttribute(
+      'href',
+      '/conversations/c1',
+    );
+    // A file has no page to open today, so it is listed without a link
+    // rather than given one that goes nowhere.
+    expect(screen.queryByRole('link', { name: /pricing\.csv/ })).not.toBeInTheDocument();
+  });
+
+  it('shows an agent run in the chronology, linked to its own permalink page', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, agentRun: 1 },
+        timeline: [
+          ...workspace().timeline,
+          {
+            kind: 'agentRun',
+            id: 'run1',
+            title: 'Summarise the competitive landscape',
+            at: new Date(Date.now() - 1_800_000).toISOString(),
+            detail: 'Researcher · completed',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText('Summarise the competitive landscape')).toBeInTheDocument();
+    expect(screen.getByText(/Researcher · completed/)).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /Summarise the competitive landscape/ }),
+    ).toHaveAttribute('href', '/agents/runs/run1');
+  });
+
+  it('shows a decision note in the chronology, exactly as written and attributed to its author', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 1 },
+        timeline: [
+          ...workspace().timeline,
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B: cheaper, and a better support SLA.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(
+      screen.getByText('Went with vendor B: cheaper, and a better support SLA.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Priya/)).toBeInTheDocument();
+  });
+
+  it('adds a note and clears the field once it is saved', () => {
+    const mutate = vi.fn((_input, opts) => opts?.onSuccess?.());
+    vi.mocked(api.useAddProjectNote).mockReturnValue({ mutate, isPending: false } as never);
+
+    renderPanel();
+    const input = screen.getByLabelText(/add a note/i);
+    fireEvent.change(input, { target: { value: 'Chose vendor B for pricing.' } });
+    fireEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { content: 'Chose vendor B for pricing.', correctsNoteId: undefined },
+      expect.anything(),
+    );
+    expect(input).toHaveValue('');
+  });
+
+  it('corrects a note by appending a new one, with the consequence stated before the click', () => {
+    const mutate = vi.fn((_input, opts) => opts?.onSuccess?.());
+    vi.mocked(api.useAddProjectNote).mockReturnValue({ mutate, isPending: false } as never);
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 1 },
+        timeline: [
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole('button', { name: /correct the note/i }));
+    // The consequence is stated before anything is sent: the original
+    // stays visible, marked — never edited or erased.
+    expect(screen.getByText(/original stays visible, marked as corrected/i)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/add a note/i), {
+      target: { value: 'Actually vendor A — B failed the security review.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add note/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { content: 'Actually vendor A — B failed the security review.', correctsNoteId: 'n1' },
+      expect.anything(),
+    );
+    // The correcting state is consumed by the save, not left armed for
+    // the next unrelated note.
+    expect(
+      screen.queryByText(/original stays visible, marked as corrected/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows the whole decision log verbatim, with corrections marked, absent when empty', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        decisions: [
+          {
+            id: 'n2',
+            content:
+              'Actually vendor A — B failed the security review, and their SLA excluded the exact incident class we care about.',
+            author: 'Priya',
+            at: new Date(Date.now() - 300_000).toISOString(),
+            correction: true,
+            correctedLater: false,
+          },
+          {
+            id: 'n1',
+            content: 'Went with vendor B.',
+            author: 'Priya',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            correction: false,
+            correctedLater: true,
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText(/Decisions \(2\)/)).toBeInTheDocument();
+    // FULL content, past the timeline's 80-char truncation — the log is
+    // where the whole reasoning lives.
+    expect(
+      screen.getByText(/their SLA excluded the exact incident class we care about/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/corrected by a later note/)).toBeInTheDocument();
+  });
+
+  it('shows no decisions section at all when there are none', () => {
+    renderPanel();
+    expect(screen.queryByText(/Decisions \(/)).not.toBeInTheDocument();
+  });
+
+  it('does not offer to correct a note that is already corrected', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        counts: { ...workspace().counts, note: 2 },
+        timeline: [
+          {
+            kind: 'note',
+            id: 'n2',
+            title: 'Actually vendor A.',
+            at: new Date(Date.now() - 300_000).toISOString(),
+            detail: 'Priya · correction',
+          },
+          {
+            kind: 'note',
+            id: 'n1',
+            title: 'Went with vendor B.',
+            at: new Date(Date.now() - 900_000).toISOString(),
+            detail: 'Priya · corrected by a later note',
+          },
+        ],
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // The already-corrected original offers no second correction; the
+    // newest note is the one to correct.
+    expect(
+      screen.queryByRole('button', { name: /correct the note “went with vendor b/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /correct the note “actually vendor a/i }),
+    ).toBeInTheDocument();
+  });
+
+  it('will not add an empty note', () => {
+    renderPanel();
+    // Nothing to type into means nothing worth sending — disabled rather
+    // than reachable and then refused.
+    expect(screen.getByRole('button', { name: /add note/i })).toBeDisabled();
+  });
+
+  it('states last activity as a fact, and passes no judgement on the project', () => {
+    renderPanel();
+    expect(screen.getByText(/Last activity/)).toBeInTheDocument();
+    // "Stalled", "behind", "at risk" would be the platform deciding
+    // something about someone's work that it has no standing to decide —
+    // and would be wrong exactly during a deliberate pause.
+    expect(screen.queryByText(/stalled|at risk|behind schedule/i)).not.toBeInTheDocument();
+  });
+
+  it('says an empty project is empty, without inventing activity', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        timeline: [],
+        counts: { conversation: 0, canvas: 0, file: 0, document: 0, image: 0, video: 0, audio: 0, agentRun: 0, note: 0 },
+        resumeConversationId: null,
+        lastActivityAt: null,
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    expect(screen.getByText(/Nothing here yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/Last activity/)).not.toBeInTheDocument();
+  });
+
+  it('shows what changed since the last visit, broken down by kind', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        newSinceLastVisit: {
+          previousVisitAt: new Date(Date.now() - 604_800_000).toISOString(),
+          count: 3,
+          byKind: { conversation: 2, document: 1 },
+        },
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    const heading = screen.getByText(/3 new since you were last here/);
+    expect(heading).toBeInTheDocument();
+    // Scoped to the banner: the "held" summary lower on the page can
+    // legitimately show the same numbers for an unrelated reason (this
+    // fixture's total counts), so an unscoped query would be ambiguous
+    // about which claim it's actually checking.
+    const banner = within(heading.closest('div')!);
+    expect(banner.getByText(/2 conversations/)).toBeInTheDocument();
+    expect(banner.getByText(/1 document/)).toBeInTheDocument();
+  });
+
+  it('says nothing about "since last visit" on a first-ever visit', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({ newSinceLastVisit: null }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // Everything in a brand-new project is trivially "new" — not an
+    // informative claim, so the banner is absent rather than always
+    // reading "100% new."
+    expect(screen.queryByText(/since you were last here/)).not.toBeInTheDocument();
+  });
+
+  it('says nothing when a returning visit found no new activity, rather than a banner about zero', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: workspace({
+        newSinceLastVisit: {
+          previousVisitAt: new Date(Date.now() - 3_600_000).toISOString(),
+          count: 0,
+          byKind: {},
+        },
+      }),
+      isLoading: false,
+    } as never);
+
+    renderPanel();
+    // A real fact ("nothing changed") that still isn't worth a banner —
+    // announcing zero new things would be noise dressed as information.
+    expect(screen.queryByText(/since you were last here/)).not.toBeInTheDocument();
+  });
+
+  it('renders nothing while the work is still loading', () => {
+    vi.mocked(api.useProjectWorkspace).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+    } as never);
+
+    const { container } = renderPanel();
+    // Better an absent panel than a skeleton of a history that may turn
+    // out to be empty.
+    expect(container).toBeEmptyDOMElement();
+  });
+});

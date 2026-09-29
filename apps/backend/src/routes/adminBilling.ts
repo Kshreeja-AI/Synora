@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import { requireAdminRole } from '../middleware/requireAdminRole.js';
+import { NotFoundException } from '@synora/shared';
 import * as planService from '../services/plan.service.js';
 import * as creditService from '../services/credit.service.js';
+import * as refundService from '../services/refund.service.js';
 
 const router: Router = Router();
 
@@ -90,13 +93,73 @@ router.post('/plans/:planId/set-default', async (req: AuthRequest, res, next) =>
   }
 });
 
+// GET /api/admin/billing/past-due
+// Surfaces workspaces currently failing payment, ordered longest-struggling
+// first, so support can proactively reach out. There is no automatic
+// suspension/downgrade of a PAST_DUE workspace — Stripe's own dunning
+// retries run independently, and this gives a human the visibility to
+// intervene without racing that process.
+router.get('/billing/past-due', async (req: AuthRequest, res, next) => {
+  try {
+    const subscriptions = await prisma.subscription.findMany({
+      where: { status: 'PAST_DUE' },
+      include: {
+        plan: { select: { name: true, priceCents: true } },
+        workspace: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: { pastDueSince: 'asc' },
+    });
+
+    res.json(
+      subscriptions.map((s) => ({
+        workspaceId: s.workspace.id,
+        workspaceName: s.workspace.name,
+        workspaceSlug: s.workspace.slug,
+        planName: s.plan.name,
+        pastDueSince: s.pastDueSince,
+        paymentFailureCount: s.paymentFailureCount,
+      })),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/admin/workspaces/:workspaceId/billing
 router.get('/workspaces/:workspaceId/billing', async (req: AuthRequest, res, next) => {
   try {
     const workspaceId = req.params.workspaceId;
 
-    // Placeholder: in production, compose subscription + credits + recent invoices
-    res.json({ workspaceId, message: 'Support view not yet implemented' });
+    const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
+    if (!workspace) {
+      throw new NotFoundException('Workspace');
+    }
+
+    const [subscription, credits, recentInvoices, recentLedgerEntries] = await Promise.all([
+      prisma.subscription.findUnique({
+        where: { workspaceId },
+        include: { plan: true },
+      }),
+      prisma.workspaceCredits.findUnique({ where: { workspaceId } }),
+      prisma.invoice.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+      prisma.creditLedgerEntry.findMany({
+        where: { workspaceId },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      }),
+    ]);
+
+    res.json({
+      workspaceId,
+      subscription,
+      creditBalance: credits?.balance ?? null,
+      recentInvoices,
+      recentLedgerEntries,
+    });
   } catch (error) {
     next(error);
   }
@@ -135,6 +198,26 @@ router.post('/workspaces/:workspaceId/credits/adjust', async (req: AuthRequest, 
     const credits = await creditService.adjustCredits(req.userId!, workspaceId, input);
 
     res.json(credits);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/admin/workspaces/:workspaceId/invoices/:invoiceId/refund
+router.post('/workspaces/:workspaceId/invoices/:invoiceId/refund', async (req: AuthRequest, res, next) => {
+  try {
+    const workspaceId = req.params.workspaceId;
+    const invoiceId = req.params.invoiceId;
+
+    const schema = z.object({
+      amountCents: z.number().int().positive().optional(),
+      reason: z.string().min(1),
+    });
+
+    const input = schema.parse(req.body);
+    const refund = await refundService.refundInvoice(req.userId!, workspaceId, invoiceId, input);
+
+    res.status(201).json(refund);
   } catch (error) {
     next(error);
   }

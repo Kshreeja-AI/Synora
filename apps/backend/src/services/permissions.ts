@@ -40,7 +40,16 @@ export type Permission =
   | 'conversation-folder:manage'
   | 'prompt:manage'
   | 'template:manage'
-  | 'sharing:manage';
+  | 'sharing:manage'
+  // Tool subsystem. `tool:manage` (define/update/delete tool definitions,
+  // which embed endpoint configs and secret references) is scoped to
+  // EDITOR and above; `tool:execute` matches the chat-action tier; and
+  // `tool:approve` is ADMIN/OWNER only — approval exists to put a second,
+  // more privileged pair of eyes on a gated execution, so granting it to
+  // the same tier that requests executions would make it a rubber stamp.
+  | 'tool:manage'
+  | 'tool:execute'
+  | 'tool:approve';
 
 const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
   OWNER: new Set<Permission>([
@@ -67,6 +76,9 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'prompt:manage',
     'template:manage',
     'sharing:manage',
+    'tool:manage',
+    'tool:execute',
+    'tool:approve',
   ]),
   ADMIN: new Set<Permission>([
     'workspace:update',
@@ -90,6 +102,9 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'prompt:manage',
     'template:manage',
     'sharing:manage',
+    'tool:manage',
+    'tool:execute',
+    'tool:approve',
   ]),
   EDITOR: new Set<Permission>([
     'project:create',
@@ -107,6 +122,8 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'prompt:manage',
     'template:manage',
     'sharing:manage',
+    'tool:manage',
+    'tool:execute',
   ]),
   MEMBER: new Set<Permission>([
     'asset:upload',
@@ -120,6 +137,7 @@ const ROLE_PERMISSIONS: Record<WorkspaceRole, ReadonlySet<Permission>> = {
     'prompt:manage',
     'template:manage',
     'sharing:manage',
+    'tool:execute',
   ]),
   VIEWER: new Set<Permission>(['billing:view']),
 };

@@ -32,19 +32,24 @@ describe('workspace member management + audit log (M5)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string) {
     const email = uniqueEmail(prefix);
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email };
   }
 
   async function createWorkspace(accessToken: string, name: string) {
     const res = await request(app)
       .post('/api/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Cookie', accessToken)
       .send({ name });
     testWorkspaceIds.push(res.body.data.id);
     return res.body.data as { id: string };
@@ -64,7 +69,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .patch(`/api/workspaces/${workspace.id}/members/${membership.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ role: 'EDITOR' });
 
       expect(res.status).toBe(200);
@@ -81,7 +86,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .patch(`/api/workspaces/${workspace.id}/members/${targetMembership.id}`)
-        .set('Authorization', `Bearer ${admin.accessToken}`)
+        .set('Cookie', admin.accessToken)
         .send({ role: 'OWNER' });
 
       expect(res.status).toBe(403);
@@ -92,12 +97,12 @@ describe('workspace member management + audit log (M5)', () => {
       const workspace = await createWorkspace(owner.accessToken, 'Solo Co');
       const members = await request(app)
         .get(`/api/workspaces/${workspace.id}/members`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
       const ownerMembershipId = members.body.data[0].id;
 
       const res = await request(app)
         .patch(`/api/workspaces/${workspace.id}/members/${ownerMembershipId}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ role: 'ADMIN' });
 
       expect(res.status).toBe(403);
@@ -113,7 +118,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .patch(`/api/workspaces/${workspace.id}/members/${otherMembership.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`)
+        .set('Cookie', member.accessToken)
         .send({ role: 'EDITOR' });
 
       expect(res.status).toBe(403);
@@ -129,7 +134,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .delete(`/api/workspaces/${workspace.id}/members/${membership.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
 
       expect(res.status).toBe(200);
 
@@ -145,7 +150,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .delete(`/api/workspaces/${workspace.id}/members/${membership.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`);
+        .set('Cookie', member.accessToken);
 
       expect(res.status).toBe(200);
     });
@@ -155,12 +160,12 @@ describe('workspace member management + audit log (M5)', () => {
       const workspace = await createWorkspace(owner.accessToken, 'Only Owner Co');
       const members = await request(app)
         .get(`/api/workspaces/${workspace.id}/members`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
       const ownerMembershipId = members.body.data[0].id;
 
       const res = await request(app)
         .delete(`/api/workspaces/${workspace.id}/members/${ownerMembershipId}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
 
       expect(res.status).toBe(403);
     });
@@ -175,7 +180,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .delete(`/api/workspaces/${workspace.id}/members/${targetMembership.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`);
+        .set('Cookie', member.accessToken);
 
       expect(res.status).toBe(403);
     });
@@ -188,12 +193,12 @@ describe('workspace member management + audit log (M5)', () => {
 
       await request(app)
         .patch(`/api/workspaces/${workspace.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Audited Co Renamed' });
 
       const res = await request(app)
         .get(`/api/workspaces/${workspace.id}/audit-log`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
 
       expect(res.status).toBe(200);
       const actions = res.body.data.map((entry: { action: string }) => entry.action);
@@ -210,7 +215,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .get(`/api/workspaces/${workspace.id}/audit-log`)
-        .set('Authorization', `Bearer ${viewer.accessToken}`);
+        .set('Cookie', viewer.accessToken);
 
       expect(res.status).toBe(403);
     });
@@ -222,7 +227,7 @@ describe('workspace member management + audit log (M5)', () => {
 
       const res = await request(app)
         .get(`/api/workspaces/${workspace.id}/audit-log`)
-        .set('Authorization', `Bearer ${stranger.accessToken}`);
+        .set('Cookie', stranger.accessToken);
 
       expect(res.status).toBe(404);
     });

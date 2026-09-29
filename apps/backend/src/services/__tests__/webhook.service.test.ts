@@ -305,6 +305,47 @@ describe('webhook.service', () => {
         where: { id: subscriptionId },
       });
       expect(updated?.status).toBe('PAST_DUE');
+      expect(updated?.pastDueSince).not.toBeNull();
+    });
+
+    it('clears the dunning clock when Stripe reports the subscription active again', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          externalSubscriptionId: 'test_sub_update_recovered',
+          status: 'PAST_DUE',
+          pastDueSince: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+          paymentFailureCount: 3,
+        },
+      });
+
+      const now = Math.floor(Date.now() / 1000);
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn().mockResolvedValue({
+          id: 'test_evt_sub_update_recovered',
+          type: 'customer.subscription.updated',
+          data: {
+            id: 'test_sub_update_recovered',
+            status: 'active',
+            current_period_start: now,
+            current_period_end: now + 2592000,
+          },
+        }),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      const updated = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(updated?.status).toBe('ACTIVE');
+      expect(updated?.pastDueSince).toBeNull();
+      expect(updated?.paymentFailureCount).toBe(0);
     });
   });
 
@@ -400,6 +441,75 @@ describe('webhook.service', () => {
       });
       expect(creditsAfter?.balance).toBe((creditsBefore?.balance || 0) + 5000);
     });
+
+    it('recovers a PAST_DUE subscription back to ACTIVE and clears the dunning clock', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          externalSubscriptionId: 'test_sub_recovery_123',
+          status: 'PAST_DUE',
+          pastDueSince: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+          paymentFailureCount: 2,
+        },
+      });
+
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn().mockResolvedValue({
+          id: 'test_evt_inv_recovered',
+          type: 'invoice.paid',
+          data: {
+            id: 'test_inv_recovered_123',
+            subscription: 'test_sub_recovery_123',
+            amount_paid: 9999,
+          },
+        }),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      const recovered = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(recovered?.status).toBe('ACTIVE');
+      expect(recovered?.pastDueSince).toBeNull();
+      expect(recovered?.paymentFailureCount).toBe(0);
+    });
+
+    it('does not touch an already-ACTIVE subscription beyond the normal invoice bookkeeping', async () => {
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn().mockResolvedValue({
+          id: 'test_evt_inv_already_active',
+          type: 'invoice.paid',
+          data: {
+            id: 'test_inv_already_active_123',
+            subscription: 'test_sub_for_inv_123',
+            amount_paid: 9999,
+          },
+        }),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_for_inv_123' },
+      });
+
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      const unchanged = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(unchanged?.status).toBe('ACTIVE');
+    });
   });
 
   describe('handleInvoicePaymentFailed', () => {
@@ -440,6 +550,48 @@ describe('webhook.service', () => {
         where: { externalInvoiceId: 'test_inv_fail_123' },
       });
       expect(invoice?.status).toBe('OPEN');
+    });
+
+    it('starts the dunning clock on first failure and only increments the count on repeats', async () => {
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn(),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_dunning_clock' },
+      });
+
+      mockProvider.verifyAndParseWebhookEvent.mockResolvedValueOnce({
+        id: 'test_evt_fail_1',
+        type: 'invoice.payment_failed',
+        data: { id: 'test_inv_fail_1', subscription: 'test_sub_dunning_clock', amount_due: 5000 },
+      });
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      const afterFirst = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(afterFirst?.paymentFailureCount).toBe(1);
+      expect(afterFirst?.pastDueSince).not.toBeNull();
+      const firstPastDueSince = afterFirst!.pastDueSince;
+
+      mockProvider.verifyAndParseWebhookEvent.mockResolvedValueOnce({
+        id: 'test_evt_fail_2',
+        type: 'invoice.payment_failed',
+        data: { id: 'test_inv_fail_2', subscription: 'test_sub_dunning_clock', amount_due: 5000 },
+      });
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      const afterSecond = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(afterSecond?.paymentFailureCount).toBe(2);
+      // The clock does not restart on a repeat failure of the same episode.
+      expect(afterSecond?.pastDueSince?.getTime()).toBe(firstPastDueSince?.getTime());
     });
   });
 
@@ -527,6 +679,71 @@ describe('webhook.service', () => {
         where: { externalPaymentMethodId: 'test_pm_detach_123' },
       });
       expect(deleted).toBeNull();
+    });
+  });
+
+  describe('payload shape validation', () => {
+    function mockEvent(event: Record<string, unknown>) {
+      const mockProvider = {
+        isConfigured: vi.fn().mockReturnValue(true),
+        verifyAndParseWebhookEvent: vi.fn().mockResolvedValue(event),
+        createCustomer: vi.fn(),
+        createCheckoutSession: vi.fn(),
+        updateSubscription: vi.fn(),
+        cancelSubscription: vi.fn(),
+        createBillingPortalSession: vi.fn(),
+      };
+      vi.spyOn(billingModule, 'resolveBillingProvider').mockResolvedValue(mockProvider as any);
+    }
+
+    it('skips a signed event whose payload is missing required fields', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_malformed' },
+      });
+
+      // A valid signature with a payload that has no `subscription` field —
+      // what provider API-version drift looks like from this side.
+      mockEvent({
+        id: 'test_evt_malformed',
+        type: 'invoice.paid',
+        data: { id: 'test_inv_malformed', amount_paid: 10000 },
+      });
+
+      // Must not throw: retrying cannot produce a different payload.
+      await expect(handleBillingWebhook(Buffer.from('test'), 'sig')).resolves.toBeUndefined();
+
+      // And must not have written a half-formed record.
+      const invoice = await prisma.invoice.findFirst({
+        where: { externalInvoiceId: 'test_inv_malformed' },
+      });
+      expect(invoice).toBeNull();
+    });
+
+    it('accepts subscription statuses beyond the happy path and withholds entitlement', async () => {
+      await prisma.subscription.update({
+        where: { id: subscriptionId },
+        data: { externalSubscriptionId: 'test_sub_unpaid', status: 'ACTIVE' },
+      });
+
+      const now = Math.floor(Date.now() / 1000);
+      mockEvent({
+        id: 'test_evt_sub_unpaid',
+        type: 'customer.subscription.updated',
+        data: {
+          id: 'test_sub_unpaid',
+          status: 'unpaid',
+          current_period_start: now,
+          current_period_end: now + 2592000,
+        },
+      });
+
+      await handleBillingWebhook(Buffer.from('test'), 'sig');
+
+      // 'unpaid' must not be mapped to ACTIVE — that would hand paid
+      // entitlement to a subscription the provider is not collecting on.
+      const updated = await prisma.subscription.findUnique({ where: { id: subscriptionId } });
+      expect(updated?.status).toBe('PAST_DUE');
     });
   });
 });

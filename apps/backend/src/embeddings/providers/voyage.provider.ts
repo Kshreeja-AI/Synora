@@ -85,7 +85,8 @@ export const voyageEmbeddingDescriptor: EmbeddingProviderDescriptor = {
   id: 'voyage',
   displayName: 'Voyage AI',
   async isConfigured() {
-    return (await secretsManager.tryGet('VOYAGE_API_KEY', 'embeddings:voyage')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('VOYAGE_API_KEY', 'embeddings:voyage');
   },
   async create() {
     const apiKey = await secretsManager.get('VOYAGE_API_KEY', 'embeddings:voyage');

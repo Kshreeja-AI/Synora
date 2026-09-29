@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { SDK_CLIENT_OPTIONS } from '../../ai/providers/sdk-options';
 import { secretsManager } from '../../secrets';
 import { getConfig } from '../../config';
 import type { EmbeddingProviderDescriptor } from '../descriptor';
@@ -15,13 +16,14 @@ export const openaiEmbeddingDescriptor: EmbeddingProviderDescriptor = {
   id: 'openai',
   displayName: 'OpenAI',
   async isConfigured() {
-    return (await secretsManager.tryGet('OPENAI_API_KEY', 'embeddings:openai')) !== undefined;
+    // hasReal, not tryGet: a generated placeholder is not a credential.
+    return secretsManager.hasReal('OPENAI_API_KEY', 'embeddings:openai');
   },
   async create() {
     const apiKey = await secretsManager.get('OPENAI_API_KEY', 'embeddings:openai');
     return new OpenAICompatibleEmbeddingProvider(
       'openai',
-      new OpenAI({ apiKey }),
+      new OpenAI({ ...SDK_CLIENT_OPTIONS, apiKey }),
       getConfig().embeddings.openaiModel,
       OPENAI_MAX_BATCH_SIZE
     );

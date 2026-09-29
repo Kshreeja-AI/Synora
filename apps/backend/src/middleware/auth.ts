@@ -46,14 +46,27 @@ async function verifyToken(token: string): Promise<JwtPayload> {
   throw new Error('Token did not verify against any known secret version');
 }
 
-export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+/**
+ * The access token lives in an httpOnly `accessToken` cookie (see
+ * setAuthCookies in routes/auth.ts) since the P0-002 XSS hardening moved it
+ * out of the response body; the browser frontend relies on that cookie
+ * alone (fetch with credentials: 'include', no Authorization header). A
+ * Bearer header is still honored for non-browser API clients.
+ */
+function extractToken(req: Request): string | undefined {
   const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    return authHeader.substring(7);
+  }
+  return (req as Request & { cookies?: Record<string, string> }).cookies?.accessToken;
+}
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
+  const token = extractToken(req);
+
+  if (!token) {
     return next(new UnauthorizedException('Missing or invalid authorization header'));
   }
-
-  const token = authHeader.substring(7);
 
   try {
     const decoded = await verifyToken(token);
@@ -67,10 +80,9 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
 }
 
 export async function optionalAuthMiddleware(req: AuthRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
+  const token = extractToken(req);
 
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
+  if (token) {
     try {
       const decoded = await verifyToken(token);
       req.userId = decoded.userId;

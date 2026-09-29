@@ -21,6 +21,12 @@ model User {
   role          UserRole    @default(USER)
   status        UserStatus  @default(ACTIVE)
 
+  // Set the first time the user completes (or explicitly skips) the
+  // onboarding flow. Null means "never onboarded" — router uses this to
+  // redirect a fresh user into /welcome instead of dropping them onto an
+  // empty dashboard.
+  onboardedAt   DateTime?
+
   // OAuth accounts
   accounts      Account[]
 
@@ -30,6 +36,10 @@ model User {
 
   // Workspace membership
   workspaces    WorkspaceMember[]
+
+  // API keys the user created (workspace-scoped, but attributed to creator
+  // so audits can show who provisioned a machine credential).
+  apiKeysCreated ApiKey[]
 
   // Content & projects
   projects      Project[]
@@ -63,6 +73,9 @@ model User {
   // Conversation folders created by this user
   conversationFolders ConversationFolder[]
 
+  // Files uploaded to conversations by this user
+  conversationFiles   ConversationFile[]
+
   // Memory system
   memories      Memory[]
   memoryAuditLogs MemoryAuditLog[]
@@ -75,9 +88,38 @@ model User {
   createdToolSecrets ToolSecret[]
   toolSecretAuditLogs ToolSecretAuditLog[]
 
+  // Prompt & template creation
+  createdPrompts    PromptTemplate[] @relation("CreatedPrompts")
+  createdTemplates  ConversationTemplate[] @relation("CreatedTemplates")
+
   // Universal Search System
   searchQueries     SearchQuery[]
   savedSearches     SavedSearch[]
+
+  // Continuous Learning Platform feedback
+  messageFeedback   MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  corrections       Correction[]
+  preferredResponses PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
+  privacyConsent    PrivacyConsent[]
+  trainingConsent   TrainingConsent[]
+  abAssignments     ABAssignment[]
+
+  // Training dataset creation
+  createdDatasets   Dataset[] @relation("DatasetCreator")
+
+  // Multi-factor authentication
+  mfaMethods     MFAMethod[]
+  mfaChallenges  MFAChallengeToken[]
+  mfaSetupTokens MFASetupToken[]
+  commandExecutions CommandExecution[]
+  commandPlans   CommandPlan[]
 
   // Timestamps
   createdAt     DateTime    @default(now())
@@ -182,10 +224,14 @@ model Workspace {
   folders       Folder[]
   assets        Asset[]
   auditLogs     AuditLog[]
+  commandExecutions CommandExecution[]
+  commandPlans  CommandPlan[]
+  visits        WorkspaceVisit[]
 
   // Billing relations (M6)
   subscription  Subscription?
   invoices      Invoice[]
+  refunds       Refund[]
   paymentMethods PaymentMethod[]
   credits       WorkspaceCredits?
   creditLedger  CreditLedgerEntry[]
@@ -195,6 +241,7 @@ model Workspace {
   conversations       Conversation[]
   conversationFolders ConversationFolder[]
   conversationTags    ConversationTag[]
+  conversationFiles   ConversationFile[]
   aiMemory            AIMemory?
   promptTemplates     PromptTemplate[]
   conversationTemplates ConversationTemplate[]
@@ -209,6 +256,7 @@ model Workspace {
   toolDefinitions     ToolDefinition[]
   toolExecutions      ToolExecution[]
   toolQuota           ToolQuota?
+  aiSpendBudget       AiSpendBudget?
   toolSecrets         ToolSecret[]
   toolSecretAuditLogs ToolSecretAuditLog[]
 
@@ -219,6 +267,33 @@ model Workspace {
   searchSuggestions   SearchSuggestion[]
   searchRankings      SearchRanking[]
   searchAnalytics     SearchAnalytics[]
+
+  // Continuous Learning Platform feedback
+  messageFeedback     MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  workspaceFeedback   WorkspaceFeedback?
+  corrections         Correction[]
+  preferredResponses  PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback    CitationFeedback[]
+  toolFeedback        ToolFeedback[]
+  visionFeedback      VisionFeedback[]
+  voiceFeedback       VoiceFeedback[]
+  rewardSignals       RewardSignal[]
+  abExperiments       ABExperiment[]
+  abAssignments       ABAssignment[]
+  benchmarkRuns       BenchmarkRun[]
+  evaluationRuns      EvaluationRun[]
+  humanPreferences    HumanPreference[]
+  privacyConsent      PrivacyConsent[]
+  trainingConsent     TrainingConsent[]
+  feedbackAnalytics   FeedbackAnalytics[]
+
+  // Dataset management
+  datasets            Dataset[]
+  trainingCandidates  TrainingCandidate[]
+  trainingExports     TrainingExport[]
+  modelRegistry       ModelRegistry[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -272,12 +347,22 @@ model WorkspaceInvitation {
 model ApiKey {
   id            String    @id @default(cuid())
   workspaceId   String
+  createdById   String?
   name          String
+  /// SHA-256 hash of the full secret. Deterministic so lookup by presented
+  /// key stays a single indexed WHERE — the raw key has enough entropy that
+  /// hashing it with SHA-256 (instead of bcrypt) offers no meaningful
+  /// advantage to an attacker who leaks the DB row.
   key           String    @unique
+  /// Non-secret display prefix (e.g. "sk_syn_abc12345") — shown in the UI so
+  /// users can distinguish keys without ever seeing the secret again.
+  prefix        String    @unique
   lastUsedAt    DateTime?
   expiresAt     DateTime?
+  revokedAt     DateTime?
 
   workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy     User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -297,18 +382,111 @@ model Project {
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
+  /// What the person is trying to accomplish, in their words. Distinct from
+  /// `description`, which says what the project IS: a goal says what "done"
+  /// would look like, and is what lets a project report progress against
+  /// something rather than merely holding files.
+  goal          String?
+
   documents     Document[]
   images        GeneratedImage[]
   videos        GeneratedVideo[]
   audios        GeneratedAudio[]
   folders       Folder[]
   assets        Asset[]
+  /// A project holds the work, not only its outputs. Conversations are
+  /// where most of the thinking happens, so a project that could not hold
+  /// them was a filing cabinet rather than a project.
+  conversations Conversation[]
+
+  /// Per-viewer "last opened" timestamps — see ProjectVisit below. Plural
+  /// because a shared workspace project is opened by more than one person,
+  /// each with their own sense of what's new since they were last here.
+  visits        ProjectVisit[]
+
+  /// Decision notes — see ProjectNote below.
+  notes         ProjectNote[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+/// When a person last opened a project's workspace view — purely a
+/// per-viewer timestamp, not a fact about the project itself. It exists so
+/// returning to a project after time away can say what changed since THIS
+/// person was last here ("continue work months later without starting
+/// from zero") instead of handing back the same undifferentiated timeline
+/// whether someone left for an hour or a quarter.
+///
+/// Deliberately NOT related to User by an explicit relation field, mirroring
+/// ConversationCollaborator's userId: a plain column, not a foreign key,
+/// so this table needs no reverse array on the User model.
+model ProjectVisit {
+  id           String   @id @default(cuid())
+  projectId    String
+  userId       String
+
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  lastViewedAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+}
+
+/// When a person last opened their workspace home — the workspace-level
+/// sibling of ProjectVisit, recorded when the dashboard's "what's new"
+/// digest is read. Same shape, same reasoning: a per-viewer fact about
+/// this person's relationship to the workspace, not about the workspace.
+model WorkspaceVisit {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  userId       String
+
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  lastViewedAt DateTime  @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+}
+
+/// A person's own record of why a decision was made — "I want Synora to
+/// remember why we made a decision," answered the honest way: by giving
+/// someone a place to write it down themselves, rather than an AI
+/// summarizing or inferring a rationale nobody actually stated. Content is
+/// exactly what was typed, shown verbatim in the project's timeline
+/// alongside everything else that happened — never rewritten, condensed,
+/// or interpreted.
+///
+/// `userId` is a plain column, not an owning relation, mirroring
+/// ProjectVisit and ConversationCollaborator above — the author's display
+/// name is resolved by a separate lookup when the timeline is built, the
+/// same way agent and workflow names are resolved for run entries.
+model ProjectNote {
+  id             String   @id @default(cuid())
+  projectId      String
+  userId         String
+  content        String
+
+  /// A correction is a NEW note pointing at the one it corrects — the
+  /// original is never edited or deleted, because a record of the past
+  /// that can be quietly rewritten is not a record. The timeline shows
+  /// the original marked "corrected later" beside the correction, so a
+  /// reader months from now neither acts on stale rationale nor loses
+  /// the history of what was believed at the time. Plain column, not a
+  /// self-relation: the timeline resolves it with one set lookup, and a
+  /// deleted original (project cascade) takes its corrections with it.
+  correctsNoteId String?
+
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+
+  @@index([projectId])
 }
 
 // A folder organizes assets within a workspace, optionally scoped to a
@@ -454,6 +632,10 @@ model GeneratedVideo {
   height        Int
   model         String
   status        ContentStatus @default(PROCESSING)
+  // The provider's own job/prediction ID (e.g. a Replicate prediction id),
+  // required to poll that job later — this is NOT the same as our own `id`.
+  providerJobId String?
+  pollAttempts  Int       @default(0)
 
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   project       Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
@@ -636,6 +818,123 @@ model MFAAuditLog {
   @@index([timestamp])
 }
 
+// ---------------------------------------------------------------------------
+// Multi-factor authentication (TOTP)
+//
+// MFAMethod holds the per-user enrolled factor; MFASetupToken and
+// MFAChallengeToken are short-lived, single-use handles for the enrollment
+// and login-challenge flows respectively (both stored hashed, never raw).
+// MFAAttempt and MFARecoveryCode back rate limiting and account recovery.
+// Operational telemetry lives in MFAAuditLog above.
+// ---------------------------------------------------------------------------
+
+model MFAMethod {
+  id              String    @id @default(cuid())
+  userId          String
+  type            MFAType   @default(TOTP)
+  status          MFAStatus @default(SETUP_PENDING)
+
+  // TOTP-specific (encrypted)
+  secret          String?
+  backupCodesHash String[]
+
+  // Metadata
+  deviceName      String?
+  createdAt       DateTime  @default(now())
+  enabledAt       DateTime?
+  lastUsedAt      DateTime?
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts        MFAAttempt[]
+  recoveryCodes   MFARecoveryCode[]
+
+  @@unique([userId, type])
+  @@index([userId])
+  @@index([status])
+}
+
+model MFAAttempt {
+  id              String    @id @default(cuid())
+  mfaMethodId     String
+  sessionId       String?
+  ipAddress       String?
+  userAgent       String?
+  code            String?
+  success         Boolean
+  createdAt       DateTime  @default(now())
+
+  mfaMethod       MFAMethod @relation(fields: [mfaMethodId], references: [id], onDelete: Cascade)
+
+  @@index([mfaMethodId])
+  @@index([createdAt])
+  @@index([success])
+  @@index([mfaMethodId, createdAt])
+}
+
+model MFAChallengeToken {
+  id              String    @id @default(cuid())
+  userId          String
+  tokenHash       String    @unique
+  sessionId       String?
+  ipAddress       String?
+  userAgent       String?
+  /// Carries the login screen's "remember me" choice across the second-factor
+  /// step, so the session issued after verification matches what was asked for.
+  rememberMe      Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  usedAt          DateTime?
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([userId, createdAt])
+}
+
+model MFARecoveryCode {
+  id              String    @id @default(cuid())
+  mfaMethodId     String
+  codeHash        String    @unique
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  mfaMethod       MFAMethod @relation(fields: [mfaMethodId], references: [id], onDelete: Cascade)
+
+  @@index([mfaMethodId])
+  @@index([usedAt])
+  @@index([mfaMethodId, createdAt])
+}
+
+model MFASetupToken {
+  id              String    @id @default(cuid())
+  userId          String
+  tokenHash       String    @unique
+  secret          String
+  verified        Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tokenHash])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+enum MFAType {
+  TOTP
+}
+
+enum MFAStatus {
+  SETUP_PENDING
+  ACTIVE
+  DISABLED
+  RECOVERY_MODE
+}
+
 // Billing Models
 // Admin-editable plan catalog. Each plan defines pricing, credits, trial period,
 // and feature set. One plan marked as default for new workspaces.
@@ -686,6 +985,12 @@ model Subscription {
   currentPeriodEnd        DateTime?
   cancelAtPeriodEnd       Boolean             @default(false)
   trialEndsAt             DateTime?
+  // Dunning tracking: set on the first invoice.payment_failed after a
+  // healthy period, cleared on the next successful payment/status
+  // transition away from PAST_DUE. Lets support see how long a workspace
+  // has actually been struggling, not just that it currently is.
+  pastDueSince            DateTime?
+  paymentFailureCount     Int                 @default(0)
 
   workspace               Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   plan                    Plan                @relation(fields: [planId], references: [id])
@@ -724,9 +1029,16 @@ model Invoice {
   periodEnd         DateTime?
   issuedAt          DateTime?
   paidAt            DateTime?
+  // Running total of amounts refunded against this invoice. Stripe itself
+  // does not change an invoice's own status on refund (the refund lives on
+  // the underlying charge), so this is the local source of truth for
+  // "how much of what was paid has since been returned" — fullyRefunded
+  // is refundedAmountCents >= amountPaidCents, not a status value.
+  refundedAmountCents Int           @default(0)
 
   subscription      Subscription    @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  refunds           Refund[]
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -742,6 +1054,28 @@ enum InvoiceStatus {
   PAID
   VOID
   UNCOLLECTIBLE
+}
+
+// Audit trail of refunds issued against a paid invoice. Multiple partial
+// refunds against the same invoice are supported; Invoice.refundedAmountCents
+// is the running total kept in sync with this table.
+model Refund {
+  id                String    @id @default(cuid())
+  invoiceId         String
+  workspaceId       String
+  provider          String
+  externalRefundId  String    @unique
+  amountCents       Int
+  reason            String
+  actorId           String
+
+  invoice           Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+
+  @@index([invoiceId])
+  @@index([workspaceId])
 }
 
 // Payment methods synced from provider via webhooks. Supports multiple
@@ -851,6 +1185,11 @@ model ProcessedWebhookEvent {
 model Conversation {
   id                String    @id @default(cuid())
   workspaceId       String
+  /// Optional: a conversation may be filed into a project, gathering the
+  /// thinking alongside the files and outputs it produced. SetNull rather
+  /// than Cascade — deleting a project must never destroy the
+  /// conversations someone had, only the grouping.
+  projectId         String?
   title             String
   description       String?
   provider          String
@@ -865,6 +1204,7 @@ model Conversation {
   lastMessageAt     DateTime?
 
   workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project           Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   messages          Message[]
   folder            ConversationFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -878,6 +1218,22 @@ model Conversation {
   toolCalls         ToolCall[]
   toolExecutions    ToolExecution[]
   memories          Memory[]
+  files             ConversationFile[]
+
+  // Continuous Learning Platform feedback
+  messageFeedback   MessageFeedback[]
+  conversationFeedback ConversationFeedback[]
+  corrections       Correction[]
+  preferredResponses PreferredResponse[]
+  hallucinationReports HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
+  abAssignments     ABAssignment[]
+  abResults         ABResult[]
+  trainingConsent   TrainingConsent[]
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -887,6 +1243,8 @@ model Conversation {
   @@index([workspaceId, lastMessageAt])
   @@index([isArchived])
   @@index([isPinned])
+  /// Reading one project's conversations is the project page's main query.
+  @@index([projectId])
 }
 
 enum ConversationStatus {
@@ -911,6 +1269,16 @@ model Message {
   role              MessageRole
   parentId          String?
   deletedAt         DateTime?
+  isPinned          Boolean   @default(false)
+
+  // Per-message accounting, written by the generation worker on completion.
+  // Persisted (rather than only streamed over SSE) so counts survive reload
+  // and so usage/analytics can aggregate without replaying streams.
+  inputTokens       Int       @default(0)
+  outputTokens      Int       @default(0)
+  costCents         Float     @default(0)
+  provider          String?
+  model             String?
 
   conversation      Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   parent            Message?  @relation("MessageTree", fields: [parentId], references: [id], onDelete: Cascade)
@@ -920,12 +1288,25 @@ model Message {
   attachments       MessageAttachment[]
   streamingJob      StreamingJob?
 
+  // Continuous Learning Platform feedback
+  feedback          MessageFeedback[]
+  corrections       Correction[]
+  preferredIn       PreferredResponse[] @relation("PreferredResponse")
+  rejectedIn        PreferredResponse[] @relation("RejectedResponse")
+  hallucinations    HallucinationReport[]
+  citationFeedback  CitationFeedback[]
+  toolFeedback      ToolFeedback[]
+  visionFeedback    VisionFeedback[]
+  voiceFeedback     VoiceFeedback[]
+  rewardSignals     RewardSignal[]
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([conversationId])
   @@index([conversationId, createdAt])
   @@index([conversationId, deletedAt])
+  @@index([conversationId, isPinned])
   @@index([parentId])
 }
 
@@ -961,6 +1342,92 @@ model MessageAttachment {
   createdAt         DateTime  @default(now())
 
   @@index([messageId])
+}
+
+// File uploads for conversation context
+model ConversationFile {
+  id                String          @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  fileName          String
+  mimeType          String
+  fileSize          Int
+
+  // Storage metadata
+  storageKey        String          // S3 object key or local path
+  storageProvider   String          @default("s3")  // s3, local, gcs, azure
+
+  // Processing status
+  processingStatus  FileProcessingStatus @default(PENDING)
+  processingError   String?
+  processedAt       DateTime?
+
+  // Parsed content (for search/context)
+  extractedText     String?         @db.Text
+
+  // Virus scan
+  virusScanStatus   VirusScanStatus @default(PENDING)
+  virusScanError    String?
+
+  // Metadata
+  uploadedBy        String
+  isArchived        Boolean         @default(false)
+
+  conversation      Conversation    @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedByUser    User            @relation(fields: [uploadedBy], references: [id])
+  processingJob     FileProcessingJob?
+
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([uploadedBy])
+  @@index([processingStatus])
+  @@index([virusScanStatus])
+}
+
+enum FileProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum VirusScanStatus {
+  PENDING
+  SCANNING
+  CLEAN
+  INFECTED
+  FAILED
+}
+
+// Background job for file processing
+model FileProcessingJob {
+  id                String    @id @default(cuid())
+  fileId            String    @unique
+
+  // Processing details
+  status            FileProcessingStatus @default(PENDING)
+  attempt           Int       @default(0)
+  lastError         String?
+
+  // Progress tracking
+  progress          Float     @default(0)  // 0-100
+
+  // Job timing
+  startedAt         DateTime?
+  completedAt       DateTime?
+
+  file              ConversationFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([fileId])
 }
 
 model ConversationFolder {
@@ -1001,41 +1468,63 @@ model ConversationTag {
 
 model PromptTemplate {
   id                String    @id @default(cuid())
-  workspaceId       String?
+  workspaceId       String
   name              String
+  description       String?
   content           String
   category          String?
   tags              String[]
   isPublic          Boolean   @default(false)
   usageCount        Int       @default(0)
+  rating            Float     @default(0)
   isFavorite        Boolean   @default(false)
 
-  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // Versioning
+  parentId          String?
+  parent            PromptTemplate? @relation(name: "PromptVersions", fields: [parentId], references: [id], onDelete: SetNull)
+  children          PromptTemplate[] @relation(name: "PromptVersions")
+  version           Int       @default(1)
+
+  // Ownership
+  createdBy         String
+  creator           User      @relation(name: "CreatedPrompts", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([workspaceId])
+  @@index([createdBy])
   @@index([isPublic])
+  @@index([category])
 }
 
 model ConversationTemplate {
   id                String    @id @default(cuid())
-  workspaceId       String?
+  workspaceId       String
   name              String
   description       String?
-  initialMessages   Json
+  systemPrompt      String
+  initialUserMessage String?
+  suggestedFollowUps String[]
   category          String?
   isPublic          Boolean   @default(false)
   usageCount        Int       @default(0)
 
-  workspace         Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  // Ownership
+  createdBy         String
+  creator           User      @relation(name: "CreatedTemplates", fields: [createdBy], references: [id], onDelete: Cascade)
+
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([workspaceId])
+  @@index([createdBy])
   @@index([isPublic])
+  @@index([category])
 }
 
 model AIMemory {
@@ -1501,9 +1990,17 @@ model ToolDefinition {
   metrics           ToolMetrics?
   webhooks          ToolWebhook[]
   toolSecrets       ToolSecret[]
+  toolFeedback      ToolFeedback[]
 
-  createdBy         String
-  createdByUser     User            @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  createdBy         String?
+  createdByUser     User?           @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+
+  /// Set when a plugin contributed this tool, NULL when a person authored it.
+  /// Provenance is a column rather than a naming convention because uninstall
+  /// has to remove EXACTLY the plugin's tools: a contributed tool can reach a
+  /// third-party host, and a rename that broke a string convention would
+  /// leave that reach in place after the grant was withdrawn.
+  pluginId          String?
 
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -1514,6 +2011,7 @@ model ToolDefinition {
   @@index([type])
   @@index([isActive])
   @@index([createdBy])
+  @@index([workspaceId, pluginId])
 }
 
 enum ToolType {
@@ -1740,6 +2238,58 @@ model ToolWebhook {
 }
 
 // Tool workspace quota (limits per workspace)
+/// Hard AI spend/usage ceilings for one workspace.
+///
+/// WHY THIS EXISTS BEFORE ANY PAID PROVIDER IS CONNECTED: cost is already
+/// OBSERVED (pricing tables, the EOS cost monitor) but nothing anywhere
+/// STOPS spend. An uncapped metered credential in a public-facing app is
+/// an unbounded liability, so the cap ships first and the credential
+/// second — never the other way around.
+///
+/// Nullable maxima mean "no cap set", distinct from a cap of zero, which
+/// means "refuse everything". Token caps exist separately from cost caps
+/// because locally-served models have no per-token price: their cost
+/// reads as zero forever, and a cost cap alone would never bind them.
+///
+/// Counters are denormalized and reset LAZILY on access (the same
+/// converge-on-read discipline the approval deadlines use), with separate
+/// daily and monthly stamps so the two windows cannot corrupt each other.
+/// The deployment-wide AI spend ledger, one row per UTC day.
+///
+/// The global cap was an in-process counter — fine as a single-instance
+/// kill switch, but N instances would each admit the full cap, and a
+/// restart forgot the day's spend entirely. Production financial controls
+/// must not live in process memory. Increments are SQL-atomic; the row is
+/// keyed by the UTC day string so a new day is simply a new row and no
+/// reset logic can race.
+model AiGlobalSpendDay {
+  /// UTC day, e.g. "2026-08-09".
+  dayUtc     String  @id
+  costCents  Int     @default(0)
+  tokens     Int     @default(0)
+  updatedAt  DateTime @updatedAt
+}
+
+model AiSpendBudget {
+  id                   String    @id @default(cuid())
+  workspaceId          String    @unique
+  workspace            Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  maxCostPerDayCents   Int?
+  maxCostPerMonthCents Int?
+  maxTokensPerDay      Int?
+
+  usedCostTodayCents   Int       @default(0)
+  usedCostMonthCents   Int       @default(0)
+  usedTokensToday      Int       @default(0)
+
+  lastDailyResetAt     DateTime  @default(now())
+  lastMonthlyResetAt   DateTime  @default(now())
+
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
 model ToolQuota {
   id                String          @id @default(cuid())
   workspaceId       String          @unique
@@ -1808,7 +2358,11 @@ model ToolSecret {
 // Immutable audit trail for all secret access and modifications
 model ToolSecretAuditLog {
   id                String          @id @default(cuid())
-  secretId          String
+  // Nullable + SetNull (not Cascade): this log is the immutable record that a
+  // secret was deleted, so it must outlive the secret it describes — a
+  // cascading FK would destroy the DELETED entry in the same transaction
+  // that creates it.
+  secretId          String?
   workspaceId       String
 
   // Action tracking
@@ -1825,7 +2379,7 @@ model ToolSecretAuditLog {
   requestId         String?         // Correlation ID from request middleware
 
   // Relations
-  secret            ToolSecret      @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  secret            ToolSecret?     @relation(fields: [secretId], references: [id], onDelete: SetNull)
   workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   createdAt         DateTime        @default(now())
@@ -2064,4 +2618,1309 @@ model SearchAnalytics {
 
   @@unique([workspaceId, periodStart, periodEnd])
   @@index([workspaceId])
+}
+
+// ============================================================================
+// Release 3: Continuous Learning Platform
+// Provider-agnostic feedback collection, dataset preparation, and model
+// evolution infrastructure. Designed for training, evaluation, and A/B testing.
+// ============================================================================
+
+// Message-level feedback
+model MessageFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Feedback types
+  rating            Int?                  // 1-5 star rating
+  isHelpful         Boolean?              // Thumbs up/down
+  thumbsUp          Boolean?              // Explicit positive reaction
+  thumbsDown        Boolean?              // Explicit negative reaction
+
+  // Detailed feedback
+  feedbackType      MessageFeedbackType   // RATING, HELPFUL, UNHELPFUL, CORRECTION, etc.
+  comment           String?               @db.Text
+
+  // Feedback on specific aspects
+  accuracyRating    Int?                  // 1-5 accuracy score
+  clarityRating     Int?                  // 1-5 clarity score
+  completenessRating Int?                 // 1-5 completeness score
+  relevanceRating   Int?                  // 1-5 relevance score
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Audit
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([messageId, userId])
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([feedbackType])
+  @@index([createdAt])
+}
+
+enum MessageFeedbackType {
+  RATING
+  HELPFUL
+  UNHELPFUL
+  CORRECTION
+  HALLUCINATION
+  TOXICITY
+  BIAS
+  INCOMPLETE
+  IRRELEVANT
+}
+
+// Conversation-level feedback
+model ConversationFeedback {
+  id                String                @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Overall feedback
+  overallRating     Int?                  // 1-5 star rating
+  isUseful          Boolean?
+
+  // Detailed metrics
+  qualityScore      Int?                  // 1-100
+  satisfactionScore Int?                  // 1-100
+
+  // Text feedback
+  comment           String?               @db.Text
+
+  // Feedback on aspects
+  relevanceRating   Int?
+  coherenceRating   Int?
+  usefulnessRating  Int?
+
+  // Relations
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// Workspace-level feedback aggregates
+model WorkspaceFeedback {
+  id                String                @id @default(cuid())
+  workspaceId       String                @unique
+
+  // Aggregated metrics
+  averageRating     Float                 @default(0)
+  totalRatings      Int                   @default(0)
+
+  // Quality metrics
+  averageQualityScore Float               @default(0)
+  averageSatisfactionScore Float           @default(0)
+
+  // Feedback distribution
+  positiveCount     Int                   @default(0)
+  neutralCount      Int                   @default(0)
+  negativeCount     Int                   @default(0)
+
+  // Common issues
+  topIssues         Json?                 // [{issue: string, count: int}]
+
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+}
+
+// Response corrections and alternatives
+model Correction {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Original vs corrected
+  originalContent   String                @db.Text
+  correctedContent  String                @db.Text
+  reason            String?               @db.Text
+
+  // Correction type
+  correctionType    CorrectionType
+  confidence        Float?                // 0-1 confidence in correction
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([correctionType])
+}
+
+enum CorrectionType {
+  FACTUAL_ERROR
+  GRAMMAR
+  CLARITY
+  TONE
+  COMPLETENESS
+  STYLE
+  TECHNICAL
+  OTHER
+}
+
+// Pairwise preferences (for DPO training)
+model PreferredResponse {
+  id                String                @id @default(cuid())
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // The two responses being compared
+  preferredMessageId String
+  rejectedMessageId  String
+
+  // Reason for preference
+  reason            String?               @db.Text
+  preferenceType    PreferenceType
+
+  // Confidence
+  confidence        Float?                // 0-1
+
+  // Relations
+  preferredMessage  Message               @relation(name: "PreferredResponse", fields: [preferredMessageId], references: [id], onDelete: Cascade)
+  rejectedMessage   Message               @relation(name: "RejectedResponse", fields: [rejectedMessageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([conversationId])
+  @@index([workspaceId])
+  @@index([preferenceType])
+}
+
+enum PreferenceType {
+  ACCURACY
+  CLARITY
+  HELPFULNESS
+  RELEVANCE
+  STYLE
+  TONE
+  COMPLETENESS
+  SAFETY
+}
+
+// Hallucination reports
+model HallucinationReport {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // What was hallucinated
+  hallucinatedText  String                @db.Text
+  factualCorrection String                @db.Text
+
+  // Hallucination severity
+  severity          HallucinationSeverity
+  category          HallucinationCategory
+
+  // Supporting evidence
+  evidence          String?               @db.Text
+  sourceUrl         String?
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([severity])
+  @@index([category])
+}
+
+enum HallucinationSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HallucinationCategory {
+  FACTUAL_ERROR
+  FALSE_CITATION
+  INVENTED_INFORMATION
+  OUTDATED_INFORMATION
+  LOGICAL_ERROR
+}
+
+// Citation quality feedback
+model CitationFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Citation being reviewed
+  citedText         String                @db.Text
+  sourceUrl         String?
+  isAccurate        Boolean?
+  isCitable         Boolean?
+
+  // Quality assessment
+  qualityScore      Int?                  // 1-5
+  relevanceScore    Int?                  // 1-5
+
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([isAccurate])
+}
+
+// Tool execution feedback
+model ToolFeedback {
+  id                String                @id @default(cuid())
+  messageId         String?               // Message containing tool use
+  conversationId    String
+  workspaceId       String
+  userId            String
+  toolId            String
+
+  // Feedback
+  isSuccessful      Boolean?
+  isCorrect         Boolean?
+  rating            Int?                  // 1-5
+
+  // Details
+  comment           String?               @db.Text
+  errorDescription  String?               @db.Text
+
+  // Relations
+  message           Message?              @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tool              ToolDefinition        @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+  @@index([toolId])
+}
+
+// Vision task feedback
+model VisionFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Image analysis feedback
+  detectionAccuracy Int?                  // 1-5
+  descriptionQuality Int?                // 1-5
+  relevance         Int?                  // 1-5
+
+  // Issues found
+  missedElements    String[]              @default([])
+  incorrectElements String[]              @default([])
+
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+}
+
+// Voice/audio task feedback
+model VoiceFeedback {
+  id                String                @id @default(cuid())
+  messageId         String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Audio quality feedback
+  transcriptionAccuracy Int?              // 1-5
+  synthesiQuality   Int?                  // 1-5
+  pronunciationQuality Int?               // 1-5
+
+  // Issues
+  errors            String[]              @default([])
+  comment           String?               @db.Text
+
+  // Relations
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([messageId])
+  @@index([conversationId])
+}
+
+// Dataset for training
+model Dataset {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?               @db.Text
+
+  // Dataset purpose
+  datasetType       DatasetType           // RLHF, DPO, SFT, etc.
+  purpose           String?               // "Claude 3.5 Sonnet SFT", etc.
+
+  // Versioning
+  version           String                @default("1.0")
+  parentDatasetId   String?
+  parent            Dataset?              @relation("DatasetVersions", fields: [parentDatasetId], references: [id], onDelete: SetNull)
+  children          Dataset[]             @relation("DatasetVersions")
+
+  // Access control
+  isPublic          Boolean               @default(false)
+  createdBy         String
+  creator           User                  @relation(name: "DatasetCreator", fields: [createdBy], references: [id])
+
+  // Metadata
+  sampleCount       Int                   @default(0)
+  totalTokens       Int                   @default(0)
+
+  // Status
+  status            DatasetStatus         @default(DRAFT)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  samples           DatasetSample[]
+  versions          DatasetVersion[]
+  exports           TrainingExport[]
+  evaluationRuns    EvaluationRun[]
+  humanPreferences  HumanPreference[]
+  trainingCandidates TrainingCandidate[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+  @@index([datasetType])
+  @@index([status])
+  @@index([createdBy])
+}
+
+enum DatasetType {
+  RLHF
+  DPO
+  SFT
+  TOOL_USE
+  REASONING
+  CODE_GENERATION
+  VISION
+  MULTIMODAL
+  EVALUATION
+  BENCHMARK
+}
+
+enum DatasetStatus {
+  DRAFT
+  PROCESSING
+  READY
+  ARCHIVED
+  DELETED
+}
+
+// Dataset version tracking
+model DatasetVersion {
+  id                String                @id @default(cuid())
+  datasetId         String
+  versionNumber     Int
+  versionName       String?
+  changeLog         String?               @db.Text
+
+  // Snapshot metadata
+  sampleCount       Int
+  totalTokens       Int
+  checksum          String                // For integrity verification
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  samples           DatasetSample[]
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([datasetId, versionNumber])
+  @@index([datasetId])
+}
+
+// Individual samples in a dataset
+model DatasetSample {
+  id                String                @id @default(cuid())
+  datasetId         String
+  datasetVersionId  String?
+
+  // Source tracking
+  sourceType        SampleSourceType      // MESSAGE, CONVERSATION, FEEDBACK, SYNTHETIC
+  sourceId          String?               // messageId, conversationId, etc.
+
+  // Sample content
+  input             String                @db.Text
+  output            String                @db.Text
+
+  // Metadata
+  inputTokens       Int
+  outputTokens      Int
+
+  // Quality metrics
+  qualityScore      Float?                // 0-1
+  confidence        Float?                // 0-1
+
+  // Flags
+  isFiltered        Boolean               @default(false)
+  filterReason      String?
+  hasPII            Boolean               @default(false)
+  isUnsafe          Boolean               @default(false)
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  version           DatasetVersion?       @relation(fields: [datasetVersionId], references: [id], onDelete: SetNull)
+  labels            DatasetLabel[]
+  splits            DatasetSplit[]
+
+  createdAt         DateTime              @default(now())
+
+  @@index([datasetId])
+  @@index([sourceType])
+  @@index([qualityScore])
+  @@index([hasPII])
+}
+
+enum SampleSourceType {
+  MESSAGE
+  CONVERSATION
+  FEEDBACK
+  CORRECTION
+  PREFERENCE
+  SYNTHETIC
+  EXTERNAL
+}
+
+// Labels on dataset samples
+model DatasetLabel {
+  id                String                @id @default(cuid())
+  sampleId          String
+  labelType         String                // "intent", "sentiment", "topic", etc.
+  labelValue        String
+  confidence        Float?                // 0-1 confidence in label
+
+  sample            DatasetSample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([sampleId])
+  @@index([labelType])
+}
+
+// Train/val/test splits
+model DatasetSplit {
+  id                String                @id @default(cuid())
+  sampleId          String
+  splitType         SplitType
+  splitPercentage   Float                 // For reproducibility
+
+  sample            DatasetSample         @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+
+  @@unique([sampleId, splitType])
+  @@index([sampleId])
+}
+
+enum SplitType {
+  TRAIN
+  VALIDATION
+  TEST
+  HOLDOUT
+}
+
+// Evaluation run (benchmark)
+model EvaluationRun {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  datasetId         String
+
+  // Model being evaluated
+  modelId           String
+  modelVersion      String
+
+  // Evaluation config
+  evaluationType    EvaluationType
+  metrics           String[]              @default([])
+
+  // Results
+  status            EvaluationStatus      @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  results           EvaluationResult[]
+
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([datasetId])
+  @@index([status])
+}
+
+enum EvaluationType {
+  ACCURACY
+  PERPLEXITY
+  BLEU
+  ROUGE
+  F1
+  CUSTOM
+}
+
+enum EvaluationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Evaluation results
+model EvaluationResult {
+  id                String                @id @default(cuid())
+  evaluationRunId   String
+  sampleId          String
+
+  // Prediction vs ground truth
+  prediction        String                @db.Text
+  groundTruth       String?               @db.Text
+
+  // Scores
+  score             Float                 // 0-1
+  metrics           Json?                 // {accuracy: 0.95, precision: 0.92}
+
+  // Errors
+  error             String?
+  errorType         String?
+
+  evaluationRun     EvaluationRun         @relation(fields: [evaluationRunId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([evaluationRunId])
+  @@index([score])
+}
+
+// Reward signals for RLHF
+model RewardSignal {
+  id                String                @id @default(cuid())
+  conversationId    String
+  messageId         String
+  workspaceId       String
+  userId            String
+
+  // The signal
+  reward            Float                 // Unbounded reward value
+  rewardType        RewardType
+
+  // Context
+  comment           String?               @db.Text
+
+  // Relations
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message           Message               @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([rewardType])
+}
+
+enum RewardType {
+  THUMBS_UP
+  THUMBS_DOWN
+  RATING
+  PREFERENCE
+  CORRECTION
+  CUSTOM
+}
+
+// Human preference pairs for DPO training
+model HumanPreference {
+  id                String                @id @default(cuid())
+  datasetId         String
+  workspaceId       String
+
+  // Preference pair
+  preferredSampleId String
+  rejectedSampleId  String
+
+  // Metadata
+  annotatorId       String?
+  confidence        Float?                // 0-1
+
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([datasetId])
+  @@index([workspaceId])
+}
+
+// A/B experiment configuration
+model ABExperiment {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+  description       String?               @db.Text
+
+  // Models being tested
+  controlModelId    String
+  treatmentModelId  String
+
+  // Configuration
+  status            ExperimentStatus      @default(DRAFT)
+  targetSampleSize  Int
+  currentSampleSize Int                   @default(0)
+
+  // Dates
+  startedAt         DateTime?
+  endedAt           DateTime?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  assignments       ABAssignment[]
+  results           ABResult[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+// A/B assignment (which variant a user gets)
+model ABAssignment {
+  id                String                @id @default(cuid())
+  experimentId      String
+  conversationId    String
+  workspaceId       String
+  userId            String
+
+  // Variant
+  variant           String                // "control" or "treatment"
+
+  // Relations
+  experiment        ABExperiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([experimentId, conversationId])
+  @@index([experimentId])
+  @@index([variant])
+}
+
+// A/B result
+model ABResult {
+  id                String                @id @default(cuid())
+  experimentId      String
+  conversationId    String
+
+  // Outcome
+  variant           String
+  outcome           String?               // win/loss/draw
+  metricValue       Float?
+
+  experiment        ABExperiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([experimentId])
+}
+
+// Benchmark run
+model BenchmarkRun {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  name              String
+
+  // Models tested
+  modelIds          String[]              @default([])
+
+  // Benchmark datasets
+  datasetIds        String[]              @default([])
+
+  // Status
+  status            BenchmarkStatus       @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metrics           BenchmarkMetric[]
+
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+enum BenchmarkStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Benchmark metric results
+model BenchmarkMetric {
+  id                String                @id @default(cuid())
+  benchmarkRunId    String
+
+  // Model and dataset
+  modelId           String
+  datasetId         String
+
+  // Metrics
+  metricName        String
+  metricValue       Float
+
+  // Secondary metrics
+  metadata          Json?
+
+  benchmarkRun      BenchmarkRun          @relation(fields: [benchmarkRunId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([benchmarkRunId])
+  @@index([modelId])
+  @@index([datasetId])
+}
+
+// Model registry for tracking versions and capabilities
+model ModelRegistry {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  providerId        String                // "anthropic", "openai", etc.
+  modelName         String                // "claude-3-opus", "gpt-4"
+
+  // Model metadata
+  description       String?               @db.Text
+  capabilities      String[]              @default([])  // ["text", "vision", "tool_use"]
+
+  // Versioning
+  latestVersion     String?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  versions          ModelVersion[]
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, providerId, modelName])
+  @@index([workspaceId])
+  @@index([providerId])
+}
+
+// Model version tracking
+model ModelVersion {
+  id                String                @id @default(cuid())
+  modelId           String
+  versionString     String
+
+  // Training info
+  trainingDatasetId String?
+  trainingProgress  Float                 @default(0)
+
+  // Performance
+  benchmarkScores   Json?                 // {accuracy: 0.95, f1: 0.92}
+
+  // Status
+  status            ModelVersionStatus    @default(DRAFT)
+
+  // Relations
+  model             ModelRegistry         @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@unique([modelId, versionString])
+  @@index([modelId])
+  @@index([status])
+}
+
+enum ModelVersionStatus {
+  DRAFT
+  TRAINING
+  EVALUATING
+  RELEASED
+  DEPRECATED
+}
+
+// Training candidate (a model ready for training)
+model TrainingCandidate {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  datasetId         String
+  modelName         String
+
+  // Training config
+  hyperparameters   Json                  // {lr: 0.0001, batch_size: 32}
+  algorithm         String                // "sft", "dpo", "rlhf"
+
+  // Status
+  status            CandidateStatus       @default(PENDING)
+  priority          Int                   @default(0)  // 0 = lowest, 100 = highest
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([priority])
+}
+
+enum CandidateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+// Training data export
+model TrainingExport {
+  id                String                @id @default(cuid())
+  datasetId         String
+  workspaceId       String
+
+  // Export format
+  format            ExportFormat          // "jsonl", "parquet", "huggingface"
+
+  // File metadata
+  fileSize          BigInt?
+  fileUrl           String?
+  checksum          String?               // SHA-256 for integrity
+
+  // Status
+  status            ExportStatus          @default(PENDING)
+  progress          Float                 @default(0)
+
+  // Relations
+  dataset           Dataset               @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  completedAt       DateTime?
+
+  @@index([datasetId])
+  @@index([status])
+}
+
+enum ExportFormat {
+  JSONL
+  PARQUET
+  HUGGINGFACE
+  CSV
+  JSON
+}
+
+enum ExportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Privacy and consent tracking
+model PrivacyConsent {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  userId            String
+
+  // Consent types
+  collectFeedback   Boolean               @default(false)
+  useForTraining    Boolean               @default(false)
+  shareWithPartners Boolean               @default(false)
+  allowEvaluation   Boolean               @default(false)
+
+  // Document tracking
+  consentDocumentVersion String?
+  consentGivenAt    DateTime?
+  consentRevokedAt  DateTime?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId])
+  @@index([userId])
+  @@index([collectFeedback])
+  @@index([useForTraining])
+}
+
+// Training participation consent
+model TrainingConsent {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  userId            String
+  conversationId    String
+
+  // Specific conversation consent
+  allowUseInTraining Boolean              @default(false)
+  allowUseInEvaluation Boolean            @default(false)
+
+  // Opt-out reasons
+  optOutReason      String?
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation      Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([conversationId, userId])
+  @@index([workspaceId])
+  @@index([allowUseInTraining])
+}
+
+// Feedback analytics aggregate
+model FeedbackAnalytics {
+  id                String                @id @default(cuid())
+  workspaceId       String
+
+  // Time period
+  periodStart       DateTime
+  periodEnd         DateTime
+
+  // Aggregates
+  totalFeedback     Int                   @default(0)
+  averageRating     Float                 @default(0)
+  helpfulCount      Int                   @default(0)
+  unhelpfulCount    Int                   @default(0)
+
+  // By type
+  feedbackByType    Json?                 // {rating: 100, correction: 50}
+
+  // Quality metrics
+  averageQualityScore Float               @default(0)
+  averageSatisfaction Float               @default(0)
+
+  // Issues
+  topIssues         Json?                 // [{issue: "hallucination", count: 20}]
+
+  // Relations
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@unique([workspaceId, periodStart, periodEnd])
+  @@index([workspaceId])
+  @@index([periodStart])
+}
+
+// Add feedback relations to User model
+// (Already done in User model above)
+
+// Add feedback relations to Conversation model
+// (Already done in Conversation model above)
+
+// Add feedback relations to Message model
+// (Already done in Message model above)
+
+/// A durable record of one command passing through the Universal Command
+/// Layer: what was asked, what Synora resolved it to, whether the person was
+/// allowed, how risky it was, whether approval was needed, and what happened.
+///
+/// Written for EVERY outcome — refused, unauthorized, unavailable and
+/// completed alike. A record written only on success would make the audit
+/// trail systematically optimistic, and the refusals are exactly what an
+/// operator investigating an incident needs to see.
+///
+/// Deliberately stores NO secrets and no raw credentials. `commandText` is
+/// the person's own sentence; `resultSummary` is a short human description,
+/// never a full payload.
+model CommandExecution {
+  id             String   @id @default(cuid())
+
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The person's original sentence, stored verbatim so an investigation can
+  /// see what was actually typed rather than Synora's paraphrase of it.
+  commandText    String
+  /// Normalized intent from the deterministic understander, e.g. "find".
+  intent         String
+  /// Resolved capability id, e.g. "search.workspace". Null when nothing matched.
+  capabilityId   String?
+
+  /// read-only | reversible | sensitive | high-risk
+  riskClass      String
+  /// Whether the caller's role permitted the resolved capability.
+  permitted      Boolean
+  /// Whether this deployment can actually run it (credentials present).
+  available      Boolean
+  approvalRequired Boolean  @default(false)
+  /// none | pending | deciding | approved | rejected | expired
+  ///
+  /// `deciding` is a short-lived claim held while one approval is being
+  /// carried out. It exists so two simultaneous approvals of the same
+  /// record cannot both proceed: the claim is taken with a conditional
+  /// update, and only the writer that actually changed the row continues.
+  approvalState  String   @default("none")
+  approvedBy     String?
+  approvedAt     DateTime?
+  /// Rejection is recorded separately from approval rather than reusing the
+  /// approved* columns. "Who approved this" and "who refused this" are
+  /// different questions, and an audit table that answers them with the same
+  /// column cannot be queried honestly.
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionReason String?
+  /// The deadline this record was created with. Stored rather than computed
+  /// from a constant so the deadline a person was shown is the deadline
+  /// actually enforced, even if the policy window changes later.
+  approvalExpiresAt DateTime?
+
+  /// completed | not-authorized | unavailable | not-implemented | not-bound |
+  /// waiting-approval | needs-input | rejected | expired | failed
+  state          String
+  /// Short human-readable outcome. Never a raw payload or stack trace.
+  resultSummary  String?
+  /// Human-language reason a command did not complete, for the person to act on.
+  failureReason  String?
+
+  /// What this execution CREATED, when it created something reversible, so
+  /// undo has a real target instead of parsing it back out of prose.
+  ///
+  /// Two plain columns rather than JSON: "what kind of thing" and "which
+  /// one" are the only questions undo asks, they are queryable, and a JSON
+  /// blob would invite storing the whole result — which is exactly the
+  /// payload this table promises never to hold.
+  undoKind       String?
+  undoTargetId   String?
+  /// Set once a person actually reversed it. Undo is itself an event worth
+  /// recording: "this was created then removed" and "this was never
+  /// created" are different histories.
+  undoneAt       DateTime?
+  undoneBy       String?
+
+  /// ---- EXPERIENCE FIELDS ----
+  /// The first fields recorded for the intelligence layer rather than for
+  /// the person waiting on the answer. Each one exists because a REAL
+  /// producer writes it today; fields the future architecture wants but
+  /// nothing can populate (model identity, cost, user correction,
+  /// evaluation result) are deliberately absent — a column that can only
+  /// hold null teaches every reader to ignore the table.
+
+  /// How sure the understander was of its reading: 'high' | 'low' | 'none'.
+  /// Copied from the deterministic classifier at the moment it ran, so the
+  /// learning layer can later ask "was low confidence actually less
+  /// accurate?" against outcomes rather than guesses.
+  confidence     String?
+  /// Wall-clock milliseconds for the execution attempt, measured by the
+  /// server around the work itself. For a command that paused for approval
+  /// this is the RESUMED run's duration, not the days it waited — a queue
+  /// is not latency.
+  latencyMs      Int?
+  /// The exact question Synora asked back when one detail was missing
+  /// (state = 'needs-input'). Stored because "what did Synora not
+  /// understand?" is among the most valuable learning signals there is,
+  /// and it was previously composed, sent, and thrown away.
+  clarificationQuestion String?
+  /// Whether the requester had consented to training use AT THE MOMENT of
+  /// this interaction — captured then, never recomputed later. Consent
+  /// looked up at training time would apply TODAY's answer to LAST YEAR's
+  /// words. Fails closed: any doubt records false.
+  ///
+  /// TRUE DOES NOT MEAN "IS TRAINING DATA". It means this record may enter
+  /// the pipeline that evaluates, filters and selects — each a separate,
+  /// later, governed step. Recorded ≠ eligible ≠ selected ≠ trained.
+  trainingEligibleAtCapture Boolean @default(false)
+
+  /// Correlation, when this execution was one step of a multi-step plan.
+  ///
+  /// Deliberately a plain id rather than a relation with a cascade: an
+  /// execution is an AUDIT record and must outlive the plan that produced
+  /// it. `onDelete: Cascade` here would mean deleting a plan silently
+  /// erased the evidence of what it did, which is the one thing an audit
+  /// trail may never do.
+  planId         String?
+  /// 1-based position within that plan, so a trail reads
+  /// PLAN → STEP 2 → APPROVAL → outcome without a second lookup.
+  planStepIndex  Int?
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([state])
+  @@index([planId])
+}
+
+/// A multi-action request, stored so it survives a restart.
+///
+/// WHY DURABLE: a plan pauses. It stops at an approval that a person in
+/// another timezone will answer tomorrow, or at a step that needs one more
+/// detail. In-memory state would mean a deploy silently discards work
+/// someone is waiting on, and they would never learn why — the plan would
+/// simply cease to exist.
+///
+/// Stores NO secrets and no payloads: `originalText` is the person's own
+/// sentence, and each step keeps a short human summary, never a result body.
+model CommandPlan {
+  id             String   @id @default(cuid())
+
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The whole sentence, verbatim, so an investigation sees what was typed.
+  originalText   String
+
+  /// executing | completed | waiting-approval | needs-input |
+  /// partially-completed | failed | cancelled
+  ///
+  /// `partially-completed` is a first-class outcome, never collapsed into
+  /// `completed` or `failed`. "Three of four steps ran" is the truth a
+  /// person needs, and both neighbours are lies about it.
+  status         String
+
+  /// 1-based index of the step execution stopped at, when it did not finish.
+  stoppedAtStep  Int?
+  /// Plain-language reason execution stopped. Never a stack trace.
+  stoppedReason  String?
+
+  steps          CommandPlanStep[]
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([status])
+}
+
+/// One action within a plan, with its resolved facts and its outcome.
+///
+/// The resolved facts are stored rather than recomputed on read: they are
+/// what the person was SHOWN and what the server acted on. Re-deriving them
+/// later would silently rewrite history whenever a role, a credential or the
+/// catalogue changed.
+model CommandPlanStep {
+  id             String   @id @default(cuid())
+
+  planId         String
+  plan           CommandPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  /// 1-based, the order the person read and the order execution followed.
+  index          Int
+  /// This step's own words, verbatim.
+  text           String
+
+  capabilityId   String?
+  riskClass      String
+  /// Whether this person's role permitted THIS step. Never inherited.
+  permitted      Boolean
+  /// Indices of steps whose output this one consumes. Empty when independent.
+  dependsOn      Int[]
+
+  /// The same ten command states, plus `skipped` for a step never reached.
+  /// `skipped` is distinct from `failed` on purpose: nothing was attempted,
+  /// so nothing broke, and reporting it as a failure would send someone
+  /// hunting for a bug that does not exist.
+  state          String
+  /// Short human-readable outcome. Never a raw payload.
+  resultSummary  String?
+  /// Human-language reason this step did not complete.
+  failureReason  String?
+
+  /// The audit record for this step's execution, when it ran. Plain id, not
+  /// a relation, for the same reason CommandExecution.planId is.
+  executionId    String?
+
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  @@unique([planId, index])
+  @@index([planId])
 }

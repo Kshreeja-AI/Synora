@@ -24,8 +24,10 @@ import { ArrowLeft, File, Folder as FolderIcon, Plus, Trash2, Upload } from 'luc
 import { useCurrentWorkspace } from '../../../../hooks/useCurrentWorkspace';
 import { getProject, deleteProject } from '../../../../lib/api/projects';
 import { listFolders, createFolder, deleteFolder } from '../../../../lib/api/folders';
+import type { Folder } from '../../../../lib/api/types';
 import { listAssets, uploadAsset, deleteAsset } from '../../../../lib/api/assets';
 import { ApiError } from '../../../../lib/api/client';
+import { ProjectWorkspacePanel } from '../../../../components/projects/ProjectWorkspacePanel';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -207,6 +209,10 @@ export default function ProjectDetailPage(): React.JSX.Element {
         )}
       </div>
 
+      {/* The work first, files second. Someone returning to a project
+          wants to know where they were, not which folder a PDF is in. */}
+      <ProjectWorkspacePanel projectId={projectId} />
+
       <Card>
         <CardContent className="space-y-4 p-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -222,7 +228,7 @@ export default function ProjectDetailPage(): React.JSX.Element {
             >
               Unfiled
             </button>
-            {folders?.map((folder) => (
+            {folders?.map((folder: Folder) => (
               <span key={folder.id} className="group relative">
                 <button
                   type="button"

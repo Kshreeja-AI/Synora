@@ -5,6 +5,7 @@ import { createApiResponse } from '@synora/shared'
 import { conversationService } from '../services/conversation.service'
 import { conversationUsageService } from '../services/conversationUsage.service'
 import { exportService } from '../services/export.service'
+import { promoteConversationToProject } from '../services/projectWorkspace.service'
 
 const router: Router = Router({ mergeParams: true })
 
@@ -21,6 +22,9 @@ const updateConversationSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   tagNames: z.array(z.string().min(1).max(50)).max(20).optional(),
+  // Nullable on purpose: null means "take it out of the project", which
+  // is different from omitting the field ("leave it where it is").
+  projectId: z.string().nullable().optional(),
 })
 
 const sortFieldSchema = z.enum(['createdAt', 'updatedAt', 'lastMessageAt', 'title'])
@@ -41,7 +45,7 @@ router.post('/:workspaceId/conversations', authMiddleware, async (req: AuthReque
 router.get('/:workspaceId/conversations', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params
-    const { skip, take, search, archived, pinned, sortBy, sortDirection } = req.query
+    const { skip, take, search, archived, pinned, sortBy, sortDirection, folderId } = req.query
 
     const result = await conversationService.listByWorkspace(req.userId!, workspaceId, {
       skip: skip ? parseInt(skip as string) : undefined,
@@ -49,6 +53,7 @@ router.get('/:workspaceId/conversations', authMiddleware, async (req: AuthReques
       search: search as string | undefined,
       archived: archived === 'true',
       pinned: pinned === 'true' ? true : undefined,
+      folderId: typeof folderId === 'string' && folderId.length > 0 ? folderId : undefined,
       sortBy: sortBy ? sortFieldSchema.parse(sortBy) : undefined,
       sortDirection: sortDirection ? sortDirectionSchema.parse(sortDirection) : undefined,
     })
@@ -87,6 +92,32 @@ router.patch('/:workspaceId/conversations/:conversationId', authMiddleware, asyn
     next(error)
   }
 })
+
+/**
+ * Turn this conversation into a project.
+ *
+ * Work rarely starts as a project — it starts as a question, and somewhere
+ * in the middle a person realises the thing is bigger than the thread.
+ * This records that realisation in one action instead of six.
+ */
+router.post(
+  '/:workspaceId/conversations/:conversationId/project',
+  authMiddleware,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { name } = z.object({ name: z.string().trim().max(200).optional() }).parse(req.body ?? {})
+      const result = await promoteConversationToProject(
+        req.userId!,
+        req.params.workspaceId,
+        req.params.conversationId,
+        name,
+      )
+      res.status(201).json(createApiResponse(result))
+    } catch (error) {
+      next(error)
+    }
+  }
+)
 
 router.delete('/:workspaceId/conversations/:conversationId', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
@@ -162,6 +193,17 @@ router.get('/:workspaceId/conversations/:conversationId/usage', authMiddleware, 
         usage ?? { conversationId, inputTokens: 0, outputTokens: 0, totalTokens: 0, estimatedCost: 0 }
       )
     )
+  } catch (error) {
+    next(error)
+  }
+})
+
+router.post('/:workspaceId/conversations/:conversationId/generate-title', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { conversationId } = req.params
+
+    const conversation = await conversationService.generateTitle(req.userId!, conversationId)
+    res.json(createApiResponse(conversation))
   } catch (error) {
     next(error)
   }

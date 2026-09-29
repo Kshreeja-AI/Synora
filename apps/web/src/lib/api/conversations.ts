@@ -11,6 +11,7 @@ import {
   UseQueryResult,
   UseMutationResult,
   UseInfiniteQueryResult,
+  InfiniteData,
 } from '@tanstack/react-query';
 import { api } from './client';
 import type {
@@ -24,20 +25,46 @@ const CONVERSATIONS_KEY = 'conversations';
 /**
  * Fetch all conversations for a workspace (paginated, infinite scroll)
  */
+const PAGE_SIZE = 20;
+
+export interface ConversationsPage {
+  conversations: Conversation[];
+  total: number;
+}
+
+/**
+ * Paginated conversation list.
+ *
+ * The page shape is `{ conversations, total }` — exactly what the
+ * backend returns. It previously declared `{ items, total, hasMore }`,
+ * none of which the API sends, so every caller's
+ * `pages.flatMap(p => p.items)` yielded `[undefined]`.
+ *
+ * `folderId` scopes the list: a folder id, or `'none'` for conversations
+ * that sit in no folder. Omitted means every folder.
+ */
 export function useConversations(
   workspaceId: string,
-  options?: { enabled?: boolean }
-): UseInfiniteQueryResult<{ items: Conversation[]; total: number; hasMore: boolean }> {
+  options?: { enabled?: boolean; folderId?: string | 'none' | null }
+): UseInfiniteQueryResult<InfiniteData<ConversationsPage>> {
+  const folderId = options?.folderId ?? undefined;
+
   return useInfiniteQuery({
-    queryKey: [CONVERSATIONS_KEY, workspaceId],
+    queryKey: [CONVERSATIONS_KEY, workspaceId, folderId ?? 'all'],
     queryFn: async ({ pageParam = 0 }) => {
-      return api.get<{ items: Conversation[]; total: number; hasMore: boolean }>(
-        `/api/workspaces/${workspaceId}/conversations?skip=${pageParam}&take=20`
+      const params = new URLSearchParams({
+        skip: String(pageParam),
+        take: String(PAGE_SIZE),
+      });
+      if (folderId) params.set('folderId', folderId);
+
+      return api.get<ConversationsPage>(
+        `/api/workspaces/${workspaceId}/conversations?${params.toString()}`
       );
     },
-    getNextPageParam: (lastPage) => {
-      if (!lastPage.hasMore) return undefined;
-      return undefined;
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, page) => sum + page.conversations.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
     },
     initialPageParam: 0,
     enabled: !!workspaceId && options?.enabled !== false,
@@ -213,5 +240,29 @@ export function useSearchConversations(
     },
     enabled: !!query && !!workspaceId && options?.enabled !== false,
     staleTime: 30000, // 30s
+  });
+}
+
+/**
+ * Generate title for a conversation based on its messages
+ */
+export function useGenerateTitle(
+  workspaceId: string,
+  conversationId: string
+): UseMutationResult<Conversation, Error, void> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      return api.post<Conversation>(
+        `/api/workspaces/${workspaceId}/conversations/${conversationId}/generate-title`
+      );
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData([CONVERSATIONS_KEY, conversationId], data);
+      queryClient.invalidateQueries({
+        queryKey: [CONVERSATIONS_KEY, workspaceId],
+      });
+    },
   });
 }

@@ -18,17 +18,18 @@ import { durationToMs } from './token.service';
  * it (never logging or persisting it anywhere but the hash).
  */
 export async function issuePasswordResetToken(userId: string): Promise<string> {
-  await prisma.passwordResetToken.updateMany({
-    where: { userId, usedAt: null },
-    data: { usedAt: new Date() },
-  });
-
   const rawToken = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + durationToMs(getConfig().auth.passwordResetTokenExpiry));
 
-  await prisma.passwordResetToken.create({
-    data: { tokenHash: hashToken(rawToken), userId, expiresAt },
-  });
+  await prisma.$transaction([
+    prisma.passwordResetToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    }),
+    prisma.passwordResetToken.create({
+      data: { tokenHash: hashToken(rawToken), userId, expiresAt },
+    }),
+  ]);
 
   return rawToken;
 }
@@ -39,20 +40,28 @@ export async function issuePasswordResetToken(userId: string): Promise<string> {
  * step so it can never be replayed. Returns null for anything else
  * (unknown/used/expired), which the caller must treat as a generic
  * failure — never revealing which condition failed.
+ *
+ * The check-and-mark happens as a single conditional UPDATE (not a
+ * find-then-update) so two concurrent requests racing on the same raw
+ * token can't both pass validation before either marks it used — only
+ * one of them will match `usedAt: null` and flip the row.
  */
 export async function consumePasswordResetToken(rawToken: string): Promise<{ userId: string } | null> {
-  const record = await prisma.passwordResetToken.findUnique({
-    where: { tokenHash: hashToken(rawToken) },
-  });
+  const tokenHash = hashToken(rawToken);
 
-  if (!record || record.usedAt !== null || record.expiresAt.getTime() <= Date.now()) {
-    return null;
-  }
-
-  await prisma.passwordResetToken.update({
-    where: { id: record.id },
+  const { count } = await prisma.passwordResetToken.updateMany({
+    where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
     data: { usedAt: new Date() },
   });
 
-  return { userId: record.userId };
+  if (count === 0) {
+    return null;
+  }
+
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash },
+    select: { userId: true },
+  });
+
+  return record ? { userId: record.userId } : null;
 }

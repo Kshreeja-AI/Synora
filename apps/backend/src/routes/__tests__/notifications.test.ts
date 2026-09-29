@@ -35,11 +35,16 @@ describe('notifications routes (M4)', () => {
     return decodeURIComponent(match[1]);
   }
 
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string, password = 'a-valid-password-123') {
     const email = uniqueEmail(prefix);
     const res = await request(app).post('/api/auth/register').send({ email, password });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email, password };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email, password };
   }
 
   describe('GET /api/notifications', () => {
@@ -48,7 +53,7 @@ describe('notifications routes (M4)', () => {
 
       const res = await request(app)
         .get('/api/notifications')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(res.status).toBe(200);
       expect(res.body.data.notifications).toEqual([]);
@@ -77,20 +82,20 @@ describe('notifications routes (M4)', () => {
 
       const list = await request(app)
         .get('/api/notifications')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(list.body.data.unreadCount).toBe(2);
 
       const targetId = list.body.data.notifications[0].id;
       const readRes = await request(app)
         .post(`/api/notifications/${targetId}/read`)
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(readRes.status).toBe(200);
       expect(readRes.body.data.readAt).not.toBeNull();
 
       const countRes = await request(app)
         .get('/api/notifications/unread-count')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(countRes.body.data.unreadCount).toBe(1);
     });
 
@@ -101,12 +106,12 @@ describe('notifications routes (M4)', () => {
 
       const list = await request(app)
         .get('/api/notifications')
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
       const targetId = list.body.data.notifications[0].id;
 
       const res = await request(app)
         .post(`/api/notifications/${targetId}/read`)
-        .set('Authorization', `Bearer ${stranger.accessToken}`);
+        .set('Cookie', stranger.accessToken);
 
       expect(res.status).toBe(404);
     });
@@ -117,14 +122,14 @@ describe('notifications routes (M4)', () => {
 
       const res = await request(app)
         .post('/api/notifications/read-all')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(res.status).toBe(200);
       expect(res.body.data.count).toBe(2);
 
       const countRes = await request(app)
         .get('/api/notifications/unread-count')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(countRes.body.data.unreadCount).toBe(0);
     });
   });
@@ -135,13 +140,13 @@ describe('notifications routes (M4)', () => {
 
       const changeRes = await request(app)
         .post('/api/users/me/password')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ currentPassword: user.password, newPassword: 'a-brand-new-password-789' });
       expect(changeRes.status).toBe(200);
 
       const res = await request(app)
         .get('/api/notifications')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(res.body.data.notifications).toHaveLength(1);
       expect(res.body.data.notifications[0]).toMatchObject({ type: 'SECURITY', title: 'Password changed' });
@@ -162,9 +167,9 @@ describe('notifications routes (M4)', () => {
       const loginRes = await request(app)
         .post('/api/auth/login')
         .send({ email: user.email, password: 'yet-another-new-password' });
-      const accessToken = loginRes.body.data.accessToken as string;
+      const accessToken = cookieHeader(loginRes.headers['set-cookie']);
 
-      const res = await request(app).get('/api/notifications').set('Authorization', `Bearer ${accessToken}`);
+      const res = await request(app).get('/api/notifications').set('Cookie', accessToken);
       expect(res.body.data.notifications).toEqual(
         expect.arrayContaining([expect.objectContaining({ type: 'SECURITY', title: 'Password reset' })])
       );
@@ -179,7 +184,7 @@ describe('notifications routes (M4)', () => {
 
       const res = await request(app)
         .get('/api/notifications')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
 
       expect(res.body.data.notifications).toEqual(
         expect.arrayContaining([expect.objectContaining({ type: 'ACCOUNT', title: 'Email verified' })])

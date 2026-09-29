@@ -1,0 +1,30 @@
+# Synora edge. Caddy provisions and renews Let's Encrypt TLS automatically —
+# the entire HTTPS story is this file plus an A record.
+{$SYNORA_DOMAIN} {
+	encode gzip
+
+	# Backend API + websockets.
+	handle /api/* {
+		reverse_proxy app:3001
+	}
+	handle /socket.io/* {
+		reverse_proxy app:3001
+	}
+
+	# Frontend. Points at the `web` container, NOT `app` — the backend listens
+	# only on 3001, so the previous `app:3000` target was a closed port and
+	# every page request would have failed while /api kept working.
+	#
+	# If the Next.js app is hosted elsewhere (e.g. Vercel), delete this block
+	# and point that host's rewrite at https://{$SYNORA_DOMAIN}/api.
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

@@ -2,18 +2,32 @@
  * Bull Queue worker: Generate AI responses with streaming
  */
 
-import { Queue, Worker } from 'bullmq';
+import { Worker } from 'bullmq';
 import { prisma } from '@synora/database';
 import { logger } from '../utils/logger';
 import { getStreamingResolver } from '../ai/streaming/resolver';
 import { StreamingAccumulator, TokenAccountant } from '../ai/streaming/accumulator';
 import { StreamingRetryEngine, StreamingJobStatus } from '../ai/streaming/statemachine';
+import { conversationContextService } from '../services/conversationContext.service';
+import {
+  aiProviderCallsTotal,
+  aiProviderCallDuration,
+  aiTokensTotal,
+} from '../monitoring/metrics';
 import { Redis } from 'ioredis';
+import { recordAiInteraction, declareAiPath } from '../eos/instrumentation';
+import { assertAiBudget, recordAiSpend, AiBudgetExceededError } from '../ai/spend-guard';
+import { emptyGenerationMessage } from '../ai/shared';
+import { isCaptureActive } from '../eos/case-capture';
+import { privacyConsentService } from '../services/privacyConsent.service';
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
+declareAiPath('chat.generate');
+
 const PROMPT_HISTORY_WINDOW = 50;
 
-interface GenerateResponseJob {
+export interface GenerateResponseJob {
   jobId: string;
   conversationId: string;
   messageId: string;
@@ -22,23 +36,92 @@ interface GenerateResponseJob {
   model: string;
 }
 
-export function createGenerateResponseQueue(): Queue<GenerateResponseJob> {
-  return new Queue('generate_response', {
-    connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379')
-    }
-  });
+/**
+ * Retrieval-augmented generation: fetch the memories relevant to this
+ * conversation and return them as the system instruction for the provider
+ * call, or `undefined` when there is nothing relevant to add.
+ *
+ * The result must be passed as `systemPrompt`, never as a 'system' entry in
+ * `messages` — see ai/shared.ts, where system-role turns are dropped because
+ * each provider's wire format allows exactly one system instruction. Injecting
+ * retrieved context into the message history would silently no-op.
+ *
+ * Fail-open by design: memory is an enhancement, so a retrieval outage (the
+ * embedding provider being unreachable, the vector store being down) degrades
+ * to an unaugmented reply rather than costing the user their message.
+ */
+export async function buildAugmentedSystemPrompt(params: {
+  jobId: string;
+  conversationId: string;
+  userId: string;
+  workspaceId: string;
+}): Promise<string | undefined> {
+  const { jobId, conversationId, userId, workspaceId } = params;
+  try {
+    const context = await conversationContextService.buildContext({
+      conversationId,
+      userId,
+      workspaceId,
+    });
+
+    logger.debug('[Worker] Context built', {
+      jobId,
+      memoriesInContext: context.metadata.memoriesInContext,
+      contextTokens: context.metadata.tokensUsed,
+    });
+
+    // With no relevant memories the prompt carries no retrieved knowledge, so
+    // sending it would only spend tokens restating the conversation title.
+    return context.relevantMemories.length > 0 ? context.systemPrompt : undefined;
+  } catch (err: unknown) {
+    logger.warn('[Worker] Memory retrieval failed; generating without it', {
+      jobId,
+      conversationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  }
+}
+
+/**
+ * THE BACKSTOP: no provider may persist a blank reply as a success.
+ *
+ * A stream can finish cleanly, report real token usage, and never have
+ * emitted a single character. Before this, the worker wrote that to the
+ * database as the assistant's message and marked the job COMPLETED — the
+ * person saw an empty bubble, having paid for the tokens, with nothing
+ * anywhere saying why.
+ *
+ * The OpenAI-compatible stream adapter already refuses this case with a
+ * precise reason, because it can see `finish_reason` and reasoning deltas.
+ * This guard exists for every OTHER streaming adapter, present and future,
+ * and sits in the one place that writes the message — so a new adapter
+ * cannot reintroduce the failure by omission.
+ *
+ * It deliberately reports `no-output` rather than guessing at an exhausted
+ * budget: stream chunks carry no finish reason, so the worker genuinely
+ * does not know why, and inventing the likeliest cause would send someone
+ * to change a setting that may have nothing to do with it.
+ *
+ * Cancellation is not a failure. Stopping a generation is the person's own
+ * decision, and whatever text arrived first is theirs to keep.
+ */
+export function assertStreamProducedAnAnswer(args: {
+  provider: string;
+  text: string;
+  cancelled: boolean;
+}): void {
+  if (args.cancelled || args.text.trim() !== '') return;
+  throw new Error(emptyGenerationMessage(args.provider, 'no-output'));
 }
 
 export function createGenerateResponseWorker() {
-  const queue = createGenerateResponseQueue();
   const retryEngine = new StreamingRetryEngine();
   const resolver = getStreamingResolver();
 
   const worker = new Worker<GenerateResponseJob>('generate_response', async (bullJob) => {
     const jobData: GenerateResponseJob = bullJob.data;
-    const { jobId, conversationId, messageId, userId: _userId, provider, model } = jobData;
+    const { jobId, conversationId, messageId, userId, provider, model } = jobData;
 
     logger.info('[Worker] Processing job', { jobId, conversationId, messageId });
 
@@ -48,6 +131,7 @@ export function createGenerateResponseWorker() {
       async (attempt) => {
         const accumulator = new StreamingAccumulator();
         const accountant = new TokenAccountant(model, provider);
+        const startedAt = Date.now();
 
         try {
           // Fetch conversation with message history
@@ -73,6 +157,33 @@ export function createGenerateResponseWorker() {
               role: m.role as 'user' | 'assistant' | 'system',
               content: m.content
             }));
+
+          // Retrieval-augmented context: pull the memories relevant to this
+          // conversation and pass them as the system instruction.
+          //
+          // This must go through `systemPrompt`, not a 'system' entry in
+          // `messages` — see ai/shared.ts, where system-role turns are dropped
+          // because each provider's wire format allows exactly one system
+          // instruction. Injecting it into the history would silently no-op.
+          //
+          // Fail-open by design: memory is an enhancement, so a retrieval
+          // outage (embedding provider down, vector store unreachable) must
+          // degrade to an unaugmented reply rather than cost the user their
+          // message.
+          const systemPrompt = await buildAugmentedSystemPrompt({
+            jobId,
+            conversationId,
+            userId,
+            workspaceId: conversation.workspaceId,
+          });
+
+          // The budget gate, BEFORE a provider is even resolved. Chat is the
+          // one generation path that bypasses instrumentedGenerate entirely
+          // (it streams through a separate stack), so without this check the
+          // most-used path in the product would be the one path no cap
+          // binds. A budget refusal is not a provider failure and must not
+          // be retried — the retry would just re-refuse.
+          await assertAiBudget({ workspaceId: conversation.workspaceId, model });
 
           // Get provider
           const providerInstance = await resolver.resolve(provider);
@@ -108,10 +219,13 @@ export function createGenerateResponseWorker() {
 
           const timeToFirstToken = Date.now();
           let firstTokenReceived = false;
+          let providerReportedUsage = false;
+          const providerCallTimer = aiProviderCallDuration.startTimer({ provider });
 
           for await (const chunk of providerInstance.generateStream({
             messages: messageHistory,
             model,
+            systemPrompt,
             maxTokens: 2048,
             abortSignal: abortController.signal
           })) {
@@ -144,6 +258,13 @@ export function createGenerateResponseWorker() {
                 })
               );
             } else if (chunk.type === 'usage') {
+              // Only real numbers count as "the provider reported usage".
+              // Ollama-style endpoints often send no usage at all, and the
+              // spend guard must see that as UNKNOWN (estimated floor), never
+              // as zero — zero would read as free.
+              if ((chunk.inputTokens ?? 0) > 0 || (chunk.outputTokens ?? 0) > 0) {
+                providerReportedUsage = true;
+              }
               accountant.setInputTokens(chunk.inputTokens || 0);
               accountant.incrementOutputTokens(chunk.outputTokens || 0);
 
@@ -165,28 +286,68 @@ export function createGenerateResponseWorker() {
           const finalText = accumulator.getText();
           const accounting = accountant.getSummary();
 
+          assertStreamProducedAnAnswer({
+            provider,
+            text: finalText,
+            cancelled: abortController.signal.aborted,
+          });
+
+          // Spend metrics: one observation per completed provider call, plus
+          // token counters split by direction so cost dashboards can separate
+          // prompt growth from response growth.
+          providerCallTimer();
+          aiProviderCallsTotal.inc({ provider, outcome: 'completed' });
+          aiTokensTotal.inc({ provider, direction: 'input' }, accounting.inputTokens);
+          aiTokensTotal.inc({ provider, direction: 'output' }, accounting.outputTokens);
+
           logger.info('[Worker] Persisting message', {
             jobId,
             textLength: finalText.length,
             tokens: accounting.outputTokens
           });
 
-          await prisma.message.update({
-            where: { id: messageId },
-            data: {
-              content: finalText
-            }
-          });
+          const totalTokens = accounting.inputTokens + accounting.outputTokens;
 
-          // Update job
-          await prisma.streamingJob.update({
-            where: { id: jobId },
-            data: {
-              messageId,
-              status: StreamingJobStatus.COMPLETED,
-              completedAt: new Date()
-            }
-          });
+          // Message content, its accounting, the job status, and the
+          // conversation-level rollup must land together — a partial write
+          // would leave usage totals permanently out of step with messages.
+          await prisma.$transaction([
+            prisma.message.update({
+              where: { id: messageId },
+              data: {
+                content: finalText,
+                inputTokens: accounting.inputTokens,
+                outputTokens: accounting.outputTokens,
+                costCents: accounting.estimatedCostCents,
+                provider,
+                model
+              }
+            }),
+            prisma.streamingJob.update({
+              where: { id: jobId },
+              data: {
+                messageId,
+                status: StreamingJobStatus.COMPLETED,
+                completedAt: new Date()
+              }
+            }),
+            prisma.conversationUsage.upsert({
+              where: { conversationId },
+              create: {
+                conversationId,
+                inputTokens: accounting.inputTokens,
+                outputTokens: accounting.outputTokens,
+                totalTokens,
+                estimatedCost: accounting.estimatedCostCents
+              },
+              update: {
+                inputTokens: { increment: accounting.inputTokens },
+                outputTokens: { increment: accounting.outputTokens },
+                totalTokens: { increment: totalTokens },
+                estimatedCost: { increment: accounting.estimatedCostCents }
+              }
+            })
+          ]);
 
           // Emit completion event
           await redis.publish(
@@ -216,8 +377,95 @@ export function createGenerateResponseWorker() {
             costCents: accounting.estimatedCostCents
           });
 
+          // Charge the spend AFTER the message transaction, never inside it:
+          // accounting failure must not roll back a persisted message (the
+          // tokens are spent either way). Raw-or-undefined counts keep
+          // unknown distinguishable from free on exactly the self-hosted
+          // path where usage reporting is unreliable.
+          await recordAiSpend({
+            workspaceId: conversation.workspaceId,
+            provider,
+            model,
+            inputTokens: providerReportedUsage ? accounting.inputTokens : undefined,
+            outputTokens: providerReportedUsage ? accounting.outputTokens : undefined,
+            fallbackChars:
+              finalText.length +
+              messageHistory.reduce((sum, m) => sum + m.content.length, 0),
+          });
+
+          // Feed EOS/CIEP: provider matrix, prompt regression detection, and
+          // evaluation case capture. Interaction text is only attached when
+          // the user has consented to evaluation use; the consent lookup is
+          // skipped entirely when capture is inactive (the default), so this
+          // adds no database round-trip to the normal path.
+          let consentedContent:
+            | { input: string; output: string; consented: boolean }
+            | undefined;
+          if (isCaptureActive()) {
+            try {
+              const consented = await privacyConsentService.canUseConversationForEvaluation(
+                conversationId,
+                userId
+              );
+              if (consented) {
+                const lastUserTurn = [...messageHistory].reverse().find(m => m.role === 'user');
+                consentedContent = {
+                  input: lastUserTurn?.content ?? '',
+                  output: finalText,
+                  consented: true,
+                };
+              }
+            } catch {
+              // Consent unknown means no capture — the safe outcome.
+            }
+          }
+
+          recordAiInteraction({
+            promptId: 'chat.generate',
+            providerId: provider,
+            modelId: model,
+            success: true,
+            latencyMs: Date.now() - startedAt,
+            inputTokens: accounting.inputTokens,
+            outputTokens: accounting.outputTokens,
+            costCents: accounting.estimatedCostCents,
+            content: consentedContent,
+          });
+
           return { success: true, messageId };
         } catch (err: any) {
+          // A budget refusal is policy, not malfunction: skip the failure
+          // telemetry that would page someone toward a provider dashboard,
+          // record the honest reason on the job, and abort the retry loop —
+          // retrying a refusal just refuses again.
+          if (err instanceof AiBudgetExceededError) {
+            await prisma.streamingJob.update({
+              where: { id: jobId },
+              data: { lastError: err.message, status: StreamingJobStatus.FAILED },
+            });
+            await redis.publish(
+              `job:${jobId}:stream`,
+              JSON.stringify({ type: 'error', payload: { message: err.message, code: 'AI_BUDGET_EXCEEDED' } })
+            );
+            throw err;
+          }
+          aiProviderCallsTotal.inc({ provider, outcome: 'failed' });
+
+          // A failure is the most valuable signal the observatory and prompt
+          // intelligence receive, so it is recorded on this path too. No text
+          // is attached: a failed generation has no output worth capturing.
+          recordAiInteraction({
+            promptId: 'chat.generate',
+            providerId: provider,
+            modelId: model,
+            success: false,
+            latencyMs: Date.now() - startedAt,
+            inputTokens: 0,
+            outputTokens: 0,
+            costCents: 0,
+            errorCode: err?.code ?? err?.name ?? 'unknown',
+          });
+
           logger.error('[Worker] Generation failed', {
             jobId,
             attempt,
@@ -238,9 +486,15 @@ export function createGenerateResponseWorker() {
       }
     );
   }, {
+    // Same REDIS_URL as the producer (workers/queue.ts) and the
+    // pub/sub connection above — the previous REDIS_HOST/REDIS_PORT
+    // pair silently split the worker onto a different Redis than the
+    // rest of the system whenever only REDIS_URL was configured.
+    // maxRetriesPerRequest: null is BullMQ's requirement for worker
+    // connections so they ride out Redis restarts by reconnecting.
     connection: {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379')
+      url: process.env.REDIS_URL || 'redis://localhost:6379',
+      maxRetriesPerRequest: null,
     },
     concurrency: 5
   });
@@ -253,5 +507,5 @@ export function createGenerateResponseWorker() {
     logger.error('[Worker] Job failed', { jobId: job?.id, error: err.message });
   });
 
-  return { queue, worker };
+  return { worker };
 }

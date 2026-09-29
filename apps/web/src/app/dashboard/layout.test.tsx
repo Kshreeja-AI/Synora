@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import DashboardLayout from './layout';
 
 vi.mock('../../hooks/useRequireAuth', () => ({
@@ -27,6 +28,14 @@ vi.mock('../../components/shell/Topbar', () => ({
 vi.mock('../../components/shell/CommandPalette', () => ({ CommandPalette: () => null }));
 vi.mock('../../components/shell/KeyboardShortcutsDialog', () => ({ KeyboardShortcutsDialog: () => null }));
 vi.mock('../../components/shell/CreateWorkspaceDialog', () => ({ CreateWorkspaceDialog: () => null }));
+vi.mock('../../components/search/SearchDialog', () => ({ SearchDialog: () => null }));
+vi.mock('../../hooks/useSearchDialog', () => ({
+  useSearchDialog: () => ({
+    isOpen: false,
+    openDialog: vi.fn(),
+    closeDialog: vi.fn(),
+  }),
+}));
 
 import { useRequireAuth } from '../../hooks/useRequireAuth';
 
@@ -35,10 +44,23 @@ function setViewportWidth(width: number): void {
 }
 
 describe('DashboardLayout', () => {
+  let queryClient: QueryClient;
+
   beforeEach(() => {
     vi.clearAllMocks();
     setViewportWidth(1024);
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
   });
+
+  const renderWithQueryClient = (component: React.ReactElement) => {
+    return render(
+      <QueryClientProvider client={queryClient}>
+        {component}
+      </QueryClientProvider>
+    );
+  };
 
   it('shows a loading state and withholds children while auth is resolving', () => {
     (useRequireAuth as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -46,7 +68,7 @@ describe('DashboardLayout', () => {
       isLoading: true,
     });
 
-    render(
+    renderWithQueryClient(
       <DashboardLayout>
         <div>Protected content</div>
       </DashboardLayout>
@@ -61,7 +83,7 @@ describe('DashboardLayout', () => {
       isLoading: false,
     });
 
-    render(
+    renderWithQueryClient(
       <DashboardLayout>
         <div>Protected content</div>
       </DashboardLayout>
@@ -82,7 +104,7 @@ describe('DashboardLayout', () => {
     });
 
     it('starts closed on a narrow viewport, with no backdrop', () => {
-      const { container } = render(
+      const { container } = renderWithQueryClient(
         <DashboardLayout>
           <div>Protected content</div>
         </DashboardLayout>
@@ -92,7 +114,7 @@ describe('DashboardLayout', () => {
     });
 
     it('opens as an overlay with a backdrop when toggled, and closes on backdrop click', () => {
-      const { container } = render(
+      const { container } = renderWithQueryClient(
         <DashboardLayout>
           <div>Protected content</div>
         </DashboardLayout>
@@ -108,7 +130,7 @@ describe('DashboardLayout', () => {
     });
 
     it('closes the overlay after navigating from the sidebar', () => {
-      const { container } = render(
+      const { container } = renderWithQueryClient(
         <DashboardLayout>
           <div>Protected content</div>
         </DashboardLayout>

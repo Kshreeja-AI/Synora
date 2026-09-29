@@ -131,6 +131,55 @@ export async function adjustCredits(
   return updated;
 }
 
+/**
+ * Claws back credits that were granted for an invoice which has since been
+ * refunded. Clamped at 0 rather than allowed to go negative — a workspace
+ * that already spent the credits before the refund keeps what it used;
+ * this only removes what's still sitting in the balance.
+ */
+export async function clawbackCreditsForRefund(
+  actorUserId: string,
+  workspaceId: string,
+  input: { amount: number; reason: string }
+) {
+  const existing = await prisma.workspaceCredits.findUnique({
+    where: { workspaceId },
+  });
+
+  if (!existing) {
+    throw new NotFoundException('Workspace credits');
+  }
+
+  const newBalance = Math.max(0, existing.balance - input.amount);
+  const actualDeduction = existing.balance - newBalance;
+
+  const updated = await prisma.workspaceCredits.update({
+    where: { workspaceId },
+    data: { balance: newBalance },
+  });
+
+  await prisma.creditLedgerEntry.create({
+    data: {
+      workspaceId,
+      type: 'REFUND',
+      amount: -actualDeduction,
+      balanceAfter: newBalance,
+      reason: input.reason,
+      actorId: actorUserId,
+    },
+  });
+
+  logger.info('[billing] credits clawed back for refund', {
+    actorId: actorUserId,
+    workspaceId,
+    requested: input.amount,
+    actualDeduction,
+    reason: input.reason,
+  });
+
+  return updated;
+}
+
 export async function recordUsage(
   workspaceId: string,
   input: { capability: string; quantity: number; creditsCost: number; userId?: string; metadata?: Record<string, unknown> }

@@ -8,8 +8,8 @@
 **Status: Release 1 complete.** Real authentication (JWT + rotating
 refresh tokens, per-account lockout), real AI text/code generation across
 10 providers, a production Docker image, and blocking CI security gates
-are all shipped and verified. See `RELEASE_1_FINAL.md` for the full
-snapshot, or `PROJECT_HANDOVER.md` if you're new here and want the
+are all shipped and verified. See `SYNORA_MASTER_BLUEPRINT.md` for the full
+picture, or `SYNORA_OPERATIONS.md` if you're new here and want the
 zero-context tour.
 
 ## Features
@@ -26,7 +26,7 @@ Shipped in Release 1:
 - **🛡️ Blocking CI Security Gates** — dependency vulnerability scanning
   and secret scanning on every push
 
-Not yet shipped (see `RELEASE_2_PLAN.md`):
+Not yet shipped:
 - 🎨 Image/video/audio generation (routes exist, currently return
   placeholders — needs an async job queue + object storage)
 - MFA and CSRF protection (both fully built on `recover/mfa` /
@@ -43,7 +43,7 @@ Not yet shipped (see `RELEASE_2_PLAN.md`):
 - `next-auth`, `@tanstack/react-query`, `zustand`, `axios` are declared
   dependencies for a planned future state-management layer — not yet
   wired into any page (current code uses raw `fetch` + `useState` +
-  `localStorage`; see `PROJECT_HANDOVER.md` §11)
+  `localStorage`; see `SYNORA_OPERATIONS.md`)
 
 ### Backend
 - **Node.js 20+/22** — ESM
@@ -85,7 +85,7 @@ pnpm install
 ```bash
 cp .env.example .env.local
 ```
-See `RELEASE_1_LAUNCH_READINESS.md` §2 for the full, currently-accurate
+See `SYNORA_MASTER_BLUEPRINT.md` for the full, currently-accurate
 list of required vs. optional variables.
 
 4. **Start PostgreSQL** (using Docker Compose)
@@ -110,22 +110,20 @@ pnpm run dev
 
 ## Documentation
 
-Start with `PROJECT_HANDOVER.md` (zero-context entry point) or
-`RELEASE_1_FINAL.md` (the authoritative Release 1 snapshot). See
-`docs/README.md` for the full documentation hierarchy — current reference
-docs live in `docs/`, historical point-in-time reports live in
-`docs/archive/`.
+Synora keeps exactly three authoritative documents:
+`SYNORA_MASTER_BLUEPRINT.md` (what Synora is and how it is architected),
+`SYNORA_OPERATIONS.md` (how to run, configure, deploy and recover it), and
+`SYNORA_LEARNING.md` (the engineering concepts behind those choices).
+Do not add a fourth: put permanent knowledge in one of these three.
 
-- **[Project Handover](./PROJECT_HANDOVER.md)** — start here
-- **[Release 1 Final Summary](./RELEASE_1_FINAL.md)** — architecture, API, database, deployment, security, all in one place
+- **[Synora Master Blueprint](./SYNORA_MASTER_BLUEPRINT.md)** — what Synora is and how it is architected
+- **[Synora Operations](./SYNORA_OPERATIONS.md)** — run it, configure it, deploy it, recover it
 - **[Architecture](./docs/architecture.md)**
 - **[Database Schema](./docs/database.md)**
 - **[API Reference](./docs/api.md)**
 - **[Deployment Guide](./docs/deployment.md)**
 - **[Security Policy](./docs/security.md)**
-- **[Release Roadmap](./RELEASE_ROADMAP.md)** — what's done, what's next
-- **[Release 2 Plan](./RELEASE_2_PLAN.md)**
-
+- **[Synora Learning](./SYNORA_LEARNING.md)** — the engineering concepts, explained plainly
 ## Testing
 
 ```bash
@@ -221,7 +219,7 @@ Licensed under BUSL-1.1 (Business Source License). See [LICENSE](./LICENSE) for 
 
 Release 2 (production hardening — MFA, CSRF/cookie auth, Redis-backed
 shared state, media generation, CD pipeline, observability) is planned
-but not started. See `RELEASE_2_PLAN.md` for objectives, priorities,
+but not started. See `SYNORA_MASTER_BLUEPRINT.md` for objectives, priorities,
 milestones, and dependencies.
 
 ## Authors

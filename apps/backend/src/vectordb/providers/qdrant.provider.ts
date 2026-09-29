@@ -207,7 +207,9 @@ export const qdrantVectorDBDescriptor: VectorDBProviderDescriptor = {
     if (!qdrantUrl) {
       throw new Error('Qdrant requires VECTORDB_QDRANT_URL to be set.');
     }
-    const apiKey = await secretsManager.tryGet('QDRANT_API_KEY', 'vectordb:qdrant');
+    // tryGetReal: the key is optional (self-hosted, no auth), and sending a
+    // generated placeholder as a real API key would break exactly that case.
+    const apiKey = await secretsManager.tryGetReal('QDRANT_API_KEY', 'vectordb:qdrant');
     return new QdrantProvider(qdrantUrl, apiKey, qdrantMaxUpsertBatchSize ?? QDRANT_DEFAULT_MAX_UPSERT_BATCH_SIZE);
   },
 };

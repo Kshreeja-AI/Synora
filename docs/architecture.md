@@ -235,16 +235,39 @@ pluggable source chain with audit-logged reads. Full detail:
   keyboard-shortcuts trigger, logout), `Breadcrumbs` (derived from
   `usePathname()`), `CommandPalette` (global ⌘K/Ctrl+K via a
   `window` keydown listener; also binds ⌘/ to the shortcuts dialog),
-  `KeyboardShortcutsDialog`. `dashboard/layout.tsx` composes these and
-  renders the three dialog-based components (`CommandPalette`,
+  `KeyboardShortcutsDialog`. `components/shell/AppShell.tsx` composes
+  these and renders the three dialog-based components (`CommandPalette`,
   `KeyboardShortcutsDialog`, `CreateWorkspaceDialog`) once, outside the
   scrollable content area, so they're available from anywhere in the
   shell.
+- **Two authenticated route trees, one shell**: signed-in surfaces live
+  under either `/dashboard/*` (`app/dashboard/layout.tsx`) or the
+  `(dashboard)` route group, which holds the full-bleed surfaces that
+  sit at the URL root — `/conversations/*` and `/knowledge/*`
+  (`app/(dashboard)/layout.tsx`). Both layouts are thin wrappers around
+  the same `AppShell`, so the auth guard (`useRequireAuth`) and the
+  application frame are defined in exactly one place. The group layout
+  passes empty content padding because every page in it brings its own
+  chrome (the conversation rail, the knowledge tab bar). Adding a new
+  authenticated tree means wrapping `AppShell`, never re-implementing
+  the guard.
+- **Workspace scoping in the UI**: no authenticated page is
+  workspace-*routed*; there is no `/workspaces/:id/...` route. The
+  active workspace comes from `useCurrentWorkspace()`. Reading
+  `useParams().workspaceId` (or `.id`) on a route that has no such
+  segment silently yields `undefined`, which disables every query on
+  the page and leaves it stuck on an empty state — this was a real bug
+  on the usage and knowledge pages.
 - **Pages today**: landing/pricing/features/changelog (`(marketing)`
   route group, M2), `/auth/{login,register,forgot-password,
   reset-password,verify-email}`, `/dashboard` (real empty-state/
   workspace-overview, M4), `/dashboard/settings/{profile,account,
-  sessions,workspace}` — all composed from design-system components on
+  sessions,workspace}`, `/dashboard/{projects,tools,usage,billing}`,
+  and in the `(dashboard)` group `/conversations`,
+  `/conversations/[id]`, `/knowledge/{prompts,templates}`; plus the
+  unauthenticated `/share/[token]` and `/invite/[token]`. The sidebar
+  links every one of these primary surfaces — composed from
+  design-system components on
   the typed API client; no page reads `localStorage` directly or wires
   its own token logic. Pages that read a URL query param (`login`,
   `reset-password`, `verify-email`) split into a server `page.tsx`
@@ -367,23 +390,44 @@ non-negotiable (see `PROJECT_HANDOVER.md` "Things that must never be
 changed"). Interface design for hyperscale self-hosted serving lives in
 the `feature/synora-infra-interfaces` branch (unmerged design work).
 
-### Conversation Generation Flow (Release 3 M2)
+### Conversation Generation Flow
 
-`conversationGeneration.service.ts` is the only place a user message
-becomes an assistant reply:
+Generation is **asynchronous**: the HTTP request enqueues a job and
+returns immediately with an empty assistant placeholder, and the client
+streams tokens over SSE. There is exactly one generation
+implementation — the `generate_response` BullMQ worker
+(`workers/generateResponse.worker.ts`) on top of `ai/streaming/*`.
 
 ```
 POST .../messages (role=USER)
   → messageService.create() persists the user message (final, immediately)
-  → conversationGenerationService.generateReply()
-      → StreamingJob(PENDING → RUNNING)
-      → resolveProvider('text-generation', { explicitProviderId: conversation.provider })
-      → provider.generateText({ prompt, messages: <windowed history>, model })
-          success → Message(role=ASSISTANT) created, StreamingJob COMPLETED,
-                     ConversationUsage upserted, Conversation.lastMessageAt updated
-          failure → retry (up to 2x, 500ms/1500ms backoff), else StreamingJob FAILED
-  ← HTTP response (same request — no queue, no streaming transport yet)
+  → messageService.createPlaceholder(ASSISTANT, parentId=userMessage.id)
+  → messageService.enqueueGeneration() → StreamingJob(PENDING)
+                                       → enqueueGenerateResponse() (BullMQ)
+  ← 201 { userMessage, assistantMessage (empty), jobId }   [request ends here]
+
+generate_response worker
+  → StreamingRetryEngine.executeWithRetry (owns retries + StreamingJob state)
+      → getStreamingResolver().resolve(conversation.provider)
+      → provider streams tokens → StreamingAccumulator
+           tokens published to Redis; the SSE endpoint relays them to the client
+           cancellation: client → SSE cancel → Redis `job:<id>:control` → AbortController
+      → TokenAccountant → ConversationUsage upserted
+      success → assistant Message content filled in, StreamingJob COMPLETED
+      failure → StreamingJob FAILED after the retry budget
 ```
+
+Retries live in `StreamingRetryEngine`, not in the queue: the BullMQ job
+is enqueued with `removeOnComplete` and no BullMQ-level retry, so there
+is a single owner of retry policy and no risk of two layers each
+retrying a billable provider call.
+
+Two earlier generation services — `conversationGeneration.service.ts`
+(synchronous, request-scoped) and `messageGeneration.service.ts`
+(generator-based) — were deleted once this worker superseded them. Each
+carried its own retry loop, prompt window, and usage accounting;
+parallel generation paths are the kind of duplication that ends in
+double-charging a customer for one reply.
 
 Deliberately synchronous: there is no Redis-backed queue or SSE/WebSocket
 transport in Release 3 M2 (see "Queue Architecture" and this section's
@@ -393,7 +437,7 @@ created on a successful generation; there is no `PENDING` placeholder
 message and no `Message.status` field — `StreamingJob` is the sole
 "generation in flight" state, so there's exactly one place that can say
 whether a reply is done, not two that could disagree.
-`M2_IMPLEMENTATION_PLAN.md` §6, §7, and §12 have the full design
+`docs/archive/M2_IMPLEMENTATION_PLAN.md` §6, §7, and §12 have the full design
 rationale, including the future path to an async/queued/streamed version
 that changes *who calls* this service, not its internal retry/state-machine
 logic.
@@ -456,12 +500,197 @@ call-site change.
   since `src/routes/users.ts` is imported — and its module-scope `multer()`
   call evaluated — before `initConfig()` has necessarily run).
 
-### Agent architecture — not implemented
+### Agent architecture — implemented
 
-No agent/orchestration layer exists today (no tool-use loops, no
-multi-step planning). When it arrives (Release 3+), it sits **above**
-`generateText()` and below routes, so it inherits provider-agnosticism
-by construction rather than needing its own provider handling.
+CORRECTED: this section previously said no agent or orchestration layer
+existed. Agents, a deterministic local planner, per-step approval gates
+and provider-native tool calling all ship today. As designed, the layer
+sits **above** `generateText()` and below routes, so it inherits
+provider-agnosticism by construction rather than handling providers
+itself. See `src/agents/` and the Universal Command Layer below.
+
+## Universal Command Layer
+
+The human-facing control language: a person describes an OUTCOME in their
+own words, and Synora resolves it into real capabilities, real permission
+answers, and real execution — or into an honest refusal. It lives in
+`apps/backend/src/command/` and is reached through `/api/command/*`.
+
+**It is deliberately deterministic and local.** Understanding, resolution,
+decomposition, permission checks, approval flow and scheduling logic are
+Synora's own code, not a model call. Three reasons, in order: a model asked
+to interpret a hostile sentence can be *talked into* interpreting it
+favourably (that is what prompt injection is, and a fixed grammar cannot be
+argued with); understanding "show me what needs my decision" must work when
+every provider is down; and a deterministic classifier that fails to
+recognize a sentence says so, while a model always produces something whose
+shape is indistinguishable from a correct answer. A model may LATER improve
+ranking or phrasing coverage — it must never become required.
+
+**The pipeline**, each stage separate on purpose:
+
+```
+sentence
+  → understand   deterministic grammar → intent + subject   (identity-free)
+  → decompose    one sentence → the actions it describes     (slice 14)
+  → prepare      per-step: may THIS person, in THIS workspace
+  → decide       capability? available here? risk class? approval?
+  → approve      authoritative gate; server re-derives the action
+  → execute      the SAME services the ordinary routes call
+  → record       durable CommandExecution row, successes and refusals alike
+```
+
+**Ten execution states, never blurred**: `completed`, `not-authorized`,
+`unavailable`, `not-implemented`, `not-bound`, `waiting-approval`,
+`needs-input`, `rejected`, `expired`, `failed`. Each answers a different
+question and sends a person to a different place for help — collapsing any
+two is how a layer starts lying. `not-bound` in particular means "Synora
+can do this, but not yet by being asked in plain language", which is
+neither a missing capability nor a bug.
+
+### Multi-step commands
+
+`decompose.ts` splits one sentence into the actions it describes;
+`plan.ts` resolves each step through the SAME `decideCommand` a single
+command uses. A plan is not a privileged path — it is several ordinary
+commands with an order between them.
+
+- **No step inherits anything from its neighbours.** Permission,
+  availability and approval are re-asked per step. Otherwise a harmless
+  first step could carry a dangerous last one past the gate.
+- **Under-split, never over-split.** Merging two actions is visible and
+  harmless; inventing one means acting on a fabrication. Only segments
+  that independently read as actions become steps.
+- **Dependencies come from back-references** ("summarize *it*"). A step
+  that refers to nothing waits for nothing; a step whose input will never
+  exist is marked blocked rather than ready.
+- **Capabilities, never vendors.** A step names `ai.generate`, not a
+  provider; provider choice stays in the existing resolver.
+- **Planning executes nothing** (`executed: false` is a literal type, and
+  no durable record is written). `POST .../plan` resolves and reports;
+  `POST .../plan/execute` is the endpoint that acts.
+
+### Running a plan
+
+`run-plan.ts` stores the plan (`CommandPlan` + `CommandPlanStep`) and runs
+its steps in order. Each step is executed by the SAME `executeCommand` a
+single command uses, so it re-derives its capability, re-checks the
+caller's permission at the moment it runs, honours the approval gate, and
+writes its own `CommandExecution` audit row — correlated by `planId` and
+`planStepIndex`, so a trail reads PLAN → STEP → APPROVAL → outcome.
+
+- **Durable, because plans pause.** A plan can stop at an approval someone
+  answers tomorrow. In-memory state would mean a deploy silently discards
+  work a person is waiting on, and they would never learn why.
+- **Stop honestly; do not push on.** Execution halts at the first step that
+  does not complete and does not skip ahead to later "independent" steps.
+  A person who asked for four things and received an unpredictable subset
+  has to reconstruct which; a plan that stops leaves a state describable in
+  one sentence. Steps never reached are `skipped`, deliberately not
+  `failed` — nothing was attempted, so nothing broke.
+- **Never retries.** No capability here carries an idempotency key, so a
+  retry could create a second schedule or a second conversation. The
+  response's `safeToRetry` says plainly whether asking again would repeat
+  anything: false as soon as any step completed.
+- **`partially-completed` is first-class**, never collapsed into
+  `completed` or `failed`. "Three of four ran" is the truth and both
+  neighbours are lies about it.
+- **A dependency that did not complete stops the dependent step.** Running
+  it would act on an input that does not exist.
+
+### Resuming after a decision
+
+Deciding a paused step continues its plan, from the approval path itself
+once the decision is durably recorded (never before — a resume that
+crashed must not be able to lose the approval that authorised it).
+
+- **An approval buys its own step and nothing else.** Every remaining step
+  runs through `executeCommand`, so a later step that needs approval pauses
+  the plan again. "Approve once, act broadly" is precisely what this layer
+  exists to prevent.
+- **The decided step is never re-run.** It already ran inside the approval
+  transaction, and a person authorised it exactly once.
+- **The requester's CURRENT role is re-fetched.** Roles change while plans
+  sit in queues; a plan resumed tomorrow is entitled to what its requester
+  can do today, not what they could do when they asked. If they have left
+  the workspace, the remaining steps do not run under anyone else's
+  authority.
+- **A rejected step gives the plan status `rejected`**, distinct from
+  `failed`: a person said no, nothing broke, and those send an operator to
+  completely different places.
+- **A failed resume never fails the approval.** The decision is recorded
+  and the action already ran; throwing would report an authorised,
+  completed action as an error and invite a repeat.
+
+Reachable end-to-end since `tool.execute` was bound: a plan pauses on a
+tool step, a person approves it through the real endpoint, a real tool
+execution is created, and the plan resumes. Capabilities that require
+approval and are still unbound honestly yield `not-bound` on approval, and
+the plan stops there.
+
+### Undo
+
+Reversibility used to be something the layer only reasoned about:
+`reversible` is a risk class, it is why creating a conversation runs
+without an approval gate, and nothing could actually reverse anything.
+`undo.ts` and `POST .../executions/:executionId/undo` close that.
+
+- **The undo target is declared by the executor, never guessed.** Whichever
+  bound executor did the work names what would reverse it at the moment it
+  performs it, and that is stored on the audit row (`undoKind`,
+  `undoTargetId`). Inferring a target from a capability id would eventually
+  infer wrong, and a wrong guess deletes the wrong thing.
+- **Permission is re-checked at undo time**, by the same services that
+  enforce it everywhere else — `conversationService.delete` requires
+  `conversation:manage`; `deleteScheduleAuthorized` requires `tool:manage`
+  for a command path that never passes through the HTTP middleware. Having
+  been allowed to create something is not standing permission to remove it.
+- **Once only.** The reversal is claimed with a conditional update, and a
+  second attempt is refused rather than silently repeated.
+- **Reverse first, record second** — the opposite of the approval path,
+  because the failure modes are not symmetric. A crash after reversing
+  leaves a recoverable "not undone yet"; a crash after recording leaves an
+  unrecoverable false "already undone" and blocks every attempt to fix it.
+- **`undoable` is a server fact, separate from the risk class.** The client
+  offers the control only when the server said this particular execution
+  has a real undo target. Offering it on `reversible` would put a button on
+  actions Synora cannot reverse.
+
+Two capabilities create something reversible today — `conversation.create`
+and `workflow.schedule` — so those are what undo covers. Anything else
+answers `not-reversible` rather than improvising a reversal.
+
+### Reaching every person, through one pipeline
+
+The standing rule is that text, voice, accessibility, visual, robotic and
+agent inputs all resolve through the SAME intent → policy → plan → approval
+→ execution → observation architecture. Not parallel systems — one system
+with several doors. The corollary applies to the output side too, and it is
+where the first real gap was: every answer the command page produced was
+inserted silently into the DOM, so a person using a screen reader pressed
+"Do it" and was told nothing.
+
+`CommandAnnouncer` is the observation door for that path. It is a
+`role="status" aria-live="polite"` region, mounted from first render and
+never conditionally — a live region that appears at the same moment as its
+content is not announced at all.
+
+- **It speaks the server's words**, using the same `COMMAND_STATE_LABEL`
+  map as the visible card and `outcome.message` verbatim. It composes no
+  new prose, for the same reason nothing else in this layer does: a second
+  wording is a second thing to keep in sync, and here the two would
+  disagree in front of the one person who cannot see the correct one.
+- **It preserves the ten states.** Someone listening gets the same
+  distinction between "Not connected here" and "Did not work" as someone
+  looking.
+- **A live region, not seized focus.** The person pressed a button and is
+  waiting; taking focus would also discard the caret of anyone about to
+  edit their sentence after a refusal — the case the page already protects
+  by deliberately not clearing the box.
+
+Still missing on this axis: voice input. See the note in
+`SYNORA_MASTER_BLUEPRINT.md` — it carries a founder decision about where
+audio is allowed to travel, which is not an engineering call.
 
 ## Queue Architecture — not implemented (M7)
 
@@ -473,14 +702,125 @@ async job queue → worker → S3-compatible object storage → 202-enqueue /
 poll-or-notify API shape for image, video, and audio generation. Do not
 read the current images route as a preview of that design.
 
-## Future Memory Architecture — not implemented
+## Memory Architecture — storage and retrieval real, semantic search disabled
 
-No conversation memory, embedding store, or vector database exists, and
-none is scoped before Release 3. When scoped, it will live behind its own
-provider-agnostic abstraction exactly like AI generation (pluggable
-vector store, config-selected), so switching pgvector ↔ dedicated vector
-DB is configuration, not rewrite. Treat any memory-related code you find
-as nonexistent until a release plan names it.
+Conversation memory **does** exist as of Release 3: `Memory` and related
+tables in the Prisma schema, `memory.service` / `memoryRetrieval.service`
+/ `memoryGdpr.service`, and routes mounted at
+`/api/workspaces/:workspaceId/memories`. Storage, permissions
+(PRIVATE/WORKSPACE/SHARED/PUBLIC), GDPR erasure, and retrieval are
+implemented and tested.
+
+Semantic search runs on two provider-agnostic subsystems that are fully
+implemented and awaiting credentials:
+
+- **`src/embeddings/`** — 7 providers (OpenAI, Voyage, Gemini, Cohere,
+  Claude, Ollama, self-hosted) behind one `EmbeddingService`, with
+  caching, rate limiting, retry, circuit breaking, metrics, chunking and
+  workspace-scoped cost accounting built in.
+- **`src/vectordb/`** — 5 providers (pgvector, Pinecone, Qdrant,
+  Weaviate, Milvus) behind one `VectorDBService`, with namespace and
+  workspace scoping plus defense-in-depth permission filtering.
+
+`memoryEmbedding.service` owns no provider logic of its own; it calls
+`embed()` and `upsertVectors()/queryVectors()` and lets each subsystem
+select its provider from configuration. **Semantic search activates
+automatically the moment an embedding provider and a vector database are
+both configured** — no code change, no redeploy of application logic.
+Until then it is *disabled, not approximated*: the semantic route returns
+503, indexing skips rather than writing `embeddingId` values for vectors
+that don't exist, and no approximate vector is ever generated.
+
+Required credentials are listed in `.env.example` (`EMBEDDING_*`,
+`VECTORDB_*`). `GET /api/capabilities` reports which capabilities are
+live in a running deployment and what each unconfigured one currently
+does instead — this is the confirmation step after adding credentials.
+
+Retrieval stays useful meanwhile: `memoryRetrieval.service` ranks on
+lexical term overlap, importance, recency, and access frequency, dropping
+the semantic weight and renormalizing the rest so scores remain
+comparable. Results carry `rankingDetails.semanticSearchUsed` so callers
+can distinguish "no vector signal available" from "not similar".
+
+When a real embedding provider and vector store are added, they plug in
+behind the `IEmbeddingModel` / `IVectorDB` interfaces — pgvector ↔
+dedicated vector DB is a configuration change, not a rewrite.
+
+## Quantum Capability Layer {#quantum-capability-layer}
+
+`apps/backend/src/quantum/` (added 2026-08-11) — the same
+descriptor → registry → resolver shape as AI, embeddings, vector DB,
+mail and storage, applied to a capability that is not a model at all.
+
+- **Facade** (`index.ts`): `executeQuantumCircuit(request)` is the quantum
+  twin of `generateText()`. No caller names a backend, imports a vendor
+  client, or changes when a provider is added or removed. Nothing outside
+  `src/quantum/**` imports anything deeper than this file.
+- **Descriptor** (`descriptor.ts`): `id`, `displayName`, `metering`,
+  `min`/`maxExecutionLevel`, `unsupportedReason?`, `isConfigured()`,
+  `verifyCredential?()`, `create()`. Reuses `CredentialVerification` from
+  the AI descriptor rather than declaring a fourth four-state type.
+- **Registry order is policy**: the local simulator is first and permanent.
+  A configured IBM credential does not make IBM the default, because
+  "you configured a credential" is not "you authorised spending on every
+  request". The text registry orders itself the opposite way, correctly —
+  text providers differ by cents, quantum rungs by orders of magnitude.
+- **Resolver** (`resolver.ts`): `QUANTUM_MAX_EXECUTION_LEVEL` (default `0`)
+  bounds every path, explicit and automatic. A request may lower it and
+  may never raise it. Providers whose cheapest rung is above the ceiling
+  are excluded *before* any network call.
+- **Providers**: `local-simulator` (level 0, in-process dense statevector,
+  no dependencies, VERIFIED); `ibm-quantum` (levels 1–3, OpenQASM 3 over
+  IBM Runtime REST via `safeFetch`, IMPLEMENTED but NOT VERIFIED — no
+  credential exists); `aws-braket` (SCAFFOLDED, `unsupportedReason` set).
+- **Circuit IR + OpenQASM** (`circuit.ts`, `qasm.ts`): Synora's own gate
+  vocabulary, validated at build time, hashed for provenance, emitted as
+  OpenQASM 3 (and 2). This is why Qiskit is not a dependency — Qiskit is
+  Python, and OpenQASM is the interchange every toolchain already reads.
+- **Cost** (`budget.ts`): quantum spend flows through `ai/spend-guard.ts`'s
+  `knownCostCents` channel, so there is ONE ledger and one set of caps.
+  Four refusals, all before submission: unenabled paid QPU, UNKNOWN cost
+  on a metered backend, over the caller's authorisation, over the
+  deployment ceiling.
+- **Suitability** (`suitability.ts`): pure and synchronous, five verdicts,
+  `UNKNOWN` by default. Its job is to say no.
+- **Algorithms** (`algorithms/`): 15 registered, 3 executable (QAOA, VQE,
+  quantum kernel), each with a mandatory classical baseline.
+  `requireExecutableAlgorithm()` throws for the rest rather than returning
+  a plausible number.
+- **Benchmark** (`benchmark/`): `outcome` and `advantageClaim` are separate
+  fields. A simulator run can never produce
+  `QUANTUM_ADVANTAGE_DEMONSTRATED` — the simulator is a classical program.
+- **Hybrid orchestration** (`src/intelligence/hybrid-orchestrator.ts`):
+  sits beside the classical path and never replaces it. Every quantum step
+  is inside a boundary that degrades to `route: 'classical-only'` with the
+  failure recorded.
+
+No HTTP route exposes any of this yet; that is a separate decision.
+Full rationale: `SYNORA_MASTER_BLUEPRINT.md` Part XI.
+
+## Knowledge Acquisition {#knowledge-acquisition}
+
+`apps/backend/src/knowledge/` (added 2026-08-11) — licensed corpus
+ingestion that REUSES the existing embedding and vector stack rather than
+introducing a second one.
+
+- **The rule**: a dataset is ingested because its licence permits it, never
+  because it was downloadable. `UNKNOWN` is a real licence state and is
+  refused; CC-BY-NC is refused (Synora is commercial); CC-BY-ND is refused
+  (chunking and embedding are derivatives).
+- **Catalogue** (`catalog.ts`): assessed sources including explicitly
+  BLOCKED ones — Common Crawl (distribution is not licensing) and
+  "outputs of other AI models" (prohibited, and not a thing Synora does).
+- **Pipeline** (`pipeline.ts`): licence check → validation → deduplication
+  (SHA-256 of the NORMALISED text) → chunking (`embeddings/chunking.ts`,
+  the same splitter the document path uses) → embedding
+  (`EmbeddingService`) → indexing (`VectorDBService`, `knowledge`
+  namespace) → retrieval with mandatory citation.
+- **Ports** (`ports.ts`): the reuse boundary, ~30 lines. Going through the
+  existing services inherits caching, rate limiting, circuit breaking,
+  cost accounting, tracing and — the one that matters — workspace scoping.
+- The licence check runs FIRST because every later stage costs something.
 
 ## Database Architecture
 

@@ -1,5 +1,6 @@
 'use client';
 import { useParams } from 'next/navigation';
+import { CreditCard } from 'lucide-react';
 import { Card } from '@synora/design-system';
 import { useSubscription, usePlans, useCreditBalance } from '../../../../hooks/useBilling';
 import { EmptyState } from '@synora/design-system';
@@ -29,7 +30,7 @@ export default function BillingPage() {
       <EmptyState
         title="No subscription"
         description="Start by selecting a plan"
-        icon="CreditCard"
+        icon={<CreditCard />}
       />
     );
   }

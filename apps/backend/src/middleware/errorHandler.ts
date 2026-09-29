@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 import { logger } from '../utils/logger';
 import { ApiException } from '@synora/shared';
 import { getConfig } from '../config';
+import { captureException } from '../monitoring/sentry';
 
 export function errorHandler(
   error: unknown,
@@ -43,6 +44,15 @@ export function errorHandler(
   }
 
   if (error instanceof Error) {
+    // Only genuine 500s reach this branch — Zod and ApiException returns
+    // above are expected client-facing outcomes, not defects. This is the
+    // signal an error tracker exists for. No-op unless SENTRY_DSN is set.
+    captureException(error, {
+      url: req.url,
+      method: req.method,
+      correlationId: req.headers['x-correlation-id'],
+    });
+
     const isDevelopment = getConfig().stage === 'development';
     return res.status(500).json({
       success: false,

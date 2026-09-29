@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
+import { I18nProvider } from '../i18n';
 
 export function Providers({ children }: { children: React.ReactNode }): React.JSX.Element {
   const [queryClient] = useState(
@@ -27,7 +28,9 @@ export function Providers({ children }: { children: React.ReactNode }): React.JS
         enableSystem={false}
         disableTransitionOnChange
       >
-        {children}
+        {/* Locale defaults to 'en' server-side; the provider re-resolves
+            client-side from localStorage + navigator.language on mount. */}
+        <I18nProvider>{children}</I18nProvider>
       </ThemeProvider>
     </QueryClientProvider>
   );

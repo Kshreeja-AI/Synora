@@ -25,6 +25,8 @@ import { togetherDescriptor } from './providers/together.provider';
 import { azureOpenAIDescriptor } from './providers/azureOpenai.provider';
 import { bedrockDescriptor } from './providers/bedrock.provider';
 import { ollamaDescriptor } from './providers/ollama.provider';
+import { groqDescriptor } from './providers/groq.provider';
+import { selfHostedTextDescriptor } from './providers/selfHostedText.provider';
 
 export const PROVIDER_REGISTRY: readonly AIProviderDescriptor[] = [
   anthropicDescriptor,
@@ -37,6 +39,11 @@ export const PROVIDER_REGISTRY: readonly AIProviderDescriptor[] = [
   azureOpenAIDescriptor,
   bedrockDescriptor,
   ollamaDescriptor,
+  // Groq before the two endpoint-driven entries: a real hosted credential
+  // is a stronger auto-detection signal than a URL someone may have left
+  // pointing at a dev box.
+  groqDescriptor,
+  selfHostedTextDescriptor,
 ];
 
 export function getProviderDescriptor(id: string): AIProviderDescriptor | undefined {

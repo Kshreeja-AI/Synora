@@ -23,24 +23,57 @@ export class EncryptionService {
   private readonly ENCODING = 'base64'
   private readonly SALT = Buffer.from('SYNORA_TOOL_SECRETS_SALT_v1', 'utf8')
 
-  private encryptionKey: Buffer
+  // Derived lazily on first encrypt/decrypt, not in the constructor. The
+  // module-level singleton below is imported transitively by most of the
+  // app, so deriving eagerly made a missing TOOL_SECRET_MASTER_KEY crash
+  // the process at import time — before config loaded and before any code
+  // that actually handles secrets ran.
+  private encryptionKey: Buffer | null = null
 
-  constructor() {
-    const masterKey = this.getMasterKey()
-    this.encryptionKey = this.deriveKey(masterKey)
+  // Boot-time value handed over from the SecretsManager source chain (see
+  // prime()). Wins over the raw env read so that a key mounted as a
+  // docker/kubernetes secret file — which validateRequired() sees but
+  // process.env does not — cannot pass boot validation and then miss at
+  // runtime.
+  private primedMasterKey: string | null = null
+
+  /**
+   * Hand this service the master key the SecretsManager chain resolved at
+   * boot. Pass only REAL values (tryGetReal) — priming with a generated
+   * placeholder would encrypt real user secrets under a key that vanishes
+   * the moment a real one is configured. Undefined is a no-op: the raw
+   * env read below stays as the fallback, which is what development uses.
+   */
+  prime(masterKey: string | undefined): void {
+    if (masterKey) {
+      this.primedMasterKey = masterKey
+      this.encryptionKey = null
+    }
   }
 
   /**
-   * Get master encryption key from environment
-   * In production: should come from HashiCorp Vault, AWS KMS, or similar
-   * For now: environment variable (TOOL_SECRET_MASTER_KEY)
+   * Master key: boot-primed value first, raw env var as fallback.
+   * In production this should come from HashiCorp Vault, AWS KMS, or similar;
+   * the SecretsManager chain (primed at boot) / env var is the current source.
    */
   private getMasterKey(): string {
-    const key = process.env.TOOL_SECRET_MASTER_KEY
+    const key = this.primedMasterKey ?? process.env.TOOL_SECRET_MASTER_KEY
     if (!key) {
       throw new Error('TOOL_SECRET_MASTER_KEY environment variable is required for secret encryption')
     }
     return key
+  }
+
+  private getKey(): Buffer {
+    if (!this.encryptionKey) {
+      this.encryptionKey = this.deriveKey(this.getMasterKey())
+    }
+    return this.encryptionKey
+  }
+
+  /** Whether a master key is present, without throwing. For health checks. */
+  isConfigured(): boolean {
+    return Boolean(this.primedMasterKey ?? process.env.TOOL_SECRET_MASTER_KEY)
   }
 
   /**
@@ -63,7 +96,7 @@ export class EncryptionService {
   encrypt(plaintext: string): EncryptedSecret {
     try {
       const iv = randomBytes(this.IV_LENGTH)
-      const cipher = createCipheriv(this.ALGORITHM, this.encryptionKey, iv)
+      const cipher = createCipheriv(this.ALGORITHM, this.getKey(), iv)
 
       const encrypted = Buffer.concat([
         cipher.update(plaintext, 'utf8'),
@@ -93,7 +126,7 @@ export class EncryptionService {
       const encryptedBuffer = Buffer.from(encrypted.encryptedValue, this.ENCODING)
       const authTag = Buffer.from(encrypted.authTag, this.ENCODING)
 
-      const decipher = createDecipheriv(this.ALGORITHM, this.encryptionKey, iv)
+      const decipher = createDecipheriv(this.ALGORITHM, this.getKey(), iv)
       decipher.setAuthTag(authTag)
 
       const decrypted = Buffer.concat([
@@ -115,6 +148,7 @@ export class EncryptionService {
    * Used for health checks and diagnostics
    */
   healthCheck(): boolean {
+    if (!this.isConfigured()) return false
     try {
       const testSecret = 'health_check_test_value_' + Date.now()
       const encrypted = this.encrypt(testSecret)

@@ -20,7 +20,10 @@ const VALID_TRANSITIONS: Record<StreamingJobStatus, StreamingJobStatus[]> = {
   [StreamingJobStatus.RUNNING]: [
     StreamingJobStatus.COMPLETED,
     StreamingJobStatus.FAILED,
-    StreamingJobStatus.CANCELED
+    StreamingJobStatus.CANCELED,
+    // Re-queued after a retryable attempt failed: the job returns to PENDING
+    // and the next loop iteration takes it back to RUNNING.
+    StreamingJobStatus.PENDING
   ],
   [StreamingJobStatus.COMPLETED]: [],
   [StreamingJobStatus.FAILED]: [StreamingJobStatus.PENDING],
@@ -140,13 +143,9 @@ export class StreamingRetryEngine {
           lastAttempt: isLastAttempt
         });
 
-        // Update job with error
         await prisma.streamingJob.update({
           where: { id: jobId },
-          data: {
-            lastError: error.message,
-            status: isLastAttempt && isRetryable ? StreamingJobStatus.FAILED : StreamingJobStatus.PENDING
-          }
+          data: { lastError: error.message }
         });
 
         // If not retryable or last attempt, throw
@@ -155,7 +154,9 @@ export class StreamingRetryEngine {
           throw error;
         }
 
-        // Wait before retry
+        // Retryable and attempts remain: return to PENDING so the next loop
+        // iteration's RUNNING transition is valid, then back off.
+        await stateMachine.transition(StreamingJobStatus.PENDING);
         const backoffMs = this.RETRY_BACKOFF_MS[attempt];
         logger.info('[Retry] Backoff', { jobId, backoffMs });
         await this.sleep(backoffMs);

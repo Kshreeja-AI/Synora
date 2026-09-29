@@ -5,6 +5,20 @@ point for a new engineer, and `RELEASE_1_FINAL.md` is the authoritative
 snapshot of what Release 1 actually shipped. This folder holds the
 supporting reference material those two documents point into.
 
+## Canonical (the two documents everything else is checked against)
+
+- `SYNORA_MASTER_BLUEPRINT.md` — canonical architecture and capability
+  document. Every capability carries one of four labels: Implemented,
+  Partially implemented, Planned, Future vision. Reconstructed from the
+  repository on 2026-08-04; see its §0 for provenance and §13 for the
+  maintenance protocol. Nothing may be documented there that does not
+  exist, and nothing may be removed without a logged reason (§12).
+- `SYNORA_UI_SYSTEM.md` — canonical UI and design-system document: tokens,
+  components, route map, shell, shortcuts, accessibility and motion status.
+- Companion at the repo root: `FEATURE_INVENTORY.md`, per-feature
+  operational detail (credentials, dependencies, risks). Blueprint holds
+  architecture; inventory holds operations; keep them consistent.
+
 ## Current (living — kept accurate as the code changes)
 
 - `architecture.md`, `api.md`, `database.md`, `deployment.md`,
@@ -41,11 +55,11 @@ supporting reference material those two documents point into.
   API summary, database summary, deployment, environment variables,
   CI/CD, Docker, security, limitations, known issues, Release 2 starting
   point.
-- `RELEASE_1_LAUNCH_READINESS.md` — the exact env vars/keys/commands
+- `docs/archive/RELEASE_1_LAUNCH_READINESS.md` — the exact env vars/keys/commands
   needed to launch, written during Release 1 as the launch checklist.
-- `RELEASE_1_VERIFICATION_REPORT.md` — every CI failure hit while
+- `docs/archive/RELEASE_1_VERIFICATION_REPORT.md` — every CI failure hit while
   stabilizing Release 1's pipeline, with root cause and fix for each.
-- `PRODUCTION_READINESS_AUDIT.md` — the final CTO-level audit performed
+- `docs/archive/PRODUCTION_READINESS_AUDIT.md` — the final CTO-level audit performed
   after Release 1 shipped.
 - `RELEASE_ROADMAP.md` — the living roadmap across all planned releases.
 - `RELEASE_2_PLAN.md` — Release 2's objectives, priorities, milestones.

@@ -51,6 +51,32 @@ describe('conversation.service', () => {
       expect(conversation.status).toBe('ACTIVE')
     })
 
+    it('creates the container even when the named provider holds no real credential', async () => {
+      // A conversation is a container; the honest refusal for a missing key
+      // lives at generation time, per message. Precondition asserted so this
+      // test cannot go vacuous if the test environment ever gains a real key
+      // — the point is creating WITHOUT one.
+      const { anthropicDescriptor } = await import('../../ai/providers/anthropic.provider')
+      expect(await anthropicDescriptor.isConfigured()).toBe(false)
+
+      const conversation = await conversationService.create(ownerId, workspaceId, {
+        title: 'No key needed for the container',
+        provider: 'anthropic',
+        model: 'claude-sonnet-5',
+      })
+      expect(conversation.status).toBe('ACTIVE')
+    })
+
+    it('rejects a provider id that is not in the registry — an invariant of the data', async () => {
+      await expect(
+        conversationService.create(ownerId, workspaceId, {
+          title: 'Test',
+          provider: 'not-a-provider',
+          model: 'claude-sonnet-5',
+        })
+      ).rejects.toThrow(ValidationException)
+    })
+
     it('rejects a VIEWER (no conversation:create permission)', async () => {
       await expect(
         conversationService.create(viewerId, workspaceId, {

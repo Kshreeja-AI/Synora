@@ -2,14 +2,23 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '@synora/database';
 import { authMiddleware, AuthRequest } from '../middleware/auth';
-import { createApiResponse, NotFoundException } from '@synora/shared';
+import { createApiResponse, NotFoundException, ServiceUnavailableException } from '@synora/shared';
+import { NoProviderConfiguredError } from '../ai';
+import { imageGenerationService } from '../services/imageGeneration.service';
+import { getProjectForUser } from '../services/project.service';
+import { mediaGenerationLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router();
 
+// OpenAI's image models accept a fixed set of square/portrait/landscape
+// sizes; we accept a `${w}x${h}` string and let the provider reject
+// unsupported combinations rather than inventing arbitrary dimensions.
 const generateImageSchema = z.object({
   prompt: z.string().min(1).max(4000),
-  width: z.number().int().positive().max(4096).optional(),
-  height: z.number().int().positive().max(4096).optional(),
+  size: z
+    .string()
+    .regex(/^\d{2,4}x\d{2,4}$/, 'size must look like 1024x1024')
+    .optional(),
   projectId: z.string().min(1).optional(),
 });
 
@@ -26,25 +35,36 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
   }
 });
 
-router.post('/generate', authMiddleware, async (req: AuthRequest, res, next) => {
+router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
-    const { prompt, width, height, projectId } = generateImageSchema.parse(req.body);
+    const { prompt, size, projectId } = generateImageSchema.parse(req.body);
 
-    const image = await prisma.generatedImage.create({
-      data: {
-        userId: req.userId!,
-        prompt,
-        width: width || 512,
-        height: height || 512,
-        imageUrl: 'https://via.placeholder.com/' + (width || 512) + 'x' + (height || 512),
-        model: 'placeholder',
-        status: 'COMPLETED',
-        projectId,
-      },
+    // The project timeline is read by bare projectId, so an unchecked id
+    // here would let anyone plant generated media in a project — and
+    // therefore a workspace — they cannot see. 404 on any project the
+    // caller can't access.
+    if (projectId) {
+      await getProjectForUser(req.userId!, projectId);
+    }
+
+    const image = await imageGenerationService.generate({
+      userId: req.userId!,
+      prompt,
+      size,
+      projectId,
     });
 
     res.status(201).json(createApiResponse(image));
   } catch (error) {
+    // No image provider configured: honest 503, not a fabricated image.
+    if (error instanceof NoProviderConfiguredError) {
+      next(
+        new ServiceUnavailableException(
+          'Image generation is not available: no image provider is configured for this deployment.'
+        )
+      );
+      return;
+    }
     next(error);
   }
 });

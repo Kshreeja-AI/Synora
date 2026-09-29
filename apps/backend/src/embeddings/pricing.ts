@@ -35,3 +35,28 @@ export function estimateEmbeddingCost(model: string, tokens: number): number {
   if (pricePer1k === undefined) return 0;
   return (tokens / 1000) * pricePer1k;
 }
+
+/**
+ * The spend-cap's view of embedding cost: the same table, but UNKNOWN is a
+ * ceiling, never zero.
+ *
+ * `estimateEmbeddingCost` above keeps returning 0 for an unknown model —
+ * right for its display/usage-report callers, and exactly wrong for a cap,
+ * where "nobody priced it" as "free" is an unbounded bill. The ceiling is
+ * the most expensive rate THIS table knows (an embedding-scale number, ~50×
+ * cheaper per token than frontier text), so an unpriced embedding model is
+ * charged conservatively within its own workload class rather than at a
+ * fantasy text-generation rate. Zero-priced entries (Gemini's free tier)
+ * are KNOWN zeros and stay free.
+ */
+export function embeddingCostCentsForCap(
+  model: string,
+  tokens: number
+): { costCents: number; unpriced: boolean } {
+  const pricePer1k = MODEL_PRICING_PER_1K[model];
+  if (pricePer1k !== undefined) {
+    return { costCents: Math.ceil((tokens / 1000) * pricePer1k * 100), unpriced: false };
+  }
+  const ceilingPer1k = Math.max(...Object.values(MODEL_PRICING_PER_1K));
+  return { costCents: Math.ceil((tokens / 1000) * ceilingPer1k * 100), unpriced: true };
+}

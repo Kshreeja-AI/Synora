@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { initConfig } from '../../config';
 import { createServer, Server as HTTPServer } from 'http';
 import { RealtimeService } from '../realtime.service';
 
@@ -6,7 +7,13 @@ describe('RealtimeService', () => {
   let realtimeService: RealtimeService;
   let httpServer: HTTPServer;
 
-  beforeEach(() => {
+  // Config first, exactly as production does it: `initializeApp()` awaits
+  // `initConfig()` before `startServer()` ever calls `initialize()`. The
+  // service now reads its CORS origins from the canonical config rather
+  // than a stray env var, so a cold `initialize()` is a state production
+  // cannot reach — and a test that simulated it would be testing fiction.
+  beforeEach(async () => {
+    await initConfig();
     realtimeService = new RealtimeService();
     httpServer = createServer();
   });

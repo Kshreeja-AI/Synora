@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
-import { initializeApp } from '../../src/index'
+import jwt from 'jsonwebtoken'
 import { prisma } from '@synora/database'
+import { initializeApp } from '../../src/index'
 
 describe('Conversation Templates Routes', () => {
   let app: any
@@ -37,7 +38,6 @@ describe('Conversation Templates Routes', () => {
       },
     })
 
-    const jwt = require('jsonwebtoken')
     token = jwt.sign({ userId, workspaceId }, process.env.JWT_SECRET || 'test-secret', {
       expiresIn: '24h',
     })
@@ -58,27 +58,25 @@ describe('Conversation Templates Routes', () => {
         .send({
           name: 'Code Review Session',
           description: 'Start a code review conversation',
-          initialMessages: [
-            { role: 'system', content: 'You are an expert code reviewer.' },
-            { role: 'user', content: 'Please review the following code:' },
-          ],
+          systemPrompt: 'You are an expert code reviewer.',
+          initialUserMessage: 'Please review the following code:',
           category: 'coding',
         })
 
       expect(response.status).toBe(201)
       expect(response.body.data.name).toBe('Code Review Session')
       expect(response.body.data.category).toBe('coding')
-      expect(response.body.data.initialMessages).toHaveLength(2)
+      expect(response.body.data.systemPrompt).toBe('You are an expert code reviewer.')
       expect(response.body.data.usageCount).toBe(0)
     })
 
-    it('should require at least one initial message', async () => {
+    it('should require a non-empty system prompt', async () => {
       const response = await request(app)
         .post(`/api/workspaces/${workspaceId}/templates`)
         .set('Authorization', `Bearer ${token}`)
         .send({
           name: 'Empty',
-          initialMessages: [],
+          systemPrompt: '',
         })
 
       expect(response.status).toBe(400)
@@ -92,14 +90,18 @@ describe('Conversation Templates Routes', () => {
           {
             workspaceId,
             name: 'Template A',
-            initialMessages: [{ role: 'system', content: 'A' }],
+            systemPrompt: 'A',
             category: 'coding',
+            createdBy: userId,
+            suggestedFollowUps: [],
           },
           {
             workspaceId,
             name: 'Template B',
-            initialMessages: [{ role: 'system', content: 'B' }],
+            systemPrompt: 'B',
             category: 'writing',
+            createdBy: userId,
+            suggestedFollowUps: [],
           },
         ],
       })
@@ -135,7 +137,9 @@ describe('Conversation Templates Routes', () => {
         data: {
           workspaceId,
           name: 'Original',
-          initialMessages: [{ role: 'system', content: 'Original' }],
+          systemPrompt: 'Original',
+          createdBy: userId,
+          suggestedFollowUps: [],
         },
       })
       templateId = tpl.id
@@ -161,7 +165,9 @@ describe('Conversation Templates Routes', () => {
         data: {
           workspaceId,
           name: 'To Delete',
-          initialMessages: [{ role: 'system', content: 'Delete me' }],
+          systemPrompt: 'Delete me',
+          createdBy: userId,
+          suggestedFollowUps: [],
         },
       })
       templateId = tpl.id
@@ -187,8 +193,10 @@ describe('Conversation Templates Routes', () => {
         data: {
           workspaceId,
           name: 'Popular',
-          initialMessages: [{ role: 'system', content: 'Popular' }],
+          systemPrompt: 'Popular',
           usageCount: 10,
+          createdBy: userId,
+          suggestedFollowUps: [],
         },
       })
       templateId = tpl.id

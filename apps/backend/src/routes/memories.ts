@@ -6,14 +6,28 @@ import { memoryService } from '../services/memory.service'
 import { memoryEmbeddingService } from '../services/memoryEmbedding.service'
 import { memoryCacheService } from '../services/memoryCache.service'
 import { memoryGdprService } from '../services/memoryGdpr.service'
-import { ValidationException } from '@synora/shared'
+import { memoryAnalyticsService } from '../services/memoryAnalytics.service'
+import { ApiException, ValidationException } from '@synora/shared'
 import { logger } from '../utils/logger'
 
 const router: ExpressRouter = Router()
 
+/** Rejects unparseable dates instead of passing `Invalid Date` into a query. */
+function parseDateParam(raw: unknown, name: string): Date | undefined {
+  if (raw === undefined) return undefined
+  const parsed = new Date(String(raw))
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationException(`${name} must be a valid ISO date`)
+  }
+  return parsed
+}
+
 /**
  * POST /api/workspaces/:workspaceId/memories/search/semantic
- * Semantic search using embeddings
+ * Semantic search using embeddings. Returns 503 when the deployment has
+ * no embedding provider configured — callers must be able to tell
+ * "unavailable" from "no matches" and fall back to the lexical search
+ * on `GET /memories?search=` instead.
  * IMPORTANT: Must be defined BEFORE routes with dynamic :memoryId parameter
  */
 router.post('/:workspaceId/memories/search/semantic', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
@@ -29,6 +43,10 @@ router.post('/:workspaceId/memories/search/semantic', authMiddleware, requireWor
 
     res.json({ success: true, data: results })
   } catch (error) {
+    if (error instanceof ApiException) {
+      res.status(error.statusCode).json({ error: error.message })
+      return
+    }
     logger.error('Semantic search failed', { error })
     res.status(500).json({ error: 'Search failed' })
   }
@@ -67,7 +85,7 @@ router.post('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), 
     })
 
     // Cache the memory
-    memoryCacheService.cacheMemory(memory)
+    await memoryCacheService.cacheMemory(memory)
 
     res.status(201).json({ success: true, data: memory })
   } catch (error) {
@@ -96,7 +114,7 @@ router.post('/:workspaceId/memories/:memoryId/consolidate', authMiddleware, requ
     const consolidated = await memoryService.consolidateMemories(memoryIds)
 
     // Invalidate workspace cache
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: consolidated })
   } catch (error) {
@@ -117,8 +135,8 @@ router.post('/:workspaceId/memories/:memoryId/pin', authMiddleware, requireWorks
 
     const updated = await memoryService.updateMemory(memoryId, { isPinned: true }, userId, workspaceId)
 
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: updated })
   } catch (error) {
@@ -139,12 +157,43 @@ router.post('/:workspaceId/memories/:memoryId/unpin', authMiddleware, requireWor
 
     const updated = await memoryService.updateMemory(memoryId, { isPinned: false }, userId, workspaceId)
 
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: updated })
   } catch (error) {
     logger.error('Failed to unpin memory', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * POST /api/workspaces/:workspaceId/memories/:memoryId/resolve-conflict
+ * Pick which version wins after a version conflict (e.g. concurrent edits)
+ * IMPORTANT: Must be defined BEFORE catch-all GET/:memoryId route
+ */
+router.post('/:workspaceId/memories/:memoryId/resolve-conflict', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId, memoryId } = req.params
+    const { selectedVersion } = req.body
+    const userId = req.user!.id
+
+    if (selectedVersion !== 'current' && selectedVersion !== 'previous') {
+      throw new ValidationException('selectedVersion must be "current" or "previous"')
+    }
+
+    const resolved = await memoryService.resolveConflict(memoryId, selectedVersion, userId, workspaceId)
+
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
+
+    res.json({ success: true, data: resolved })
+  } catch (error) {
+    if (error instanceof ApiException) {
+      res.status(error.statusCode).json({ error: error.message })
+      return
+    }
+    logger.error('Failed to resolve memory conflict', { error })
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -159,16 +208,83 @@ router.get('/:workspaceId/memories/stats', authMiddleware, requireWorkspaceAcces
     const { workspaceId } = req.params
 
     // Check cache
-    let stats = memoryCacheService.getCachedWorkspaceStats(workspaceId)
+    let stats = await memoryCacheService.getCachedWorkspaceStats(workspaceId)
 
     if (!stats) {
       stats = await memoryService.getWorkspaceStats(workspaceId)
-      memoryCacheService.cacheWorkspaceStats(workspaceId, stats)
+      await memoryCacheService.cacheWorkspaceStats(workspaceId, stats)
     }
 
     res.json({ success: true, data: stats })
   } catch (error) {
     logger.error('Failed to get statistics', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics
+ * Full analytics report: creation/retrieval rates, importance distribution,
+ * category and permission breakdowns, embedding coverage, decay.
+ * `/memories/stats` returns only the five headline counters; this is the
+ * detailed view behind them.
+ * IMPORTANT: Must be defined BEFORE catch-all GET/:memoryId route
+ */
+router.get('/:workspaceId/memories/analytics', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const from = parseDateParam(req.query.from, 'from')
+    const to = parseDateParam(req.query.to, 'to')
+
+    const analytics = await memoryAnalyticsService.getWorkspaceAnalytics(workspaceId, from, to)
+    res.json({ success: true, data: analytics })
+  } catch (error) {
+    if (error instanceof ValidationException) {
+      return res.status(400).json({ error: error.message })
+    }
+    logger.error('Failed to get memory analytics', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics/trends?days=30
+ * Day-bucketed creation, access and importance trends.
+ */
+router.get('/:workspaceId/memories/analytics/trends', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const raw = req.query.days
+    let days = 30
+    if (raw !== undefined) {
+      days = Number(raw)
+      // Unbounded windows scan the whole memory table; cap at a year.
+      if (!Number.isInteger(days) || days < 1 || days > 365) {
+        return res.status(400).json({ error: 'days must be an integer between 1 and 365' })
+      }
+    }
+
+    const trends = await memoryAnalyticsService.getTrendAnalysis(workspaceId, days)
+    res.json({ success: true, data: trends })
+  } catch (error) {
+    logger.error('Failed to get memory trends', { error })
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+/**
+ * GET /api/workspaces/:workspaceId/memories/analytics/me
+ * The caller's own slice of the workspace analytics. Scoped to req.userId
+ * rather than an arbitrary id so it needs no extra authorization beyond
+ * workspace membership.
+ */
+router.get('/:workspaceId/memories/analytics/me', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res: Response) => {
+  try {
+    const { workspaceId } = req.params
+    const analytics = await memoryAnalyticsService.getUserAnalytics(workspaceId, req.userId!)
+    res.json({ success: true, data: analytics })
+  } catch (error) {
+    logger.error('Failed to get user memory analytics', { error })
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -229,11 +345,11 @@ router.get('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspaceA
     const userId = req.user!.id
 
     // Check cache first
-    let memory = memoryCacheService.getCachedMemory(memoryId)
+    let memory = await memoryCacheService.getCachedMemory(memoryId)
 
     if (!memory) {
       memory = await memoryService.getMemory(memoryId, userId, workspaceId)
-      memoryCacheService.cacheMemory(memory)
+      await memoryCacheService.cacheMemory(memory)
     }
 
     res.json({ success: true, data: memory })
@@ -256,7 +372,7 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
 
     // Check cache for search results
     const cacheKey = `${workspaceId}:${search || ''}`
-    const cached = memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
+    const cached = await memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
 
     if (cached) {
       return res.json({ success: true, data: cached })
@@ -279,7 +395,7 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
     )
 
     // Cache results
-    memoryCacheService.cacheSearchResults(workspaceId, cacheKey, result)
+    await memoryCacheService.cacheSearchResults(workspaceId, cacheKey, result)
 
     res.json({ success: true, data: result })
   } catch (error) {
@@ -306,8 +422,8 @@ router.patch('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspac
     )
 
     // Invalidate cache
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     // Queue embedding refresh if content changed
     if (content) {
@@ -335,8 +451,8 @@ router.delete('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspa
     await memoryService.deleteMemory(memoryId, userId, workspaceId)
 
     // Invalidate cache
-    memoryCacheService.invalidateMemory(memoryId)
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateMemory(memoryId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, message: 'Memory deleted' })
   } catch (error) {
@@ -357,7 +473,7 @@ router.delete('/:workspaceId/memories/erase', authMiddleware, requireWorkspaceAc
 
     const result = await memoryGdprService.eraseUserData(userId, workspaceId)
 
-    memoryCacheService.invalidateWorkspace(workspaceId)
+    await memoryCacheService.invalidateWorkspace(workspaceId)
 
     res.json({ success: true, data: result })
   } catch (error) {

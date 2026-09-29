@@ -8,7 +8,7 @@ export class SecretNotFoundError extends Error {
 export class SecretsValidationError extends Error {
   constructor(missingKeys: string[], environment: string) {
     super(
-      `Missing required secret(s) for environment "${environment}": ${missingKeys.join(', ')}. ` +
+      `Missing or not-production-grade required secret(s) for environment "${environment}": ${missingKeys.join(', ')}. ` +
         'See docs/security/SECRET_MANAGEMENT.md for how to configure them.'
     );
     this.name = 'SecretsValidationError';

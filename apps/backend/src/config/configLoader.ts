@@ -47,9 +47,14 @@ export async function loadConfig(
   const defaults = getStageDefaults(stage, modes);
 
   const databaseUrl = await secrets.tryGet('DATABASE_URL', 'config-loader');
-  const openaiKey = await secrets.tryGet('OPENAI_API_KEY', 'config-loader');
-  const anthropicKey = await secrets.tryGet('ANTHROPIC_API_KEY', 'config-loader');
-  const replicateKey = await secrets.tryGet('REPLICATE_API_KEY', 'config-loader');
+  // hasReal, not tryGet, for the provider flags: these feed
+  // `providers.*Enabled`, which is an availability CLAIM — and a generated
+  // placeholder is not a credential any vendor would accept. DATABASE_URL
+  // above deliberately stays tryGet: a deterministic placeholder DSN is an
+  // internal value, useful for booting development with zero configuration.
+  const hasOpenaiKey = await secrets.hasReal('OPENAI_API_KEY', 'config-loader');
+  const hasAnthropicKey = await secrets.hasReal('ANTHROPIC_API_KEY', 'config-loader');
+  const hasReplicateKey = await secrets.hasReal('REPLICATE_API_KEY', 'config-loader');
 
   const candidate = {
     stage,
@@ -106,14 +111,18 @@ export async function loadConfig(
       url: databaseUrl ?? '',
     },
     providers: {
-      openaiEnabled: Boolean(openaiKey),
-      anthropicEnabled: Boolean(anthropicKey),
-      replicateEnabled: Boolean(replicateKey),
+      openaiEnabled: hasOpenaiKey,
+      anthropicEnabled: hasAnthropicKey,
+      replicateEnabled: hasReplicateKey,
     },
     ai: {
       provider: env.AI_PROVIDER || undefined,
       anthropicModel: readString(env, 'ANTHROPIC_MODEL', defaults.ai.anthropicModel),
       openaiModel: readString(env, 'OPENAI_MODEL', defaults.ai.openaiModel),
+      openaiImageModel: readString(env, 'OPENAI_IMAGE_MODEL', defaults.ai.openaiImageModel),
+      replicateVideoModel: readString(env, 'REPLICATE_VIDEO_MODEL', defaults.ai.replicateVideoModel),
+      openaiTtsModel: readString(env, 'OPENAI_TTS_MODEL', defaults.ai.openaiTtsModel),
+      openaiTtsVoice: readString(env, 'OPENAI_TTS_VOICE', defaults.ai.openaiTtsVoice),
       geminiModel: readString(env, 'GEMINI_MODEL', defaults.ai.geminiModel),
       xaiModel: readString(env, 'XAI_MODEL', defaults.ai.xaiModel),
       openrouterModel: readString(env, 'OPENROUTER_MODEL', defaults.ai.openrouterModel),
@@ -136,7 +145,73 @@ export async function loadConfig(
       bedrockRegion: env.BEDROCK_REGION || undefined,
       bedrockModelId: readString(env, 'BEDROCK_MODEL_ID', defaults.ai.bedrockModelId),
       ollamaBaseUrl: env.OLLAMA_BASE_URL || undefined,
+      ollamaApiKey: env.OLLAMA_API_KEY || undefined,
       ollamaModel: readString(env, 'OLLAMA_MODEL', defaults.ai.ollamaModel),
+      ollamaModels: (env.OLLAMA_MODELS || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      selfHostedTextBaseUrl: env.SELF_HOSTED_TEXT_BASE_URL || undefined,
+      selfHostedTextApiKey: env.SELF_HOSTED_TEXT_API_KEY || undefined,
+      selfHostedTextModel: env.SELF_HOSTED_TEXT_MODEL || undefined,
+      // Defaults to TRUE — fail closed on money. The `self-hosted` slot serves
+      // both a free local runtime and a paid OpenAI-compatible router, and only
+      // the operator knows which. Assuming "free" makes the cost cap silently
+      // unenforceable against a real bill; assuming "paid" merely refuses a
+      // free runtime early, which is visible and recoverable.
+      selfHostedTextMetered: readString(env, 'SELF_HOSTED_TEXT_METERED', 'true') === 'true',
+      selfHostedTextModels: (env.SELF_HOSTED_TEXT_MODELS || '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      groqModel: readString(env, 'GROQ_MODEL', defaults.ai.groqModel),
+      globalMaxCostPerDayCents: env.AI_GLOBAL_MAX_COST_PER_DAY_CENTS
+        ? readNumber(env, 'AI_GLOBAL_MAX_COST_PER_DAY_CENTS', 0)
+        : undefined,
+      globalMaxTokensPerDay: env.AI_GLOBAL_MAX_TOKENS_PER_DAY
+        ? readNumber(env, 'AI_GLOBAL_MAX_TOKENS_PER_DAY', 0)
+        : undefined,
+      userMaxCostPerDayCents: env.AI_USER_MAX_COST_PER_DAY_CENTS
+        ? readNumber(env, 'AI_USER_MAX_COST_PER_DAY_CENTS', 0)
+        : undefined,
+      rateLimit: {
+        backend: readString(
+          env,
+          'AI_RATE_LIMIT_BACKEND',
+          defaults.ai.rateLimit.backend
+        ) as AppConfig['ai']['rateLimit']['backend'],
+        requestsPerSecond: readNumber(
+          env,
+          'AI_RATE_LIMIT_REQUESTS_PER_SECOND',
+          defaults.ai.rateLimit.requestsPerSecond
+        ),
+        redisUrl: env.AI_RATE_LIMIT_REDIS_URL || undefined,
+      },
+    },
+    // Quantum execution. Read directly from env with literal defaults rather
+    // than through StageDefaults, matching `selfHostedTextMetered` above: the
+    // safe value is the SAME in every stage, and routing it through per-stage
+    // defaults would create four places a production ceiling could be raised
+    // by accident.
+    quantum: {
+      localMaxQubits: readNumber(env, 'QUANTUM_LOCAL_MAX_QUBITS', 20),
+      // 0 = the free in-process simulator only. Every higher rung is a
+      // deliberate act, in every stage including development.
+      maxExecutionLevel: readNumber(env, 'QUANTUM_MAX_EXECUTION_LEVEL', 0) as 0 | 1 | 2 | 3,
+      // Fail closed on money, twice: an unset value and any value other than
+      // the exact string "true" both mean disabled.
+      paidQpuEnabled: readString(env, 'QUANTUM_PAID_QPU_ENABLED', 'false') === 'true',
+      maxCostPerExecutionCents: readNumber(env, 'QUANTUM_MAX_COST_PER_EXECUTION_CENTS', 0),
+      defaultShots: readNumber(env, 'QUANTUM_DEFAULT_SHOTS', 1024),
+      defaultTimeoutMs: readNumber(env, 'QUANTUM_DEFAULT_TIMEOUT_MS', 60_000),
+      // Resource ceilings, independent of cost: free compute is still compute.
+      maxShots: readNumber(env, 'QUANTUM_MAX_SHOTS', 100_000),
+      maxCircuitDepth: readNumber(env, 'QUANTUM_MAX_CIRCUIT_DEPTH', 10_000),
+      maxQubits: readNumber(env, 'QUANTUM_MAX_QUBITS', 64),
+      maxRuntimeMs: readNumber(env, 'QUANTUM_MAX_RUNTIME_MS', 300_000),
+      ibmBaseUrl: readString(env, 'IBM_QUANTUM_BASE_URL', 'https://quantum.cloud.ibm.com/api/v1'),
+      ibmInstance: env.IBM_QUANTUM_INSTANCE || undefined,
+      ibmOpenAccess: readString(env, 'IBM_QUANTUM_OPEN_ACCESS', 'false') === 'true',
     },
     mail: {
       transport: readString(env, 'MAIL_TRANSPORT', defaults.mail.transport) as AppConfig['mail']['transport'],
@@ -157,6 +232,28 @@ export async function loadConfig(
         defaults.storage.maxAssetUploadBytes
       ),
     },
+    virusScan: {
+      provider: readString(
+        env,
+        'VIRUS_SCAN_PROVIDER',
+        defaults.virusScan.provider
+      ) as AppConfig['virusScan']['provider'],
+      clamavHost: env.VIRUS_SCAN_CLAMAV_HOST || undefined,
+      clamavPort: readNumber(env, 'VIRUS_SCAN_CLAMAV_PORT', defaults.virusScan.clamavPort),
+      clamavTimeoutMs: readNumber(
+        env,
+        'VIRUS_SCAN_CLAMAV_TIMEOUT_MS',
+        defaults.virusScan.clamavTimeoutMs
+      ),
+      maxScanBytes: readNumber(env, 'VIRUS_SCAN_MAX_BYTES', defaults.virusScan.maxScanBytes),
+      forceBlockUnscanned:
+        readString(
+          env,
+          'VIRUS_SCAN_FORCE_BLOCK_UNSCANNED',
+          String(defaults.virusScan.forceBlockUnscanned)
+        ) === 'true',
+    },
+
     billing: {
       provider: readString(env, 'BILLING_PROVIDER', defaults.billing.provider) as AppConfig['billing']['provider'],
       defaultCurrency: readString(env, 'BILLING_DEFAULT_CURRENCY', defaults.billing.defaultCurrency),
@@ -227,6 +324,7 @@ export async function loadConfig(
       voyageModel: readString(env, 'EMBEDDING_VOYAGE_MODEL', defaults.embeddings.voyageModel),
       cohereModel: readString(env, 'EMBEDDING_COHERE_MODEL', defaults.embeddings.cohereModel),
       ollamaBaseUrl: env.EMBEDDING_OLLAMA_BASE_URL || undefined,
+      ollamaApiKey: env.EMBEDDING_OLLAMA_API_KEY || undefined,
       ollamaModel: readString(env, 'EMBEDDING_OLLAMA_MODEL', defaults.embeddings.ollamaModel),
       ollamaMaxBatchSize: env.EMBEDDING_OLLAMA_MAX_BATCH_SIZE
         ? readNumber(env, 'EMBEDDING_OLLAMA_MAX_BATCH_SIZE', 64)

@@ -1,10 +1,26 @@
 name: CI Pipeline
 
+# One full pipeline per change, not two. `claude/*` was previously in the
+# push list while pull_request covered the same commits, so every push to a
+# PR branch ran the entire 4-job pipeline twice — measured on 2026-08-03 as
+# paired duplicate runs on identical head SHAs. With ~288 commits pushed in
+# the week prior, the duplication roughly doubled Actions spend and drained
+# the organization's minutes. Feature branches get CI through their PR
+# (opened immediately in this workflow's development model); long-lived
+# branches keep push CI.
 on:
   push:
-    branches: [main, develop, SYNORA, claude/*]
+    branches: [main, develop, SYNORA]
   pull_request:
     branches: [main, develop, SYNORA]
+
+# Rapid consecutive pushes to a PR supersede each other: cancel the stale
+# run and spend the minutes on the newest commit, which is the only one a
+# merge decision will ever be made on. Push builds on long-lived branches
+# are never cancelled — each one is a state someone may deploy from.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -24,6 +40,19 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+      # BullMQ-backed job queues (dataset export, evaluation runs, message
+      # generation) connect to Redis unconditionally — without this service
+      # every test that enqueues a job hangs until it hits vitest's test
+      # timeout rather than failing fast.
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
 
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +104,33 @@ jobs:
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
 
+      # A production deploy applies migrations, not `db push`, so the
+      # migration history — not schema.prisma — is what actually defines the
+      # production database. When the two diverge, production silently gets a
+      # different schema than every developer runs against. This asserts they
+      # still agree; an empty diff is the only passing result.
+      - name: Check migrations reproduce schema.prisma
+        run: |
+          set -e
+          psql "postgresql://synora:synora@localhost:5432/postgres" \
+            -c "DROP DATABASE IF EXISTS synora_drift_check;" \
+            -c "CREATE DATABASE synora_drift_check;"
+          DIFF=$(pnpm --filter @synora/database exec prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --shadow-database-url "postgresql://synora:synora@localhost:5432/synora_drift_check" \
+            --script)
+          if ! echo "$DIFF" | grep -q "This is an empty migration"; then
+            echo "::error::Migration drift: applying migrations does not reproduce schema.prisma."
+            echo "Add a migration for the difference below (do not edit an already-released migration):"
+            echo "$DIFF"
+            exit 1
+          fi
+          echo "No drift: migrations reproduce schema.prisma exactly."
+        env:
+          PGPASSWORD: synora
+          DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+
       - name: Lint
         run: pnpm run lint
 
@@ -98,6 +154,7 @@ jobs:
         run: pnpm run test:coverage
         env:
           DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+          REDIS_URL: redis://localhost:6379
           NODE_ENV: test
           TOOL_SECRET_MASTER_KEY: ci-only-not-a-real-secret-tool-master-key-000000
 
@@ -113,6 +170,48 @@ jobs:
         with:
           files: ./apps/backend/coverage/coverage-final.json,./apps/web/coverage/coverage-final.json,./packages/design-system/coverage/coverage-final.json
           fail_ci_if_error: false
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm --filter @synora/web exec playwright install --with-deps chromium
+
+      - name: Build frontend
+        run: pnpm run build
+        env:
+          DATABASE_URL: postgresql://synora:synora@localhost:5432/synora
+
+      - name: Run E2E tests
+        run: pnpm --filter @synora/web test:e2e
+        env:
+          NODE_ENV: test
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/e2e/.results/
+          retention-days: 7
 
   docker:
     runs-on: ubuntu-latest

@@ -440,6 +440,8 @@ model Subscription {
   currentPeriodStart      DateTime?   // Billing period start
   currentPeriodEnd        DateTime?   // Billing period end
   cancelAtPeriodEnd       Boolean     // Scheduled for cancellation
+  pastDueSince            DateTime?   // Set on first invoice.payment_failed since last recovery; cleared on the next successful payment or any status change away from PAST_DUE
+  paymentFailureCount     Int         // Incremented on each invoice.payment_failed while already PAST_DUE; reset to 0 on recovery
   
   // Relations
   workspace               Workspace
@@ -528,14 +530,41 @@ model Invoice {
   amountPaidCents     Int         // Amount paid in cents
   hostedInvoiceUrl    String?     // URL to hosted invoice PDF
   paidAt              DateTime?   // Payment timestamp
+  refundedAmountCents Int         // Running total refunded against this invoice (see Refund below); fully refunded = refundedAmountCents >= amountPaidCents
   
   // Relations
   subscription        Subscription?
   workspace           Workspace
+  refunds             Refund[]
   
   // Timestamps
   createdAt           DateTime
   updatedAt           DateTime
+}
+```
+
+#### Refund
+Audit trail of refunds issued against a paid invoice. An invoice can have
+multiple partial refunds; `Invoice.refundedAmountCents` is kept in sync
+with the sum of these rows.
+
+```prisma
+model Refund {
+  id                String    // Unique identifier
+  invoiceId         String    // FK to Invoice
+  workspaceId       String    // FK to Workspace
+  provider          String    // "stripe"
+  externalRefundId  String    // Stripe refund ID (unique per provider)
+  amountCents       Int       // Amount refunded in cents
+  reason            String    // Admin-supplied reason
+  actorId           String    // Admin user who issued the refund
+
+  // Relations
+  invoice           Invoice
+  workspace         Workspace
+
+  // Timestamps
+  createdAt         DateTime
 }
 ```
 
@@ -699,8 +728,8 @@ model StreamingJob {
                                      // this job produced — set only on success;
                                      // null while running or if every retry failed
   status        StreamingJobStatus  // PENDING, RUNNING, COMPLETED, FAILED, CANCELED
-  attempt       Int                 // Generation attempts made so far (max 3 — see
-                                     // conversationGeneration.service.ts)
+  attempt       Int                 // Generation attempts made so far (bounded by
+                                     // StreamingRetryEngine — ai/streaming/statemachine.ts)
   lastError     String?             // The most recent failure's message, if any
 
   // Timestamps
@@ -713,13 +742,21 @@ model StreamingJob {
 **Indexes:** `conversationId`, `status`.
 
 **Purpose:** the per-generation state machine backing "retry support" and
-"error recovery" — one row per attempted generation, driven end-to-end by
-`conversationGeneration.service.ts`: created `PENDING`, moved to `RUNNING`
-before the first provider call, `attempt` incremented before each retry,
-`lastError` updated after each failure, and finally `COMPLETED` (with
-`messageId` set) or `FAILED`. Not yet consumed by any client-facing
-streaming transport — see `M2_IMPLEMENTATION_PLAN.md` §12 for the
-async/SSE path these fields are already shaped for.
+"error recovery" — one row per attempted generation. It is created
+`PENDING` when `messageService.enqueueGeneration()` enqueues the job, and
+driven from there by `StreamingRetryEngine`
+(`ai/streaming/statemachine.ts`) inside the `generate_response` worker:
+moved to `RUNNING` before the first provider call, `attempt` incremented
+before each retry, `lastError` updated after each failure, and finally
+`COMPLETED` (with `messageId` set) or `FAILED`. The client follows the
+same job over SSE while it runs, and can cancel it.
+
+Release 3 also added a Universal Memory System, a Universal Tool Calling
+Engine, and a Universal Search System — dozens of further models
+(`Memory*`, `Tool*`, `Search*`) live in
+`packages/database/prisma/schema.prisma` alongside the chat models above;
+treat the schema file as the definitive source for their exact fields
+rather than reproducing them here.
 
 Release 3 also added a Universal Memory System, a Universal Tool Calling
 Engine, and a Universal Search System — dozens of further models

@@ -324,19 +324,36 @@ export class ConversationContextService {
     }
   }
 
-  /**
-   * Get context statistics for monitoring
-   */
-  async getContextStats(_workspaceId: string): Promise<{
+  async getContextStats(workspaceId: string): Promise<{
     avgMemoriesPerContext: number
     avgTokensPerContext: number
     cacheHitRate: number
   }> {
-    // Mock stats - in production, track actual metrics
-    return {
-      avgMemoriesPerContext: 3.5,
-      avgTokensPerContext: 850,
-      cacheHitRate: 0.65,
+    try {
+      const recentContexts = await db.memory.aggregate({
+        where: { workspaceId, isArchived: false },
+        _count: { id: true },
+        _avg: { importance: true },
+      })
+
+      const totalMemories = recentContexts._count.id
+      const conversations = await db.conversation.count({
+        where: { workspaceId, status: { not: 'DELETED' } },
+      })
+      const avgMemoriesPerContext = conversations > 0 ? totalMemories / conversations : 0
+
+      return {
+        avgMemoriesPerContext: Math.round(avgMemoriesPerContext * 100) / 100,
+        avgTokensPerContext: 0,
+        cacheHitRate: 0,
+      }
+    } catch (error) {
+      logger.warn('Failed to compute context stats, returning zeros', { workspaceId, error })
+      return {
+        avgMemoriesPerContext: 0,
+        avgTokensPerContext: 0,
+        cacheHitRate: 0,
+      }
     }
   }
 }

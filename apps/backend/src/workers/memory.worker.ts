@@ -2,6 +2,7 @@ import { prisma as db } from '@synora/database'
 import { memoryService } from '../services/memory.service'
 import { memoryEmbeddingService } from '../services/memoryEmbedding.service'
 import { memoryCacheService } from '../services/memoryCache.service'
+import { memorySummarizationService } from '../services/memorySummarization.service'
 import { MemoryStatus } from '@synora/database'
 import { logger } from '../utils/logger'
 
@@ -49,8 +50,7 @@ export class MemoryWorker {
 
       for (const memory of memories) {
         try {
-          // Summarize memory content (mock implementation)
-          const summary = await this.summarizeContent(memory.content)
+          const { summary } = await memorySummarizationService.summarizeMemory(memory.id)
 
           // Update memory
           await db.memory.update({
@@ -78,7 +78,7 @@ export class MemoryWorker {
       }
 
       // Invalidate cache
-      memoryCacheService.invalidateWorkspace(workspaceId)
+      await memoryCacheService.invalidateWorkspace(workspaceId)
 
       logger.info(`Consolidation complete: ${consolidated} succeeded, ${failed} failed`)
       return { consolidated, failed }
@@ -150,8 +150,13 @@ export class MemoryWorker {
 
       const result = await memoryEmbeddingService.batchIndexMemories(memories.map((m: typeof memories[0]) => m.id))
 
+      if (result.skipped) {
+        logger.debug('Embedding generation skipped: no embedding provider configured', { workspaceId })
+        return { indexed: 0, failed: 0 }
+      }
+
       logger.info(`Embedding generation complete: ${result.indexed} indexed, ${result.failed} failed`)
-      return result
+      return { indexed: result.indexed, failed: result.failed }
     } catch (error) {
       logger.error('Embedding generation worker error', { error, workspaceId })
       return { indexed: 0, failed: 0 }
@@ -291,14 +296,6 @@ export class MemoryWorker {
       logger.error('Archival worker error', { error, workspaceId })
       return 0
     }
-  }
-
-  /**
-   * Private: Mock summarization
-   */
-  private async summarizeContent(content: string): Promise<string> {
-    // Mock: return first 200 chars as summary
-    return content.substring(0, 200) + (content.length > 200 ? '...' : '')
   }
 }
 

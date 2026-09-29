@@ -70,8 +70,12 @@ describe('POST /api/auth/register and /api/auth/login — password hashing', () 
     const loginRes = await request(app).post('/api/auth/login').send({ email, password });
 
     expect(loginRes.status).toBe(200);
-    expect(loginRes.body.data.accessToken).toBeDefined();
-    expect(loginRes.body.data.refreshToken).toBeDefined();
+    // P0-002: tokens are set as HttpOnly cookies (see setAuthCookies in
+    // ../auth.ts), not returned in the JSON body.
+    const setCookie = loginRes.headers['set-cookie'];
+    const cookies = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+    expect(cookies.some((c) => c.startsWith('accessToken='))).toBe(true);
+    expect(cookies.some((c) => c.startsWith('refreshToken='))).toBe(true);
 
     const postMigration = await prisma.user.findUnique({ where: { id: user.id } });
     expect(postMigration?.password?.startsWith('$argon2id$')).toBe(true);

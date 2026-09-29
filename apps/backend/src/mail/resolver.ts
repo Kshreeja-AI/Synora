@@ -20,7 +20,10 @@ export async function resolveMailTransport(): Promise<MailTransport> {
 
   if (!descriptor) {
     throw new Error(
-      `MAIL_TRANSPORT is set to "${transportId}", which is not a known transport. ` +
+      `MAIL_TRANSPORT is set to a value that is not a known transport. ` +
+        // Value withheld: a mistyped selection variable has been observed to
+        // contain an API key, and this error is logged.
+
         `Known transports: ${TRANSPORT_REGISTRY.map((t) => t.id).join(', ')}.`
     );
   }

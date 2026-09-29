@@ -6,10 +6,11 @@ import { createApiResponse } from '@synora/shared';
 import { exportService } from '../services/export.service';
 import { importService } from '../services/import.service';
 import { prisma } from '@synora/database';
+import { exportLimiter } from '../middleware/resourceRateLimit.js';
 
 const router: Router = Router({ mergeParams: true });
 
-const exportSchema = z.object({
+const exportQuerySchema = z.object({
   format: z.enum(['json', 'markdown']),
 });
 
@@ -18,13 +19,25 @@ const importSchema = z.object({
   content: z.string().optional(),
 });
 
-// Export conversation
-router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+const EXPORT_MIME: Record<'json' | 'markdown', string> = {
+  json: 'application/json',
+  markdown: 'text/markdown',
+};
+
+/**
+ * GET /api/workspaces/:workspaceId/conversations/:conversationId/export?format=json|markdown
+ *
+ * Streams the export directly as an attachment. A single conversation
+ * is bounded, so the export is generated synchronously — no job
+ * indirection, nothing written to server disk, nothing to clean up.
+ * The filename is derived from the conversation title, RFC 5987
+ * encoded so user-supplied titles can't break out of the header.
+ */
+router.get('/:workspaceId/conversations/:conversationId/export', authMiddleware, exportLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, conversationId } = req.params;
-    const { format } = exportSchema.parse(req.body);
+    const { format } = exportQuerySchema.parse(req.query);
 
-    // Verify conversation exists and user has access
     const conversation = await prisma.conversation.findFirst({
       where: { id: conversationId, workspace: { id: workspaceId } },
     });
@@ -33,54 +46,24 @@ router.post('/:workspaceId/conversations/:conversationId/export', authMiddleware
       return res.status(404).json(createApiResponse({ error: 'Conversation not found' }));
     }
 
-    // Generate export based on format
-    let content: string;
-    if (format === 'json') {
-      content = await exportService.exportToJSON(conversationId);
-    } else {
-      content = await exportService.exportToMarkdown(conversationId);
-    }
+    const content =
+      format === 'json'
+        ? await exportService.exportToJSON(conversationId)
+        : await exportService.exportToMarkdown(conversationId);
 
-    // Create job
-    const job = await exportService.createExportJob(conversationId, format);
-
-    // Save file (in production, would be async job)
-    const filepath = await exportService.saveExportToFile(job.id, content, format);
-
-    res.json(
-      createApiResponse({
-        jobId: job.id,
-        conversationId,
-        format,
-        status: 'complete',
-        filepath,
-      })
-    );
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Download export
-router.get('/:workspaceId/export/:jobId/download', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
-  try {
-    const { jobId } = req.params;
-
-    // In production, fetch from S3 or file storage
-    // For now, return placeholder
-    res.json(
-      createApiResponse({
-        message: 'Download endpoint - implement S3 integration',
-        jobId,
-      })
-    );
+    const extension = format === 'markdown' ? 'md' : 'json';
+    const encodedName = encodeURIComponent(`${conversation.title}.${extension}`);
+    res.setHeader('Content-Type', `${EXPORT_MIME[format]}; charset=utf-8`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedName}`);
+    res.send(content);
   } catch (error) {
     next(error);
   }
 });
 
 // Import conversation
-router.post('/:workspaceId/import', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+router.post('/:workspaceId/import', authMiddleware, exportLimiter, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId } = req.params;
     const { format, content } = importSchema.partial().parse(req.body);

@@ -1,0 +1,634 @@
+/**
+ * Engineering dashboard tests.
+ *
+ * The property under test is honesty. This page's job is not merely to
+ * render numbers — it is to make absent measurement visible, so nobody
+ * reads a partial picture as a complete one. These tests assert the
+ * distinctions that carry that meaning: instrumented vs observed, and
+ * "not token-priced" vs a cost of zero.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import EngineeringDashboardPage from '../page';
+import * as eosApi from '@/lib/api/eos';
+
+vi.mock('@/lib/api/eos');
+
+function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, refetchInterval: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <EngineeringDashboardPage />
+    </QueryClientProvider>
+  );
+}
+
+const emptyLatency = {
+  current: { count: 0, p50: 0, p95: 0, p99: 0, mean: 0 },
+  recentSummaries: [],
+};
+const emptyErrorRate = {
+  current: { errorsInWindow: 0, windowMs: 60_000, threshold: 10 },
+  recentAlerts: [],
+};
+const emptyPrompts = { report: [], recentAlerts: [] };
+const emptyCapture = {
+  stats: { active: false, datasetId: 'captured-failures', captured: 0, skipped: 0, maxCases: 500 },
+  recentCaptures: [],
+};
+const emptyEvents = { totalEmitted: 0, bufferSize: 1000, listenerCount: 0 };
+
+beforeEach(() => {
+  vi.mocked(eosApi.getLatency).mockResolvedValue(emptyLatency);
+  vi.mocked(eosApi.getErrorRate).mockResolvedValue(emptyErrorRate);
+  vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([]);
+  vi.mocked(eosApi.getPromptReport).mockResolvedValue(emptyPrompts);
+  vi.mocked(eosApi.getEventStats).mockResolvedValue(emptyEvents);
+  vi.mocked(eosApi.getCaptureStatus).mockResolvedValue(emptyCapture);
+  vi.mocked(eosApi.getCoverage).mockResolvedValue([]);
+  vi.mocked(eosApi.getProposals).mockResolvedValue([]);
+  vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue(healthyRuntime);
+  vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getDegradation).mockResolvedValue({ report: [], recentAlerts: [] });
+  vi.mocked(eosApi.getLaunchReadiness).mockResolvedValue(unmeasuredReadiness);
+  vi.mocked(eosApi.getBenchmarks).mockResolvedValue(emptyBenchmarks);
+});
+
+const emptyBenchmarks = {
+  benchmarks: [],
+  totalPublicCases: 0,
+  totalHoldoutCases: 0,
+  note: 'No benchmark has been imported yet. The benchmark gate is unmeasured for this reason — not because a run failed.',
+};
+
+const importedBenchmarks = {
+  benchmarks: [
+    {
+      benchmarkId: 'mini-mmlu',
+      name: 'Mini MMLU',
+      source: 'huggingface:cais/mmlu',
+      sourceVersion: 'rev-abc123',
+      license: 'MIT',
+      datasetId: 'bench_mini-mmlu_rev-abc123',
+      holdoutDatasetId: 'bench_mini-mmlu_rev-abc123_holdout',
+      contentHash: 'a'.repeat(64),
+      publicCases: 40,
+      holdoutCases: 10,
+      importedAt: Date.now(),
+    },
+  ],
+  totalPublicCases: 40,
+  totalHoldoutCases: 10,
+  note: 'Gate measurement runs public splits only; holdout splits are preserved so overfitting stays detectable.',
+};
+
+const unmeasuredReadiness = {
+  gates: [
+    {
+      id: 'ai-quality',
+      category: 'ai-quality',
+      question: 'Are the AI answers good, judged against stated criteria?',
+      threshold: 95,
+      unit: '%' as const,
+      direction: 'at-least' as const,
+      status: 'unmeasured' as const,
+      value: null,
+      blockedBy: 'An evaluation run with a configured AI judge. No judge is configured yet.',
+    },
+  ],
+  passed: 0,
+  failed: 0,
+  unmeasured: 1,
+  readyToLaunch: false,
+  summary: 'No launch gate has been measured yet. 1 gates are defined and all of them are waiting on evidence — this is the honest starting point, not a failure.',
+};
+
+const healthyRuntime = {
+  entries: [
+    {
+      component: 'prompt-intelligence',
+      eventType: 'ai.prompt.outcome',
+      listeners: 1,
+      running: true,
+      consequenceIfMissing: 'Prompt quality is never tracked, so no regression can ever be detected.',
+    },
+  ],
+  allRunning: true,
+  notRunning: [],
+  notCoveredByThisCheck: ['memory-collector', 'latency-tracker'],
+};
+
+const costEntry = {
+  providerId: 'anthropic',
+  modelId: 'claude-x',
+  requests: 40,
+  baselineCostCents: 2,
+  recentCostCents: 6,
+  ratio: 3,
+  baselineSamples: 30,
+  sufficientData: true,
+  anomalous: true,
+  lastObservedAt: Date.now(),
+};
+
+describe('EngineeringDashboardPage', () => {
+  it('states that measurements reset on restart', async () => {
+    renderPage();
+    // Without this, a low number reads as "quiet period" rather than
+    // "the server restarted".
+    expect(await screen.findByText(/reset when the server restarts/i)).toBeInTheDocument();
+  });
+
+  it('renders coverage from the backend, not a hardcoded list', async () => {
+    vi.mocked(eosApi.getCoverage).mockResolvedValue([
+      { promptId: 'chat.generate', label: 'Chat generation', instrumented: true, observed: true },
+      { promptId: 'video.generate', label: 'Video generation', instrumented: false, observed: false },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('Chat generation')).toBeInTheDocument();
+    expect(screen.getByText('Video generation')).toBeInTheDocument();
+    expect(screen.getByText('reporting')).toBeInTheDocument();
+    expect(screen.getByText('not instrumented')).toBeInTheDocument();
+  });
+
+  it('distinguishes a wired path with no traffic from one that is reporting', async () => {
+    vi.mocked(eosApi.getCoverage).mockResolvedValue([
+      { promptId: 'image.generate', label: 'Image generation', instrumented: true, observed: false },
+    ]);
+
+    renderPage();
+
+    // Nothing is deployed yet, so this is the state that matters most:
+    // connected but not yet producing data.
+    expect(await screen.findByText('wired, no traffic yet')).toBeInTheDocument();
+    expect(screen.queryByText('reporting')).not.toBeInTheDocument();
+  });
+
+  it('shows "not token-priced" rather than a zero cost for image generation', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'openai',
+        modelId: 'gpt-image-1',
+        requests: 5,
+        successes: 5,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 900,
+        p95LatencyMs: 1500,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 0,
+        errorCodes: {},
+        tokenPriced: false,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    // A $0.00 here would read as "free" rather than "not measured this way".
+    expect(await screen.findByText('not token-priced')).toBeInTheDocument();
+    expect(screen.queryByText('$0.0000')).not.toBeInTheDocument();
+  });
+
+  it('shows a real cost for a token-priced provider', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-x',
+        requests: 10,
+        successes: 9,
+        failures: 1,
+        successRate: 0.9,
+        p50LatencyMs: 400,
+        p95LatencyMs: 800,
+        totalInputTokens: 5000,
+        totalOutputTokens: 2000,
+        totalCostCents: 250,
+        errorCodes: { timeout: 1 },
+        tokenPriced: true,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('$2.5000')).toBeInTheDocument();
+    expect(screen.getByText('90%')).toBeInTheDocument();
+  });
+
+  it('shows $0.0000 for a token-priced provider that genuinely cost nothing', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-x',
+        requests: 1,
+        successes: 1,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 100,
+        p95LatencyMs: 100,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 0,
+        errorCodes: {},
+        tokenPriced: true,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    // The old heuristic inferred "not token-priced" from zero tokens, so it
+    // mislabelled this case. tokenPriced is now recorded, not inferred.
+    expect(await screen.findByText('$0.0000')).toBeInTheDocument();
+    expect(screen.queryByText('not token-priced')).not.toBeInTheDocument();
+  });
+
+  it('labels a media cost with its basis and marks it as stated', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'openai',
+        modelId: 'gpt-image-1',
+        requests: 4,
+        successes: 4,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 900,
+        p95LatencyMs: 1500,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 16,
+        errorCodes: {},
+        tokenPriced: false,
+        pricingBasis: 'per-image',
+        costProvenance: 'stated',
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    // The figure is real, but it came from a published rate card rather
+    // than from the provider's response, and must not read as measured.
+    expect(await screen.findByText('$0.1600 (per-image, stated)')).toBeInTheDocument();
+    expect(screen.queryByText('not token-priced')).not.toBeInTheDocument();
+  });
+
+  it('still shows "not token-priced" for media with no published price', async () => {
+    vi.mocked(eosApi.getProviderMatrix).mockResolvedValue([
+      {
+        providerId: 'openai',
+        modelId: 'gpt-image-1',
+        requests: 4,
+        successes: 4,
+        failures: 0,
+        successRate: 1,
+        p50LatencyMs: 900,
+        p95LatencyMs: 1500,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostCents: 0,
+        errorCodes: {},
+        tokenPriced: false,
+        lastObservedAt: Date.now(),
+      },
+    ]);
+
+    renderPage();
+
+    expect(await screen.findByText('not token-priced')).toBeInTheDocument();
+  });
+
+  it('explains that the matrix is empty rather than rendering a bare table', async () => {
+    renderPage();
+    expect(await screen.findByText(/No provider traffic recorded yet/i)).toBeInTheDocument();
+  });
+
+  it('flags regressing prompts', async () => {
+    vi.mocked(eosApi.getPromptReport).mockResolvedValue({
+      report: [
+        {
+          promptId: 'chat.generate',
+          version: 1,
+          executions: 40,
+          successes: 30,
+          failures: 10,
+          successRate: 0.75,
+          recentSuccessRate: 0.2,
+          p50LatencyMs: 300,
+          p95LatencyMs: 900,
+          avgInputTokens: 100,
+          avgOutputTokens: 50,
+          totalCostCents: 40,
+          regressing: true,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('regressing')).toBeInTheDocument();
+    expect(screen.getByText('75%')).toBeInTheDocument();
+    expect(screen.getByText('20%')).toBeInTheDocument();
+  });
+
+  it('warns at the top of the page when a watcher is not running', async () => {
+    vi.mocked(eosApi.getRuntimeCheck).mockResolvedValue({
+      entries: [
+        {
+          component: 'proposal-engine (cost anomalies)',
+          eventType: 'alert.cost_anomaly',
+          listeners: 0,
+          running: false,
+          consequenceIfMissing: 'Detected cost rises raise an alert that nothing turns into a proposal.',
+        },
+      ],
+      allRunning: false,
+      notRunning: ['proposal-engine (cost anomalies)'],
+      notCoveredByThisCheck: [],
+    });
+
+    renderPage();
+
+    // The exact failure that prompted this check: components existed, were
+    // tested, and were never started. The page must not look calm.
+    expect(await screen.findByText(/1 watcher\(s\) are not running/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing was watching/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/nothing turns into a proposal/i)
+    ).toBeInTheDocument();
+  });
+
+  it('shows no alarm banner when every watcher is running', async () => {
+    renderPage();
+
+    expect(await screen.findByText(/running \(1 listener/i)).toBeInTheDocument();
+    expect(screen.queryByText(/are not running/i)).not.toBeInTheDocument();
+  });
+
+  it('names what the watcher check cannot see', async () => {
+    renderPage();
+
+    // A green list must not be mistaken for full coverage.
+    expect(await screen.findByText(/Not covered by this check: memory-collector/i)).toBeInTheDocument();
+  });
+
+  it('flags a cost rise with the multiple it actually measured', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({ report: [costEntry], recentAlerts: [] });
+
+    renderPage();
+
+    expect(await screen.findByText(/risen 3.0×/i)).toBeInTheDocument();
+    expect(screen.getByText('2.0000¢')).toBeInTheDocument();
+    expect(screen.getByText('6.0000¢')).toBeInTheDocument();
+  });
+
+  it('distinguishes "not enough history" from "steady"', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({
+      report: [
+        {
+          ...costEntry,
+          baselineCostCents: null,
+          recentCostCents: null,
+          ratio: null,
+          baselineSamples: 4,
+          sufficientData: false,
+          anomalous: false,
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    // "steady" would be a claim of normality the platform has not earned.
+    expect(await screen.findByText(/not enough history yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('steady')).not.toBeInTheDocument();
+    // And an unestablished baseline must not render as a measured zero.
+    expect(screen.getAllByText('not established')).toHaveLength(2);
+    expect(screen.queryByText('0.0000¢')).not.toBeInTheDocument();
+  });
+
+  it('describes a rise from no recorded cost without inventing a multiple', async () => {
+    vi.mocked(eosApi.getCostReport).mockResolvedValue({
+      report: [{ ...costEntry, baselineCostCents: 0, ratio: null }],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/risen from no recorded cost/i)).toBeInTheDocument();
+  });
+
+  it('explains why image and audio never appear in the cost table', async () => {
+    renderPage();
+    expect(await screen.findByText(/unmeasured rather than zero/i)).toBeInTheDocument();
+  });
+
+  it('shows an unmeasured launch gate as unmeasured, never as passing', async () => {
+    renderPage();
+
+    expect(await screen.findByText('not measured')).toBeInTheDocument();
+    expect(screen.getByText(/No judge is configured yet/)).toBeInTheDocument();
+    expect(screen.getByText('1 unmeasured')).toBeInTheDocument();
+    expect(screen.getByText(/this is the honest starting point, not a failure/i)).toBeInTheDocument();
+  });
+
+  it('shows a measured gate with the evidence behind it', async () => {
+    vi.mocked(eosApi.getLaunchReadiness).mockResolvedValue({
+      ...unmeasuredReadiness,
+      gates: [
+        {
+          ...unmeasuredReadiness.gates[0],
+          status: 'passed' as const,
+          value: 96,
+          source: 'evaluation run r_1',
+          sampleSize: 200,
+          blockedBy: undefined,
+        },
+      ],
+      passed: 1,
+      unmeasured: 0,
+      summary: 'All 1 gates are measured and passing.',
+    });
+
+    renderPage();
+
+    // The number is shown with what it rests on, so it can be rechecked.
+    expect(await screen.findByText('96% (needs ≥95%)')).toBeInTheDocument();
+    expect(screen.getByText(/evaluation run r_1 · 200 observations/)).toBeInTheDocument();
+  });
+
+  it('shows a latency drift with the multiple it measured', async () => {
+    vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 80,
+          baselineP95Ms: 100,
+          recentP95Ms: 400,
+          ratio: 4,
+          baselineSamples: 60,
+          sufficientData: true,
+          drifting: true,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('slower 4.0×')).toBeInTheDocument();
+    expect(screen.getByText('100 ms')).toBeInTheDocument();
+  });
+
+  it('shows a reliability drop in points, never as a ratio', async () => {
+    vi.mocked(eosApi.getDegradation).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 80,
+          baselineSuccessRate: 1,
+          recentSuccessRate: 0.85,
+          dropPercentagePoints: 15,
+          baselineSamples: 60,
+          sufficientData: true,
+          degraded: true,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    // Points, because 100% to 85% is a 0.85 ratio and that reads as nothing.
+    expect(await screen.findByText('down 15 points')).toBeInTheDocument();
+  });
+
+  it('distinguishes an unestablished drift baseline from a measured zero', async () => {
+    vi.mocked(eosApi.getLatencyDrift).mockResolvedValue({
+      report: [
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-x',
+          requests: 4,
+          baselineP95Ms: null,
+          recentP95Ms: null,
+          ratio: null,
+          baselineSamples: 4,
+          sufficientData: false,
+          drifting: false,
+          lastObservedAt: Date.now(),
+        },
+      ],
+      recentAlerts: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/not enough history yet \(4 baseline samples\)/i)).toBeInTheDocument();
+    // Both the baseline and recent cells say so. A "0 ms" here would assert
+    // a measurement that was never taken — and the assertion is scoped to
+    // the drift row, since the API latency tiles legitimately read 0 ms
+    // when no requests have been sampled.
+    expect(screen.getAllByText('not established')).toHaveLength(2);
+  });
+
+  it('reports capture as off rather than showing a misleading zero', async () => {
+    renderPage();
+    // "0 captured" would suggest capture is running and finding nothing.
+    expect(await screen.findByText(/Capture is off/i)).toBeInTheDocument();
+  });
+
+  it('shows capture counts when it is running', async () => {
+    vi.mocked(eosApi.getCaptureStatus).mockResolvedValue({
+      stats: { active: true, datasetId: 'ds', captured: 12, skipped: 3, maxCases: 500 },
+      recentCaptures: [],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('12')).toBeInTheDocument();
+    expect(screen.getByText(/Skipped: 3/)).toBeInTheDocument();
+  });
+
+  it('renders without crashing when every endpoint fails', async () => {
+    const boom = new Error('backend unreachable');
+    vi.mocked(eosApi.getLatency).mockRejectedValue(boom);
+    vi.mocked(eosApi.getErrorRate).mockRejectedValue(boom);
+    vi.mocked(eosApi.getProviderMatrix).mockRejectedValue(boom);
+    vi.mocked(eosApi.getPromptReport).mockRejectedValue(boom);
+    vi.mocked(eosApi.getEventStats).mockRejectedValue(boom);
+    vi.mocked(eosApi.getCaptureStatus).mockRejectedValue(boom);
+    vi.mocked(eosApi.getCoverage).mockRejectedValue(boom);
+    vi.mocked(eosApi.getProposals).mockRejectedValue(boom);
+    vi.mocked(eosApi.getCostReport).mockRejectedValue(boom);
+    vi.mocked(eosApi.getRuntimeCheck).mockRejectedValue(boom);
+    vi.mocked(eosApi.getLatencyDrift).mockRejectedValue(boom);
+    vi.mocked(eosApi.getDegradation).mockRejectedValue(boom);
+    vi.mocked(eosApi.getLaunchReadiness).mockRejectedValue(boom);
+    vi.mocked(eosApi.getBenchmarks).mockRejectedValue(boom);
+
+    renderPage();
+
+    // A monitoring page that white-screens when the thing it monitors is
+    // down is useless precisely when it is needed.
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Engineering' })).toBeInTheDocument();
+    });
+  });
+
+  describe('benchmark registry', () => {
+    it('explains an empty registry rather than showing an empty table', async () => {
+      renderPage();
+
+      // The benchmark gate above reads "not measured". Without this text the
+      // reader is left to guess whether a run failed; the honest answer is
+      // that nothing has been imported.
+      expect(
+        await screen.findByText(/No benchmark has been imported yet/i),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/not because a run failed/i)).toBeInTheDocument();
+    });
+
+    it('shows provenance and both split sizes for an imported benchmark', async () => {
+      vi.mocked(eosApi.getBenchmarks).mockResolvedValue(importedBenchmarks);
+
+      renderPage();
+
+      expect(await screen.findByText('Mini MMLU')).toBeInTheDocument();
+      expect(screen.getByText('huggingface:cais/mmlu')).toBeInTheDocument();
+      // Pinned version, licence and hash prefix are what make a score
+      // reproducible by someone who does not trust the number.
+      expect(screen.getByText('rev-abc123')).toBeInTheDocument();
+      expect(screen.getByText('MIT')).toBeInTheDocument();
+      expect(screen.getByText('aaaaaaaaaaaa')).toBeInTheDocument();
+    });
+
+    it('surfaces the holdout count, never only the public one', async () => {
+      vi.mocked(eosApi.getBenchmarks).mockResolvedValue(importedBenchmarks);
+
+      renderPage();
+
+      expect(await screen.findByText(/40 public cases/i)).toBeInTheDocument();
+      // A hidden reserve reads as missing cases rather than as deliberate
+      // overfitting protection, so it is always shown.
+      expect(screen.getByText(/10 held out/i)).toBeInTheDocument();
+      expect(screen.getByText(/holdout splits are preserved/i)).toBeInTheDocument();
+    });
+  });
+});

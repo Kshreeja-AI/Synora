@@ -76,3 +76,9 @@ export {
   CommandSeparator,
   CommandShortcut,
 } from './components/Command';
+export { Heading, type HeadingProps } from './components/Heading';
+export { Container, type ContainerProps } from './components/Container';
+export { Grid, type GridProps } from './components/Grid';
+export { CTA, type CTAProps } from './components/CTA';
+export { FeedbackCorrection, type FeedbackCorrectionProps } from './components/FeedbackCorrection';
+export { FeedbackHallucination, type FeedbackHallucinationProps } from './components/FeedbackHallucination';

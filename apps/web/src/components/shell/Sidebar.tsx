@@ -2,9 +2,28 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, FolderKanban } from 'lucide-react';
+import {
+  LayoutDashboard,
+  MessageSquare,
+  BookOpen,
+  FolderKanban,
+  Wrench,
+  BarChart3,
+  Search,
+  CreditCard,
+  Code2,
+  Shield,
+  Wand2,
+  Bot,
+  Workflow,
+  LayoutGrid,
+  Plug,
+  FileText,
+  Sparkles,
+} from 'lucide-react';
 import { cn } from '@synora/design-system';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { useCurrentUser } from '../../hooks/useCurrentUser';
 
 export interface SidebarProps {
   /** Shared with the mobile overlay: open = visible overlay on mobile, full-width column on desktop. */
@@ -12,13 +31,45 @@ export interface SidebarProps {
   onNavigate: () => void;
 }
 
+// Chat and the knowledge library live at the URL root (the `(dashboard)`
+// route group) rather than under /dashboard; everything else is a
+// /dashboard child. Both trees render inside the same AppShell.
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  // Directly under Dashboard: asking for an outcome in a sentence is meant
+  // to be the way in for someone who does not yet know which of the
+  // surfaces below they need.
+  { href: '/command', label: 'Ask Synora', icon: Sparkles },
+  { href: '/conversations', label: 'Conversations', icon: MessageSquare },
+  { href: '/search', label: 'Search', icon: Search },
+  { href: '/studio', label: 'Studio', icon: Wand2 },
+  { href: '/agents', label: 'Agents', icon: Bot },
+  { href: '/workflows', label: 'Workflows', icon: Workflow },
+  { href: '/canvas', label: 'Canvas', icon: LayoutGrid },
+  { href: '/knowledge/prompts', label: 'Knowledge', icon: BookOpen },
+  { href: '/documents', label: 'Documents', icon: FileText },
   { href: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
+  { href: '/dashboard/tools', label: 'Tools', icon: Wrench },
+  { href: '/plugins', label: 'Plugins', icon: Plug },
+  { href: '/dashboard/usage', label: 'Usage', icon: BarChart3 },
+  { href: '/dashboard/billing', label: 'Billing', icon: CreditCard },
+  { href: '/developer', label: 'Developer', icon: Code2 },
 ];
+
+// Only rendered for ADMIN users — the pages behind it are separately
+// server-gated, so hiding the entry is display hygiene, not security.
+const ADMIN_NAV_ITEM = { href: '/admin', label: 'Admin', icon: Shield };
+
+/** Prefix used for the active-state check, where it differs from href. */
+const ACTIVE_PREFIX: Record<string, string> = {
+  '/knowledge/prompts': '/knowledge',
+};
 
 export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
   const pathname = usePathname();
+  const { data: user } = useCurrentUser();
+
+  const navItems = user?.role === 'ADMIN' ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <aside
@@ -41,9 +92,12 @@ export function Sidebar({ open, onNavigate }: SidebarProps): React.JSX.Element {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Primary">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
-          const active = item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href);
+          const active =
+            item.href === '/dashboard'
+              ? pathname === item.href
+              : pathname.startsWith(ACTIVE_PREFIX[item.href] ?? item.href);
           return (
             <Link
               key={item.href}

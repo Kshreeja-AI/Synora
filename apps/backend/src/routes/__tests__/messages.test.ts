@@ -4,6 +4,7 @@ import { prisma } from '@synora/database'
 import { initializeApp } from '../../index'
 import { issueTokens } from '../../services/token.service'
 import * as aiModule from '../../ai/index.js'
+import * as queueModule from '../../workers/queue'
 import type { Express } from 'express'
 
 describe('message routes', () => {
@@ -49,17 +50,42 @@ describe('message routes', () => {
   })
 
   describe('POST /:workspaceId/conversations/:conversationId/messages', () => {
-    it('creates a USER message, synchronously generates a reply, and returns both plus usage', async () => {
-      vi.spyOn(aiModule, 'resolveProvider').mockResolvedValue({
-        id: 'anthropic',
-        capabilities: ['text-generation'],
-        generateText: vi.fn().mockResolvedValue({
-          text: 'Hi! How can I help?',
-          provider: 'anthropic',
-          model: 'claude-sonnet-5',
-          usage: { inputTokens: 12, outputTokens: 6 },
-        }),
-      } as unknown as aiModule.TextGenerationProvider)
+    it('creates a USER message, a placeholder ASSISTANT message, and enqueues a generation job', async () => {
+      // Generation itself happens asynchronously in a separate BullMQ worker
+      // (see generateResponse.worker.ts) that streams tokens over SSE — the
+      // route returns immediately with an empty placeholder, not a finished
+      // reply. This only asserts the synchronous, request/response contract.
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ content: 'Hello', role: 'USER' })
+
+      expect(res.status).toBe(201)
+      expect(res.body.data.userMessage.content).toBe('Hello')
+      expect(res.body.data.assistantMessage.role).toBe('ASSISTANT')
+      expect(res.body.data.assistantMessage.content).toBe('')
+      expect(res.body.data.jobId).toBe(res.body.data.assistantMessage.id)
+
+      const job = await prisma.streamingJob.findUnique({
+        where: { messageId: res.body.data.assistantMessage.id },
+      })
+      expect(job).not.toBeNull()
+      // Pinning this to RUNNING contradicts the note above: wherever a
+      // Redis-backed worker is live (CI and local dev both run one) it may
+      // already have picked the job up and driven it to a terminal state —
+      // FAILED is normal here since no provider key is configured. Assert the
+      // job exists on a legal path instead; the synchronous contract is
+      // covered by the response assertions above.
+      expect(['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELED']).toContain(job?.status)
+    })
+
+    it('still returns 201 with the placeholder if enqueueing the generation job fails', async () => {
+      // enqueueGeneration() deliberately swallows queue errors (see comment
+      // in message.service.ts) so a Redis/queue outage doesn't block the
+      // user from sending a message — it just never gets a reply.
+      vi.spyOn(queueModule, 'enqueueGenerateResponse').mockRejectedValue(
+        new Error('queue unavailable')
+      )
 
       const res = await request(app)
         .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
@@ -68,28 +94,11 @@ describe('message routes', () => {
 
       expect(res.status).toBe(201)
       expect(res.body.data.userMessage.content).toBe('Hello')
-      expect(res.body.data.assistantMessage.content).toBe('Hi! How can I help?')
-      expect(res.body.data.usage).toEqual({ inputTokens: 12, outputTokens: 6 })
-    })
+      expect(res.body.data.assistantMessage.role).toBe('ASSISTANT')
 
-    it('returns a 503 naming the failed job when generation exhausts every retry', async () => {
-      vi.spyOn(aiModule, 'resolveProvider').mockResolvedValue({
-        id: 'anthropic',
-        capabilities: ['text-generation'],
-        generateText: vi.fn().mockRejectedValue(new aiModule.AIProviderError('down', 'anthropic')),
-      } as unknown as aiModule.TextGenerationProvider)
-
-      const res = await request(app)
-        .post(`/api/workspaces/${workspaceId}/conversations/${conversationId}/messages`)
-        .set('Authorization', `Bearer ${token}`)
-        .send({ content: 'Hello', role: 'USER' })
-
-      expect(res.status).toBe(503)
-
-      // The user message itself is not rolled back even though generation failed.
       const messages = await prisma.message.findMany({ where: { conversationId, role: 'USER' } })
       expect(messages).toHaveLength(1)
-    }, 10000)
+    })
 
     it('creating a SYSTEM message does not trigger generation', async () => {
       const resolveSpy = vi.spyOn(aiModule, 'resolveProvider')

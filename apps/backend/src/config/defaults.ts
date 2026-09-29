@@ -34,14 +34,23 @@ export interface StageDefaults {
   ai: {
     anthropicModel: string;
     openaiModel: string;
+    openaiImageModel: string;
+    replicateVideoModel: string;
+    openaiTtsModel: string;
+    openaiTtsVoice: string;
     geminiModel: string;
     xaiModel: string;
     openrouterModel: string;
     deepseekModel: string;
     togetherModel: string;
+    groqModel: string;
     azureOpenAIApiVersion: string;
     bedrockModelId: string;
     ollamaModel: string;
+    rateLimit: {
+      backend: 'memory' | 'redis';
+      requestsPerSecond: number;
+    };
   };
   mail: {
     transport: 'console' | 'smtp';
@@ -56,6 +65,13 @@ export interface StageDefaults {
     publicBasePath: string;
     maxUploadBytes: number;
     maxAssetUploadBytes: number;
+  };
+  virusScan: {
+    provider: 'none' | 'clamav';
+    clamavPort: number;
+    clamavTimeoutMs: number;
+    maxScanBytes: number;
+    forceBlockUnscanned: boolean;
   };
   billing: {
     provider: 'stripe';
@@ -164,14 +180,33 @@ const BASE_DEFAULTS: StageDefaults = {
     // var without a code change — see docs/production/R1-e_AI_PROVIDER_ABSTRACTION.md.
     anthropicModel: 'claude-sonnet-5',
     openaiModel: 'gpt-4o',
+    openaiImageModel: 'gpt-image-1',
+    // Replicate's own default video model. Overridable with
+    // REPLICATE_VIDEO_MODEL so a different one (Seedance, Wan, anything
+    // else Replicate hosts) is a config change and not a code change.
+    replicateVideoModel: 'minimax/video-01',
+    openaiTtsModel: 'tts-1',
+    openaiTtsVoice: 'alloy',
     geminiModel: 'gemini-1.5-pro',
     xaiModel: 'grok-2-latest',
     openrouterModel: 'anthropic/claude-3.5-sonnet',
     deepseekModel: 'deepseek-chat',
     togetherModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+    // Groq's stable workhorse for open-source inference; overridable via
+    // GROQ_MODEL without a code change like every other default here.
+    groqModel: 'llama-3.3-70b-versatile',
     azureOpenAIApiVersion: '2024-10-21',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',
+    rateLimit: {
+      // Outbound pacing toward text-generation vendors, per provider. This
+      // is a backstop against runaway callers (an agent loop, a batch job),
+      // NOT a mirror of any vendor's tier — set it from your actual tier on
+      // credential day. 10/s is deliberately below every major vendor's
+      // entry paid tier so the default never masks a real 429.
+      backend: 'memory',
+      requestsPerSecond: 10,
+    },
   },
   mail: {
     // Console until MAIL_TRANSPORT explicitly selects a real provider — see
@@ -188,6 +223,13 @@ const BASE_DEFAULTS: StageDefaults = {
     publicBasePath: '/uploads',
     maxUploadBytes: 5 * 1024 * 1024, // 5 MiB — plenty for an avatar image
     maxAssetUploadBytes: 25 * 1024 * 1024, // 25 MiB — workspace assets (docs, images, etc.), not just avatars
+  },
+  virusScan: {
+    provider: 'none', // no scanner until a clamd host is configured
+    clamavPort: 3310,
+    clamavTimeoutMs: 30000,
+    maxScanBytes: 25 * 1024 * 1024, // 25 MiB — matches the largest upload limit above
+    forceBlockUnscanned: false, // production is fail-closed regardless; this hardens other stages
   },
   billing: {
     provider: 'stripe',
@@ -316,6 +358,7 @@ export function getStageDefaults(stage: DeploymentStage, modes: OperatingModeFla
     ai: { ...BASE_DEFAULTS.ai, ...override.ai },
     mail: { ...BASE_DEFAULTS.mail, ...override.mail },
     storage: { ...BASE_DEFAULTS.storage, ...override.storage },
+    virusScan: { ...BASE_DEFAULTS.virusScan, ...override.virusScan },
     billing: { ...BASE_DEFAULTS.billing, ...override.billing },
     queue: { ...BASE_DEFAULTS.queue, ...override.queue },
     embeddings: { ...BASE_DEFAULTS.embeddings, ...override.embeddings },

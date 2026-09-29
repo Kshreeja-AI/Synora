@@ -1,5 +1,86 @@
 # Synora AI Platform - Development Guide
 
+## Operating Protocol (read first)
+
+The reasoning behind these rules is in `SYNORA_FOUNDER_OS.md`. This section is
+the enforceable form.
+
+### Priority order
+
+When two of these conflict, the higher number yields:
+
+1. Security
+2. Correctness
+3. User safety
+4. Architectural integrity
+5. Maintainability
+6. Observability
+7. Performance
+8. UX / accessibility
+9. Cost efficiency
+10. Development speed
+
+**Speed is last and never overrides the other nine.** "It was faster" is not a
+justification for any decision above it.
+
+### Always
+
+- **Inspect before editing.** Read the current implementation first.
+- **Search before creating.** A second implementation of an existing feature is
+  a defect, not a contribution.
+- **Reuse before duplicating.**
+- **Verify before declaring.** Run the thing; do not infer from the diff.
+- **Test before merging**, including the failure paths.
+- **Preserve the provider abstraction** — business logic never learns a
+  vendor's name.
+- **State uncertainty explicitly.** "I could not verify X" is a valid and
+  valuable output.
+
+### Status vocabulary — never inflate a rung
+
+`UNKNOWN → PLANNED → IMPLEMENTED → TESTED → VERIFIED → DEPLOYED → OBSERVED → PROVEN`
+
+- "Configured" is not "Verified". "Verified locally" is not "Production proven".
+- "Deployed" is not "Healthy". "Healthy" is not "Successful".
+- A check that could not run is **`NOT VERIFIED`** — never `PASS`, never `FAIL`.
+
+**Converting "did not run" into "passed" is the most damaging single action
+available in this repository.** It manufactures confidence exactly where
+evidence is missing.
+
+### Never
+
+- Never print, log, echo, or fingerprint a secret value. Verify by presence,
+  length, format, or authentication result only.
+- Never commit a secret, or a file that contains one.
+- Never force-push, rewrite history, reset, stash, or discard founder work.
+  Preserve `founder-wip/pre-reconcile-2026-08-10`.
+- Never weaken a test to make it pass.
+- Never claim a capability that has not been executed.
+- Never respond to a failure with "try again" before classifying it as code,
+  configuration, infrastructure, credentials, environment, provider, network,
+  data, test harness, assumption, or human decision.
+
+### Do NOT stop merely because
+
+a credential is missing, a provider is unchosen, hardware or cloud
+infrastructure does not exist, or CI is unavailable — design behind the
+interface and verify later. **Waiting is not caution when independent work is
+available.**
+
+### DO stop for
+
+DNS changes · production data deletion or reset · spending money · rotating an
+externally-issued credential · entering a credential · weakening a security
+control · permanent provider lock-in · destroying infrastructure · unclear
+legal or ethical boundaries · safety-critical physical action.
+
+### Guardrails
+
+`node scripts/guardrails.mjs` checks tracked secrets, placeholder credentials,
+env-file tracking, business-logic/vendor coupling, and public port exposure.
+Run it before any commit that touches configuration, deployment, or providers.
+
 ## Project Overview
 
 **Synora AI** is a premium, enterprise-grade AI platform for creators, built with modern web technologies and a focus on production quality, security, and user experience.
@@ -14,7 +95,7 @@ A unified platform that integrates AI-powered tools for content creation, automa
 - **Authentication**: Custom JWT + rotating refresh tokens (`next-auth` is a declared frontend dependency for a possible future OAuth2 flow, not yet wired in)
 - **ORM**: Prisma
 - **Design System**: React components with Tailwind CSS, shadcn/ui
-- **Testing**: Vitest (Jest and Playwright are named here as an original intent; the actual test suite is Vitest + Supertest, no Playwright E2E suite exists yet — see `RELEASE_2_PLAN.md`, R2-h)
+- **Testing**: Vitest (Jest and Playwright are named here as an original intent; the actual test suite is Vitest + Supertest, no Playwright E2E suite exists yet — no Playwright E2E suite yet)
 - **Package Manager**: pnpm workspaces (monorepo)
 - **Build Tool**: Turbo
 - **Deployment**: Docker, Vercel, Railway, or self-hosted
@@ -54,15 +135,25 @@ synora/
 ├── docs/                     # See docs/README.md for the full hierarchy
 │   ├── architecture.md, api.md, database.md, deployment.md, security.md
 │   ├── operations/, security/, production/  # living reference docs
-│   └── archive/              # historical, point-in-time reports
-├── .github/workflows/ci.yml  # test, security, docker jobs
+│   └── archive/              # historical, point-in-time reports — every
+│                             # frozen release/audit report lives here, not
+│                             # at the repo root
+├── .github/workflows/ci.yml  # test, security, docker jobs; test also
+│                             # asserts migrations reproduce schema.prisma
 ├── turbo.json                # Turbo configuration
 ├── package.json               # Root workspace config, packageManager pin
 ├── .env.example               # Environment variables template
-├── PROJECT_HANDOVER.md        # Zero-context entry point
-├── RELEASE_1_FINAL.md         # Authoritative Release 1 snapshot
+├── SYNORA_MASTER_BLUEPRINT.md # Architecture source of truth
+├── SYNORA_OPERATIONS.md       # How to run/deploy/recover
+├── SYNORA_LEARNING.md         # Engineering concepts, explained
 └── README.md                  # Project overview
 ```
+
+Synora keeps exactly three authoritative documents:
+`SYNORA_MASTER_BLUEPRINT.md` (what Synora is and how it is architected),
+`SYNORA_OPERATIONS.md` (how to run, configure, deploy and recover it), and
+`SYNORA_LEARNING.md` (the engineering concepts behind those choices).
+Do not add a fourth: put permanent knowledge in one of these three.
 
 ## Environment Setup
 
@@ -94,8 +185,8 @@ cp apps/backend/.env.example apps/backend/.env.local
 cp apps/web/.env.example apps/web/.env.local
 
 # Start PostgreSQL (Docker) — docker-compose.dev.yml also provisions Redis
-# for future use; it isn't consumed by the app yet (see RELEASE_2_PLAN.md,
-# R2-c), so starting just postgres is enough for local development today
+# for future use; it isn't consumed by the app yet, so starting just
+# postgres is enough for local development today
 docker-compose -f docker-compose.dev.yml up -d postgres
 
 # Run database migrations
@@ -344,10 +435,13 @@ See `docs/security.md` for comprehensive security guidelines.
 
 ## Documentation
 
-Start at `PROJECT_HANDOVER.md` (zero-context entry point) or
-`RELEASE_1_FINAL.md` (the authoritative Release 1 snapshot). See
-`docs/README.md` for the full hierarchy. The five core reference docs
-below live in `docs/` and are kept in sync with code — update the
+Synora keeps exactly three authoritative documents:
+`SYNORA_MASTER_BLUEPRINT.md` (what Synora is and how it is architected),
+`SYNORA_OPERATIONS.md` (how to run, configure, deploy and recover it), and
+`SYNORA_LEARNING.md` (the engineering concepts behind those choices).
+Do not add a fourth: put permanent knowledge in one of these three.
+
+The engineering reference under `docs/` stays in sync with code — update the
 relevant one whenever a change touches it:
 
 - **`docs/architecture.md`**: System design and component relationships
@@ -356,9 +450,8 @@ relevant one whenever a change touches it:
 - **`docs/deployment.md`**: Deployment procedures
 - **`docs/security.md`**: Security practices and guidelines
 
-There is no `changelog.md` — release-level history lives in
-`RELEASE_ROADMAP.md` and the per-release summary docs
-(`RELEASE_1_FINAL.md`, etc.) instead.
+There is no `changelog.md`. Release history lives in
+`SYNORA_MASTER_BLUEPRINT.md`.
 
 ## Contributing
 
@@ -388,4 +481,4 @@ For questions or issues:
 ---
 
 **Last Updated**: 2026-07-23
-**Status**: Release 1 complete — see `RELEASE_1_FINAL.md` and `RELEASE_ROADMAP.md`
+**Status**: Release 1 complete — see `SYNORA_MASTER_BLUEPRINT.md`

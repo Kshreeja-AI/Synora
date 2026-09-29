@@ -53,14 +53,49 @@ function ensureRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+const CSRF_COOKIE = 'X-CSRF-Token';
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+/**
+ * The CSRF token the backend set on a previous safe request.
+ *
+ * The backend uses double-submit: it will only accept a mutating request
+ * that echoes this cookie back in a header, proving the caller is
+ * same-origin script rather than a cross-site page that can make the
+ * browser SEND cookies but never read them.
+ *
+ * This half did not exist. The backend demanded the header on every
+ * mutating route outside /api/auth and nothing ever sent one, so a real
+ * user could register, log in, and then not create a workspace, start a
+ * conversation, or send a single message — all 403.
+ */
+function readCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  for (const part of document.cookie.split(';')) {
+    const [name, ...rest] = part.trim().split('=');
+    if (name === CSRF_COOKIE) return decodeURIComponent(rest.join('='));
+  }
+  return undefined;
+}
+
 async function rawRequest(path: string, options: RequestOptions): Promise<Response> {
   const headers: Record<string, string> = {};
   const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   // FormData must never get a Content-Type header set manually — the
   // browser needs to add the multipart boundary itself.
   if (options.body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
+
+  const method = options.method ?? 'GET';
+  if (MUTATING_METHODS.has(method)) {
+    // Absent rather than empty when there is no token yet: sending a blank
+    // header would fail the comparison with a confusing "validation failed"
+    // instead of the accurate "make a GET request first".
+    const csrf = readCsrfToken();
+    if (csrf) headers[CSRF_COOKIE] = csrf;
+  }
+
   return fetch(`${getApiBaseUrl()}${path}`, {
-    method: options.method ?? 'GET',
+    method,
     headers,
     credentials: 'include', // Send accessToken cookie automatically
     body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,

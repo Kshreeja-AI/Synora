@@ -13,6 +13,13 @@ export enum MFAAuditAction {
   VERIFICATION_SUCCESS = 'VERIFICATION_SUCCESS',
   VERIFICATION_FAILED = 'VERIFICATION_FAILED',
   RECOVERY_CODE_USED = 'RECOVERY_CODE_USED',
+  /** Enrollment code accepted; recovery codes handed out but MFA not yet active. */
+  SETUP_VERIFIED = 'SETUP_VERIFIED',
+  /** A verify attempt was refused by the throttle rather than by a bad code. */
+  RATE_LIMITED = 'RATE_LIMITED',
+  RECOVERY_CODE_FAILED = 'RECOVERY_CODE_FAILED',
+  /** Someone with a live session tried to turn MFA off with the wrong password. */
+  DISABLE_FAILED = 'DISABLE_FAILED',
   DISABLED = 'DISABLED',
   METHOD_REMOVED = 'METHOD_REMOVED',
   ACCOUNT_LOCKOUT = 'ACCOUNT_LOCKOUT',

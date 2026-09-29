@@ -80,6 +80,20 @@ export const AppConfigSchema = z.object({
     provider: z.string().optional(),
     anthropicModel: z.string().min(1),
     openaiModel: z.string().min(1),
+    openaiImageModel: z.string().min(1),
+    /**
+     * The Replicate model a video job runs on, e.g. `minimax/video-01`.
+     *
+     * Every other provider in this section already takes its model from an
+     * env var; the video adapter alone had its model hardcoded, so choosing a
+     * different one — Seedance, Wan, or anything else Replicate hosts —
+     * required editing source. That is the difference between "swap the model"
+     * being configuration and being a code change, which is the whole
+     * property the provider abstraction exists to give.
+     */
+    replicateVideoModel: z.string().min(1),
+    openaiTtsModel: z.string().min(1),
+    openaiTtsVoice: z.string().min(1),
     geminiModel: z.string().min(1),
     xaiModel: z.string().min(1),
     openrouterModel: z.string().min(1),
@@ -92,6 +106,120 @@ export const AppConfigSchema = z.object({
     bedrockModelId: z.string().min(1),
     ollamaBaseUrl: z.string().optional(),
     ollamaModel: z.string().min(1),
+    /**
+     * Optional Bearer token for a PROTECTED Ollama endpoint. Bare local
+     * Ollama checks no key; a remote deployment must sit behind a
+     * token-checking TLS proxy, and this is the token that proxy checks.
+     * Mirrors `embeddings.selfHostedApiKey` — plain config, sent as a
+     * standard Bearer header by the OpenAI SDK.
+     */
+    ollamaApiKey: z.string().optional(),
+    /**
+     * The named models this deployment's Ollama endpoint serves, for the
+     * catalog and for benchmarking several models side by side. Selection
+     * stays per-request (`TextGenerationRequest.model`); this list only
+     * declares what exists. The default model need not be repeated here.
+     */
+    ollamaModels: z.array(z.string().min(1)).default([]),
+    /**
+     * Any OpenAI-compatible text server from env alone — vLLM, TGI,
+     * llama.cpp server, a second Ollama. BOTH url and model are required
+     * to count as configured: a generic endpoint's model id cannot be
+     * guessed, and guessing would recreate the placeholder dishonesty
+     * slice 13 eliminated.
+     */
+    selfHostedTextBaseUrl: z.string().url().optional(),
+    selfHostedTextApiKey: z.string().optional(),
+    selfHostedTextModel: z.string().optional(),
+    selfHostedTextModels: z.array(z.string().min(1)).default([]),
+    // Does this endpoint bill per token? Defaults to TRUE -- fail closed on
+    // money. A wrong `false` silently disables the cost cap; a wrong `true`
+    // merely charges a self-hosted runtime that is actually free, which shows
+    // up as an early refusal rather than an unbounded bill.
+    selfHostedTextMetered: z.boolean().default(true),
+    /** Groq-hosted open-source models (OpenAI-compatible; key in SecretsManager). */
+    groqModel: z.string().min(1),
+    /**
+     * Process-wide hard ceilings on AI usage, enforced by ai/spend-guard.ts
+     * BEFORE any generation runs. Deployment-level kill switches: they bind
+     * every workspace at once, on top of any per-workspace AiSpendBudget
+     * row. Absent means no global cap — the development default. Token caps
+     * exist separately because locally-served models have no per-token
+     * price, so a cost cap alone would never bind them.
+     */
+    globalMaxCostPerDayCents: z.number().int().positive().optional(),
+    globalMaxTokensPerDay: z.number().int().positive().optional(),
+    /**
+     * Per-USER daily AI cost ceiling, uniform across users. Optional; when
+     * set, enforced through Redis (shared across instances) wherever the
+     * calling path knows which user is asking. Stops one account from
+     * draining a whole workspace's budget.
+     */
+    userMaxCostPerDayCents: z.number().int().positive().optional(),
+    /**
+     * Synora's own outbound pacing toward text-generation vendors, keyed
+     * per provider — the text-path twin of `embeddings.rateLimit`. `redis`
+     * backend is required for multi-instance deployments (an in-memory
+     * bucket per instance would jointly admit N x the intended rate).
+     */
+    rateLimit: z.object({
+      backend: z.enum(['memory', 'redis']).default('memory'),
+      requestsPerSecond: z.number().positive().default(10),
+      redisUrl: z.string().url().optional(),
+    }),
+  }),
+
+  /**
+   * Provider-agnostic quantum execution (src/quantum/**). Every default here
+   * is the SAFE one, and the two that govern money default to refusing.
+   *
+   * `maxExecutionLevel: 0` means auto-selection — and explicit selection —
+   * never leaves the free in-process simulator. `paidQpuEnabled: false` and
+   * `maxCostPerExecutionCents: 0` mean paid hardware cannot run even if the
+   * ceiling is raised, until a human sets both. Two independent gates rather
+   * than one, because raising a ceiling to reach an open-access QPU is a very
+   * different act from authorising a bill.
+   */
+  quantum: z.object({
+    /**
+     * Statevector memory is 2^n × 16 bytes: 16 MB at 20 qubits, 268 MB at 24,
+     * 4 GB at 28. The cap is enforced BEFORE allocation, because an
+     * out-of-memory kill inside a worker takes the queue with it.
+     */
+    localMaxQubits: z.number().int().min(1).max(26).default(20),
+    /** Hard ceiling on EVERY execution path, explicit or automatic. */
+    maxExecutionLevel: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).default(0),
+    /** Level 3 (paid hardware) additionally requires this. No default sets it. */
+    paidQpuEnabled: z.boolean().default(false),
+    /** Per-execution spend ceiling in cents. 0 refuses any non-zero cost. */
+    maxCostPerExecutionCents: z.number().int().nonnegative().default(0),
+    defaultShots: z.number().int().positive().max(1_000_000).default(1024),
+    defaultTimeoutMs: z.number().int().positive().default(60_000),
+    /**
+     * RESOURCE CEILINGS, separate from the money ceilings above.
+     *
+     * A free local simulation costs no money and can still take a machine
+     * down: 2^26 amplitudes is a gigabyte, a million shots is a long CPU
+     * burn, and a 100,000-gate circuit submitted to a QPU is a queue slot
+     * spent on noise. These bound the RESOURCE regardless of the price, and
+     * they apply to every rung including level 0.
+     */
+    maxShots: z.number().int().positive().default(100_000),
+    maxCircuitDepth: z.number().int().positive().default(10_000),
+    /** Applies to every backend. `localMaxQubits` bounds the simulator further. */
+    maxQubits: z.number().int().positive().default(64),
+    maxRuntimeMs: z.number().int().positive().default(300_000),
+    /** IBM Quantum Runtime REST base. Operator-configurable; SSRF-validated on use. */
+    ibmBaseUrl: z.string().url().default('https://quantum.cloud.ibm.com/api/v1'),
+    /** IBM service instance (CRN), where the account requires one. */
+    ibmInstance: z.string().optional(),
+    /**
+     * Declares that this IBM account's devices are OPEN ACCESS (free tier).
+     * Defaults to false, which classifies real devices as level 3 — the
+     * pessimistic direction, because mistaking paid hardware for free is the
+     * expensive error and mistaking free for paid costs one config line.
+     */
+    ibmOpenAccess: z.boolean().default(false),
   }),
 
   /**
@@ -121,6 +249,31 @@ export const AppConfigSchema = z.object({
     publicBasePath: z.string().min(1),
     maxUploadBytes: z.number().int().positive(),
     maxAssetUploadBytes: z.number().int().positive(),
+  }),
+
+  /**
+   * Malware scanning for uploaded files. `provider: 'none'` (the default)
+   * means no scanner is configured — uploads are NOT marked clean, they are
+   * recorded as unscanned, and whether they can be downloaded is governed by
+   * the fail-closed policy below. Configuring `clamav` with a reachable clamd
+   * host activates real scanning automatically. API keys aren't needed
+   * (clamd is a network daemon), so all fields here are non-secret config.
+   */
+  virusScan: z.object({
+    provider: z.enum(['none', 'clamav']).default('none'),
+    clamavHost: z.string().optional(),
+    clamavPort: z.number().int().positive().default(3310),
+    clamavTimeoutMs: z.number().int().positive().default(30000),
+    /** Files larger than this are not sent to the scanner (clamd's own limit). */
+    maxScanBytes: z.number().int().positive().default(26214400), // 25 MiB
+    /**
+     * Force fail-closed everywhere: files that were not scanned clean
+     * (no scanner configured, scan pending, or scan errored) cannot be
+     * downloaded. Production is ALWAYS fail-closed regardless of this flag;
+     * setting it true makes non-production stages fail-closed too. Infected
+     * files are always blocked in every stage.
+     */
+    forceBlockUnscanned: z.boolean().default(false),
   }),
 
   billing: z.object({
@@ -182,6 +335,8 @@ export const AppConfigSchema = z.object({
     voyageModel: z.string().min(1).default('voyage-3'),
     cohereModel: z.string().min(1).default('embed-english-v3.0'),
     ollamaBaseUrl: z.string().url().optional(),
+    /** Optional Bearer token for a protected endpoint — see ai.ollamaApiKey. */
+    ollamaApiKey: z.string().optional(),
     ollamaModel: z.string().min(1).default('nomic-embed-text'),
     ollamaMaxBatchSize: z.number().int().positive().optional(),
     selfHostedBaseUrl: z.string().url().optional(),

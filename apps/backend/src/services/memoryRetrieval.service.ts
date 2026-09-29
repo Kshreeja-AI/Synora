@@ -1,7 +1,7 @@
 import { prisma as db } from '@synora/database'
 import { Memory } from '@synora/database'
 import { NotFoundException, ValidationException } from '@synora/shared'
-import { memoryEmbeddingService } from './memoryEmbedding.service'
+import { memoryEmbeddingService, isSemanticSearchAvailable } from './memoryEmbedding.service'
 import { memoryCacheService } from './memoryCache.service'
 import { logger } from '../utils/logger'
 
@@ -25,11 +25,19 @@ export interface RetrievedMemory {
   memory: Memory
   relevanceScore: number
   rankingDetails: {
+    /**
+     * Vector similarity. Always 0 — and excluded from the weighting —
+     * when semantic search is disabled for the deployment; check
+     * `semanticSearchUsed` rather than reading 0 as "not similar".
+     */
     semanticScore: number
+    /** Fraction of query terms found in the memory's own text. */
+    lexicalScore: number
     importanceScore: number
     recencyScore: number
     accessScore: number
     overallScore: number
+    semanticSearchUsed: boolean
   }
 }
 
@@ -48,23 +56,30 @@ export class MemoryRetrievalService {
   async retrieveMemories(query: RetrievalQuery): Promise<RetrievedMemory[]> {
     try {
       const limit = query.limit || this.DEFAULT_LIMIT
+      const terms = this.tokenize(query.query)
+      const hasQuery = Boolean(query.query && query.query.trim())
 
-      // Step 1: Semantic search (if query provided)
+      // Step 1: Semantic search — only when a real embedding provider is
+      // configured. When it isn't, the semantic signal is genuinely
+      // absent and is dropped from the ranking rather than contributing
+      // a fabricated (or uniformly zero) score.
+      const semanticUsed = hasQuery && (await isSemanticSearchAvailable())
       let semanticResults: Array<{ memoryId: string; score: number }> = []
-      if (query.query && query.query.trim()) {
+      if (semanticUsed) {
         semanticResults = await this.semanticSearch(query.query, query.workspaceId, limit * 3)
       }
 
-      // Step 2: Full-text search fallback (mock for now - Elasticsearch later)
-      let fullTextResults: Memory[] = []
-      if (query.query && query.query.trim()) {
-        fullTextResults = await this.fullTextSearch(query.query, query.workspaceId, limit * 3)
+      // Step 2: Lexical search over stored content — the always-available
+      // retrieval path.
+      let lexicalResults: Memory[] = []
+      if (hasQuery) {
+        lexicalResults = await this.lexicalSearch(terms, query.workspaceId, limit * 3)
       }
 
       // Step 3: Build candidate pool
       const candidateIds = new Set<string>()
       semanticResults.forEach((r) => candidateIds.add(r.memoryId))
-      fullTextResults.forEach((m) => candidateIds.add(m.id))
+      lexicalResults.forEach((m) => candidateIds.add(m.id))
 
       // Step 4: Fetch full memory records for candidates
       const candidates = await db.memory.findMany({
@@ -88,26 +103,33 @@ export class MemoryRetrievalService {
       // Step 7: Calculate ranking scores for each memory
       const scored = filtered.map((memory) => {
         const semanticScore = this.getSemanticScore(memory.id, semanticResults)
+        const lexicalScore = this.calculateLexicalScore(memory, terms)
         const importanceScore = memory.importance // 0-1
         const recencyScore = this.calculateRecencyScore(memory.createdAt)
         const accessScore = this.calculateAccessScore(memory.accessCount || 0)
 
-        const overallScore = this.calculateOverallScore({
-          semantic: semanticScore,
-          importance: importanceScore,
-          recency: recencyScore,
-          access: accessScore,
-        })
+        const overallScore = this.calculateOverallScore(
+          {
+            semantic: semanticScore,
+            lexical: lexicalScore,
+            importance: importanceScore,
+            recency: recencyScore,
+            access: accessScore,
+          },
+          semanticUsed,
+        )
 
         return {
           memory,
           relevanceScore: overallScore,
           rankingDetails: {
             semanticScore,
+            lexicalScore,
             importanceScore,
             recencyScore,
             accessScore,
             overallScore,
+            semanticSearchUsed: semanticUsed,
           },
         }
       })
@@ -196,48 +218,69 @@ export class MemoryRetrievalService {
   }
 
   /**
-   * Full-text search (mock - Elasticsearch integration later)
+   * Split a query into searchable terms. Single- and two-character
+   * tokens are dropped: they match almost everything and would flatten
+   * the lexical score.
    */
-  private async fullTextSearch(query: string, workspaceId: string, limit: number): Promise<Memory[]> {
+  private tokenize(query: string | undefined): string[] {
+    if (!query) return []
+    return [
+      ...new Set(
+        query
+          .toLowerCase()
+          .split(/[^\p{L}\p{N}]+/u)
+          .filter((t) => t.length > 2),
+      ),
+    ]
+  }
+
+  /**
+   * Case-insensitive term matching over a memory's own text and tags.
+   * Every term is searched (the previous implementation only queried
+   * the first one, so "docker compose config" retrieved on "docker"
+   * alone), and the candidate pool is intentionally an OR — per-term
+   * precision is what the lexical score below is for.
+   */
+  private async lexicalSearch(terms: string[], workspaceId: string, limit: number): Promise<Memory[]> {
+    if (terms.length === 0) {
+      return []
+    }
+
     try {
-      const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2)
-
-      if (terms.length === 0) {
-        return []
-      }
-
-      // For now, use simple contains matching (full-text search via Elasticsearch in production)
-      const memories = await db.memory.findMany({
+      return await db.memory.findMany({
         where: {
           workspaceId,
           OR: [
-            {
-              content: {
-                contains: terms[0] || '',
-                mode: 'insensitive',
-              },
-            },
-            {
-              summary: {
-                contains: terms[0] || '',
-                mode: 'insensitive',
-              },
-            },
-            {
-              tags: {
-                hasSome: terms,
-              },
-            },
+            ...terms.flatMap((term) => [
+              { content: { contains: term, mode: 'insensitive' as const } },
+              { summary: { contains: term, mode: 'insensitive' as const } },
+            ]),
+            { tags: { hasSome: terms } },
           ],
         },
         take: limit,
       })
-
-      return memories
     } catch (error) {
-      logger.warn('Full-text search failed', { error })
+      logger.warn('Lexical memory search failed', { error })
       return []
     }
+  }
+
+  /**
+   * Fraction of query terms present in the memory's text or tags — a
+   * real measurement of overlap, not a similarity estimate. 0 when
+   * there is no query, so query-less context retrieval ranks purely on
+   * importance/recency/access.
+   */
+  private calculateLexicalScore(memory: Memory, terms: string[]): number {
+    if (terms.length === 0) {
+      return 0
+    }
+
+    const haystack = `${memory.content} ${memory.summary ?? ''} ${memory.tags.join(' ')}`.toLowerCase()
+    const matched = terms.filter((term) => haystack.includes(term)).length
+
+    return matched / terms.length
   }
 
   /**
@@ -332,39 +375,44 @@ export class MemoryRetrievalService {
    * Calculate overall ranking score (0-1)
    * Weighted combination of multiple signals
    */
-  private calculateOverallScore(scores: {
-    semantic: number
-    importance: number
-    recency: number
-    access: number
-  }): number {
-    // Weights: semantic(0.4) + importance(0.3) + recency(0.2) + access(0.1)
-    const weight = {
-      semantic: 0.4,
-      importance: 0.3,
-      recency: 0.2,
-      access: 0.1,
+  private calculateOverallScore(
+    scores: {
+      semantic: number
+      lexical: number
+      importance: number
+      recency: number
+      access: number
+    },
+    semanticAvailable: boolean,
+  ): number {
+    // Signals are weighted over what's actually measurable. When no
+    // embedding provider is configured the semantic weight is dropped
+    // and the remainder renormalized, so scores stay on a comparable
+    // 0-1 scale instead of being uniformly deflated by the missing 0.3.
+    const weights: Array<[number, number]> = [
+      [scores.lexical, 0.3],
+      [scores.importance, 0.25],
+      [scores.recency, 0.2],
+      [scores.access, 0.1],
+    ]
+    if (semanticAvailable) {
+      weights.push([scores.semantic, 0.3])
     }
 
-    return (
-      scores.semantic * weight.semantic +
-      scores.importance * weight.importance +
-      scores.recency * weight.recency +
-      scores.access * weight.access
-    )
+    const totalWeight = weights.reduce((sum, [, w]) => sum + w, 0)
+    const weighted = weights.reduce((sum, [value, w]) => sum + value * w, 0)
+
+    return totalWeight > 0 ? weighted / totalWeight : 0
   }
 
   /**
    * Record memory retrieval for analytics
    */
   private recordRetrieval(memoryId: string, userId?: string): void {
-    try {
-      if (userId) {
-        memoryCacheService.recordMemoryAccess(memoryId, userId)
-      }
-    } catch (error) {
+    if (!userId) return
+    memoryCacheService.recordMemoryAccess(memoryId, userId).catch((error) => {
       logger.warn('Failed to record memory access', { error, memoryId })
-    }
+    })
   }
 
   /**

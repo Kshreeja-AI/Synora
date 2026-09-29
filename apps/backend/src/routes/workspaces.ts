@@ -5,6 +5,7 @@ import { createApiResponse } from '@synora/shared';
 import {
   createWorkspace,
   listWorkspacesForUser,
+  listWaitingElsewhere,
   getWorkspaceForUser,
   updateWorkspace,
   listWorkspaceMembers,
@@ -55,6 +56,20 @@ router.post('/', authMiddleware, async (req: AuthRequest, res, next) => {
     const input = createWorkspaceSchema.parse(req.body);
     const workspace = await createWorkspace(req.userId!, input);
     res.status(201).json(createApiResponse(workspace));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/workspaces/waiting-elsewhere — per-workspace counts of
+// decisions waiting on the signed-in person across ALL their
+// workspaces. Registered BEFORE /:id so "waiting-elsewhere" is never
+// read as a workspace id. Self-scoped: it starts from the caller's own
+// memberships.
+router.get('/waiting-elsewhere', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const entries = await listWaitingElsewhere(req.userId!);
+    res.json(createApiResponse(entries));
   } catch (error) {
     next(error);
   }

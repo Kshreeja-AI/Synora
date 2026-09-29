@@ -46,13 +46,11 @@ describe('Conversations API Hooks', () => {
   });
 
   describe('useConversations', () => {
-    it('should fetch conversations list', async () => {
-      const mockResponse = {
-        items: [mockConversation],
-        total: 1,
-        hasMore: false,
-      };
-      mockApi.get.mockResolvedValue(mockResponse);
+    // The API returns `{ conversations, total }`. This test previously
+    // mocked `{ items, total, hasMore }` — a shape the backend has never
+    // sent — which is how the list stayed silently empty in the UI.
+    it('should fetch conversations list in the shape the API actually returns', async () => {
+      mockApi.get.mockResolvedValue({ conversations: [mockConversation], total: 1 });
 
       const { result } = renderHook(() => useConversations('ws-1'), {
         wrapper: createWrapper(),
@@ -62,7 +60,36 @@ describe('Conversations API Hooks', () => {
         expect(result.current.isPending).toBe(false);
       });
 
-      expect(result.current.data).toBeDefined();
+      expect(result.current.data?.pages[0].conversations).toEqual([mockConversation]);
+      expect(mockApi.get).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/conversations?skip=0&take=20'
+      );
+    });
+
+    it('scopes the request and the cache key by folder', async () => {
+      mockApi.get.mockResolvedValue({ conversations: [], total: 0 });
+
+      const { result } = renderHook(() => useConversations('ws-1', { folderId: 'f1' }), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+      expect(mockApi.get).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/conversations?skip=0&take=20&folderId=f1'
+      );
+    });
+
+    it('requests only unfiled conversations for folderId=none', async () => {
+      mockApi.get.mockResolvedValue({ conversations: [], total: 0 });
+
+      const { result } = renderHook(() => useConversations('ws-1', { folderId: 'none' }), {
+        wrapper: createWrapper(),
+      });
+
+      await waitFor(() => expect(result.current.isPending).toBe(false));
+      expect(mockApi.get).toHaveBeenCalledWith(
+        '/api/workspaces/ws-1/conversations?skip=0&take=20&folderId=none'
+      );
     });
 
     it('should respect enabled option', () => {

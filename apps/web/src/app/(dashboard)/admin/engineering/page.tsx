@@ -1,0 +1,728 @@
+'use client';
+
+import { useQuery } from '@tanstack/react-query';
+import { Activity, AlertTriangle, Boxes, Cpu, Database, Gauge, Inbox, ShieldCheck } from 'lucide-react';
+import {
+  getBenchmarks,
+  getCaptureStatus,
+  getCostReport,
+  getErrorRate,
+  getEventStats,
+  getLatency,
+  getDegradation,
+  getLatencyDrift,
+  getLaunchReadiness,
+  getPromptReport,
+  getProposals,
+  getRuntimeCheck,
+  getProviderMatrix,
+  getCoverage,
+  type ProviderMatrixEntry,
+} from '@/lib/api/eos';
+import { ProposalsPanel } from './ProposalsPanel';
+
+/**
+ * Founder-only view of the Engineering Operating System.
+ *
+ * Deliberately shows what is NOT being measured as prominently as what is.
+ * A dashboard that only renders the data it happens to have invites the
+ * reader to assume that data is complete — which is the same failure mode
+ * as a cost column reporting zero when it means "unmeasured".
+ */
+
+const REFRESH_MS = 30_000;
+
+function Tile({
+  label,
+  value,
+  icon: Icon,
+  sub,
+  tone = 'normal',
+}: {
+  label: string;
+  value: string | number;
+  icon: React.ComponentType<{ className?: string }>;
+  sub?: string;
+  tone?: 'normal' | 'warn';
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-card p-4">
+      <div className="flex items-center justify-between">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <Icon className={`h-4 w-4 ${tone === 'warn' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+      </div>
+      <div className={`mt-2 text-2xl font-semibold ${tone === 'warn' ? 'text-amber-500' : ''}`}>{value}</div>
+      {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-card">
+      <div className="border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+function EmptyHint({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>;
+}
+
+/**
+ * Whether a capability is token-priced is now recorded by the backend
+ * rather than inferred here from a zero cost. The inference was reasonable
+ * but wrong in one real case: a token-priced call that genuinely cost
+ * nothing would have been labelled "not token-priced".
+ */
+function formatCost(entry: ProviderMatrixEntry): string {
+  // Media capabilities are priced from a published table rather than by the
+  // provider's response, so the figure is labelled "stated" — a claim about
+  // a rate card, not a measurement.
+  if (entry.pricingBasis && entry.pricingBasis !== 'token') {
+    const amount = `$${(entry.totalCostCents / 100).toFixed(4)}`;
+    return entry.costProvenance === 'stated'
+      ? `${amount} (${entry.pricingBasis}, stated)`
+      : `${amount} (${entry.pricingBasis})`;
+  }
+  if (!entry.tokenPriced) return 'not token-priced';
+  return `$${(entry.totalCostCents / 100).toFixed(4)}`;
+}
+
+/**
+ * Null means the figure was never established, which is a different
+ * statement from a measured cost of zero. Rendering it as "0.0000¢" would
+ * assert a measurement that was never taken.
+ */
+function formatCostPerRequest(cents: number | null): string {
+  if (cents === null) return 'not established';
+  return `${cents.toFixed(4)}¢`;
+}
+
+interface DriftRow {
+  key: string;
+  subject: string;
+  requests: number;
+  /** Null means never established — rendered as such, never as a zero. */
+  baseline: string | null;
+  recent: string | null;
+  baselineSamples: number;
+  sufficientData: boolean;
+  flagged: boolean;
+  flaggedLabel: string;
+}
+
+/**
+ * Shared rendering for the detectors that compare a measurement against its
+ * own history. The three states stay distinct here exactly as they do in the
+ * data: not enough history yet, steady, and departed — because "no claim has
+ * been made" and "a claim of normality" are different statements.
+ */
+function DriftTable({
+  loading,
+  empty,
+  rows,
+}: {
+  loading: boolean;
+  empty: string;
+  rows: DriftRow[];
+}) {
+  if (loading) return <EmptyHint>Loading…</EmptyHint>;
+  if (rows.length === 0) return <EmptyHint>{empty}</EmptyHint>;
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <th className="pb-2 pr-4 font-medium">Provider / model</th>
+            <th className="pb-2 pr-4 font-medium">Requests</th>
+            <th className="pb-2 pr-4 font-medium">Baseline</th>
+            <th className="pb-2 pr-4 font-medium">Recent</th>
+            <th className="pb-2 font-medium">State</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} className="border-b border-border/50">
+              <td className="py-2 pr-4">{row.subject}</td>
+              <td className="py-2 pr-4">{row.requests}</td>
+              <td className="py-2 pr-4">{row.baseline ?? 'not established'}</td>
+              <td className="py-2 pr-4">{row.recent ?? 'not established'}</td>
+              <td className="py-2">
+                {!row.sufficientData ? (
+                  <span className="text-xs text-muted-foreground">
+                    not enough history yet ({row.baselineSamples} baseline samples)
+                  </span>
+                ) : row.flagged ? (
+                  <span className="text-xs font-medium text-amber-500">{row.flaggedLabel}</span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">steady</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function EngineeringDashboardPage() {
+  const latency = useQuery({ queryKey: ['eos', 'latency'], queryFn: getLatency, refetchInterval: REFRESH_MS });
+  const errorRate = useQuery({ queryKey: ['eos', 'errorRate'], queryFn: getErrorRate, refetchInterval: REFRESH_MS });
+  const matrix = useQuery({ queryKey: ['eos', 'matrix'], queryFn: getProviderMatrix, refetchInterval: REFRESH_MS });
+  const prompts = useQuery({ queryKey: ['eos', 'prompts'], queryFn: getPromptReport, refetchInterval: REFRESH_MS });
+  const events = useQuery({ queryKey: ['eos', 'events'], queryFn: getEventStats, refetchInterval: REFRESH_MS });
+  const capture = useQuery({ queryKey: ['eos', 'capture'], queryFn: getCaptureStatus, refetchInterval: REFRESH_MS });
+  const coverage = useQuery({ queryKey: ['eos', 'coverage'], queryFn: getCoverage, refetchInterval: REFRESH_MS });
+  // Same query key as the panel below, so the tile and the list share one
+  // fetch and can never disagree about how many are waiting.
+  const proposals = useQuery({
+    queryKey: ['eos', 'proposals'],
+    queryFn: () => getProposals(),
+    refetchInterval: REFRESH_MS,
+  });
+
+  const cost = useQuery({ queryKey: ['eos', 'cost'], queryFn: getCostReport, refetchInterval: REFRESH_MS });
+  const latencyDrift = useQuery({
+    queryKey: ['eos', 'latencyDrift'],
+    queryFn: getLatencyDrift,
+    refetchInterval: REFRESH_MS,
+  });
+  const degradation = useQuery({
+    queryKey: ['eos', 'degradation'],
+    queryFn: getDegradation,
+    refetchInterval: REFRESH_MS,
+  });
+  const readiness = useQuery({
+    queryKey: ['eos', 'readiness'],
+    queryFn: getLaunchReadiness,
+    refetchInterval: REFRESH_MS,
+  });
+  const benchmarks = useQuery({
+    queryKey: ['eos', 'benchmarks'],
+    queryFn: getBenchmarks,
+    refetchInterval: REFRESH_MS,
+  });
+  const runtime = useQuery({
+    queryKey: ['eos', 'runtime'],
+    queryFn: getRuntimeCheck,
+    refetchInterval: REFRESH_MS,
+  });
+
+  const regressing = prompts.data?.report.filter((p) => p.regressing) ?? [];
+  const awaitingDecision = proposals.data?.filter((p) => p.status === 'pending').length ?? 0;
+  const errorsNow = errorRate.data?.current.errorsInWindow ?? 0;
+  const errorThreshold = errorRate.data?.current.threshold ?? 0;
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6 p-6">
+      <header>
+        <h1 className="text-2xl font-semibold">Engineering</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Internal platform health, refreshed every 30 seconds. Measurements are held in memory and
+          reset when the server restarts, so figures reflect the current process only.
+        </p>
+      </header>
+
+      <Section
+        title="Launch gates"
+        description="What must be true before launch, measured rather than estimated. A gate with no evidence is shown as unmeasured — which is neither a pass nor a failure."
+      >
+        {readiness.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !readiness.data ? (
+          <EmptyHint>Launch readiness unavailable.</EmptyHint>
+        ) : (
+          <>
+            <p className="text-sm">{readiness.data.summary}</p>
+            <div className="mt-3 flex flex-wrap gap-4 text-sm">
+              <span className="text-emerald-600">{readiness.data.passed} passing</span>
+              <span className="text-red-500">{readiness.data.failed} failing</span>
+              <span className="text-muted-foreground">{readiness.data.unmeasured} unmeasured</span>
+            </div>
+            <ul className="mt-4 space-y-3">
+              {readiness.data.gates.map((gate) => (
+                <li key={gate.id} className="border-b border-border/50 pb-3 last:border-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <span className="text-sm">{gate.question}</span>
+                    <span
+                      className={
+                        gate.status === 'passed'
+                          ? 'text-sm font-semibold text-emerald-600'
+                          : gate.status === 'failed'
+                            ? 'text-sm font-semibold text-red-500'
+                            : 'text-sm font-semibold text-muted-foreground'
+                      }
+                    >
+                      {gate.status === 'unmeasured'
+                        ? 'not measured'
+                        : `${gate.value}${gate.unit === '%' ? '%' : ''} (needs ${
+                            gate.direction === 'at-least' ? '≥' : '≤'
+                          }${gate.threshold}${gate.unit === '%' ? '%' : ''})`}
+                    </span>
+                  </div>
+                  {gate.status === 'unmeasured' ? (
+                    <p className="mt-1 text-sm text-muted-foreground">Waiting on: {gate.blockedBy}</p>
+                  ) : (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {gate.source} · {gate.sampleSize} observations
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Section>
+
+      {/*
+        Sits directly under the gates because it explains one of them. The
+        benchmark gate reads "not measured", and the honest reason is that
+        no benchmark has been imported — an absence of data, not a failed
+        run. Showing the registry next to the gate makes that legible
+        instead of leaving the reader to assume something broke.
+      */}
+      <Section
+        title="Benchmark registry"
+        description="Imported public benchmarks, with the provenance needed to reproduce a score"
+      >
+        {benchmarks.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !benchmarks.data ? (
+          <EmptyHint>Benchmark registry unavailable.</EmptyHint>
+        ) : benchmarks.data.benchmarks.length === 0 ? (
+          <EmptyHint>{benchmarks.data.note}</EmptyHint>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-4 text-sm">
+              <span>
+                <span className="font-semibold">{benchmarks.data.benchmarks.length}</span> imported
+              </span>
+              <span className="text-muted-foreground">
+                {benchmarks.data.totalPublicCases} public cases
+              </span>
+              <span className="text-muted-foreground">
+                {benchmarks.data.totalHoldoutCases} held out
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[40rem] text-left text-sm">
+                <thead className="text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="pb-2 pr-4 font-medium">Benchmark</th>
+                    <th className="pb-2 pr-4 font-medium">Pinned version</th>
+                    <th className="pb-2 pr-4 font-medium">Licence</th>
+                    <th className="pb-2 pr-4 font-medium">Public</th>
+                    <th className="pb-2 pr-4 font-medium">Holdout</th>
+                    <th className="pb-2 font-medium">Content hash</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {benchmarks.data.benchmarks.map((b) => (
+                    <tr key={b.datasetId} className="border-t border-border/50">
+                      <td className="py-2 pr-4">
+                        {b.name}
+                        <span className="block text-xs text-muted-foreground">{b.source}</span>
+                      </td>
+                      <td className="py-2 pr-4 font-mono text-xs">{b.sourceVersion}</td>
+                      <td className="py-2 pr-4 text-xs">{b.license}</td>
+                      <td className="py-2 pr-4">{b.publicCases}</td>
+                      <td className="py-2 pr-4">{b.holdoutCases}</td>
+                      {/* Truncated: the full hash is an audit artefact, not a
+                          reading aid, and the prefix is enough to compare. */}
+                      <td className="py-2 font-mono text-xs text-muted-foreground">
+                        {b.contentHash.slice(0, 12)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-xs text-muted-foreground">{benchmarks.data.note}</p>
+          </>
+        )}
+      </Section>
+
+      {runtime.data && !runtime.data.allRunning ? (
+        // First thing on the page, deliberately. If a watcher is not
+        // running, every calm figure below it is calm for the wrong reason,
+        // and the reader needs to know that before reading any of them.
+        <div className="rounded-lg border border-red-500/60 bg-red-500/5 p-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-red-500" />
+            <h2 className="text-sm font-semibold text-red-500">
+              {runtime.data.notRunning.length} watcher(s) are not running
+            </h2>
+          </div>
+          <p className="mt-2 text-sm">
+            The measurements below are incomplete. A quiet number here may mean nothing happened, or
+            it may mean nothing was watching.
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-6 text-sm">
+            {runtime.data.entries
+              .filter((entry) => !entry.running)
+              .map((entry) => (
+                <li key={entry.eventType}>
+                  <span className="font-medium">{entry.component}</span> — {entry.consequenceIfMissing}
+                </li>
+              ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+        <Tile
+          label="API p95"
+          value={latency.data ? `${latency.data.current.p95} ms` : '—'}
+          icon={Gauge}
+          sub={latency.data ? `${latency.data.current.count} requests sampled` : 'no requests yet'}
+        />
+        <Tile
+          label="API p50"
+          value={latency.data ? `${latency.data.current.p50} ms` : '—'}
+          icon={Activity}
+          sub={latency.data ? `mean ${latency.data.current.mean} ms` : undefined}
+        />
+        <Tile
+          label="Errors in window"
+          value={errorsNow}
+          icon={AlertTriangle}
+          tone={errorThreshold > 0 && errorsNow >= errorThreshold ? 'warn' : 'normal'}
+          sub={errorThreshold > 0 ? `alerts at ${errorThreshold}` : undefined}
+        />
+        <Tile
+          label="Prompts regressing"
+          value={regressing.length}
+          icon={ShieldCheck}
+          tone={regressing.length > 0 ? 'warn' : 'normal'}
+          sub={prompts.data ? `${prompts.data.report.length} tracked` : 'none tracked yet'}
+        />
+        <Tile
+          label="Awaiting your decision"
+          value={awaitingDecision}
+          icon={Inbox}
+          tone={awaitingDecision > 0 ? 'warn' : 'normal'}
+          sub={awaitingDecision > 0 ? 'proposals below' : 'nothing pending'}
+        />
+      </div>
+
+      <ProposalsPanel />
+
+      <Section
+        title="Watchers"
+        description="Whether each component is actually subscribed and processing events. Read from the event bus, not from what a component reports about itself."
+      >
+        {runtime.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !runtime.data ? (
+          <EmptyHint>Runtime check unavailable.</EmptyHint>
+        ) : (
+          <>
+            <ul className="space-y-2">
+              {runtime.data.entries.map((entry) => (
+                <li key={entry.eventType} className="flex items-center justify-between text-sm">
+                  <span>{entry.component}</span>
+                  <span
+                    className={
+                      entry.running
+                        ? 'text-xs font-medium text-emerald-500'
+                        : 'text-xs font-medium text-red-500'
+                    }
+                  >
+                    {entry.running ? `running (${entry.listeners} listener(s))` : 'not running'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Not covered by this check: {runtime.data.notCoveredByThisCheck.join(', ')}. These run on
+              a timer rather than by subscription, so a green result above does not vouch for them.
+            </p>
+          </>
+        )}
+      </Section>
+
+      <Section
+        title="Coverage"
+        description="Which AI paths report to the platform. Unreported paths are invisible to every measurement on this page."
+      >
+        {coverage.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : (
+          <ul className="space-y-2">
+            {(coverage.data ?? []).map((path) => (
+              <li key={path.promptId} className="flex items-center justify-between text-sm">
+                <span>{path.label}</span>
+                <span
+                  className={
+                    path.instrumented
+                      ? 'text-xs font-medium text-emerald-500'
+                      : 'text-xs font-medium text-muted-foreground'
+                  }
+                >
+                  {path.instrumented
+                    ? path.observed
+                      ? 'reporting'
+                      : 'wired, no traffic yet'
+                    : 'not instrumented'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section
+        title="Provider capability matrix"
+        description="Measured per provider and model from real traffic. Never hardcoded."
+      >
+        {matrix.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !matrix.data?.length ? (
+          <EmptyHint>
+            No provider traffic recorded yet. This fills once the platform is deployed and serving
+            real requests.
+          </EmptyHint>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-2 pr-4 font-medium">Provider / model</th>
+                  <th className="pb-2 pr-4 font-medium">Requests</th>
+                  <th className="pb-2 pr-4 font-medium">Success</th>
+                  <th className="pb-2 pr-4 font-medium">p95</th>
+                  <th className="pb-2 font-medium">Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.data.map((entry) => (
+                  <tr key={`${entry.providerId}:${entry.modelId}`} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <span className="font-medium">{entry.providerId}</span>
+                      <span className="text-muted-foreground"> / {entry.modelId}</span>
+                    </td>
+                    <td className="py-2 pr-4">{entry.requests}</td>
+                    <td className={`py-2 pr-4 ${entry.successRate < 1 ? 'text-amber-500' : ''}`}>
+                      {Math.round(entry.successRate * 100)}%
+                    </td>
+                    <td className="py-2 pr-4">{entry.p95LatencyMs} ms</td>
+                    <td className="py-2 text-muted-foreground">{formatCost(entry)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Prompt intelligence"
+        description="Success rate per prompt version, with a regression flag when the recent window drops below the historical baseline."
+      >
+        {prompts.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !prompts.data?.report.length ? (
+          <EmptyHint>No prompt executions recorded yet.</EmptyHint>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-2 pr-4 font-medium">Prompt</th>
+                  <th className="pb-2 pr-4 font-medium">Runs</th>
+                  <th className="pb-2 pr-4 font-medium">Overall</th>
+                  <th className="pb-2 pr-4 font-medium">Recent</th>
+                  <th className="pb-2 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {prompts.data.report.map((entry) => (
+                  <tr key={`${entry.promptId}:${entry.version}`} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <span className="font-medium">{entry.promptId}</span>
+                      <span className="text-muted-foreground"> v{entry.version}</span>
+                    </td>
+                    <td className="py-2 pr-4">{entry.executions}</td>
+                    <td className="py-2 pr-4">{Math.round(entry.successRate * 100)}%</td>
+                    <td className="py-2 pr-4">{Math.round(entry.recentSuccessRate * 100)}%</td>
+                    <td className="py-2">
+                      {entry.regressing ? (
+                        <span className="text-xs font-medium text-amber-500">regressing</span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">stable</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Cost per request"
+        description="Each model is compared only against its own history. There is no table of expected prices anywhere in the platform."
+      >
+        {cost.isLoading ? (
+          <EmptyHint>Loading…</EmptyHint>
+        ) : !cost.data?.report.length ? (
+          <EmptyHint>
+            No token-priced traffic recorded yet. Image and audio generation report no cost data at
+            all, so they never appear here — their spend is unmeasured rather than zero.
+          </EmptyHint>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="pb-2 pr-4 font-medium">Provider / model</th>
+                  <th className="pb-2 pr-4 font-medium">Requests</th>
+                  <th className="pb-2 pr-4 font-medium">Baseline</th>
+                  <th className="pb-2 pr-4 font-medium">Recent</th>
+                  <th className="pb-2 font-medium">State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cost.data.report.map((entry) => (
+                  <tr key={`${entry.providerId}:${entry.modelId}`} className="border-b border-border/50">
+                    <td className="py-2 pr-4">
+                      <span className="font-medium">{entry.providerId}</span>
+                      <span className="text-muted-foreground"> / {entry.modelId}</span>
+                    </td>
+                    <td className="py-2 pr-4">{entry.requests}</td>
+                    <td className="py-2 pr-4">{formatCostPerRequest(entry.baselineCostCents)}</td>
+                    <td className="py-2 pr-4">{formatCostPerRequest(entry.recentCostCents)}</td>
+                    <td className="py-2">
+                      {!entry.sufficientData ? (
+                        // Deliberately distinct from "steady": no claim has
+                        // been made yet, which is not the same as a claim of
+                        // normality.
+                        <span className="text-xs text-muted-foreground">
+                          not enough history yet ({entry.baselineSamples} baseline samples)
+                        </span>
+                      ) : entry.anomalous ? (
+                        <span className="text-xs font-medium text-amber-500">
+                          risen{entry.ratio !== null ? ` ${entry.ratio.toFixed(1)}×` : ' from no recorded cost'}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">steady</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <Section
+        title="Response time drift"
+        description="95th-percentile latency against each model's own history — the slowest one call in twenty, which is what a customer experiences as a pause."
+      >
+        <DriftTable
+          loading={latencyDrift.isLoading}
+          empty="No traffic recorded yet, so no model has a response-time history to depart from."
+          rows={(latencyDrift.data?.report ?? []).map((entry) => ({
+            key: `${entry.providerId}:${entry.modelId}`,
+            subject: `${entry.providerId} / ${entry.modelId}`,
+            requests: entry.requests,
+            baseline: entry.baselineP95Ms === null ? null : `${Math.round(entry.baselineP95Ms)} ms`,
+            recent: entry.recentP95Ms === null ? null : `${Math.round(entry.recentP95Ms)} ms`,
+            baselineSamples: entry.baselineSamples,
+            sufficientData: entry.sufficientData,
+            flagged: entry.drifting,
+            flaggedLabel:
+              entry.ratio !== null ? `slower ${entry.ratio.toFixed(1)}×` : 'slower than no baseline',
+          }))}
+        />
+      </Section>
+
+      <Section
+        title="Reliability drift"
+        description="Success rate against each model's own history, measured in percentage points — 100% falling to 98% is a real incident that a ratio would dismiss."
+      >
+        <DriftTable
+          loading={degradation.isLoading}
+          empty="No traffic recorded yet, so no model has a reliability history to depart from."
+          rows={(degradation.data?.report ?? []).map((entry) => ({
+            key: `${entry.providerId}:${entry.modelId}`,
+            subject: `${entry.providerId} / ${entry.modelId}`,
+            requests: entry.requests,
+            baseline:
+              entry.baselineSuccessRate === null
+                ? null
+                : `${Math.round(entry.baselineSuccessRate * 100)}%`,
+            recent:
+              entry.recentSuccessRate === null
+                ? null
+                : `${Math.round(entry.recentSuccessRate * 100)}%`,
+            baselineSamples: entry.baselineSamples,
+            sufficientData: entry.sufficientData,
+            flagged: entry.degraded,
+            flaggedLabel: `down ${entry.dropPercentagePoints ?? 0} points`,
+          }))}
+        />
+      </Section>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Section
+          title="Evaluation capture"
+          description="Real failures become permanent regression tests, subject to consent and redaction."
+        >
+          {capture.data?.stats.active ? (
+            <div className="space-y-1 text-sm">
+              <div>
+                Captured: <span className="font-medium">{capture.data.stats.captured}</span> of{' '}
+                {capture.data.stats.maxCases}
+              </div>
+              <div className="text-muted-foreground">Skipped: {capture.data.stats.skipped}</div>
+            </div>
+          ) : (
+            <EmptyHint>
+              Capture is off. It must be switched on deliberately, because it derives cases from real
+              customer interactions.
+            </EmptyHint>
+          )}
+        </Section>
+
+        <Section title="Event bus" description="In-process backbone all collectors publish to.">
+          {events.data ? (
+            <div className="space-y-1 text-sm">
+              <div className="flex items-center gap-2">
+                <Boxes className="h-4 w-4 text-muted-foreground" />
+                {events.data.totalEmitted} events buffered
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Database className="h-4 w-4" />
+                buffer capacity {events.data.bufferSize}
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Cpu className="h-4 w-4" />
+                {events.data.listenerCount} listeners attached
+              </div>
+            </div>
+          ) : (
+            <EmptyHint>Loading…</EmptyHint>
+          )}
+        </Section>
+      </div>
+    </div>
+  );
+}

@@ -1,119 +1,29 @@
 /**
- * OpenRouter streaming provider implementation
+ * OpenRouter streaming provider — a named instance of the shared
+ * OpenAI-compatible stream implementation, which carries all the wire
+ * behaviour (SSE ordering, usage accounting, auth, error mapping) and its
+ * tests. This file only pins what is OpenRouter-specific: the endpoint
+ * and the credential source.
+ *
+ * Same two deliberate changes as the DeepSeek rebase: the credential is
+ * read lazily instead of frozen at construction, and
+ * `stream_options: { include_usage: true }` is now actually requested —
+ * the copy this replaced read `chunk.usage` without ever asking for it,
+ * so the spend guard only ever saw the per-token estimate.
  */
 
-import OpenAI from 'openai';
-import { logger } from '../../../utils/logger';
 import {
-  TextGenerationStreamProvider,
-  GenerateStreamInput,
-  StreamChunk,
-  StreamChunkType,
-  TimeoutError,
-  RateLimitError,
-  StreamingError
-} from '../types';
+  OpenAICompatibleStreamProvider,
+  OpenAICompatibleStreamSettings,
+} from './openaiCompatible';
 
-export class OpenRouterStreamProvider implements TextGenerationStreamProvider {
-  private client: OpenAI;
-  private configured = false;
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
+export class OpenRouterStreamProvider extends OpenAICompatibleStreamProvider {
   constructor(apiKey?: string) {
-    const key = apiKey || process.env.OPENROUTER_API_KEY;
-    this.client = new OpenAI({
-      apiKey: key,
-      baseURL: 'https://openrouter.ai/api/v1'
+    super('openrouter', (): OpenAICompatibleStreamSettings | null => {
+      const key = apiKey || process.env.OPENROUTER_API_KEY;
+      return key ? { baseURL: OPENROUTER_BASE_URL, apiKey: key } : null;
     });
-    this.configured = !!key;
-  }
-
-  getName(): string {
-    return 'openrouter';
-  }
-
-  isConfigured(): boolean {
-    return this.configured;
-  }
-
-  async *generateStream(input: GenerateStreamInput): AsyncIterable<StreamChunk> {
-    if (!this.isConfigured()) {
-      throw new StreamingError(
-        'PROVIDER_NOT_CONFIGURED',
-        'OpenRouter provider not configured',
-        false
-      );
-    }
-
-    let outputTokens = 0;
-    let timeoutHandle: NodeJS.Timeout | null = null;
-
-    try {
-      const timeout = new Promise<never>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          reject(new TimeoutError('OpenRouter stream timeout'));
-        }, 30 * 60 * 1000);
-      });
-
-      const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-      if (input.systemPrompt) {
-        messages.push({ role: 'system', content: input.systemPrompt });
-      }
-      messages.push(
-        ...input.messages.map(m => ({
-          role: m.role as 'user' | 'assistant' | 'system',
-          content: m.content
-        }))
-      );
-
-      const stream = await Promise.race([
-        this.client.chat.completions.create({
-          model: input.model,
-          messages,
-          max_tokens: input.maxTokens || 1024,
-          temperature: input.temperature,
-          top_p: input.topP,
-          stream: true
-        }),
-        timeout
-      ]);
-
-      let inputTokens = 0;
-
-      for await (const chunk of stream) {
-        if (input.abortSignal?.aborted) {
-          logger.info('[OpenRouterStream] Aborted', { model: input.model });
-          break;
-        }
-
-        if (chunk.choices[0]?.delta?.content) {
-          yield {
-            type: StreamChunkType.TOKEN,
-            token: chunk.choices[0].delta.content
-          };
-          outputTokens++;
-        }
-
-        if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens;
-          outputTokens = chunk.usage.completion_tokens;
-        }
-      }
-
-      yield {
-        type: StreamChunkType.USAGE,
-        inputTokens,
-        outputTokens
-      };
-    } catch (error: any) {
-      logger.error('[OpenRouterStream] Error', { error: error.message });
-
-      if (error instanceof TimeoutError) throw error;
-      if (error.status === 429) throw new RateLimitError();
-      if (error.status === 401) throw new StreamingError('INVALID_API_KEY', 'OpenRouter key invalid', false);
-
-      throw new StreamingError('PROVIDER_ERROR', `OpenRouter error: ${error.message}`, true);
-    } finally {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-    }
   }
 }

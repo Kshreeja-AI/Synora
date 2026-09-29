@@ -200,10 +200,12 @@ export class MemoryService {
       throw new ForbiddenException('Not a member of this workspace')
     }
 
-    const where: any = {
-      workspaceId,
-      status: archivedOnly ? MemoryStatus.ARCHIVED : status,
-    }
+    // Archiving is recorded on the `isArchived` flag — consolidation and the
+    // decay worker both write it, and nothing ever writes MemoryStatus.ARCHIVED.
+    // Filtering on status here matched no rows at all.
+    const where: any = archivedOnly
+      ? { workspaceId, isArchived: true }
+      : { workspaceId, status }
 
     if (conversationId) {
       where.conversationId = conversationId
@@ -428,7 +430,7 @@ export class MemoryService {
           create: {
             source: 'consolidation',
             isConsolidated: false,
-            confidence: 0.8,
+            confidence: Math.round(avgImportance * 100) / 100,
           },
         },
       },
@@ -449,14 +451,25 @@ export class MemoryService {
   /**
    * Resolve version conflicts
    */
-  async resolveConflict(memoryId: string, selectedVersion: 'current' | 'previous'): Promise<Memory> {
-    const memory = await db.memory.findUnique({
-      where: { id: memoryId },
+  async resolveConflict(
+    memoryId: string,
+    selectedVersion: 'current' | 'previous',
+    userId: string,
+    workspaceId: string,
+  ): Promise<Memory> {
+    const memory = await db.memory.findFirst({
+      where: { id: memoryId, workspaceId },
       include: { parent: true },
     })
 
     if (!memory || !memory.parent) {
       throw new NotFoundException('Memory or previous version not found')
+    }
+
+    this.validateMemoryAccess(memory, userId)
+
+    if (memory.permission === MemoryPermission.PRIVATE && memory.userId !== userId) {
+      throw new ForbiddenException('Cannot resolve conflict on private memory of other user')
     }
 
     if (selectedVersion === 'previous') {
@@ -495,6 +508,7 @@ export class MemoryService {
       select: {
         type: true,
         status: true,
+        isArchived: true,
         importance: true,
       },
     })
@@ -510,7 +524,7 @@ export class MemoryService {
     return {
       totalMemories: memories.length,
       activeMemories: memories.filter((m) => m.status === MemoryStatus.ACTIVE).length,
-      archivedMemories: memories.filter((m) => m.status === MemoryStatus.ARCHIVED).length,
+      archivedMemories: memories.filter((m) => m.isArchived).length,
       averageImportance: memories.length > 0 ? totalImportance / memories.length : 0,
       typeDistribution,
     }

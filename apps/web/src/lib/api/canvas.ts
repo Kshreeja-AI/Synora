@@ -1,0 +1,239 @@
+'use client';
+
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from '@tanstack/react-query';
+import { api } from './client';
+
+export type BlockKind = 'text' | 'note' | 'link';
+export type LinkTarget = 'conversation' | 'run' | 'workflow' | 'agent';
+
+export interface CanvasBlock {
+  id: string;
+  kind: BlockKind;
+  content: string;
+  target?: LinkTarget;
+  targetId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/**
+ * A directed line between two blocks. Both endpoints always exist: the
+ * server deletes a block's connections along with the block, so the client
+ * never has to render a line to nothing.
+ */
+export interface CanvasConnection {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+  createdAt: number;
+}
+
+export interface CanvasDocument {
+  id: string;
+  workspaceId: string;
+  /** The project this canvas belongs to, if any. */
+  projectId?: string;
+  title: string;
+  blocks: CanvasBlock[];
+  /** Absent on canvases stored before connections existed. */
+  connections?: CanvasConnection[];
+  createdBy: string;
+  createdAt: number;
+  updatedAt: number;
+  archived: boolean;
+}
+
+export interface AddBlockInput {
+  kind: BlockKind;
+  content: string;
+  target?: LinkTarget;
+  targetId?: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+}
+
+export type UpdateBlockInput = Partial<Pick<AddBlockInput, 'content' | 'x' | 'y' | 'width' | 'height'>>;
+
+const KEY = 'canvases';
+
+export function useCanvases(
+  workspaceId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<CanvasDocument[]> {
+  return useQuery({
+    queryKey: [KEY, workspaceId],
+    queryFn: () => api.get<CanvasDocument[]>(`/api/workspaces/${workspaceId}/canvases`),
+    enabled: !!workspaceId && options?.enabled !== false,
+  });
+}
+
+export function useCanvas(
+  workspaceId: string,
+  canvasId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<CanvasDocument> {
+  return useQuery({
+    queryKey: [KEY, workspaceId, canvasId],
+    queryFn: () => api.get<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases/${canvasId}`),
+    enabled: !!workspaceId && !!canvasId && options?.enabled !== false,
+  });
+}
+
+/**
+ * What a canvas's link blocks point at, read now rather than copied when
+ * the link was made.
+ *
+ * A separate query from the canvas itself: resolving touches the database
+ * and three registries, so a canvas with no links should not pay for the
+ * feature, and a canvas whose targets have been deleted should still open.
+ */
+export interface ResolvedLink {
+  blockId: string;
+  title?: string;
+  detail?: string;
+  /** Carries no reason, deliberately — deleted and inaccessible look alike. */
+  missing?: boolean;
+}
+
+export function useCanvasLinks(
+  workspaceId: string,
+  canvasId: string,
+  options?: { enabled?: boolean },
+): UseQueryResult<ResolvedLink[]> {
+  return useQuery({
+    queryKey: [KEY, workspaceId, canvasId, 'links'],
+    queryFn: () =>
+      api.get<ResolvedLink[]>(`/api/workspaces/${workspaceId}/canvases/${canvasId}/links`),
+    enabled: !!workspaceId && !!canvasId && options?.enabled !== false,
+  });
+}
+
+export function useCreateCanvas(
+  workspaceId: string,
+): UseMutationResult<CanvasDocument, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (title) =>
+      api.post<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases`, { title }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useArchiveCanvas(
+  workspaceId: string,
+): UseMutationResult<CanvasDocument, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (canvasId) =>
+      api.delete<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases/${canvasId}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+/**
+ * Files a canvas into a project, or takes it out with an explicit null.
+ * Shares the canvas PATCH with renaming, so an omitted field means "leave
+ * it alone" — otherwise renaming would evict the canvas from its project.
+ */
+export function useSetCanvasProject(
+  workspaceId: string,
+): UseMutationResult<CanvasDocument, Error, { canvasId: string; projectId: string | null }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, projectId }) =>
+      api.patch<CanvasDocument>(`/api/workspaces/${workspaceId}/canvases/${canvasId}`, {
+        projectId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] });
+      // The project page shows canvases now, so its view is stale too.
+      queryClient.invalidateQueries({ queryKey: ['project-workspace'] });
+    },
+  });
+}
+
+export function useAddBlock(
+  workspaceId: string,
+): UseMutationResult<CanvasBlock, Error, { canvasId: string; input: AddBlockInput }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, input }) =>
+      api.post<CanvasBlock>(`/api/workspaces/${workspaceId}/canvases/${canvasId}/blocks`, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useUpdateBlock(
+  workspaceId: string,
+): UseMutationResult<
+  CanvasBlock,
+  Error,
+  { canvasId: string; blockId: string; changes: UpdateBlockInput }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, blockId, changes }) =>
+      api.patch<CanvasBlock>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/blocks/${blockId}`,
+        changes,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useRemoveBlock(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, { canvasId: string; blockId: string }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, blockId }) =>
+      api.delete<{ deleted: boolean }>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/blocks/${blockId}`,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useConnectBlocks(
+  workspaceId: string,
+): UseMutationResult<
+  CanvasConnection,
+  Error,
+  { canvasId: string; from: string; to: string; label?: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, from, to, label }) =>
+      api.post<CanvasConnection>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/connections`,
+        { from, to, label },
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}
+
+export function useDisconnectBlocks(
+  workspaceId: string,
+): UseMutationResult<{ deleted: boolean }, Error, { canvasId: string; connectionId: string }> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ canvasId, connectionId }) =>
+      api.delete<{ deleted: boolean }>(
+        `/api/workspaces/${workspaceId}/canvases/${canvasId}/connections/${connectionId}`,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [KEY, workspaceId] }),
+  });
+}

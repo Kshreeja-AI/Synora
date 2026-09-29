@@ -1,6 +1,5 @@
 'use client';
 
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -21,30 +20,29 @@ import { Badge, Button, Card, CardContent } from '@synora/design-system';
 import { Section, SectionHeading } from '../../components/marketing/Section';
 import { FEATURES } from '../../content/features';
 import {
-  fadeUpVariants,
-  staggerContainerVariants,
-  staggerItemVariants,
-  containerVariants,
-  itemVariants,
+  heroHeadlineVariants,
+  heroSubheadlineVariants,
+  heroCTAVariants,
+  sectionRevealVariants,
+  cardContainerVariants,
+  cardItemVariants,
+  cardHoverVariants,
+  buttonVariants,
+  statContainerVariants,
+  statItemVariants,
+  pricingContainerVariants,
+  pricingPlanVariants,
+  testimonialContainerVariants,
+  testimonialCardVariants,
+  faqContainerVariants,
+  faqItemVariants,
+  footerRevealVariants,
+  ANIMATION_DURATIONS,
+  EASING,
+  getReducedMotionVariants,
 } from '../../lib/animations';
-
-export const metadata: Metadata = {
-  title: 'Synora AI — Universal AI Workspace for Creators',
-  description:
-    'Synora is the unified AI platform for creators — text, code, images, video, and audio behind one provider-agnostic engine.',
-  openGraph: {
-    title: 'Synora AI — Universal AI Workspace for Creators',
-    description:
-      'Create with AI across every medium. Ten interchangeable providers, one premium workspace.',
-    type: 'website',
-  },
-  twitter: {
-    card: 'summary_large_image',
-    title: 'Synora AI — Universal AI Workspace for Creators',
-    description: 'Create with AI across every medium. Ten interchangeable providers, one premium workspace.',
-  },
-  robots: 'index, follow',
-};
+import { useMotionPreference } from '../../hooks/useMotionPreference';
+import { useScrollReveal } from '../../hooks/useScrollReveal';
 
 const PILLARS = [
   {
@@ -210,28 +208,74 @@ const PRICING_PLANS = [
   },
 ];
 
-export default function HomePage(): React.JSX.Element {
+function ScrollRevealSection({
+  children,
+  ...props
+}: React.ComponentProps<typeof Section>) {
+  const { ref, isVisible } = useScrollReveal();
   return (
-    <motion.div initial="hidden" animate="visible">
+    <div ref={ref}>
+      <motion.div
+        initial="hidden"
+        animate={isVisible ? 'visible' : 'hidden'}
+        variants={sectionRevealVariants}
+      >
+        <Section {...props}>{children}</Section>
+      </motion.div>
+    </div>
+  );
+}
+
+export default function HomePage(): React.JSX.Element {
+  const prefersReducedMotion = useMotionPreference();
+  const { ref: heroRef, isVisible: heroVisible } = useScrollReveal({
+    once: true,
+    threshold: 0.1,
+  });
+
+  // Apply reduced motion to critical animations
+  const effectiveHeroHeadlineVariants = getReducedMotionVariants(
+    heroHeadlineVariants,
+    prefersReducedMotion
+  );
+  const effectiveHeroSubheadlineVariants = getReducedMotionVariants(
+    heroSubheadlineVariants,
+    prefersReducedMotion
+  );
+  const effectiveHeroCTAVariants = getReducedMotionVariants(
+    heroCTAVariants,
+    prefersReducedMotion
+  );
+
+  return (
+    <motion.div layout>
       {/* Hero Section */}
       <div className="relative overflow-hidden">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -top-32 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl motion-safe:animate-pulse" />
+          <div className="absolute -top-32 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
           <div className="absolute -top-16 left-1/4 h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl" />
           <div className="absolute right-1/4 top-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
         </div>
 
-        <Section className="min-h-screen flex flex-col items-center justify-center pb-24 pt-24 text-center sm:pt-32">
-          <motion.div variants={staggerContainerVariants} className="animate-fade-up">
-            <motion.div variants={fadeUpVariants}>
-              <Badge variant="outline" className="mb-6 gap-2 px-3 py-1">
+        <div ref={heroRef}>
+          <Section className="min-h-screen flex flex-col items-center justify-center pb-24 pt-24 text-center sm:pt-32">
+
+          <motion.div
+            initial="hidden"
+            animate={heroVisible ? 'visible' : 'hidden'}
+            className="w-full max-w-4xl"
+          >
+            {/* Badge */}
+            <motion.div variants={effectiveHeroSubheadlineVariants} className="mb-6">
+              <Badge variant="outline" className="gap-2 px-3 py-1 inline-flex">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
                 Live now: Text & code. Next: Images, video, audio.
               </Badge>
             </motion.div>
 
+            {/* Headline */}
             <motion.h1
-              variants={fadeUpVariants}
+              variants={effectiveHeroHeadlineVariants}
               className="mx-auto max-w-4xl text-balance bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-5xl font-bold tracking-tight text-transparent sm:text-6xl lg:text-7xl"
             >
               The only AI workspace
@@ -239,45 +283,64 @@ export default function HomePage(): React.JSX.Element {
               you'll never outgrow.
             </motion.h1>
 
+            {/* Subheading */}
             <motion.p
-              variants={fadeUpVariants}
+              variants={effectiveHeroSubheadlineVariants}
               className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl"
             >
               One workspace for text, code, images, and video. Use any AI provider. Switch anytime.
             </motion.p>
 
+            {/* CTA Buttons */}
             <motion.div
-              variants={fadeUpVariants}
+              variants={effectiveHeroCTAVariants}
               className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row"
             >
-              <Button asChild size="lg" className="group">
-                <Link href="/auth/register">
-                  Start free
-                  <ArrowRight
-                    aria-hidden
-                    className="transition-transform group-hover:translate-x-0.5"
-                  />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="lg" className="bg-card/50 hover:bg-card">
-                <Link href="/pricing">No credit card required</Link>
-              </Button>
+              <motion.div
+                variants={buttonVariants}
+                initial="rest"
+                whileHover="hover"
+                whileTap="tap"
+              >
+                <Button asChild size="lg" className="group">
+                  <Link href="/auth/register">
+                    Start free
+                    <ArrowRight
+                      aria-hidden
+                      className="transition-transform group-hover:translate-x-0.5"
+                    />
+                  </Link>
+                </Button>
+              </motion.div>
+              <motion.div
+                variants={buttonVariants}
+                initial="rest"
+                whileHover="hover"
+                whileTap="tap"
+              >
+                <Button asChild variant="outline" size="lg" className="bg-card/50 hover:bg-card">
+                  <Link href="/pricing">No credit card required</Link>
+                </Button>
+              </motion.div>
             </motion.div>
           </motion.div>
 
           {/* Stats Band */}
           <motion.dl
-            variants={staggerContainerVariants}
+            initial="hidden"
+            animate={heroVisible ? 'visible' : 'hidden'}
+            variants={statContainerVariants}
             className="mx-auto mt-20 grid max-w-3xl grid-cols-1 gap-8 sm:grid-cols-3"
           >
             {[
               ['10+', 'AI providers supported'],
               ['100%', 'portable—switch anytime'],
               ['<100ms', 'token streaming latency'],
-            ].map(([stat, label]) => (
+            ].map(([stat, label], idx) => (
               <motion.div
                 key={label}
-                variants={staggerItemVariants}
+                variants={statItemVariants}
+                custom={idx}
                 className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
               >
                 <dt className="order-2 text-sm text-muted-foreground">{label}</dt>
@@ -289,112 +352,143 @@ export default function HomePage(): React.JSX.Element {
           </motion.dl>
 
           {/* Scroll Indicator */}
-          <motion.div
-            animate={{ y: [0, 8, 0] }}
-            transition={{ duration: 2, repeat: Infinity }}
-            className="absolute bottom-8 left-1/2 -translate-x-1/2"
-            aria-label="Scroll for more content"
-          >
-            <ChevronDown className="h-6 w-6 text-muted-foreground" />
-          </motion.div>
+          {!prefersReducedMotion && (
+            <motion.div
+              animate={{ y: [0, 8, 0] }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: EASING.smooth,
+              }}
+              className="absolute bottom-8 left-1/2 -translate-x-1/2"
+              aria-label="Scroll for more content"
+            >
+              <ChevronDown className="h-6 w-6 text-muted-foreground" />
+            </motion.div>
+          )}
         </Section>
+        </div>
       </div>
 
       {/* Trusted By Section */}
-      <Section className="border-t border-border">
-        <motion.div
-          variants={fadeUpVariants}
-          className="mb-12 text-center"
-        >
-          <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+      <ScrollRevealSection className="border-t border-border">
+        <motion.div className="mb-12 text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
             Trusted by developers and creators
           </p>
         </motion.div>
 
         <motion.div
-          variants={containerVariants}
-          className="flex flex-wrap items-center justify-center gap-6 sm:gap-8"
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="flex flex-wrap items-center justify-center gap-8"
         >
           {['OpenAI', 'Anthropic', 'Google', 'Mistral', 'Cohere'].map((provider) => (
             <motion.div
               key={provider}
-              variants={itemVariants}
-              className="rounded-lg border border-border/30 bg-card/50 px-4 py-2 text-sm font-medium text-foreground hover:border-primary/30 transition-colors"
+              variants={cardItemVariants}
+              className="rounded-md border border-border/40 bg-card/30 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-card/50"
             >
               {provider}
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Features Grid */}
-      <Section id="features" className="scroll-mt-16">
+      <ScrollRevealSection id="features" className="scroll-mt-16 border-t border-border">
         <SectionHeading
           eyebrow="Everything you create"
           title="One platform, every medium"
           description="Start with text and code today. Images, video, audio, and team workspaces are landing next — on the same engine, in the same projects."
         />
         <motion.div
-          variants={containerVariants}
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
           className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
         >
           {FEATURES.map((feature, idx) => (
-            <motion.div key={feature.slug} variants={itemVariants} custom={idx}>
+            <motion.div
+              key={feature.slug}
+              variants={cardItemVariants}
+              custom={idx}
+              whileHover="hover"
+              initial="rest"
+            >
               <Link href={`/features/${feature.slug}`} className="group">
-                <Card className="h-full transition-all motion-safe:group-hover:-translate-y-1 group-hover:border-primary/40">
-                  <CardContent className="p-6">
-                    <div className="mb-4 text-3xl">{feature.icon}</div>
-                    <div className="mb-2 flex items-center gap-2">
-                      <h3 className="text-lg font-semibold text-foreground">{feature.title}</h3>
-                      {feature.status === 'coming-soon' && (
-                        <Badge variant="secondary">Coming soon</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">{feature.tagline}</p>
-                  </CardContent>
-                </Card>
+                <motion.div variants={cardHoverVariants}>
+                  <Card className="h-full transition-all group-hover:border-primary/30">
+                    <CardContent className="p-6">
+                      <div className="mb-4 text-3xl" aria-hidden>
+                        {feature.icon}
+                      </div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <h3 className="text-lg font-semibold text-foreground">{feature.title}</h3>
+                        {feature.status === 'coming-soon' && (
+                          <Badge variant="secondary">Coming soon</Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{feature.tagline}</p>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </Link>
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* AI Capabilities */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Capabilities"
           title="Powered by the latest AI models"
           description="Access the most advanced AI capabilities for every creative medium."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-2"
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 lg:grid-cols-2"
         >
           {AI_CAPABILITIES.map((capability, idx) => (
             <motion.div
               key={capability.title}
-              variants={itemVariants}
+              variants={cardItemVariants}
               custom={idx}
-              className="group rounded-xl border border-border/50 bg-gradient-to-br from-card to-background p-8 transition-all hover:border-primary/20 hover:shadow-lg"
+              className="group rounded-lg border border-border/50 bg-gradient-to-br from-card to-background p-8 transition-all hover:border-primary/30 hover:shadow-md"
             >
-              <capability.icon className="mb-4 h-8 w-8 text-primary transition-transform group-hover:scale-110" />
-              <h3 className="mb-2 text-lg font-semibold text-foreground">{capability.title}</h3>
-              <p className="text-sm text-muted-foreground">{capability.description}</p>
+              <motion.div
+                whileHover={{ scale: 1.1 }}
+                transition={{ duration: ANIMATION_DURATIONS.xs }}
+              >
+                <capability.icon className="mb-4 h-8 w-8 text-primary transition-transform" />
+              </motion.div>
+              <h3 className="mb-3 text-lg font-semibold text-foreground">{capability.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{capability.description}</p>
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Workflow Section */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="How it works"
           title="Intuitive workflow, powerful results"
           description="From inspiration to execution, Synora streamlines the entire creative process."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-4"
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
         >
           {[
             { step: '1', title: 'Create', desc: 'Start a new project or conversation' },
@@ -402,10 +496,10 @@ export default function HomePage(): React.JSX.Element {
             { step: '3', title: 'Refine', desc: 'Branch, iterate, and perfect' },
             { step: '4', title: 'Export', desc: 'Save, share, or integrate' },
           ].map((item, idx) => (
-            <motion.div key={item.step} variants={itemVariants} custom={idx}>
+            <motion.div key={item.step} variants={cardItemVariants} custom={idx}>
               <Card className="h-full bg-gradient-to-br from-primary/5 to-transparent">
                 <CardContent className="p-6">
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
                     {item.step}
                   </div>
                   <h4 className="mb-2 font-semibold text-foreground">{item.title}</h4>
@@ -415,20 +509,23 @@ export default function HomePage(): React.JSX.Element {
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Why Synora */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Why Synora"
           title="Built like infrastructure, polished like a product"
         />
         <motion.div
-          variants={containerVariants}
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
           className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {PILLARS.map((pillar, index) => (
-            <motion.div key={pillar.title} variants={itemVariants} custom={index}>
+            <motion.div key={pillar.title} variants={cardItemVariants} custom={index}>
               <Card>
                 <CardContent className="p-8">
                   <pillar.icon aria-hidden className="mb-4 h-8 w-8 text-primary" />
@@ -439,76 +536,85 @@ export default function HomePage(): React.JSX.Element {
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Performance */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Performance"
           title="Built for speed and scale"
           description="Experience the fastest AI platform with enterprise-grade reliability."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-4"
+          variants={statContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
         >
           {PERFORMANCE_METRICS.map((item, idx) => (
             <motion.div
               key={item.metric}
-              variants={itemVariants}
+              variants={statItemVariants}
               custom={idx}
-              className="rounded-lg bg-gradient-to-br from-primary/10 to-transparent p-6 text-center"
+              className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
             >
-              <div className="mb-2 text-2xl font-bold text-primary md:text-3xl">
-                {item.metric}
-              </div>
-              <div className="text-xs text-muted-foreground md:text-sm">{item.label}</div>
+              <div className="mb-2 text-3xl font-bold text-primary">{item.metric}</div>
+              <div className="text-sm text-muted-foreground">{item.label}</div>
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Security */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Security"
           title="Enterprise-grade protection"
           description="Your data is protected with industry-leading security practices."
         />
         <motion.div
-          variants={containerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
           className="mx-auto max-w-3xl"
         >
-          <div className="rounded-lg border border-border bg-gradient-to-br from-card to-background p-8">
+          <div className="rounded-lg border border-border/40 bg-gradient-to-br from-card to-background p-8 lg:p-10">
             <div className="mb-8 flex items-center gap-3">
-              <Shield className="h-6 w-6 text-primary" />
+              <Shield className="h-6 w-6 text-primary flex-shrink-0" />
               <h3 className="text-lg font-semibold text-foreground">Security Features</h3>
             </div>
             <motion.div
-              variants={containerVariants}
-              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              variants={cardContainerVariants}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true, amount: 0.2 }}
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
             >
               {SECURITY_FEATURES.map((feature) => (
-                <motion.div key={feature} variants={itemVariants} className="flex items-start gap-3">
-                  <Check className="mt-1 h-5 w-5 flex-shrink-0 text-primary" />
+                <motion.div key={feature} variants={cardItemVariants} className="flex items-start gap-3">
+                  <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                   <span className="text-sm text-foreground">{feature}</span>
                 </motion.div>
               ))}
             </motion.div>
           </div>
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Developers */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="For Developers"
           title="Powerful APIs and integrations"
           description="Build on top of Synora with our comprehensive REST API and webhooks."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          variants={cardContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {[
             {
@@ -527,55 +633,72 @@ export default function HomePage(): React.JSX.Element {
               icon: Users,
             },
           ].map((item, idx) => (
-            <motion.div key={item.title} variants={itemVariants} custom={idx}>
+            <motion.div key={item.title} variants={cardItemVariants} custom={idx}>
               <Card className="h-full">
                 <CardContent className="p-6">
                   <item.icon className="mb-4 h-8 w-8 text-primary" />
-                  <h3 className="mb-2 font-semibold text-foreground">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
+                  <h3 className="mb-3 font-semibold text-foreground">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Pricing Preview */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Pricing"
           title="Plans for every creator"
           description="Free to start, pay as you grow. No hidden fees."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          variants={pricingContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {PRICING_PLANS.map((plan, idx) => (
-            <motion.div key={plan.name} variants={itemVariants} custom={idx}>
+            <motion.div
+              key={plan.name}
+              variants={pricingPlanVariants}
+              custom={idx}
+              whileHover={{ y: -4 }}
+              transition={{ duration: ANIMATION_DURATIONS.xs }}
+            >
               <Card
                 className={`relative h-full transition-all ${
-                  plan.highlighted ? 'border-primary/50 bg-gradient-to-br from-primary/5 to-transparent' : ''
+                  plan.highlighted ? 'border-primary/40 bg-gradient-to-br from-primary/5 to-transparent lg:scale-105' : ''
                 }`}
               >
                 {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground rounded-full">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
                     Most Popular
                   </div>
                 )}
-                <CardContent className="p-6">
-                  <h3 className="mb-2 text-lg font-semibold text-foreground">{plan.name}</h3>
+                <CardContent className="p-8">
+                  <h3 className="mb-1 text-lg font-semibold text-foreground">{plan.name}</h3>
                   <p className="mb-6 text-sm text-muted-foreground">{plan.description}</p>
-                  <div className="mb-6">
-                    <span className="text-3xl font-bold text-foreground">{plan.price}</span>
+                  <div className="mb-8">
+                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
                     {plan.period && <span className="text-sm text-muted-foreground">{plan.period}</span>}
                   </div>
-                  <Button asChild className="mb-6 w-full" variant={plan.highlighted ? 'primary' : 'outline'}>
-                    <Link href="/auth/register">Get started</Link>
-                  </Button>
+                  <motion.div
+                    variants={buttonVariants}
+                    initial="rest"
+                    whileHover="hover"
+                    whileTap="tap"
+                    className="w-full"
+                  >
+                    <Button asChild className="mb-8 w-full" variant={plan.highlighted ? 'primary' : 'outline'}>
+                      <Link href="/auth/register">Get started</Link>
+                    </Button>
+                  </motion.div>
                   <ul className="space-y-3">
                     {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-2 text-sm text-muted-foreground">
+                      <li key={feature} className="flex items-start gap-3 text-sm text-foreground">
                         <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
                         {feature}
                       </li>
@@ -586,26 +709,37 @@ export default function HomePage(): React.JSX.Element {
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Testimonials */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="Testimonials"
           title="Loved by creators"
           description="See what creators are building with Synora."
         />
         <motion.div
-          variants={containerVariants}
-          className="grid grid-cols-1 gap-6 md:grid-cols-3"
+          variants={testimonialContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
         >
           {TESTIMONIALS.map((testimonial, idx) => (
-            <motion.div key={testimonial.author} variants={itemVariants} custom={idx}>
+            <motion.div
+              key={testimonial.author}
+              variants={testimonialCardVariants}
+              custom={idx}
+            >
               <Card>
-                <CardContent className="p-6">
-                  <p className="mb-4 text-sm text-muted-foreground italic">"{testimonial.content}"</p>
-                  <div className="flex items-center gap-3">
-                    <div className="text-2xl">{testimonial.avatar}</div>
+                <CardContent className="p-6 flex flex-col h-full">
+                  <p className="mb-6 text-sm leading-relaxed text-muted-foreground italic flex-1">
+                    "{testimonial.content}"
+                  </p>
+                  <div className="flex items-center gap-3 border-t border-border/20 pt-4">
+                    <div className="text-2xl" aria-hidden>
+                      {testimonial.avatar}
+                    </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">{testimonial.author}</p>
                       <p className="text-xs text-muted-foreground">{testimonial.role}</p>
@@ -616,54 +750,73 @@ export default function HomePage(): React.JSX.Element {
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* FAQ */}
-      <Section className="border-t border-border">
+      <ScrollRevealSection className="border-t border-border">
         <SectionHeading
           eyebrow="FAQ"
           title="Frequently asked questions"
           description="Everything you need to know about Synora."
         />
         <motion.div
-          variants={containerVariants}
-          className="mx-auto max-w-2xl space-y-4"
+          variants={faqContainerVariants}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.2 }}
+          className="mx-auto max-w-2xl space-y-3"
         >
           {FAQ_ITEMS.map((item, idx) => (
-            <motion.div key={item.question} variants={itemVariants} custom={idx}>
+            <motion.div key={item.question} variants={faqItemVariants} custom={idx}>
               <Card className="overflow-hidden">
-                <CardContent className="p-6">
+                <CardContent className="p-0">
                   <details className="group">
-                    <summary className="flex cursor-pointer items-center justify-between font-semibold text-foreground hover:text-primary">
+                    <summary className="flex cursor-pointer items-center justify-between px-6 py-4 font-semibold text-foreground hover:bg-card/50 transition-colors">
                       {item.question}
-                      <ChevronDown className="h-5 w-5 transition-transform group-open:rotate-180" />
+                      <motion.div
+                        animate={{ rotate: 0 }}
+                        className="group-open:rotate-180 transition-transform"
+                      >
+                        <ChevronDown className="h-5 w-5 flex-shrink-0" />
+                      </motion.div>
                     </summary>
-                    <p className="mt-4 text-sm text-muted-foreground">{item.answer}</p>
+                    <p className="border-t border-border/30 px-6 py-4 text-sm text-muted-foreground">{item.answer}</p>
                   </details>
                 </CardContent>
               </Card>
             </motion.div>
           ))}
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
 
       {/* Final CTA */}
-      <Section>
+      <ScrollRevealSection className="border-t border-border">
         <motion.div
-          variants={fadeUpVariants}
-          className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-primary/15 via-background to-fuchsia-500/10 p-12 text-center sm:p-16"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.3 }}
+          variants={footerRevealVariants}
+          className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-primary/12 via-background to-fuchsia-500/8 p-12 text-center sm:p-16 lg:p-20"
         >
           <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
             Start creating today. Free forever.
           </h2>
-          <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
+          <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground sm:text-base">
             No credit card required. No waiting. Get instant access to all AI providers and start with 10 free conversations.
           </p>
-          <Button asChild size="lg" className="mt-8">
-            <Link href="/auth/register">Start free now</Link>
-          </Button>
+          <motion.div
+            variants={buttonVariants}
+            initial="rest"
+            whileHover="hover"
+            whileTap="tap"
+            className="mt-8 inline-block"
+          >
+            <Button asChild size="lg">
+              <Link href="/auth/register">Start free now</Link>
+            </Button>
+          </motion.div>
         </motion.div>
-      </Section>
+      </ScrollRevealSection>
     </motion.div>
   );
 }

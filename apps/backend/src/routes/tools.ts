@@ -135,6 +135,24 @@ router.post('/:workspaceId/tools/:toolId/execute', authMiddleware, requireWorksp
   }
 });
 
+// POST /workspaces/:workspaceId/tools/:toolId/preview - what executing
+// this tool WOULD do. Sends nothing, creates no execution record, and
+// never resolves a secret: it reports the destination host and method
+// from the UNSUBSTITUTED config plus the secret NAMES that would be
+// filled in. Facts, not a safety verdict.
+router.post('/:workspaceId/tools/:toolId/preview', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+  try {
+    const { workspaceId, toolId } = req.params;
+    const { input } = z.object({ input: z.record(z.unknown()).default({}) }).parse(req.body ?? {});
+
+    const preview = await toolService.previewExecution(req.userId!, workspaceId, toolId, input);
+
+    res.json(createApiResponse(preview));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /workspaces/:workspaceId/tools/:toolId/executions - list executions for a tool
 router.get('/:workspaceId/tools/:toolId/executions', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
@@ -142,6 +160,41 @@ router.get('/:workspaceId/tools/:toolId/executions', authMiddleware, requireWork
 
     const executions = await toolService.listExecutions(req.userId!, workspaceId, toolId);
 
+    res.json(createApiResponse(executions));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /workspaces/:workspaceId/executions - workspace-wide execution list,
+// optionally filtered by status. Exists so "what is waiting on a person"
+// can be answered in one read: PENDING here means a tool marked
+// requiresApproval has stopped and will not run until someone decides.
+const listExecutionsQuerySchema = z.object({
+  status: z
+    .enum([
+      'PENDING',
+      'APPROVED',
+      'RUNNING',
+      'STREAMING',
+      'COMPLETED',
+      'FAILED',
+      'CANCELLED',
+      'TIMEOUT',
+      'REJECTED',
+    ])
+    .optional(),
+});
+
+router.get('/:workspaceId/executions', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
+  try {
+    const { status } = listExecutionsQuerySchema.parse(req.query);
+    const executions = await toolService.listExecutions(
+      req.userId!,
+      req.params.workspaceId,
+      undefined,
+      status,
+    );
     res.json(createApiResponse(executions));
   } catch (error) {
     next(error);

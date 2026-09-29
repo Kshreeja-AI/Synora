@@ -85,15 +85,25 @@ export class MemoryDeduplicationService {
 
     const duplicates: Array<{ memory: Memory; similarity: number }> = []
 
+    let semanticMatches = new Map<string, number>()
+    if (memory.embeddingId) {
+      try {
+        const similar = await memoryRetrievalService.findSimilarMemories(
+          memory.id,
+          semanticThreshold,
+          allMemories.length,
+        )
+        semanticMatches = new Map(similar.map((s) => [s.memory.id, s.similarity]))
+      } catch {
+        // Vector DB unavailable — fall through to text similarity
+      }
+    }
+
     for (const candidate of allMemories) {
       if (memory.id === candidate.id) continue
 
-      // Check semantic similarity if embeddings exist
-      let semanticSimilarity = 0
-      if (memory.embeddingId && candidate.embeddingId) {
-        // Would use vector DB in production
-        semanticSimilarity = 0 // placeholder
-      }
+      const semanticSimilarity =
+        memory.embeddingId && candidate.embeddingId ? semanticMatches.get(candidate.id) ?? 0 : 0
 
       // Check text similarity
       const textSimilarity = this.calculateTextSimilarity(memory.content, candidate.content)
@@ -199,6 +209,7 @@ export class MemoryDeduplicationService {
     primaryId: string,
     duplicateIds: string[],
     config?: DeduplicationConfig,
+    similarities?: Record<string, number>,
   ): Promise<Memory> {
     try {
       logger.info(`Merging ${duplicateIds.length} duplicates into ${primaryId}`)
@@ -268,6 +279,30 @@ export class MemoryDeduplicationService {
         },
       })
 
+      // Record the merge in the relationship graph so a duplicate's
+      // provenance survives even after it stops being independently
+      // retrievable (status CONSOLIDATING). Upsert keeps this idempotent
+      // if the same pair is merged again (e.g. a retried maintenance run).
+      for (const duplicate of duplicates) {
+        const strength = similarities?.[duplicate.id] ?? 1
+        await db.memoryRelation.upsert({
+          where: {
+            fromId_toId_relationType: {
+              fromId: duplicate.id,
+              toId: merged.id,
+              relationType: 'duplicate_of',
+            },
+          },
+          create: {
+            fromId: duplicate.id,
+            toId: merged.id,
+            relationType: 'duplicate_of',
+            strength,
+          },
+          update: { strength },
+        })
+      }
+
       // Delete embeddings for merged memories (will be regenerated on access)
       for (const duplicate of duplicates) {
         if (duplicate.embeddingId) {
@@ -276,8 +311,8 @@ export class MemoryDeduplicationService {
       }
 
       // Invalidate cache
-      memoryCacheService.invalidateMemory(merged.id)
-      duplicates.forEach((d) => memoryCacheService.invalidateMemory(d.id))
+      await memoryCacheService.invalidateMemory(merged.id)
+      await Promise.all(duplicates.map((d) => memoryCacheService.invalidateMemory(d.id)))
 
       logger.info(`Successfully merged ${duplicateIds.length} duplicates`)
       return updated
@@ -306,7 +341,10 @@ export class MemoryDeduplicationService {
       for (const cluster of clusters) {
         try {
           const duplicateIds = cluster.duplicates.map((d) => d.memory.id)
-          await this.mergeDuplicates(cluster.primary.id, duplicateIds, config)
+          const similarities = Object.fromEntries(
+            cluster.duplicates.map((d) => [d.memory.id, d.similarity]),
+          )
+          await this.mergeDuplicates(cluster.primary.id, duplicateIds, config, similarities)
 
           memoriesMerged += 1
           duplicatesRemoved += duplicateIds.length
@@ -367,13 +405,10 @@ export class MemoryDeduplicationService {
       }),
     ])
 
-    // Estimate duplicates (rough heuristic)
-    const potentialDuplicates = Math.ceil(total * 0.1) // assume ~10% are duplicates
-
     return {
       totalMemories: total,
-      potentialDuplicates,
-      estimatedReduction: Math.ceil(total * 0.05), // estimated space saving
+      potentialDuplicates: 0,
+      estimatedReduction: 0,
       consolidatedMemories: consolidated,
     }
   }

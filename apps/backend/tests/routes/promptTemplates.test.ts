@@ -74,8 +74,8 @@ describe('Prompt Templates Routes', () => {
     beforeEach(async () => {
       await prisma.promptTemplate.createMany({
         data: [
-          { workspaceId, name: 'Template 1', content: 'Content 1', category: 'coding' },
-          { workspaceId, name: 'Template 2', content: 'Content 2', category: 'writing' },
+          { workspaceId, name: 'Template 1', content: 'Content 1', category: 'coding', createdBy: userId },
+          { workspaceId, name: 'Template 2', content: 'Content 2', category: 'writing', createdBy: userId },
         ],
       })
     })
@@ -117,7 +117,7 @@ describe('Prompt Templates Routes', () => {
 
     beforeEach(async () => {
       const prompt = await prisma.promptTemplate.create({
-        data: { workspaceId, name: 'My Prompt', content: 'System prompt content' },
+        data: { workspaceId, name: 'My Prompt', content: 'System prompt content', createdBy: userId },
       })
       promptId = prompt.id
     })
@@ -145,7 +145,7 @@ describe('Prompt Templates Routes', () => {
 
     beforeEach(async () => {
       const prompt = await prisma.promptTemplate.create({
-        data: { workspaceId, name: 'Original', content: 'Original content' },
+        data: { workspaceId, name: 'Original', content: 'Original content', createdBy: userId },
       })
       promptId = prompt.id
     })
@@ -167,7 +167,7 @@ describe('Prompt Templates Routes', () => {
 
     beforeEach(async () => {
       const prompt = await prisma.promptTemplate.create({
-        data: { workspaceId, name: 'To Delete', content: 'Will be deleted' },
+        data: { workspaceId, name: 'To Delete', content: 'Will be deleted', createdBy: userId },
       })
       promptId = prompt.id
     })
@@ -190,7 +190,7 @@ describe('Prompt Templates Routes', () => {
 
     beforeEach(async () => {
       const prompt = await prisma.promptTemplate.create({
-        data: { workspaceId, name: 'Popular', content: 'Popular content', usageCount: 5 },
+        data: { workspaceId, name: 'Popular', content: 'Popular content', usageCount: 5, createdBy: userId },
       })
       promptId = prompt.id
     })

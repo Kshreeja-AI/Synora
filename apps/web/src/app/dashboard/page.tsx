@@ -1,19 +1,36 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Building2, Users, CalendarDays, Settings } from 'lucide-react';
 import { Button, Card, CardContent, Skeleton, EmptyState } from '@synora/design-system';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { useCurrentWorkspace } from '../../hooks/useCurrentWorkspace';
 import { useCreateWorkspaceStore } from '../../stores/create-workspace-store';
 import { resendVerificationEmail } from '../../lib/api/auth';
+import { WhatsNew } from '../../components/shell/WhatsNew';
+import { WaitingForYou } from '../../components/shell/WaitingForYou';
+import { ActiveWork } from '../../components/shell/ActiveWork';
+import { NeedsAttention } from '../../components/shell/NeedsAttention';
+import { RecentActivity } from '../../components/shell/RecentActivity';
 
 export default function DashboardPage(): React.JSX.Element {
+  const router = useRouter();
   const { data: user, isLoading: isUserLoading } = useCurrentUser();
   const { currentWorkspace, isLoading: isWorkspaceLoading } = useCurrentWorkspace();
   const openCreateWorkspace = useCreateWorkspaceStore((state) => state.open);
   const [resendStatus, setResendStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  // First-run redirect: send users who have never completed the welcome flow
+  // to /welcome. This is a UX affordance, not a security boundary — anyone
+  // who bypasses it still sees the same dashboard, they just don't get the
+  // guided setup.
+  useEffect(() => {
+    if (!isUserLoading && user && user.onboardedAt === null) {
+      router.replace('/welcome');
+    }
+  }, [user, isUserLoading, router]);
 
   const handleResend = async (): Promise<void> => {
     setResendStatus('sending');
@@ -67,7 +84,26 @@ export default function DashboardPage(): React.JSX.Element {
           action={<Button onClick={openCreateWorkspace}>Create workspace</Button>}
         />
       ) : (
-        <Card>
+        <div className="space-y-6">
+          {/* Returning after time away starts with what happened while
+              you were gone — then what needs you. Absent on a first
+              visit and when nothing changed. */}
+          <WhatsNew workspaceId={currentWorkspace.id} />
+
+          {/* Ordered by how real the claim on attention is: blocked on a
+              decision only a person can make, then in progress right
+              now, then things that stopped on their own without being
+              asked to. Each of these is a fact — never a rank, a score,
+              or the platform inventing urgency about someone's work. */}
+          <WaitingForYou workspaceId={currentWorkspace.id} />
+          <ActiveWork workspaceId={currentWorkspace.id} />
+          <NeedsAttention workspaceId={currentWorkspace.id} />
+
+          {/* What merely happened, below what is blocked. History reads
+              when wanted; it never claims attention. */}
+          <RecentActivity workspaceId={currentWorkspace.id} />
+
+          <Card>
           <CardContent className="space-y-6 p-6">
             <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-lg font-semibold text-primary">
@@ -114,7 +150,8 @@ export default function DashboardPage(): React.JSX.Element {
               </Button>
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       )}
     </div>
   );

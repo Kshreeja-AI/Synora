@@ -32,19 +32,24 @@ describe('projects routes (M5)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string) {
     const email = uniqueEmail(prefix);
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email };
   }
 
   async function createWorkspace(accessToken: string, name: string) {
     const res = await request(app)
       .post('/api/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Cookie', accessToken)
       .send({ name });
     testWorkspaceIds.push(res.body.data.id);
     return res.body.data as { id: string };
@@ -56,14 +61,14 @@ describe('projects routes (M5)', () => {
 
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${user.accessToken}`)
+        .set('Cookie', user.accessToken)
         .send({ name: 'My Project' });
       expect(created.status).toBe(201);
       expect(created.body.data.workspaceId).toBeNull();
 
       const list = await request(app)
         .get('/api/projects')
-        .set('Authorization', `Bearer ${user.accessToken}`);
+        .set('Cookie', user.accessToken);
       expect(list.body.data).toHaveLength(1);
     });
 
@@ -72,12 +77,12 @@ describe('projects routes (M5)', () => {
       const stranger = await register('personal-stranger');
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Private Project' });
 
       const res = await request(app)
         .get(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${stranger.accessToken}`);
+        .set('Cookie', stranger.accessToken);
       expect(res.status).toBe(404);
     });
   });
@@ -93,7 +98,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${editor.accessToken}`)
+        .set('Cookie', editor.accessToken)
         .send({ name: 'Shared Project', workspaceId: workspace.id });
 
       expect(res.status).toBe(201);
@@ -110,7 +115,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${viewer.accessToken}`)
+        .set('Cookie', viewer.accessToken)
         .send({ name: 'Should Fail', workspaceId: workspace.id });
 
       expect(res.status).toBe(403);
@@ -123,7 +128,7 @@ describe('projects routes (M5)', () => {
 
       const res = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${stranger.accessToken}`)
+        .set('Cookie', stranger.accessToken)
         .send({ name: 'Should 404', workspaceId: workspace.id });
 
       expect(res.status).toBe(404);
@@ -134,16 +139,16 @@ describe('projects routes (M5)', () => {
       const workspace = await createWorkspace(owner.accessToken, 'List Projects Co');
       await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'In Workspace', workspaceId: workspace.id });
       await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Personal Only' });
 
       const res = await request(app)
         .get(`/api/projects?workspaceId=${workspace.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].name).toBe('In Workspace');
@@ -158,17 +163,17 @@ describe('projects routes (M5)', () => {
       });
       const created = await request(app)
         .post('/api/projects')
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Viewable', workspaceId: workspace.id });
 
       const viewed = await request(app)
         .get(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`);
+        .set('Cookie', member.accessToken);
       expect(viewed.status).toBe(200);
 
       const updateByMember = await request(app)
         .patch(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${member.accessToken}`)
+        .set('Cookie', member.accessToken)
         .send({ name: 'Renamed By Member' });
       // requirePermission() deliberately returns 404, not 403, for a
       // permission-denied request -- it never reveals resource existence
@@ -177,14 +182,700 @@ describe('projects routes (M5)', () => {
 
       const updateByOwner = await request(app)
         .patch(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .set('Cookie', owner.accessToken)
         .send({ name: 'Renamed By Owner' });
       expect(updateByOwner.status).toBe(200);
 
       const deleted = await request(app)
         .delete(`/api/projects/${created.body.data.id}`)
-        .set('Authorization', `Bearer ${owner.accessToken}`);
+        .set('Cookie', owner.accessToken);
       expect(deleted.status).toBe(200);
+    });
+  });
+
+  /**
+   * A project as the work inside it.
+   *
+   * Before this, a project could hold files and generated media and
+   * nothing else — the conversations where the thinking happened lived
+   * somewhere else entirely, so opening a project told you what had been
+   * produced but never how, or what was still unfinished. These
+   * assertions are about that: the work gathers, the chronology is real,
+   * and filing cannot reach across workspaces.
+   */
+  describe('the project workspace view', () => {
+    async function makeProject(cookie: string, workspaceId: string, body: object = {}) {
+      const res = await request(app)
+        .post('/api/projects')
+        .set('Cookie', cookie)
+        .send({ name: 'Market research', workspaceId, ...body });
+      return res.body.data as { id: string; goal: string | null };
+    }
+
+    async function makeConversation(cookie: string, workspaceId: string, title: string) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/conversations`)
+        .set('Cookie', cookie)
+        .send({ title, provider: 'anthropic', model: 'claude-sonnet-5' });
+      return res.body.data as { id: string };
+    }
+
+    it('carries a goal, so a project can say what "done" looks like', async () => {
+      const user = await register('proj-goal');
+      const ws = await createWorkspace(user.accessToken, 'Goal Co');
+
+      const project = await makeProject(user.accessToken, ws.id, {
+        goal: 'Decide whether to enter the German market by March.',
+      });
+      // A description says what the project IS; a goal says what finishing
+      // it would mean, which is the thing progress can be read against.
+      expect(project.goal).toBe('Decide whether to enter the German market by March.');
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      expect(view.status).toBe(200);
+      expect(view.body.data.project.goal).toContain('German market');
+    });
+
+    it('gathers the work — a filed conversation appears in the project', async () => {
+      const user = await register('proj-gather');
+      const ws = await createWorkspace(user.accessToken, 'Gather Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Competitor pricing');
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      expect(filed.status).toBe(200);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      expect(view.body.data.counts.conversation).toBe(1);
+      expect(
+        (view.body.data.timeline as { title: string; kind: string }[]).some(
+          (e) => e.kind === 'conversation' && e.title === 'Competitor pricing',
+        ),
+      ).toBe(true);
+      // The "continue where I left off" answer, named once so every
+      // surface agrees what continuing means.
+      expect(view.body.data.resumeConversationId).toBe(conversation.id);
+    });
+
+    it('says nothing about "since last visit" on a first-ever view', async () => {
+      const user = await register('proj-visit-first');
+      const ws = await createWorkspace(user.accessToken, 'First Visit Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Everything in a brand-new project is trivially "new" — that isn't
+      // an informative claim, so a first-ever visit gets no digest at all
+      // rather than one that always says "100% new."
+      expect(view.body.data.newSinceLastVisit).toBeNull();
+    });
+
+    it('reports what changed since the last time this person opened it', async () => {
+      const user = await register('proj-visit-digest');
+      const ws = await createWorkspace(user.accessToken, 'Digest Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      // Baseline: this visit becomes "last time."
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Filed after baseline');
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+
+      const second = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      expect(second.body.data.newSinceLastVisit).not.toBeNull();
+      expect(second.body.data.newSinceLastVisit.count).toBe(1);
+      expect(second.body.data.newSinceLastVisit.byKind).toEqual({ conversation: 1 });
+      expect(typeof second.body.data.newSinceLastVisit.previousVisitAt).toBe('string');
+    });
+
+    it('reports zero new items, not nothing, when nothing changed since the last visit', async () => {
+      const user = await register('proj-visit-quiet');
+      const ws = await createWorkspace(user.accessToken, 'Quiet Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      const second = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Distinct from the first-visit case: there WAS a last time, and
+      // nothing happened since — a real, statable fact, not the absence
+      // of one.
+      expect(second.body.data.newSinceLastVisit).not.toBeNull();
+      expect(second.body.data.newSinceLastVisit.count).toBe(0);
+    });
+
+    it("tracks each person's own last-visit time, not a shared one", async () => {
+      const owner = await register('proj-visit-owner');
+      const teammate = await register('proj-visit-teammate');
+      const ws = await createWorkspace(owner.accessToken, 'Shared Visit Co');
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: teammate.userId, role: 'MEMBER' },
+      });
+      const project = await makeProject(owner.accessToken, ws.id);
+
+      // Owner visits and leaves a baseline; teammate has never visited.
+      await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', owner.accessToken);
+
+      const teammateView = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', teammate.accessToken);
+
+      // The teammate's first visit, independent of the owner's history —
+      // inheriting the owner's baseline would either hide activity from
+      // the teammate or falsely claim they'd been here before.
+      expect(teammateView.body.data.newSinceLastVisit).toBeNull();
+    });
+
+    it('adds a decision note, shown verbatim in the timeline with its author', async () => {
+      const user = await register('proj-note-author');
+      const ws = await createWorkspace(user.accessToken, 'Note Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const created = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Went with vendor B: 20% cheaper, better support SLA.' });
+      expect(created.status).toBe(201);
+      expect(typeof created.body.data.id).toBe('string');
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      expect(view.body.data.counts.note).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'note');
+      // Verbatim, not summarised — a note is the person's own record of
+      // their own reasoning, and rewording it would make it someone else's.
+      expect(entry?.title).toBe('Went with vendor B: 20% cheaper, better support SLA.');
+      expect(entry?.detail).toBeTruthy();
+    });
+
+    it('corrects a note by appending, marking the original rather than rewriting it', async () => {
+      const user = await register('proj-note-correct');
+      const ws = await createWorkspace(user.accessToken, 'Correction Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const original = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Went with vendor B.' });
+      const correction = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Actually vendor A — B failed the security review.', correctsNoteId: original.body.data.id });
+      expect(correction.status).toBe(201);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      const noteEntries = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).filter((e) => e.kind === 'note');
+
+      // BOTH notes remain visible: the original marked, never erased.
+      expect(noteEntries).toHaveLength(2);
+      const originalEntry = noteEntries.find((e) => e.title === 'Went with vendor B.');
+      const correctionEntry = noteEntries.find((e) => e.title.startsWith('Actually vendor A'));
+      expect(originalEntry?.detail).toContain('corrected by a later note');
+      expect(correctionEntry?.detail).toContain('correction');
+
+      // The decisions log carries FULL verbatim content (the timeline
+      // truncates titles) with both correction flags, newest first.
+      const decisions = view.body.data.decisions as {
+        content: string;
+        correction: boolean;
+        correctedLater: boolean;
+        author: string | null;
+      }[];
+      expect(decisions).toHaveLength(2);
+      expect(decisions[0].content).toBe('Actually vendor A — B failed the security review.');
+      expect(decisions[0].correction).toBe(true);
+      expect(decisions[0].correctedLater).toBe(false);
+      expect(decisions[1].content).toBe('Went with vendor B.');
+      expect(decisions[1].correction).toBe(false);
+      expect(decisions[1].correctedLater).toBe(true);
+      expect(decisions[1].author).toBeTruthy();
+    });
+
+    it("refuses to 'correct' a note that lives in a different project", async () => {
+      const user = await register('proj-note-crossfix');
+      const ws = await createWorkspace(user.accessToken, 'CrossFix Co');
+      const projectA = await makeProject(user.accessToken, ws.id);
+      const projectB = await makeProject(user.accessToken, ws.id);
+
+      const noteInA = await request(app)
+        .post(`/api/projects/${projectA.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Belongs to project A.' });
+
+      const res = await request(app)
+        .post(`/api/projects/${projectB.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: 'Trying to correct across projects.', correctsNoteId: noteInA.body.data.id });
+
+      // The correction target is a claim, verified in the same project —
+      // 404, the same answer a nonexistent id gets.
+      expect(res.status).toBe(404);
+    });
+
+    it('refuses an empty note rather than filing a blank record', async () => {
+      const user = await register('proj-note-empty');
+      const ws = await createWorkspace(user.accessToken, 'Empty Note Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const res = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', user.accessToken)
+        .send({ content: '   ' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("refuses to add a note to a project the caller can't reach", async () => {
+      const owner = await register('proj-note-owner');
+      const stranger = await register('proj-note-stranger');
+      const ws = await createWorkspace(owner.accessToken, 'Private Note Co');
+      const project = await makeProject(owner.accessToken, ws.id);
+
+      const res = await request(app)
+        .post(`/api/projects/${project.id}/notes`)
+        .set('Cookie', stranger.accessToken)
+        .send({ content: 'Should not be allowed.' });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('takes a conversation back out again when filed to null', async () => {
+      const user = await register('proj-unfile');
+      const ws = await createWorkspace(user.accessToken, 'Unfile Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Stray thought');
+
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: null });
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      // Explicit null means "take it out"; omitting the field would have
+      // left it where it was.
+      expect(view.body.data.counts.conversation).toBe(0);
+      expect(view.body.data.resumeConversationId).toBeNull();
+    });
+
+    it('refuses to file a conversation into another workspace\'s project', async () => {
+      const owner = await register('proj-mine');
+      const stranger = await register('proj-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const conversation = await makeConversation(owner.accessToken, ws.id, 'Mine');
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/conversations/${conversation.id}`)
+        .set('Cookie', owner.accessToken)
+        .send({ projectId: theirProject.id });
+
+      // 404, not 403: an accept/reject answer that distinguished them
+      // would reveal which project ids exist elsewhere.
+      expect(filed.status).toBe(404);
+    });
+
+    it('hides the project workspace view from another workspace', async () => {
+      const owner = await register('proj-view-mine');
+      const stranger = await register('proj-view-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'View Co');
+      const project = await makeProject(owner.accessToken, ws.id);
+
+      expect(
+        (await request(app).get(`/api/projects/${project.id}/workspace`)).status,
+      ).toBe(401);
+      expect(
+        (
+          await request(app)
+            .get(`/api/projects/${project.id}/workspace`)
+            .set('Cookie', stranger.accessToken)
+        ).status,
+      ).toBe(404);
+    });
+
+    it('turns a conversation into a project in one action', async () => {
+      const user = await register('proj-promote');
+      const ws = await createWorkspace(user.accessToken, 'Promote Co');
+      const conversation = await makeConversation(
+        user.accessToken,
+        ws.id,
+        'Should we enter Germany?',
+      );
+
+      const promoted = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+
+      expect(promoted.status).toBe(201);
+      // The name comes from the conversation, because it already has one
+      // the person chose — a dialog would ask a question whose answer is
+      // known.
+      expect(promoted.body.data.name).toBe('Should we enter Germany?');
+
+      const view = await request(app)
+        .get(`/api/projects/${promoted.body.data.projectId}/workspace`)
+        .set('Cookie', user.accessToken);
+      // Created AND filed: the two halves of one intention.
+      expect(view.body.data.counts.conversation).toBe(1);
+      expect(view.body.data.resumeConversationId).toBe(conversation.id);
+    });
+
+    it('refuses to promote a conversation that is already in a project', async () => {
+      const user = await register('proj-promote-twice');
+      const ws = await createWorkspace(user.accessToken, 'Twice Co');
+      const conversation = await makeConversation(user.accessToken, ws.id, 'Already filed');
+
+      await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+      const again = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', user.accessToken)
+        .send({});
+
+      // Otherwise a second press would silently strand the first project,
+      // empty, with the conversation moved out of it.
+      expect(again.status).toBe(400);
+      expect(JSON.stringify(again.body)).toMatch(/already in a project/);
+    });
+
+    it('will not let promoting be a way around the create-project permission', async () => {
+      const owner = await register('proj-promote-owner');
+      const viewer = await register('proj-promote-viewer');
+      const ws = await createWorkspace(owner.accessToken, 'Perm Co');
+      await prisma.workspaceMember.create({
+        data: { workspaceId: ws.id, userId: viewer.userId, role: 'VIEWER' },
+      });
+      const conversation = await makeConversation(owner.accessToken, ws.id, 'Theirs');
+
+      const promoted = await request(app)
+        .post(`/api/workspaces/${ws.id}/conversations/${conversation.id}/project`)
+        .set('Cookie', viewer.accessToken)
+        .send({});
+
+      // A VIEWER cannot create a project directly; promoting must respect
+      // the same control rather than route around it.
+      expect([403, 404]).toContain(promoted.status);
+    });
+
+    it('gathers a canvas into the project alongside the conversations', async () => {
+      const user = await register('proj-canvas');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Market map' })
+      ).body.data as { id: string };
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      expect(filed.status).toBe(200);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      // A canvas is where arranging happens; a project holding the
+      // conversations but not the canvas would still be missing part of
+      // the work.
+      expect(view.body.data.counts.canvas).toBe(1);
+      expect(
+        (view.body.data.timeline as { kind: string; title: string }[]).some(
+          (e) => e.kind === 'canvas' && e.title === 'Market map',
+        ),
+      ).toBe(true);
+    });
+
+    it('refuses to file a canvas into another workspace\'s project', async () => {
+      const owner = await register('proj-canvas-mine');
+      const stranger = await register('proj-canvas-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'Canvas Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'Canvas Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', owner.accessToken)
+          .send({ title: 'Mine' })
+      ).body.data as { id: string };
+
+      const filed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', owner.accessToken)
+        .send({ projectId: theirProject.id });
+
+      expect(filed.status).toBe(404);
+    });
+
+    it('takes a canvas back out again when filed to null', async () => {
+      const user = await register('proj-canvas-unfile');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Unfile Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Stray' })
+      ).body.data as { id: string };
+
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+      const removed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: null });
+      expect(removed.body.data.projectId).toBeUndefined();
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      expect(view.body.data.counts.canvas).toBe(0);
+    });
+
+    it('renames a canvas without unfiling it', async () => {
+      const user = await register('proj-canvas-rename');
+      const ws = await createWorkspace(user.accessToken, 'Canvas Rename Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const canvas = (
+        await request(app)
+          .post(`/api/workspaces/${ws.id}/canvases`)
+          .set('Cookie', user.accessToken)
+          .send({ title: 'Before' })
+      ).body.data as { id: string };
+      await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ projectId: project.id });
+
+      const renamed = await request(app)
+        .patch(`/api/workspaces/${ws.id}/canvases/${canvas.id}`)
+        .set('Cookie', user.accessToken)
+        .send({ title: 'After' });
+
+      // An omitted projectId means "leave it alone" — otherwise every
+      // rename would quietly evict the canvas from its project.
+      expect(renamed.body.data.title).toBe('After');
+      expect(renamed.body.data.projectId).toBe(project.id);
+    });
+
+    async function makeAgent(cookie: string, workspaceId: string, name: string) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/agents`)
+        .set('Cookie', cookie)
+        .send({ name, instructions: 'Do the task carefully.' });
+      return res.body.data as { id: string };
+    }
+
+    async function startAgentRun(
+      cookie: string,
+      workspaceId: string,
+      agentId: string,
+      body: object,
+    ) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/agents/${agentId}/runs`)
+        .set('Cookie', cookie)
+        .send(body);
+    }
+
+    it('gathers an agent run into the project alongside the conversations', async () => {
+      const user = await register('proj-run');
+      const ws = await createWorkspace(user.accessToken, 'Run Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Summarise the competitive landscape',
+        projectId: project.id,
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBe(project.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+      // A run is where the AI actually did something as part of this
+      // project's work — a project holding conversations and documents
+      // but not what an agent did in service of them would still be
+      // missing part of the picture.
+      expect(view.body.data.counts.agentRun).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'agentRun');
+      expect(entry?.title).toBe('Summarise the competitive landscape');
+      expect(entry?.detail).toContain('Researcher');
+    });
+
+    it("refuses to file an agent run into another workspace's project", async () => {
+      const owner = await register('proj-run-mine');
+      const stranger = await register('proj-run-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'Run Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'Run Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const agent = await makeAgent(owner.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(owner.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+        projectId: theirProject.id,
+      });
+
+      // 404, not 403 — the same rule as everywhere else a project id is
+      // accepted as a claim of access rather than trusted as a bare
+      // foreign key.
+      expect(started.status).toBe(404);
+    });
+
+    it('404s a run filed against a project id that does not exist', async () => {
+      const user = await register('proj-run-missing');
+      const ws = await createWorkspace(user.accessToken, 'Run Missing Co');
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+        projectId: 'proj_does_not_exist',
+      });
+      expect(started.status).toBe(404);
+    });
+
+    it('starts a run with no project just fine — filing is optional', async () => {
+      const user = await register('proj-run-none');
+      const ws = await createWorkspace(user.accessToken, 'Run None Co');
+      const agent = await makeAgent(user.accessToken, ws.id, 'Researcher');
+
+      const started = await startAgentRun(user.accessToken, ws.id, agent.id, {
+        task: 'Do the thing',
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBeUndefined();
+    });
+
+    async function makeWorkflow(cookie: string, workspaceId: string, name: string) {
+      const res = await request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows`)
+        .set('Cookie', cookie)
+        .send({
+          name,
+          steps: [{ id: 's1', kind: 'generate', description: 'step s1', input: 'summarise' }],
+        });
+      return res.body.data as { id: string };
+    }
+
+    async function startWorkflowRun(
+      cookie: string,
+      workspaceId: string,
+      workflowId: string,
+      body: object,
+    ) {
+      return request(app)
+        .post(`/api/workspaces/${workspaceId}/workflows/${workflowId}/runs`)
+        .set('Cookie', cookie)
+        .send(body);
+    }
+
+    it('gathers a workflow run into the project, named by the workflow, alongside agent runs', async () => {
+      const user = await register('proj-wfrun');
+      const ws = await createWorkspace(user.accessToken, 'WF Run Proj Co');
+      const project = await makeProject(user.accessToken, ws.id);
+      const workflow = await makeWorkflow(user.accessToken, ws.id, 'Nightly report');
+
+      const started = await startWorkflowRun(user.accessToken, ws.id, workflow.id, {
+        task: 'Run the nightly numbers',
+        projectId: project.id,
+      });
+      expect(started.status).toBe(201);
+      expect(started.body.data.run.projectId).toBe(project.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      // Agent runs and workflow runs execute through the same run record,
+      // so both are gathered under the one 'agentRun' kind — but a
+      // workflow run must be named by the WORKFLOW, not left generic,
+      // since getAgent() alone would never resolve it.
+      expect(view.body.data.counts.agentRun).toBe(1);
+      const entry = (
+        view.body.data.timeline as { kind: string; title: string; detail?: string }[]
+      ).find((e) => e.kind === 'agentRun');
+      expect(entry?.title).toBe('Run the nightly numbers');
+      expect(entry?.detail).toContain('Nightly report');
+    });
+
+    it("refuses to file a workflow run into another workspace's project", async () => {
+      const owner = await register('proj-wfrun-mine');
+      const stranger = await register('proj-wfrun-theirs');
+      const ws = await createWorkspace(owner.accessToken, 'WF Run Mine Co');
+      const theirWs = await createWorkspace(stranger.accessToken, 'WF Run Theirs Co');
+      const theirProject = await makeProject(stranger.accessToken, theirWs.id);
+      const workflow = await makeWorkflow(owner.accessToken, ws.id, 'Nightly report');
+
+      const started = await startWorkflowRun(owner.accessToken, ws.id, workflow.id, {
+        task: 'Do the thing',
+        projectId: theirProject.id,
+      });
+
+      expect(started.status).toBe(404);
+    });
+
+    it('reports an empty project honestly rather than failing', async () => {
+      const user = await register('proj-empty');
+      const ws = await createWorkspace(user.accessToken, 'Empty Co');
+      const project = await makeProject(user.accessToken, ws.id);
+
+      const view = await request(app)
+        .get(`/api/projects/${project.id}/workspace`)
+        .set('Cookie', user.accessToken);
+
+      expect(view.status).toBe(200);
+      expect(view.body.data.timeline).toEqual([]);
+      // Facts, not judgements: "nothing has happened yet" is for the
+      // person to interpret.
+      expect(view.body.data.lastActivityAt).toBeNull();
+      expect(view.body.data.resumeConversationId).toBeNull();
     });
   });
 });

@@ -155,6 +155,19 @@ export class ForbiddenException extends ApiException {
   }
 }
 
+/**
+ * 409 — the request is well-formed but conflicts with current server state,
+ * so retrying it unchanged will keep failing (e.g. enrolling a second MFA
+ * factor when one is already active). Distinct from ValidationException (400),
+ * which means the request itself was malformed.
+ */
+export class ConflictException extends ApiException {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super('CONFLICT', message, 409, details);
+    this.name = 'ConflictException';
+  }
+}
+
 export class LockedException extends ApiException {
   constructor(message = 'Account temporarily locked', details?: Record<string, unknown>) {
     super('ACCOUNT_LOCKED', message, 423, details);
@@ -166,5 +179,19 @@ export class ServiceUnavailableException extends ApiException {
   constructor(message = 'Service temporarily unavailable') {
     super('SERVICE_UNAVAILABLE', message, 503);
     this.name = 'ServiceUnavailableException';
+  }
+}
+
+/**
+ * 429 — deliberately the same code the express-rate-limit handlers emit
+ * (`resourceRateLimit.ts`, auth limiters), so a 429 raised from inside a
+ * service (e.g. Synora's own outbound provider pacing) is indistinguishable
+ * in shape from one raised at the HTTP edge: clients need exactly one
+ * "back off and retry" handler.
+ */
+export class TooManyRequestsException extends ApiException {
+  constructor(message = 'Too many requests. Please wait a moment and try again.') {
+    super('RATE_LIMIT_EXCEEDED', message, 429);
+    this.name = 'TooManyRequestsException';
   }
 }

@@ -32,19 +32,24 @@ describe('folders routes (M5)', () => {
     return email;
   }
 
+  function cookieHeader(setCookieHeaders: string | string[] | undefined): string {
+    const cookies = Array.isArray(setCookieHeaders) ? setCookieHeaders : setCookieHeaders ? [setCookieHeaders] : [];
+    return cookies.map((c) => c.split(';')[0]).join('; ');
+  }
+
   async function register(prefix: string) {
     const email = uniqueEmail(prefix);
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email, password: 'a-valid-password-123' });
-    const data = res.body.data as { accessToken: string; user: { id: string } };
-    return { accessToken: data.accessToken, userId: data.user.id, email };
+    const data = res.body.data as { user: { id: string } };
+    return { accessToken: cookieHeader(res.headers['set-cookie']), userId: data.user.id, email };
   }
 
   async function createWorkspace(accessToken: string, name: string) {
     const res = await request(app)
       .post('/api/workspaces')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Cookie', accessToken)
       .send({ name });
     testWorkspaceIds.push(res.body.data.id);
     return res.body.data as { id: string };
@@ -56,25 +61,28 @@ describe('folders routes (M5)', () => {
 
     const created = await request(app)
       .post(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .set('Cookie', owner.accessToken)
       .send({ name: 'Marketing' });
     expect(created.status).toBe(201);
 
     const listed = await request(app)
       .get(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
+    // The list endpoint returns the folder array directly, matching the
+    // web client (lib/api/folders.ts). It briefly returned `{ items }`
+    // while this route was serving conversation folders by mistake.
     expect(listed.body.data).toHaveLength(1);
 
     const renamed = await request(app)
       .patch(`/api/workspaces/${workspace.id}/folders/${created.body.data.id}`)
-      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .set('Cookie', owner.accessToken)
       .send({ name: 'Growth' });
     expect(renamed.status).toBe(200);
     expect(renamed.body.data.name).toBe('Growth');
 
     const deleted = await request(app)
       .delete(`/api/workspaces/${workspace.id}/folders/${created.body.data.id}`)
-      .set('Authorization', `Bearer ${owner.accessToken}`);
+      .set('Cookie', owner.accessToken);
     expect(deleted.status).toBe(200);
   });
 
@@ -84,12 +92,12 @@ describe('folders routes (M5)', () => {
 
     const parent = await request(app)
       .post(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .set('Cookie', owner.accessToken)
       .send({ name: 'Parent' });
 
     const child = await request(app)
       .post(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .set('Cookie', owner.accessToken)
       .send({ name: 'Child', parentId: parent.body.data.id });
 
     expect(child.status).toBe(201);
@@ -106,7 +114,7 @@ describe('folders routes (M5)', () => {
 
     const res = await request(app)
       .post(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${viewer.accessToken}`)
+      .set('Cookie', viewer.accessToken)
       .send({ name: 'Should Fail' });
 
     expect(res.status).toBe(403);
@@ -119,7 +127,7 @@ describe('folders routes (M5)', () => {
 
     const res = await request(app)
       .get(`/api/workspaces/${workspace.id}/folders`)
-      .set('Authorization', `Bearer ${stranger.accessToken}`);
+      .set('Cookie', stranger.accessToken);
 
     expect(res.status).toBe(404);
   });

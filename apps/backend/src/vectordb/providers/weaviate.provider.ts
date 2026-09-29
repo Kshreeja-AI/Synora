@@ -253,7 +253,9 @@ export const weaviateVectorDBDescriptor: VectorDBProviderDescriptor = {
     if (!weaviateUrl) {
       throw new Error('Weaviate requires VECTORDB_WEAVIATE_URL to be set.');
     }
-    const apiKey = await secretsManager.tryGet('WEAVIATE_API_KEY', 'vectordb:weaviate');
+    // tryGetReal: the key is optional (self-hosted, no auth), and sending a
+    // generated placeholder as a real API key would break exactly that case.
+    const apiKey = await secretsManager.tryGetReal('WEAVIATE_API_KEY', 'vectordb:weaviate');
     return new WeaviateProvider(
       weaviateUrl,
       apiKey,

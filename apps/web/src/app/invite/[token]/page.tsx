@@ -28,6 +28,9 @@ export default function InvitePage(): React.JSX.Element {
     onSuccess: ({ workspaceId }) => {
       setCurrentWorkspaceId(workspaceId);
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      // The dashboard's waiting list must not keep showing an
+      // invitation the person just answered.
+      queryClient.invalidateQueries({ queryKey: ['invitations', 'mine'] });
       toast.success('Invitation accepted.');
       router.push('/dashboard');
     },

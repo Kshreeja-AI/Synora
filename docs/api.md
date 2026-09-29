@@ -114,10 +114,27 @@ normal 7d. It is recorded on the session for display in the session list
 (see below) but never affects verification — a "remembered" and a normal
 session are checked identically.
 
-**Response** — same shape as Register above.
+**Response** — same shape as Register above, *unless the account has MFA
+enabled*. For an MFA-enrolled account a correct password does **not** issue
+tokens or cookies; the response is instead:
+
+```json
+{
+  "success": true,
+  "data": {
+    "mfaRequired": true,
+    "mfaChallengeToken": "<single-use token, 5 min expiry>",
+    "expiresAt": "2026-08-03T12:05:00.000Z"
+  }
+}
+```
+
+The client must then complete the login at `POST /api/auth/mfa/verify`
+(see MFA below). The challenge token carries the `rememberMe` choice, so
+the eventual session honours it.
 
 **Status Codes**
-- `200`: Authentication successful
+- `200`: Authentication successful (or MFA challenge issued — see above)
 - `400`: Invalid credentials
 - `423`: `ACCOUNT_LOCKED` — too many recent failed attempts for this
   account (default: 5 failures locks the account for 15 minutes; both
@@ -328,6 +345,71 @@ Authorization: Bearer <token>
 ```
 Revokes every active session for the account, **including the caller's
 own** — a literal "log out everywhere."
+
+---
+
+### Multi-Factor Authentication (TOTP)
+
+All endpoints live under `/api/auth/mfa`. Enrollment and management require
+authentication; `verify` deliberately does not (the caller is mid-login and
+holds only the challenge token).
+
+**Status**
+```http
+GET /api/auth/mfa/status
+Authorization: Bearer <token>
+```
+```json
+{ "success": true, "data": { "enabled": true, "type": "TOTP", "status": "ACTIVE",
+  "enabledAt": "...", "lastUsedAt": "...",
+  "recoveryCodesRemaining": 9, "recoveryCodesTotal": 10 } }
+```
+
+**Enrollment** — three steps:
+1. `POST /api/auth/mfa/setup/initiate` → `{ setupToken, secret, qrCode, expiresAt }`.
+   `qrCode` is the `otpauth://` URI to render for the authenticator app;
+   the setup token lives 10 minutes.
+2. `POST /api/auth/mfa/setup/verify` with `{ setupToken, code }` (the 6-digit
+   code from the app) → `{ recoveryCodes, codeHashes, setupToken }`. This is
+   the **only** time the plaintext recovery codes are returned — they are
+   stored hashed.
+3. `POST /api/auth/mfa/setup/confirm` with `{ setupToken, recoveryCodes: codeHashes }`
+   → activates TOTP for the account.
+
+**Complete a login**
+```http
+POST /api/auth/mfa/verify
+Content-Type: application/json
+
+{ "mfaChallengeToken": "<from login>", "code": "123456" }
+```
+or, with a recovery code instead of a TOTP code:
+```json
+{ "mfaChallengeToken": "<from login>", "recoveryCode": "XXXX-XXXX" }
+```
+Exactly one of `code` / `recoveryCode` must be present. On success the
+response matches a normal login (user payload + HttpOnly cookies). The
+challenge token is single-use: replays and concurrent redemptions get `401`.
+Using a recovery code flips the method into `RECOVERY_MODE` and includes a
+`warning` in the response. Attempts are rate-limited per user and audited.
+
+**Disable**
+```http
+POST /api/auth/mfa/disable
+Authorization: Bearer <token>
+
+{ "password": "<account password>" }
+```
+Password confirmation is mandatory so a hijacked session cannot silently
+strip the second factor.
+
+**Recovery codes**
+```http
+GET /api/auth/mfa/recovery-codes
+Authorization: Bearer <token>
+```
+Returns remaining/used counts only — plaintext codes are never retrievable
+after enrollment.
 
 ---
 
@@ -1153,25 +1235,28 @@ Content-Type: application/json
 `400`. An assistant message is only ever created by a successful
 generation (see below); a client cannot fabricate one directly.
 
-For a `USER` message, this endpoint is **synchronous**: it creates the
-user message, then calls the conversation's own AI provider (not
-whatever `AI_PROVIDER` happens to be globally set to — see
-`ai/resolver.ts`'s `explicitProviderId`), retrying up to twice with
-backoff on failure, before responding. There is no streaming/async
-transport in Release 3 M2 — the whole exchange happens within one HTTP
-request/response.
+For a `USER` message, this endpoint is **asynchronous**: it persists the
+user message, creates an *empty* assistant message as a placeholder,
+enqueues a `generate_response` job, and returns immediately. The reply
+is produced by the worker against the conversation's own AI provider
+(not whatever `AI_PROVIDER` happens to be globally set to — see
+`ai/resolver.ts`'s `explicitProviderId`); the client streams its tokens
+from the SSE endpoint below, keyed by the returned `jobId`.
 
-**Response (USER message, generation succeeded)**
+**Response (USER message)**
 ```json
 {
   "success": true,
   "data": {
     "userMessage": { "id": "...", "content": "Hello", "role": "USER" },
-    "assistantMessage": { "id": "...", "content": "Hi there!", "role": "ASSISTANT" },
-    "usage": { "inputTokens": 12, "outputTokens": 6 }
+    "assistantMessage": { "id": "...", "content": "", "role": "ASSISTANT" },
+    "jobId": "..."
   }
 }
 ```
+The assistant message's `content` is empty on this response by design —
+it fills in as the stream completes. Token counts land on the message
+once generation finishes.
 
 **Response (SYSTEM message — no generation triggered)**
 ```json
@@ -1179,14 +1264,67 @@ request/response.
 ```
 
 **Status Codes**
-- `201`: Created (and, for a `USER` message, generated)
+- `201`: Created — for a `USER` message, the generation job is enqueued
 - `400`: Invalid body, or `role: "ASSISTANT"`
 - `401`: Unauthorized
 - `404`: Not a member of `:workspaceId`, or the conversation doesn't exist
-- `503`: Every generation attempt failed — the response names the
-  `StreamingJob` id so the failure can be inspected
-  (`services/conversationGeneration.service.ts`). The user message itself
-  is **not** rolled back; the caller can retry with a follow-up message.
+
+Generation failure does not surface on this response, because generation
+has not started when it returns. A failed generation is reported on the
+SSE stream and recorded on the `StreamingJob` row (`FAILED`, with
+`lastError`); retries are owned by `StreamingRetryEngine` in the worker.
+The user message is never rolled back — the caller can retry the reply
+with the regenerate endpoint.
+
+### Folders — two distinct resources
+
+There are **two folder systems**, backed by different tables, and they
+must not be conflated:
+
+- **Asset folders** (`Folder` model, M5): `/api/workspaces/:id/folders`
+  — workspace- and optionally project-scoped, hold uploaded assets.
+  List returns a flat array; gated by `folder:manage`.
+- **Conversation folders** (`ConversationFolder` model, Release 3):
+  `/api/workspaces/:id/conversation-folders` — hierarchical
+  (`parentId`), hold conversations. List returns root folders (or the
+  children of `?parentId=`) with nested `children`, a preview of
+  `conversations`, and `_count`; gated by `conversation-folder:manage`.
+  - `POST   .../conversation-folders` — create (`{ name, parentId? }`)
+  - `PATCH  .../conversation-folders/:folderId` — rename / re-parent
+    (self-parenting refused)
+  - `DELETE .../conversation-folders/:folderId` — delete
+  - `POST   .../conversation-folders/move` — file a conversation
+    (`{ conversationId, folderId | null }`)
+
+To read a folder's contents, use the conversation list filter:
+`GET .../conversations?folderId=<id>` scopes to one folder,
+`?folderId=none` lists only unfiled conversations, and no filter lists
+everything.
+
+### Stream a Generation (SSE)
+```http
+GET /api/workspaces/:workspaceId/conversations/:conversationId/stream?messageId=<assistantMessageId>
+Authorization: Bearer <token>
+Accept: text/event-stream
+```
+Relays the `generate_response` worker's output for the `StreamingJob`
+attached to `messageId`. Events are named by the worker's event type
+(tokens as they arrive, then a terminal completion or error event), plus
+a periodic `heartbeat` to keep intermediaries from closing an idle
+connection. `X-Accel-Buffering: no` is set so buffering proxies don't
+withhold tokens.
+
+- `400`: no `messageId` query param
+- `event: error` with `code: JOB_NOT_FOUND` when no job exists for that
+  message (the stream then closes)
+
+### Cancel a Generation
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/stream/:jobId/cancel
+Authorization: Bearer <token>
+```
+Publishes a cancel signal on the job's Redis control channel; the worker
+aborts the in-flight provider request. `404` if the job doesn't exist.
 
 ### List Messages
 ```http
@@ -1209,6 +1347,20 @@ Content-Type: application/json
 
 { "content": "Edited content" }
 ```
+Requires `message:manage`. The UI offers this on **user** turns only —
+rewriting an assistant message in place would leave the transcript
+claiming the model produced text it never produced; to change an
+assistant response, regenerate or branch it. Editing a user turn
+invalidates the assistant reply that answered it, so the client
+regenerates that reply against the new text.
+
+### Pin / Unpin Message
+```http
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/pin
+POST /api/workspaces/:workspaceId/conversations/:conversationId/messages/:messageId/unpin
+Authorization: Bearer <token>
+```
+Toggles `Message.isPinned`. Pinning is workspace-visible, not per-user.
 
 ### Delete Message (soft delete)
 ```http
@@ -1227,6 +1379,116 @@ Content-Type: application/json
 
 { "url": "https://...", "mimeType": "image/png", "name": "screenshot.png", "size": 12345 }
 ```
+
+---
+
+## Tool Endpoints
+
+Workspace-scoped tool definitions and executions. All routes require
+authentication and workspace membership; mutations are additionally
+role-gated by the permissions module (`tool:manage` = EDITOR+,
+`tool:execute` = MEMBER+, `tool:approve` = ADMIN/OWNER).
+
+Only `HTTP` and `Webhook` tool types can be executed — the engine makes a
+real outbound HTTP request built from the tool's `config`
+(`{ url, method?, headers? }`), with the tool's `timeout` and `maxRetries`
+applied. Other declared types are refused at execute time with a 400.
+Outbound requests are SSRF-guarded (private, loopback, link-local, and
+metadata address ranges are blocked at DNS-resolution time; redirects are
+not followed) and header/URL values may reference stored tool secrets via
+`{{secret:NAME}}` placeholders, resolved server-side and never logged.
+
+- `GET    /api/workspaces/:workspaceId/tools` — list active tools (`?category=` filter)
+- `POST   /api/workspaces/:workspaceId/tools` — create tool (`tool:manage`)
+- `GET    /api/workspaces/:workspaceId/tools/:toolId` — get tool
+- `PATCH  /api/workspaces/:workspaceId/tools/:toolId` — update tool (`tool:manage`, bumps `version`)
+- `DELETE /api/workspaces/:workspaceId/tools/:toolId` — soft-delete (`tool:manage`)
+- `POST   /api/workspaces/:workspaceId/tools/:toolId/execute` — run tool (`tool:execute`); body `{ input, conversationId? }`; returns the execution record (`PENDING` when the tool `requiresApproval`, else `RUNNING`)
+- `GET    /api/workspaces/:workspaceId/tools/:toolId/executions` — recent executions for a tool
+- `GET    /api/workspaces/:workspaceId/executions/:executionId` — poll one execution
+- `POST   /api/workspaces/:workspaceId/executions/:executionId/approve` — approve a `PENDING` execution (`tool:approve`); stamps `approvedBy`/`approvedAt` and starts the run
+- `POST   /api/workspaces/:workspaceId/executions/:executionId/reject` — reject a `PENDING` execution (`tool:approve`); body `{ reason }`
+
+Execution `status` values: `PENDING` (awaiting approval), `APPROVED`,
+`RUNNING`, `STREAMING`, `COMPLETED`, `FAILED`, `CANCELLED`, `TIMEOUT`,
+`REJECTED`. Successful executions carry
+`output: { statusCode, body }` from the upstream endpoint plus
+`duration` (ms) and `attemptNumber`. Tool lifecycle and execution
+decisions (create/update/delete, execute, approve, reject) are recorded
+in the workspace audit log; execution audit entries record input *keys*
+only, never values.
+
+---
+
+## Capability Detection
+
+### `GET /api/capabilities`
+
+Which credential-dependent capabilities are live in this deployment, and
+what the platform does while the rest are unconfigured. Requires
+authentication — the response names which vendors a deployment uses. It
+never reads or returns a secret value, only each subsystem's own
+"am I configured" answer.
+
+Use this to confirm credentials took effect after deploying them.
+
+**Response**
+```json
+{
+  "data": {
+    "allActive": false,
+    "capabilities": [
+      {
+        "id": "semantic-memory",
+        "name": "Semantic memory search",
+        "status": "unconfigured",
+        "provider": null,
+        "availableProviders": ["openai", "voyage", "gemini", "cohere", "claude", "ollama", "self-hosted", "pgvector", "pinecone", "qdrant", "weaviate", "milvus"],
+        "degradedBehavior": "Memory retrieval ranks on lexical term overlap, importance, recency and access frequency; the semantic search endpoint returns 503. No approximate vectors are ever generated."
+      }
+    ]
+  }
+}
+```
+
+Reported capabilities: `text-generation`, `image-generation`,
+`semantic-memory`, `embeddings`, `vector-database`, `object-storage`,
+`virus-scanning`, `email`. `status` is `active` or `unconfigured`;
+`semantic-memory` requires both an embedding provider and a vector
+database before it reports active.
+
+---
+
+## Image Generation
+
+### `POST /api/images/generate`
+
+Generate an image from a prompt. Requires authentication.
+
+**Request**
+```http
+POST /api/images/generate
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "prompt": "a corgi in a spacesuit", "size": "1024x1024", "projectId": "..." }
+```
+
+`size` is `${width}x${height}` and is passed to the underlying provider,
+which validates supported combinations. Only OpenAI's image models are
+supported today.
+
+**Success** (201): the persisted `GeneratedImage` row, whose `imageUrl` is
+a durable URL served by Synora's own object storage (never a
+provider-hosted URL, which would expire). `status` is `COMPLETED` on
+success and `FAILED` when the provider or storage step errored.
+
+**503 Service Unavailable** when no image provider is configured for
+this deployment — callers see this instead of a fabricated placeholder.
+Confirm with `GET /api/capabilities`.
+
+### `GET /api/images` — list your generated images
+### `GET /api/images/:id` — one image
 
 ---
 
@@ -1289,15 +1551,43 @@ database is unreachable.
 
 ## Rate Limiting
 
-- One global limiter on all of `/api/*`: 100 requests per 15 minutes per
-  IP by default (`RATE_LIMIT_WINDOW_MS`/`RATE_LIMIT_MAX_REQUESTS`,
-  config-driven). There is currently no separate, stricter limiter
-  specifically on auth endpoints — brute-force protection for login is
-  the per-account lockout described above (`ACCOUNT_LOCKED`), not a
-  tighter IP rate limit. A Redis-backed limiter shared across instances
-  is planned for Release 2 (see `RELEASE_2_PLAN.md`, R2-c); today's
-  limiter is correctly in-process/single-instance for Release 1's
-  single-instance deployment target.
+Three layers apply, in this order. All of them return
+`429` with `error.code = "RATE_LIMIT_EXCEEDED"` and set standard
+`RateLimit-*` headers (legacy `X-RateLimit-*` headers are disabled).
+
+**1. Global ceiling** — all of `/api/*`: 100 requests per 15 minutes per IP by
+default (`RATE_LIMIT_WINDOW_MS` / `RATE_LIMIT_MAX_REQUESTS`, config-driven).
+
+**2. Credential endpoints** (`middleware/authRateLimit.ts`), per IP — these
+protect against brute force and complement the per-account lockout described
+above (`ACCOUNT_LOCKED`):
+
+| Endpoint | Limit |
+|---|---|
+| `POST /api/auth/login` | 5 per 15 min |
+| `POST /api/auth/register` | 3 per hour |
+| `POST /api/auth/forgot-password` | 3 per 15 min |
+| `POST /api/auth/refresh` | 30 per min |
+
+**3. Expensive resources** (`middleware/resourceRateLimit.ts`), **per
+authenticated user** (falling back to IP when unauthenticated) — these bound
+spend and compute rather than guessing attempts. Per-user is the correct unit
+here: the global limiter is per-IP, which both punishes everyone sharing a
+corporate NAT and fails to cap one account spread across many addresses.
+
+| Class | Endpoints | Limit |
+|---|---|---|
+| AI generation | `POST /api/ai/generate`, `POST …/messages`, `POST …/messages/:id/regenerate` | 30 per min |
+| Media generation | `POST /api/images/generate`, `/api/videos/generate`, `/api/audio/generate` | 10 per min |
+| Search | `GET …/search`, `GET …/search/messages`, `POST …/search/index/:conversationId` | 60 per min |
+| Export | dataset exports + download, conversation export/import | 10 per 5 min |
+| Evaluation | `POST …/evaluations/:runId/run`, `POST …/evaluations/compare` | 5 per 10 min |
+
+All limiters are skipped when `NODE_ENV=test` so suites are not throttled.
+
+Limiter state is in-process. That is correct for a single-instance deployment
+but means limits are per-instance once the API is horizontally scaled — a
+shared Redis store is required at that point (see `RELEASE_2_PLAN.md`, R2-c).
 
 ---
 

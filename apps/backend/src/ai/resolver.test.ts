@@ -52,7 +52,28 @@ describe('resolveTextGenerationProvider', () => {
     it('throws a clear, source-labeled error for an unknown explicit provider id', async () => {
       await expect(
         resolveProvider('text-generation', { explicitProviderId: 'not-a-real-provider' })
-      ).rejects.toThrow(/the requested provider is set to "not-a-real-provider"/i);
+        // The message names the SOURCE and lists the valid values, and
+        // deliberately does NOT quote what was actually set. An OpenRouter API
+        // key was found in `AI_PROVIDER` on 2026-08-12, and this error is
+        // thrown on the request path where it is logged — echoing the value
+        // would have written a live credential into the application log.
+      ).rejects.toThrow(/the requested provider is set to a value that is not a known provider/i);
+
+      await expect(
+        resolveProvider('text-generation', { explicitProviderId: 'not-a-real-provider' })
+      ).rejects.toThrow(/known providers:/i);
+
+      // STRONGER than the assertion this replaced: the offending value must
+      // be absent from the message entirely.
+      //
+      // The probe is deliberately NOT credential-shaped. An `sk-…` literal in
+      // a tracked file trips secret scanners and reads as real to anybody
+      // skimming — and the resolver redacts every unknown value regardless of
+      // shape, so a realistic-looking token would test nothing extra.
+      const probe = 'value-that-must-never-be-echoed';
+      await expect(
+        resolveProvider('text-generation', { explicitProviderId: probe })
+      ).rejects.not.toThrow(new RegExp(probe));
     });
 
     it('throws when the explicit provider does not support the requested capability', async () => {

@@ -1,8 +1,9 @@
-import { prisma } from '@synora/database';
+import { prisma, Prisma } from '@synora/database';
 import { resolveBillingProvider, BillingProviderError } from '../billing/index.js';
 import { ServiceUnavailableException } from '@synora/shared';
 import { logger } from '../utils/logger.js';
 import { createNotification } from './notification.service.js';
+import { validateWebhookData } from './webhook-validation.js';
 
 async function notifyWorkspaceOwner(workspaceId: string, title: string, body: string) {
   const owner = await prisma.workspaceMember.findFirst({
@@ -24,28 +25,49 @@ export async function handleBillingWebhook(rawBody: Buffer, signatureHeader: str
 
     const event = await provider.verifyAndParseWebhookEvent(rawBody, signatureHeader);
 
-    const existing = await prisma.processedWebhookEvent.findUnique({
-      where: {
-        provider_externalEventId: {
+    // Dedup via the unique constraint itself rather than a check-then-create:
+    // Stripe redelivers events (retries, at-least-once delivery), and two
+    // concurrent deliveries of the same event could both pass a separate
+    // findUnique() before either commits its create(). Attempting the
+    // create() directly closes that race — the DB enforces uniqueness
+    // atomically, and a collision here means "already processed," not
+    // an error.
+    try {
+      await prisma.processedWebhookEvent.create({
+        data: {
           provider: 'stripe',
           externalEventId: event.id,
         },
-      },
-    });
-
-    if (existing) {
-      logger.info('Webhook event already processed', { eventId: event.id });
-      return;
+      });
+    } catch (dedupError) {
+      if (
+        dedupError instanceof Prisma.PrismaClientKnownRequestError &&
+        dedupError.code === 'P2002'
+      ) {
+        logger.info('Webhook event already processed', { eventId: event.id });
+        return;
+      }
+      throw dedupError;
     }
 
-    await prisma.processedWebhookEvent.create({
-      data: {
-        provider: 'stripe',
-        externalEventId: event.id,
-      },
-    });
-
     const data = event.data as Record<string, unknown>;
+
+    // A valid signature proves the payload came from the provider, not that
+    // it has the shape this code expects — provider API-version drift can
+    // rename or drop fields. Handlers below cast fields without checking, so
+    // an unexpected shape would silently write nulls. Redelivery cannot
+    // change a payload, so a shape mismatch is a poison message: log it and
+    // stop rather than throwing into a retry loop that can never succeed.
+    try {
+      validateWebhookData(event.type, data);
+    } catch (validationError) {
+      logger.error('Webhook payload failed shape validation; skipping', {
+        eventId: event.id,
+        type: event.type,
+        error: validationError instanceof Error ? validationError.message : validationError,
+      });
+      return;
+    }
 
     switch (event.type) {
       case 'checkout.session.completed':
@@ -138,6 +160,13 @@ async function handleSubscriptionUpdated(data: Record<string, unknown>) {
         status: mappedStatus,
         currentPeriodStart: new Date((data.current_period_start as number) * 1000),
         currentPeriodEnd: new Date((data.current_period_end as number) * 1000),
+        // Any transition away from PAST_DUE (recovered, canceled, trial
+        // restarted, etc.) clears the dunning clock; a transition INTO
+        // it starts one only if it wasn't already running, so repeated
+        // "still past due" updates don't reset how long it's been failing.
+        ...(mappedStatus === 'PAST_DUE'
+          ? { pastDueSince: subscription.pastDueSince ?? new Date() }
+          : { pastDueSince: null, paymentFailureCount: 0 }),
       },
     });
   }
@@ -171,6 +200,8 @@ async function handleSubscriptionDeleted(data: Record<string, unknown>) {
           planId: defaultPlan.id,
           status: 'ACTIVE',
           externalSubscriptionId: null,
+          pastDueSince: null,
+          paymentFailureCount: 0,
         },
       });
     }
@@ -218,6 +249,23 @@ async function handleInvoicePaid(data: Record<string, unknown>) {
       paidAt: new Date(),
     },
   });
+
+  // A successful payment always means the subscription is no longer
+  // struggling, even if it was PAST_DUE — this was previously never
+  // reset here, so a workspace that fixed its card stayed flagged
+  // PAST_DUE forever with no way back to ACTIVE short of Stripe
+  // separately emitting a customer.subscription.updated event.
+  if (subscription.status === 'PAST_DUE') {
+    await prisma.subscription.update({
+      where: { id: subscription.id },
+      data: { status: 'ACTIVE', pastDueSince: null, paymentFailureCount: 0 },
+    });
+    await notifyWorkspaceOwner(
+      subscription.workspaceId,
+      'Payment Recovered',
+      'Your payment succeeded and your subscription is active again.',
+    );
+  }
 
   const plan = await prisma.plan.findUnique({
     where: { id: subscription.planId },
@@ -273,7 +321,15 @@ async function handleInvoicePaymentFailed(data: Record<string, unknown>) {
 
   await prisma.subscription.update({
     where: { id: subscription.id },
-    data: { status: 'PAST_DUE' },
+    data: {
+      status: 'PAST_DUE',
+      // Only the first failure in a run starts the clock; Stripe's Smart
+      // Retries fire this event multiple times for the same underlying
+      // decline, and each one should extend the failure count without
+      // resetting how long the workspace has actually been struggling.
+      pastDueSince: subscription.pastDueSince ?? new Date(),
+      paymentFailureCount: { increment: 1 },
+    },
   });
 
   await prisma.invoice.upsert({
@@ -367,7 +423,21 @@ function mapSubscriptionStatus(stripeStatus: string): 'ACTIVE' | 'PAST_DUE' | 'C
       return 'CANCELED';
     case 'trialing':
       return 'TRIAL';
+    case 'incomplete_expired':
+      return 'CANCELED';
+    // `incomplete`, `unpaid` and `paused` all mean the provider is not
+    // collecting for this subscription. PAST_DUE is the local state that
+    // withholds entitlement without destroying the subscription record.
+    case 'incomplete':
+    case 'unpaid':
+    case 'paused':
+      return 'PAST_DUE';
     default:
-      return 'ACTIVE';
+      // Fail closed. Defaulting to ACTIVE would grant paid entitlement on
+      // any status this code has not been taught yet.
+      logger.warn('Unrecognized provider subscription status; withholding entitlement', {
+        stripeStatus,
+      });
+      return 'PAST_DUE';
   }
 }

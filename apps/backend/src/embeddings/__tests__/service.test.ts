@@ -248,4 +248,50 @@ describe('EmbeddingService', () => {
       expect(chunks).toHaveLength(0);
     });
   });
+  describe('EOS instrumentation', () => {
+    it('does not record a provider observation for a cache hit', async () => {
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      const { service } = buildService();
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.embed('hello world', { workspaceId: 'ws-1' });
+        await service.embed('hello world', { workspaceId: 'ws-1' });
+        await service.embed('hello world', { workspaceId: 'ws-1' });
+
+        // Three calls, one real provider call. Counting the two cache hits
+        // would make every provider look faster and cheaper than it is —
+        // and increasingly so as caching improved.
+        expect(fakeProvider.calls).toHaveLength(1);
+        const matrix = getProviderMatrix();
+        expect(matrix).toHaveLength(1);
+        expect(matrix[0].requests).toBe(1);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+
+    it('records token counts, since embeddings are token-priced', async () => {
+      const { getProviderMatrix, startProviderObservatory, stopProviderObservatory } = await import(
+        '../../eos/provider-observatory'
+      );
+      const { service } = buildService();
+
+      stopProviderObservatory();
+      startProviderObservatory();
+      try {
+        await service.embed('hello world', { workspaceId: 'ws-1' });
+
+        const matrix = getProviderMatrix();
+        // Unlike image, video, and audio, embeddings are priced per token,
+        // so a real token count is reported rather than omitted.
+        expect(matrix[0].totalInputTokens).toBeGreaterThan(0);
+      } finally {
+        stopProviderObservatory();
+      }
+    });
+  });
 });

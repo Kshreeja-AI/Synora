@@ -2,6 +2,7 @@ import { prisma } from '@synora/database'
 import { ConversationFolder } from '@prisma/client'
 import { ForbiddenException, NotFoundException } from '@synora/shared'
 import { requirePermission } from './permissions'
+import { requireMembership } from './checks'
 
 export interface CreateConversationFolderInput {
   name: string
@@ -15,13 +16,7 @@ export interface UpdateConversationFolderInput {
 
 export class ConversationFolderService {
   async create(userId: string, workspaceId: string, input: CreateConversationFolderInput): Promise<ConversationFolder> {
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
+    const member = await requireMembership(userId, workspaceId)
     requirePermission(member.role, 'conversation-folder:manage')
 
     if (input.parentId) {
@@ -48,13 +43,7 @@ export class ConversationFolderService {
   }
 
   async listByWorkspace(userId: string, workspaceId: string, parentId?: string): Promise<ConversationFolder[]> {
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
+    await requireMembership(userId, workspaceId)
 
     return prisma.conversationFolder.findMany({
       where: {
@@ -86,13 +75,7 @@ export class ConversationFolderService {
       return null
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: folder.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this folder')
-    }
+    await requireMembership(userId, folder.workspaceId)
 
     return folder
   }
@@ -106,13 +89,7 @@ export class ConversationFolderService {
       throw new NotFoundException('Folder not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: folder.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
+    const member = await requireMembership(userId, folder.workspaceId)
     requirePermission(member.role, 'conversation-folder:manage')
 
     if (input.parentId) {
@@ -149,13 +126,7 @@ export class ConversationFolderService {
       throw new NotFoundException('Folder not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: folder.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
+    const member = await requireMembership(userId, folder.workspaceId)
     requirePermission(member.role, 'conversation-folder:manage')
 
     await prisma.conversationFolder.delete({ where: { id } })
@@ -170,13 +141,7 @@ export class ConversationFolderService {
       throw new NotFoundException('Conversation not found')
     }
 
-    const member = await prisma.workspaceMember.findUnique({
-      where: { userId_workspaceId: { userId, workspaceId: conversation.workspaceId } },
-    })
-
-    if (!member) {
-      throw new ForbiddenException('You do not have access to this workspace')
-    }
+    const member = await requireMembership(userId, conversation.workspaceId)
     requirePermission(member.role, 'conversation-folder:manage')
 
     if (folderId) {

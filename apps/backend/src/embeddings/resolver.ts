@@ -32,7 +32,10 @@ export async function resolveEmbeddingProvider(options?: {
     const descriptor = getEmbeddingProviderDescriptor(explicitId);
     if (!descriptor) {
       throw new Error(
-        `${explicitSource} is set to "${explicitId}", which is not a known embedding provider. ` +
+        `${explicitSource} is set to a value that is not a known embedding provider. ` +
+          // Value withheld: a mistyped selection variable has been observed
+          // to contain an API key, and this error is logged.
+
           `Known providers: ${EMBEDDING_PROVIDER_REGISTRY.map((p) => p.id).join(', ')}.`
       );
     }

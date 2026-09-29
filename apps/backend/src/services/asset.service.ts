@@ -7,6 +7,7 @@ import { recordAuditEvent } from './audit.service';
 import { uploadWorkspaceAsset, deleteWorkspaceAsset } from '../storage';
 import { getConfig } from '../config';
 import { logger } from '../utils/logger';
+import { emitWorkflowEvent } from '../workflows/event-dispatch';
 
 export async function uploadAsset(
   userId: string,
@@ -59,6 +60,18 @@ export async function uploadAsset(
   await recordAuditEvent(workspaceId, userId, 'asset.uploaded', 'asset', asset.id, {
     name: asset.name,
     size: asset.size,
+  });
+
+  // Announced, not awaited: an automation listening for uploads must not
+  // be able to fail somebody's upload. Dispatch happens on the next tick.
+  emitWorkflowEvent({
+    name: 'asset.uploaded',
+    workspaceId,
+    actorId: userId,
+    subjectId: asset.id,
+    subjectName: asset.name,
+    projectId: asset.projectId ?? undefined,
+    mimeType: asset.mimeType,
   });
 
   return asset;
