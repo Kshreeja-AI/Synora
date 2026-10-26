@@ -13,8 +13,8 @@
   --popover: 240 8% 7%;
   --popover-foreground: 240 6% 96%;
 
-  --primary: 252 92% 68%;
-  --primary-foreground: 0 0% 100%;
+  --primary: 252 92% 71%;
+  --primary-foreground: 240 10% 4%; /* AA on --primary: rest 5.5:1, hover 4.6:1 */
 
   --secondary: 240 5% 12%;
   --secondary-foreground: 240 6% 96%;

@@ -519,7 +519,7 @@ current password incorrect.
 GET /api/users/me/preferences
 Authorization: Bearer <token>
 ```
-Returns defaults (`{ theme: "DARK", emailNotifications: true,
+Returns defaults (`{ theme: "AUTO", emailNotifications: true,
 pushNotifications: false, marketingEmails: false }`) if the user has
 never saved preferences — no row is created until the first `PATCH`.
 

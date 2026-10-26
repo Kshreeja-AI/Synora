@@ -189,7 +189,7 @@ model UserProfile {
 model UserPreferences {
   id                String    @id @default(cuid())
   userId            String    @unique
-  theme             Theme     @default(LIGHT)
+  theme             Theme     @default(AUTO)
   language          String    @default("en")
   emailNotifications Boolean   @default(true)
   pushNotifications Boolean   @default(false)

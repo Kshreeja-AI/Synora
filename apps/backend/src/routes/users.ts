@@ -94,7 +94,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res, next) => {
         ...user,
         emailVerified: user.emailVerified !== null,
         preferences: user.preferences ?? {
-          theme: 'DARK',
+          theme: 'AUTO',
           emailNotifications: true,
           pushNotifications: false,
           marketingEmails: false,
@@ -257,7 +257,7 @@ router.get('/me/preferences', authMiddleware, async (req: AuthRequest, res, next
     res.json(
       createApiResponse(
         preferences ?? {
-          theme: 'DARK',
+          theme: 'AUTO',
           emailNotifications: true,
           pushNotifications: false,
           marketingEmails: false,
@@ -277,7 +277,7 @@ router.patch('/me/preferences', authMiddleware, async (req: AuthRequest, res, ne
       where: { userId: req.userId },
       create: {
         userId: req.userId!,
-        theme: updates.theme ?? 'DARK',
+        theme: updates.theme ?? 'AUTO',
         emailNotifications: updates.emailNotifications ?? true,
         pushNotifications: updates.pushNotifications ?? false,
         marketingEmails: updates.marketingEmails ?? false,

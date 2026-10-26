@@ -182,7 +182,7 @@ pluggable source chain with audit-logged reads. Full detail:
 
 - **Root layout** (`src/app/layout.tsx`): Geist Sans/Mono font variables,
   design-system token stylesheet, `Providers` (TanStack `QueryClient` +
-  `next-themes` with `attribute="data-theme"`, `defaultTheme="dark"`),
+  `next-themes` with `attribute="data-theme"`, `defaultTheme="system"`, `enableSystem`),
   and the global `Toaster` outlet.
 - **API layer** (`src/lib/api/`): `client.ts` exposes `api.get/post/patch/
   delete/upload` typed against the backend envelope `{ success, data,

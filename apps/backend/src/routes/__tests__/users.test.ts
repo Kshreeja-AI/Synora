@@ -75,7 +75,7 @@ describe('users routes (account/profile settings — M3)', () => {
       expect(res.body.data.email).toBe(user.email);
       expect(res.body.data.emailVerified).toBe(false);
       expect(res.body.data.preferences).toEqual({
-        theme: 'DARK',
+        theme: 'AUTO',
         emailNotifications: true,
         pushNotifications: false,
         marketingEmails: false,

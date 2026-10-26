@@ -56,7 +56,7 @@ export function useThemePreference(): UseThemePreferenceResult {
     mutation.mutate(value);
   }
 
-  const current: ThemePreference = (theme ? FROM_NEXT_THEMES[theme] : undefined) ?? 'DARK';
+  const current: ThemePreference = (theme ? FROM_NEXT_THEMES[theme] : undefined) ?? 'AUTO';
 
   return { current, selectTheme };
 }

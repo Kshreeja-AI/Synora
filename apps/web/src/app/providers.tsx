@@ -24,8 +24,8 @@ export function Providers({ children }: { children: React.ReactNode }): React.JS
     <QueryClientProvider client={queryClient}>
       <ThemeProvider
         attribute="data-theme"
-        defaultTheme="dark"
-        enableSystem={false}
+        defaultTheme="system"
+        enableSystem
         disableTransitionOnChange
       >
         {/* Locale defaults to 'en' server-side; the provider re-resolves
