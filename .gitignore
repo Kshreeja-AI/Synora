@@ -106,6 +106,9 @@ web_modules/
 # canonical record of what a deployment needs. Real values never are.
 !.env.example
 !.env.production.example
+# Local env files that do not match the .env / .env.* patterns above.
+.app.env
+.web.env
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
