@@ -40,6 +40,7 @@ export type AICapability =
   | 'video-generation'
   | 'audio-generation'
   | 'speech-to-text'
+  | 'web-search'
   | 'text-to-speech'
   | 'embeddings'
   | 'agent';
@@ -308,6 +309,75 @@ export interface TextToSpeechProvider {
   readonly id: string;
   readonly capabilities: readonly AICapability[];
   synthesize(request: TextToSpeechRequest): Promise<TextToSpeechResult>;
+}
+
+/**
+ * Speech-to-text. Synchronous bounded call like TTS: audio bytes in,
+ * transcript out. Segment timestamps are optional because not every server
+ * returns them — a result without `segments` simply cannot be exported as
+ * subtitles, and says so instead of inventing timings.
+ */
+export interface SpeechToTextRequest {
+  audio: Buffer;
+  /** Original filename; servers use the extension to pick a decoder. */
+  fileName: string;
+  mimeType: string;
+  /** ISO-639-1 hint ("hi", "en"). Omit to let the model detect it. */
+  language?: string;
+  model?: string;
+}
+
+export interface TranscriptSegment {
+  startSeconds: number;
+  endSeconds: number;
+  text: string;
+}
+
+export interface SpeechToTextResult {
+  text: string;
+  /** The language the server reports, when it reports one. Never guessed. */
+  language?: string;
+  durationSeconds?: number;
+  segments?: readonly TranscriptSegment[];
+  provider: string;
+  model: string;
+}
+
+/**
+ * Web search over approved public sources. Results carry the URL they came
+ * from so every answer built on them can cite it; the adapter never rewrites
+ * or summarises snippets.
+ */
+export interface WebSearchRequest {
+  query: string;
+  /** 1-10. */
+  limit?: number;
+  /** ISO-639-1 hint, e.g. "hi" or "en". */
+  language?: string;
+}
+
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+export interface WebSearchResponse {
+  results: readonly WebSearchResult[];
+  provider: string;
+  query: string;
+}
+
+export interface WebSearchProvider {
+  readonly id: string;
+  readonly capabilities: readonly AICapability[];
+  search(request: WebSearchRequest): Promise<WebSearchResponse>;
+}
+
+export interface SpeechToTextProvider {
+  readonly id: string;
+  readonly capabilities: readonly AICapability[];
+  transcribe(request: SpeechToTextRequest): Promise<SpeechToTextResult>;
 }
 
 /**

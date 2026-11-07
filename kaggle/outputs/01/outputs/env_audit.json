@@ -1,0 +1,12 @@
+{
+  "utc": "2026-11-06T16:37:17Z",
+  "python": "3.13.16",
+  "platform": "Linux-6.18.55+-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "gpu": "Tesla T4, 15360 MiB, 580.178.04\nTesla T4, 15360 MiB, 580.178.04",
+  "ram_gb": 31.3,
+  "disk_working_free_gb": 20.9,
+  "torch": "2.11.0+cu130",
+  "cuda_available": true,
+  "internet_huggingface": true
+}

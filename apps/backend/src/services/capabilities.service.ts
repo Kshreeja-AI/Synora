@@ -2,6 +2,8 @@ import { PROVIDER_REGISTRY } from '../ai/registry';
 import { IMAGE_PROVIDER_REGISTRY } from '../ai/imageRegistry';
 import { VIDEO_PROVIDER_REGISTRY } from '../ai/videoRegistry';
 import { TTS_PROVIDER_REGISTRY } from '../ai/ttsRegistry';
+import { STT_PROVIDER_REGISTRY } from '../ai/sttRegistry';
+import { SEARCH_PROVIDER_REGISTRY } from '../ai/searchRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb';
 import { TRANSPORT_REGISTRY } from '../mail/registry';
@@ -95,6 +97,8 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
     imageProvider,
     videoProvider,
     ttsProvider,
+    sttProvider,
+    searchProvider,
     embeddingProvider,
     vectorProvider,
     storageProvider,
@@ -104,6 +108,8 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
     firstConfigured(IMAGE_PROVIDER_REGISTRY),
     firstConfigured(VIDEO_PROVIDER_REGISTRY),
     firstConfigured(TTS_PROVIDER_REGISTRY),
+    firstConfigured(STT_PROVIDER_REGISTRY),
+    firstConfigured(SEARCH_PROVIDER_REGISTRY),
     firstConfigured(EMBEDDING_PROVIDER_REGISTRY),
     firstConfigured(VECTORDB_PROVIDER_REGISTRY),
     firstConfigured(STORAGE_REGISTRY),
@@ -159,6 +165,20 @@ export async function getPlatformCapabilities(): Promise<PlatformCapabilities> {
       ttsProvider,
       TTS_PROVIDER_REGISTRY,
       'The audio generation endpoint returns 503 rather than fabricated audio; no placeholder is ever produced.'
+    ),
+    report(
+      'speech-to-text',
+      'AI speech-to-text',
+      sttProvider,
+      STT_PROVIDER_REGISTRY,
+      'No transcription endpoint is configured; no transcript is ever fabricated.'
+    ),
+    report(
+      'web-search',
+      'Web search',
+      searchProvider,
+      SEARCH_PROVIDER_REGISTRY,
+      'Search returns "not configured"; results are never fabricated.'
     ),
     report(
       'embeddings',

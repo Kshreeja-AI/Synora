@@ -5,6 +5,8 @@ import { executableAlgorithms, QUANTUM_ALGORITHM_REGISTRY } from '../quantum/alg
 import { VECTORDB_PROVIDER_REGISTRY } from '../vectordb/registry';
 import { IMAGE_PROVIDER_REGISTRY } from './imageRegistry';
 import { PROVIDER_REGISTRY } from './registry';
+import { SEARCH_PROVIDER_REGISTRY } from './searchRegistry';
+import { STT_PROVIDER_REGISTRY } from './sttRegistry';
 import { TTS_PROVIDER_REGISTRY } from './ttsRegistry';
 import { VIDEO_PROVIDER_REGISTRY } from './videoRegistry';
 
@@ -117,6 +119,8 @@ export async function checkCapabilityReadiness(): Promise<readonly CapabilityRow
   const image = await rowsFor(IMAGE_PROVIDER_REGISTRY);
   const video = await rowsFor(VIDEO_PROVIDER_REGISTRY);
   const speech = await rowsFor(TTS_PROVIDER_REGISTRY);
+  const stt = await rowsFor(STT_PROVIDER_REGISTRY);
+  const search = await rowsFor(SEARCH_PROVIDER_REGISTRY);
   const embeddings = await rowsFor(EMBEDDING_PROVIDER_REGISTRY);
   const vector = await rowsFor(VECTORDB_PROVIDER_REGISTRY);
   const quantum = await rowsFor(QUANTUM_PROVIDER_REGISTRY);
@@ -183,15 +187,17 @@ export async function checkCapabilityReadiness(): Promise<readonly CapabilityRow
     },
     {
       capability: 'speech-to-text',
-      // Listed as its own row rather than folded into "speech", because a
-      // combined row reading IMPLEMENTED would be true of half of it and
-      // false of the half a founder is more likely to want.
-      state: 'NOT_IMPLEMENTED',
-      providers: [],
-      credentialsRequired: [],
+      // Its own row rather than folded into "speech", because a combined row
+      // would be true of half of it and false of the half a founder is more
+      // likely to want. ENABLED only means an endpoint URL is set; no
+      // transcription has been run by this report.
+      state: stateFromProviders(stt),
+      providers: stt,
+      credentialsRequired: ['STT_BASE_URL', 'STT_MODEL', 'STT_API_KEY'],
       note:
-        'No transcription adapter exists — not for Fish Audio Transcribe, not for Whisper, not ' +
-        'for anything. This is a code change, not a credential.',
+        'OpenAI-compatible /v1/audio/transcriptions adapter (Whisper). Set STT_BASE_URL to a ' +
+        'faster-whisper-server or a hosted Whisper endpoint; STT_API_KEY only if it needs one. ' +
+        'Unit-tested against a fake client; not exercised against a real endpoint.',
     },
     {
       capability: 'content-safety',
@@ -250,10 +256,13 @@ export async function checkCapabilityReadiness(): Promise<readonly CapabilityRow
     },
     {
       capability: 'search',
-      state: 'BLOCKED',
-      providers: [],
-      credentialsRequired: [],
-      note: 'No web-search adapter exists in this build. Semantic search over ingested knowledge is the `rag` row above.',
+      state: stateFromProviders(search),
+      providers: search,
+      credentialsRequired: ['SEARCH_SEARXNG_BASE_URL'],
+      note:
+        'Wikipedia (keyless, on by default) plus optional self-hosted SearXNG. ENABLED means a ' +
+        'provider is switched on, not that a query has succeeded. Semantic search over ingested ' +
+        'knowledge is the `rag` row above.',
     },
     {
       capability: 'document-processing',
