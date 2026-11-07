@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import { createPublicAssistantRouter } from './routes/publicAssistant';
 import { prisma } from '@synora/database';
 import { logger } from './utils/logger';
 import { errorHandler } from './middleware/errorHandler';
@@ -104,6 +105,20 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   app.use(metricsMiddleware);
   app.use(tracingMiddleware);
   app.use(eosApiCollector);
+
+  // Behind Render's/any reverse proxy every request arrives from the proxy's
+  // address, so per-IP limits would all share one bucket. Trust exactly one
+  // hop, and only where a proxy is known to exist.
+  if (config.stage === 'production' || config.stage === 'staging') {
+    app.set('trust proxy', 1);
+  }
+
+  // Public, unauthenticated portfolio assistant. Mounted BEFORE the global
+  // CORS/CSRF/body-parser stack on purpose: it carries its own exact-origin
+  // CORS, rate limit and 2kb body limit, and must not inherit the app-wide
+  // credentialed CORS list or the 10mb parser.
+  app.use('/api/public/assistant', createPublicAssistantRouter());
+
   app.use(
     cors({
       origin: config.server.corsOrigins,
