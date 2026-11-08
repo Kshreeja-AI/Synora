@@ -1,3 +1,15 @@
+// ioredis logs "[ioredis] Unhandled error event" via console.error for every
+// refused reconnect against an intentionally-unreachable Redis (queueProducer
+// fail-fast tests). On CI that flood saturates the vitest worker<->main IPC and
+// triggers "[vitest-worker]: Timeout calling onTaskUpdate", failing the run with
+// every assertion green. Drop just that noise at its source; any other ioredis
+// message still prints.
+const originalConsoleError = console.error.bind(console) as (...args: unknown[]) => void;
+console.error = (...args: unknown[]): void => {
+  if (typeof args[0] === 'string' && args[0].includes('[ioredis] Unhandled error event')) return;
+  originalConsoleError(...args);
+};
+
 // Set up environment for tests
 process.env.DATABASE_URL ||= 'postgresql://synora:synora@localhost:5432/synora';
 process.env.NODE_ENV = 'test';
