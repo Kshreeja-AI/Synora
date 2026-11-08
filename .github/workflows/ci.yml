@@ -215,6 +215,23 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    # The backend refuses to start without a reachable database
+    # (`prisma.$connect()` runs before it listens), so the smoke test below needs
+    # one. The container uses the host network to reach this service.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: synora
+          POSTGRES_PASSWORD: synora
+          POSTGRES_DB: synora
+        options: >-
+          --health-cmd "pg_isready -U synora"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
     # Verifies the production image actually assembles from the Dockerfile.
     # This is the image-build check that cannot be run in a sandbox without a
     # Docker daemon; the runtime of the built artifact is covered by the
@@ -242,16 +259,23 @@ jobs:
           # throwaway DATABASE_URL; assert /health responds 200. This proves
           # the image's entrypoint runs (catches the ESM-extension class of
           # bug that a plain `docker build` would not).
-          docker run -d --name synora-ci \
+          # CORS_ORIGINS / FRONTEND_URL / BACKEND_URL: the production boot gate refuses
+          # localhost defaults. These are placeholder public-looking URLs, not secrets.
+          docker run -d --name synora-ci --network host \
             -e NODE_ENV=production \
+            -e APP_STAGE=production \
             -e PORT=3001 \
+            -e CORS_ORIGINS=https://ci.synora.invalid \
+            -e FRONTEND_URL=https://ci.synora.invalid \
+            -e BACKEND_URL=https://api.ci.synora.invalid \
+            -e QUEUE_ENABLED=false \
             -e JWT_SECRET=ci-only-not-a-real-secret-000000000000 \
             -e NEXTAUTH_SECRET=ci-only-not-a-real-secret-111111111111 \
             -e STRIPE_SECRET_KEY=sk_test_ci-only-not-a-real-secret \
             -e STRIPE_WEBHOOK_SECRET=whsec_ci-only-not-a-real-secret \
             -e TOOL_SECRET_MASTER_KEY=ci-only-not-a-real-secret-tool-master-key-000000 \
             -e DATABASE_URL=postgresql://synora:synora@127.0.0.1:5432/synora \
-            -p 3001:3001 synora-backend:ci
+            synora-backend:ci
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:3001/health >/dev/null; then
               echo "container healthy"; docker rm -f synora-ci; exit 0
