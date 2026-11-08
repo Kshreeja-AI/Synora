@@ -32,14 +32,14 @@ export function validatePaginationQuery(_req: Request, _res: Response, next: Nex
     if (error instanceof z.ZodError) {
       logger.warn('Invalid pagination query parameters', {
         path: _req.path,
-        error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+        error: error.issues.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_QUERY_PARAMETERS',
           message: 'Invalid pagination parameters',
-          details: error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+          details: error.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
         },
       });
     }
@@ -55,14 +55,14 @@ export function validateDateRangeQuery(_req: Request, _res: Response, next: Next
     if (error instanceof z.ZodError) {
       logger.warn('Invalid date range query parameters', {
         path: _req.path,
-        error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+        error: error.issues.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_QUERY_PARAMETERS',
           message: 'Invalid date range parameters',
-          details: error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+          details: error.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
         },
       });
     }
@@ -78,14 +78,14 @@ export function validateIdQuery(_req: Request, _res: Response, next: NextFunctio
     if (error instanceof z.ZodError) {
       logger.warn('Invalid ID query parameters', {
         path: _req.path,
-        error: error.errors.map(e => `${e.path.join('.')}: ${e.message}`),
+        error: error.issues.map(e => `${e.path.join('.')}: ${e.message}`),
       });
       return _res.status(400).json({
         success: false,
         error: {
           code: 'INVALID_QUERY_PARAMETERS',
           message: 'Invalid ID parameters',
-          details: error.errors.map(e => ({ field: e.path.join('.'), message: e.message })),
+          details: error.issues.map(e => ({ field: e.path.join('.'), message: e.message })),
         },
       });
     }

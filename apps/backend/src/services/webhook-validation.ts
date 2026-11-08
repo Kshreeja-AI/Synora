@@ -84,7 +84,7 @@ export function validateWebhookData(eventType: string, data: unknown): data is R
     return true;
   } catch (error) {
     if (error instanceof z.ZodError) {
-      throw new Error(`Webhook validation failed: ${error.errors.map(e => e.message).join(', ')}`);
+      throw new Error(`Webhook validation failed: ${error.issues.map(e => e.message).join(', ')}`);
     }
     throw error;
   }

@@ -33,7 +33,7 @@ router.post('/plans', async (req: AuthRequest, res, next) => {
       priceCents: z.number(),
       creditsPerInterval: z.number().optional(),
       trialDays: z.number().optional(),
-      features: z.record(z.unknown()).optional(),
+      features: z.record(z.string(), z.unknown()).optional(),
       sortOrder: z.number().optional(),
     });
 
@@ -56,7 +56,7 @@ router.patch('/plans/:planId', async (req: AuthRequest, res, next) => {
       priceCents: z.number().optional(),
       creditsPerInterval: z.number().optional(),
       trialDays: z.number().optional(),
-      features: z.record(z.unknown()).optional(),
+      features: z.record(z.string(), z.unknown()).optional(),
       sortOrder: z.number().optional(),
     });
 

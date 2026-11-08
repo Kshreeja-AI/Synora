@@ -90,7 +90,7 @@ router.get('/:workspaceId/plugins', async (req: AuthRequest, res, next) => {
 // Loose on purpose: the registry is the single validator, and duplicating
 // its rules in a zod schema would create two places for them to disagree.
 // What zod does here is guarantee an object arrived at all.
-const installSchema = z.object({ manifest: z.record(z.unknown()) });
+const installSchema = z.object({ manifest: z.record(z.string(), z.unknown()) });
 
 /**
  * What a manifest WOULD do, without doing it.

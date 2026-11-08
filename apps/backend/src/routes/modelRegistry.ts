@@ -14,7 +14,7 @@ const CreateModelSchema = z.object({
 const CreateVersionSchema = z.object({
   versionNumber: z.string().min(1),
   status: z.nativeEnum(ModelVersionStatus),
-  performanceMetrics: z.record(z.number()).optional(),
+  performanceMetrics: z.record(z.string(), z.number()).optional(),
 })
 
 const PromoteVersionSchema = z.object({

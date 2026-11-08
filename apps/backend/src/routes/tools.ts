@@ -49,7 +49,7 @@ const updateToolSchema = z.object({
 });
 
 const executeToolSchema = z.object({
-  input: z.record(z.unknown()),
+  input: z.record(z.string(), z.unknown()),
   conversationId: z.string().optional(),
 });
 
@@ -143,7 +143,7 @@ router.post('/:workspaceId/tools/:toolId/execute', authMiddleware, requireWorksp
 router.post('/:workspaceId/tools/:toolId/preview', authMiddleware, requireWorkspaceAccess(), async (req: AuthRequest, res, next) => {
   try {
     const { workspaceId, toolId } = req.params;
-    const { input } = z.object({ input: z.record(z.unknown()).default({}) }).parse(req.body ?? {});
+    const { input } = z.object({ input: z.record(z.string(), z.unknown()).default({}) }).parse(req.body ?? {});
 
     const preview = await toolService.previewExecution(req.userId!, workspaceId, toolId, input);
 
