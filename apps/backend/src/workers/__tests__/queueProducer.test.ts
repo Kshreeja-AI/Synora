@@ -1,6 +1,45 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Queue } from 'bullmq'
 
+type QueueModule = typeof import('../queue')
+
+// importing ../queue constructs every producer queue below, and each one opens
+// its own ioredis connection. Against a port with nothing listening those
+// connections keep retrying (queue.ts deliberately gives producers no bounded
+// retryStrategy, so a Redis restart is picked up), and ioredis prints an
+// "Unhandled error event" for every refused attempt. Left open past the test,
+// that flood starves the vitest worker's RPC ("Timeout calling onTaskUpdate")
+// and fails the run with every assertion green. The refused connections are
+// the expected condition here, so they are swallowed, and every queue is
+// closed when its test ends.
+const PRODUCER_QUEUE_NAMES = [
+  'exportDatasetQueue',
+  'runEvaluationQueue',
+  'messageFeedbackQueue',
+  'fileProcessingQueue',
+  'videoGenerationQueue',
+  'generateResponseQueue',
+  'memoryMaintenanceQueue',
+] as const satisfies readonly (keyof QueueModule)[]
+
+function swallowExpectedConnectionErrors(queueModule: QueueModule): void {
+  for (const name of PRODUCER_QUEUE_NAMES) {
+    queueModule[name].on('error', () => {
+      // ECONNREFUSED against the dead port is the condition under test.
+    })
+  }
+}
+
+async function closeAllProducerQueues(queueModule: QueueModule): Promise<void> {
+  await Promise.all(
+    PRODUCER_QUEUE_NAMES.map((name) =>
+      queueModule[name].close().catch(() => {
+        // Closing a queue whose connection never came up can itself throw.
+      })
+    )
+  )
+}
+
 /**
  * Producer fail-fast contract.
  *
@@ -38,6 +77,9 @@ describe('queue producer configuration', () => {
         retryStrategy: () => null,
       },
     })
+    deadQueue.on('error', () => {
+      // Expected: nothing listens on this port.
+    })
 
     try {
       await expect(deadQueue.add('probe', { data: true })).rejects.toThrow()
@@ -51,8 +93,15 @@ describe('queue producer configuration', () => {
 
   describe('real producers against a never-reachable Redis', () => {
     const originalRedisUrl = process.env.REDIS_URL
+    let queueModule: QueueModule | undefined
 
     afterEach(async () => {
+      // Runs even when an assertion above threw, unlike the inline close()
+      // calls at the end of each test.
+      if (queueModule) {
+        await closeAllProducerQueues(queueModule)
+        queueModule = undefined
+      }
       if (originalRedisUrl === undefined) {
         delete process.env.REDIS_URL
       } else {
@@ -64,7 +113,8 @@ describe('queue producer configuration', () => {
     it('enqueueExportDataset rejects on a bounded timeout instead of hanging forever', async () => {
       vi.resetModules()
       process.env.REDIS_URL = 'redis://127.0.0.1:6399'
-      const queueModule = await import('../queue')
+      queueModule = await import('../queue')
+      swallowExpectedConnectionErrors(queueModule)
 
       const start = Date.now()
       await expect(
@@ -85,7 +135,8 @@ describe('queue producer configuration', () => {
     it('scheduleMemoryMaintenance rejects on a bounded timeout instead of hanging app startup', async () => {
       vi.resetModules()
       process.env.REDIS_URL = 'redis://127.0.0.1:6399'
-      const queueModule = await import('../queue')
+      queueModule = await import('../queue')
+      swallowExpectedConnectionErrors(queueModule)
 
       const start = Date.now()
       await expect(queueModule.scheduleMemoryMaintenance()).rejects.toThrow()
