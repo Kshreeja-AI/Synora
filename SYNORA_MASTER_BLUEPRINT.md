@@ -174,6 +174,28 @@ vector store (pgvector) · virus scan (ClamAV) · payments (Stripe)
 | Privacy | PrivacyConsent, TrainingConsent |
 | Media | GeneratedImage, GeneratedVideo, GeneratedAudio |
 
+**Decision (2026-11-08): the interim Supabase database keeps Synora in schema
+`synora`, not `public`.** The Supabase project's `public` schema already held
+four empty tables that no migration in this repository created, and Prisma will
+not run `migrate deploy` against a non-empty schema (P3005). Dropping tables
+nobody had authorised dropping was rejected; pointing Prisma at its own schema
+(`DATABASE_URL=...?schema=synora`) needs no destructive step, leaves the
+existing tables alone, and keeps Synora's tables outside Supabase's
+auto-exposed REST schema. The cost: the `ensure_rls` event trigger covers
+`public` only, so row-level security is not auto-enabled on these tables; the
+backend connects as `postgres`, which bypasses RLS, so nothing relies on it.
+Reversible, but not free: moving to `public` later means an explicit decision
+about the four tables. Operational detail is in `SYNORA_OPERATIONS.md` §7.
+
+**Decision (2026-11-08): the public assistant uses a free-tier fallback chain,
+not the general provider resolver.** An anonymous endpoint cannot be allowed to
+reach a billed provider. `ai/freeTierChain.ts` tries Groq, Cloudflare Workers
+AI and OpenRouter `:free` models in configured order through the existing
+OpenAI-compatible adapter and circuit breaker; its calls are recorded at 0
+cents while tokens still count against the daily token cap. Providers whose
+free plan may train on prompts are excluded until an opt-out is confirmed.
+Business logic never names a vendor; the chain is selected by configuration.
+
 **Migration integrity is enforced in CI:** a job asserts that applying the
 migration history reproduces `schema.prisma` exactly. A production deploy
 applies migrations, so the migration history — not the schema file — defines

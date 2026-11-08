@@ -256,6 +256,55 @@ production** and needs explicit approval.
 **Rollback decision point** is after step 17: if HTTPS or the smoke test fails,
 restore the DNS records in §8 and the previous site returns.
 
+### Interim launch on free tiers (Render + Supabase) — 2026-11
+
+Until the VPS runbook above is executed, the API runs on Render's free Docker
+plan (`synora-api`, Singapore) against a Supabase project. This is a stop-gap
+with no DNS change and no paid plan. What is different from the VPS design:
+
+- **Database schema.** Supabase's `public` schema already held four empty
+  tables of unknown origin (`conversations`, `messages`, `conversation_members`,
+  `message_summaries`), and `prisma migrate deploy` refuses a non-empty schema
+  (P3005). Rather than drop them, every Synora table lives in schema
+  **`synora`**, selected with `?schema=synora` on `DATABASE_URL` (session
+  pooler, port 5432, user `postgres.<project-ref>`; the `postgres` role bypasses
+  RLS). The four `public` tables are untouched. `synora` is not exposed through
+  Supabase's REST API. To move to `public`, the four tables must be dropped
+  first, which needs an explicit decision.
+- **Migrations are not run by the app.** Apply them from a trusted machine:
+  `prisma migrate deploy`, then `prisma migrate status`. If a run is
+  interrupted, check the interrupted migration's objects in the database and
+  use `prisma migrate resolve --applied <name>` when they are all present.
+  Migrations are never reversed automatically.
+- **No Redis.** `QUEUE_ENABLED=false` keeps BullMQ workers from starting (they
+  would retry a refused connection forever). Streamed chat generation and file
+  processing are unavailable in this mode; the public assistant does not use them.
+- **Free-tier AI chain.** The public assistant (`POST /api/public/assistant`)
+  uses `ai/freeTierChain.ts`: Groq, then Cloudflare Workers AI, then OpenRouter
+  `:free` models (order in `AI_FREE_TIER_CHAIN`). It reuses the OpenAI-compatible
+  adapter, per-provider circuit breakers and pacing; base URLs and model ids are
+  configuration (`FREE_TIER_*`), and each model is checked against the
+  provider's own `/models` listing before use. Providers whose free plan may
+  train on prompts (Mistral Experiment, Google AI Studio free tier) are not
+  used. OpenRouter free models return 404 while the account has zero-data-
+  retention enforcement on; that is the intended privacy behaviour.
+- **Spend limits.** `AI_GLOBAL_MAX_COST_PER_DAY_CENTS=1` (any billed provider is
+  refused almost immediately; free-tier calls are recorded at 0 cents) and
+  `AI_GLOBAL_MAX_TOKENS_PER_DAY=200000` (the real bound on free quota), plus an
+  in-memory daily request ceiling for the assistant, global and per IP
+  (`PUBLIC_ASSISTANT_DAILY_MAX_GLOBAL`, `PUBLIC_ASSISTANT_DAILY_MAX_PER_IP`).
+- **Registration is closed.** `REGISTRATION_MODE=invite` (the default; any
+  unrecognised value also means invite). A person can register only if their
+  email is in `REGISTRATION_ALLOWLIST` or holds a live workspace invitation.
+- **Request bodies.** JSON/urlencoded bodies are limited to 100 kb (document
+  routes 2 mb); file uploads are multipart and use their own limits.
+- **Secrets stay off the repository and out of chat.** `synora-secret-set`
+  (hidden prompt, trims and validates) writes `~/.config/synora/vault.env`;
+  `synora-render-push` copies it to Render one variable at a time (never the
+  bulk endpoint) and never triggers a deploy. Deploys are manual.
+- **Rollback.** Render: set the service branch back to its previous value and
+  redeploy the previous successful deploy. Database changes are not undone.
+
 ---
 
 ## 8. Domain and DNS
