@@ -1,22 +1,31 @@
-# Gitleaks ignore file for documented examples that are redacted or non-functional
-# These are test vectors, RFC examples, and documentation samples — not production secrets
+# Supabase PAT in 47d80c4 — revoked by founder (verified HTTP 401 on 2026-11-08). Fingerprints only, no values.
+47d80c4280b600bdc9169aeb969a31a81a93b5f0:SUPABASE_LOCAL_SETUP.sh:generic-api-key:50
+47d80c4280b600bdc9169aeb969a31a81a93b5f0:SUPABASE_REMOTE_INTEGRATION.md:generic-api-key:51
 
-# Historical audit documentation: redacted JWT and Base32 examples
+# Previously listed under [allowlist] fingerprints in .gitleaks.toml (gitleaks only reads fingerprints from this file).
+78291dd5af2eb1ef8dc08ac294edaf6a614b41ce:apps/backend/src/services/mfa/__tests__/totp.service.rfc6238.test.ts:generic-api-key:214
+ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:212
+ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:423
+2805a3ffeda7194d6cd7e2653e89cf263e592b39:docs/security/CSRF_PROTECTION.md:generic-api-key:55
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:apps/backend/src/middleware/__tests__/csrf.test.ts:generic-api-key:29
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:48
+9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:58
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:220
 27828819794020213011efdeaaf161fd7aa3d19e:docs/audits/PRB_CERTIFICATION_REPORT.md:generic-api-key:1052
 
-# MFA RFC 6238 test vectors (commit 78291dd) — legitimate test data for TOTP validation
-78291dd5af2eb1ef8dc08ac294edaf6a614b41ce:apps/backend/src/services/mfa/__tests__/totp.service.rfc6238.test.ts:generic-api-key:214
+# Test fixtures / redacted audit samples found by the 2026-11-08 full-history scan (gitleaks 8.30.1, default rules).
+# Classified by file: tests and a security-audit document, no live credential shapes. Names only here.
+93121b1b401e3712db8cedf1f80b740a05ee8279:apps/web/src/components/workflows/__tests__/TriggerPanel.test.tsx:generic-api-key:33
+abc22d1ab00180ebdb4aa4b95555de4e4f68a202:apps/backend/src/eos/__tests__/redaction.test.ts:jwt:30
+d740a19aba99fe9cdfd45169011747854f8be279:apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:154
+d740a19aba99fe9cdfd45169011747854f8be279:apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:167
+3ae5251b26ffef52566c0e8c67fc08427a743157:apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:154
+3ae5251b26ffef52566c0e8c67fc08427a743157:apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:167
+5c6f89389dd6e020ec8fed6415ac10facfa90377:docs/security/AUTH_SYSTEM_SECURITY_AUDIT_v2.md:jwt:41
 
-# MFA design documentation (commit ca7a16f) — Base32 example secrets in docs
-ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:212
-ca7a16fedc5b475e01905cea2f5fc2bcf88a39af:docs/MFA_DESIGN.md:generic-api-key:423
-
-# CSRF protection documentation (commit 2805a3f) — example CSRF tokens in docs
-2805a3ffeda7194d6cd7e2653e89cf263e592b39:docs/security/CSRF_PROTECTION.md:generic-api-key:55
-
-# CSRF test fixtures (commit 9f122cc) — test tokens in unit tests and docs
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:apps/backend/src/middleware/__tests__/csrf.test.ts:generic-api-key:29
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:48
-9f122ccdd44c2d207da4544cfc298d1f7b11f9d0:docs/security/CSRF_PROTECTION.md:generic-api-key:58
+# Same test fixtures, as seen by `gitleaks dir` (fingerprint = file:rule:line).
+apps/backend/src/eos/__tests__/redaction.test.ts:jwt:30
+apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:154
+apps/backend/tests/crypto/encryption.service.test.ts:generic-api-key:167
+apps/web/src/components/workflows/__tests__/TriggerPanel.test.tsx:generic-api-key:64
