@@ -94,6 +94,18 @@ export const AppConfigSchema = z.object({
     replicateVideoModel: z.string().min(1),
     openaiTtsModel: z.string().min(1),
     openaiTtsVoice: z.string().min(1),
+    /** Speech-to-text: any OpenAI-compatible transcription server. Activated by sttBaseUrl. */
+    sttBaseUrl: z.string().url().optional(),
+    sttApiKey: z.string().optional(),
+    sttModel: z.string().min(1),
+    /** Web search. Wikipedia needs no key; SearXNG is activated by searchSearxngBaseUrl. */
+    searchWikipediaEnabled: z.boolean(),
+    searchSearxngBaseUrl: z.string().url().optional(),
+    /** Self-hosted TTS: any OpenAI-compatible /v1/audio/speech server. Activated by ttsSelfHostedBaseUrl. */
+    ttsSelfHostedBaseUrl: z.string().url().optional(),
+    ttsSelfHostedApiKey: z.string().optional(),
+    ttsSelfHostedModel: z.string().min(1),
+    ttsSelfHostedVoice: z.string().min(1),
     geminiModel: z.string().min(1),
     xaiModel: z.string().min(1),
     openrouterModel: z.string().min(1),

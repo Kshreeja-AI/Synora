@@ -38,6 +38,10 @@ export interface StageDefaults {
     replicateVideoModel: string;
     openaiTtsModel: string;
     openaiTtsVoice: string;
+    sttModel: string;
+    searchWikipediaEnabled: boolean;
+    ttsSelfHostedModel: string;
+    ttsSelfHostedVoice: string;
     geminiModel: string;
     xaiModel: string;
     openrouterModel: string;
@@ -187,6 +191,15 @@ const BASE_DEFAULTS: StageDefaults = {
     replicateVideoModel: 'minimax/video-01',
     openaiTtsModel: 'tts-1',
     openaiTtsVoice: 'alloy',
+    // Open-weight Whisper through any OpenAI-compatible /v1/audio/transcriptions
+    // server (faster-whisper-server, Groq's free tier, vLLM). Override with STT_MODEL.
+    sttModel: 'Systran/faster-whisper-small',
+    // Keyless public API; on by default because it needs no credential and no money.
+    searchWikipediaEnabled: true,
+    // Self-hosted TTS behind an OpenAI-compatible /v1/audio/speech server
+    // (Kokoro-FastAPI, Piper wrappers). Voice names are server-specific.
+    ttsSelfHostedModel: 'kokoro',
+    ttsSelfHostedVoice: 'af_heart',
     geminiModel: 'gemini-1.5-pro',
     xaiModel: 'grok-2-latest',
     openrouterModel: 'anthropic/claude-3.5-sonnet',

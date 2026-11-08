@@ -31,9 +31,13 @@ describe('text-to-speech provider registry', () => {
     vi.clearAllMocks();
   });
 
-  it('exposes OpenAI as a text-to-speech provider (adding another is one descriptor)', () => {
-    expect(TTS_PROVIDER_REGISTRY.map((p) => p.id)).toEqual(['openai']);
-    expect(TTS_PROVIDER_REGISTRY[0].capabilities).toContain('text-to-speech');
+  it('lists the self-hosted provider before OpenAI (adding another is one descriptor)', () => {
+    // Order matters: first configured wins, so a free self-hosted endpoint
+    // must outrank the paid OpenAI key when both are present.
+    expect(TTS_PROVIDER_REGISTRY.map((p) => p.id)).toEqual(['self-hosted-tts', 'openai']);
+    for (const descriptor of TTS_PROVIDER_REGISTRY) {
+      expect(descriptor.capabilities).toContain('text-to-speech');
+    }
   });
 
   it('reports unconfigured when no OPENAI_API_KEY is present', async () => {
