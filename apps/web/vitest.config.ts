@@ -31,6 +31,13 @@ export default defineConfig({
     // The cost is wall-clock on a suite that already finishes in seconds. The
     // benefit is that a red result means something.
     fileParallelism: false,
+    // Vitest's default 5s is too tight for jsdom role queries on a slow CPU.
+    // Measured, not assumed: Sidebar.test.tsx run alone passed its assertions
+    // but took 4-7s per test with `open` nav (17 getByRole calls) against
+    // 0.1s for collapsed tests, and on the CI runner the same cases failed
+    // only with "Test timed out in 5000ms" (0 assertion errors). Raising the
+    // limit changes how long a test may take, never what it asserts.
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
