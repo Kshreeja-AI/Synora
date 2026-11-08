@@ -21,6 +21,7 @@ export const selfHostedTextToSpeechDescriptor: AIProviderDescriptor<TextToSpeech
   id: 'self-hosted-tts',
   displayName: 'Self-Hosted Text-to-Speech',
   capabilities: ['text-to-speech'],
+  metering: 'metered' as const,
   // Cost depends on where the operator hosts it; the adapter cannot know.
   async isConfigured() {
     return Boolean(getConfig().ai.ttsSelfHostedBaseUrl);

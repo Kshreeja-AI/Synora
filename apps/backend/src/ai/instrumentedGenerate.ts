@@ -22,7 +22,23 @@ import { assertAiBudget, recordAiSpend } from './spend-guard';
 export async function instrumentedGenerate(
   promptId: string,
   request: TextGenerationRequest,
-  opts: { workspaceId?: string; userId?: string } = {}
+  opts: {
+    workspaceId?: string;
+    userId?: string;
+    /**
+     * Replaces the default provider resolution. The public assistant passes
+     * the free-tier chain here; everything else (budget gate, EOS emission,
+     * spend recording) stays identical.
+     */
+    generate?: (request: TextGenerationRequest) => Promise<TextGenerationResult>;
+    /**
+     * The caller's own statement of what the call cost, in cents. Only for
+     * paths that are free by construction (the free-tier chain). Without it
+     * the guard prices by provider and model, and a model absent from the
+     * price table is charged at the most expensive known rate.
+     */
+    knownCostCents?: number;
+  } = {}
 ): Promise<TextGenerationResult> {
   // The budget gate runs BEFORE the try block on purpose: a budget refusal
   // is not a provider failure, and letting it fall into the catch below
@@ -40,7 +56,7 @@ export async function instrumentedGenerate(
   const startedAt = Date.now();
 
   try {
-    const result = await generateText(request);
+    const result = await (opts.generate ?? generateText)(request);
     recordAiInteraction({
       promptId,
       providerId: result.provider,
@@ -62,6 +78,7 @@ export async function instrumentedGenerate(
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
       fallbackChars: request.prompt.length + result.text.length,
+      knownCostCents: opts.knownCostCents,
     });
     return result;
   } catch (error) {
@@ -107,6 +124,7 @@ export async function instrumentedGenerate(
         // It under-counts, which is the acceptable direction — the
         // alternative in production was counting zero.
         fallbackChars: request.prompt.length * attempts,
+        knownCostCents: opts.knownCostCents,
       });
     }
     throw error;

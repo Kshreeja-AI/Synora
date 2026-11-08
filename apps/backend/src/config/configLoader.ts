@@ -174,6 +174,35 @@ export async function loadConfig(
         .map((entry) => entry.trim())
         .filter(Boolean),
       groqModel: readString(env, 'GROQ_MODEL', defaults.ai.groqModel),
+      freeTier: {
+        chain: readString(env, 'AI_FREE_TIER_CHAIN', defaults.ai.freeTier.chain.join(','))
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean),
+        baseUrls: {
+          groq: readString(env, 'FREE_TIER_BASE_URL_GROQ', defaults.ai.freeTier.baseUrls.groq),
+          cloudflare: readString(env, 'FREE_TIER_BASE_URL_CLOUDFLARE', defaults.ai.freeTier.baseUrls.cloudflare),
+          openrouter: readString(env, 'FREE_TIER_BASE_URL_OPENROUTER', defaults.ai.freeTier.baseUrls.openrouter),
+          mistral: readString(env, 'FREE_TIER_BASE_URL_MISTRAL', defaults.ai.freeTier.baseUrls.mistral),
+          sambanova: readString(env, 'FREE_TIER_BASE_URL_SAMBANOVA', defaults.ai.freeTier.baseUrls.sambanova),
+        },
+        models: {
+          cloudflare: readString(env, 'FREE_TIER_MODEL_CLOUDFLARE', defaults.ai.freeTier.models.cloudflare),
+          openrouter: readString(env, 'FREE_TIER_MODEL_OPENROUTER', defaults.ai.freeTier.models.openrouter),
+          mistral: readString(env, 'FREE_TIER_MODEL_MISTRAL', defaults.ai.freeTier.models.mistral),
+          sambanova: readString(env, 'FREE_TIER_MODEL_SAMBANOVA', defaults.ai.freeTier.models.sambanova),
+        },
+        // An account id is an identifier, not a credential; read from env like the URLs.
+        cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID || undefined,
+        trainingOptOutConfirmed: (env.FREE_TIER_TRAINING_OPTOUT_CONFIRMED || '')
+          .split(',')
+          .map((id) => id.trim().toLowerCase())
+          .filter(Boolean),
+        modelCheckTtlMs: readNumber(env, 'FREE_TIER_MODEL_CHECK_TTL_MS', defaults.ai.freeTier.modelCheckTtlMs),
+        callTimeoutMs: readNumber(env, 'FREE_TIER_CALL_TIMEOUT_MS', defaults.ai.freeTier.callTimeoutMs),
+        dailyRequestsGlobal: readNumber(env, 'PUBLIC_ASSISTANT_DAILY_MAX_GLOBAL', defaults.ai.freeTier.dailyRequestsGlobal),
+        dailyRequestsPerIp: readNumber(env, 'PUBLIC_ASSISTANT_DAILY_MAX_PER_IP', defaults.ai.freeTier.dailyRequestsPerIp),
+      },
       globalMaxCostPerDayCents: env.AI_GLOBAL_MAX_COST_PER_DAY_CENTS
         ? readNumber(env, 'AI_GLOBAL_MAX_COST_PER_DAY_CENTS', 0)
         : undefined,

@@ -30,6 +30,7 @@ import {
   deviceMetadata,
 } from '../utils/authSession';
 import { createNotification } from '../services/notification.service';
+import { assertRegistrationAllowed } from '../services/registrationPolicy';
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
@@ -103,6 +104,10 @@ async function notifyBestEffort(label: string, notify: () => Promise<unknown>): 
 router.post('/register', authInputValidator, registerLimiter, async (req, res, next) => {
   try {
     const { email, password, name } = registerSchema.parse(req.body);
+
+    // Closed beta: REGISTRATION_MODE=invite (the default). Checked before the
+    // "already registered" lookup so a stranger learns nothing about who has an account.
+    await assertRegistrationAllowed(email);
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {

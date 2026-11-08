@@ -97,6 +97,7 @@ export const openaiCompatibleTranscriptionDescriptor: AIProviderDescriptor<Speec
   id: 'stt-openai-compatible',
   displayName: 'Whisper (OpenAI-compatible endpoint)',
   capabilities: ['speech-to-text'],
+  metering: 'metered' as const,
   // Whether it costs money depends on the endpoint the operator points it at;
   // the adapter itself cannot know, so it does not claim "unmetered".
   async isConfigured() {

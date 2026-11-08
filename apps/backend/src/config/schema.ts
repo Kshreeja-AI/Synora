@@ -152,6 +152,37 @@ export const AppConfigSchema = z.object({
     /** Groq-hosted open-source models (OpenAI-compatible; key in SecretsManager). */
     groqModel: z.string().min(1),
     /**
+     * Free-tier fallback chain used by the public, unauthenticated assistant.
+     * Base URLs and model ids live here (not in code) so a provider changing
+     * either is an env edit; models are additionally checked against the
+     * provider's own /models listing at runtime (ai/freeTierChain.ts).
+     */
+    freeTier: z.object({
+      chain: z.array(z.string().min(1)).min(1),
+      baseUrls: z.object({
+        groq: z.string().url(),
+        /** Contains the literal "{accountId}", replaced from CLOUDFLARE_ACCOUNT_ID. */
+        cloudflare: z.string().min(1),
+        openrouter: z.string().url(),
+        mistral: z.string().url(),
+        sambanova: z.string().url(),
+      }),
+      models: z.object({
+        cloudflare: z.string().min(1),
+        openrouter: z.string().min(1),
+        mistral: z.string().min(1),
+        sambanova: z.string().min(1),
+      }),
+      cloudflareAccountId: z.string().optional(),
+      /** Provider ids whose training opt-out the operator has confirmed (e.g. "mistral"). */
+      trainingOptOutConfirmed: z.array(z.string()),
+      modelCheckTtlMs: z.number().int().positive(),
+      callTimeoutMs: z.number().int().positive(),
+      /** Daily request ceilings for the public assistant (UTC day, in-memory). */
+      dailyRequestsGlobal: z.number().int().positive(),
+      dailyRequestsPerIp: z.number().int().positive(),
+    }),
+    /**
      * Process-wide hard ceilings on AI usage, enforced by ai/spend-guard.ts
      * BEFORE any generation runs. Deployment-level kill switches: they bind
      * every workspace at once, on top of any per-workspace AiSpendBudget

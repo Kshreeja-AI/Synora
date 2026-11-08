@@ -139,6 +139,7 @@ export const searxngSearchDescriptor: AIProviderDescriptor<WebSearchProvider> = 
   id: 'searxng',
   displayName: 'SearXNG (self-hosted)',
   capabilities: ['web-search'],
+  metering: 'unmetered' as const,
   async isConfigured() {
     return Boolean(getConfig().ai.searchSearxngBaseUrl);
   },

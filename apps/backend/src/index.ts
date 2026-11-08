@@ -55,8 +55,14 @@ export async function initializeApp() {
   assertQuantumLaunchGates(config);
   const app = createApp(config);
 
-  // Initialize background workers for async task processing
-  try {
+  // Initialize background workers for async task processing. With
+  // QUEUE_ENABLED=false (a deployment with no Redis) they are not started at
+  // all: BullMQ would otherwise retry a refused connection per worker, forever,
+  // and bury the real log lines in ECONNREFUSED noise. Features that need the
+  // queue (streamed chat generation, file processing) are unavailable then.
+  if (!config.queue.enabled) {
+    logger.info('[WorkerManager] QUEUE_ENABLED=false: background workers not started');
+  } else try {
     await initializeWorkers();
   } catch (error) {
     logger.error('Failed to initialize workers', {

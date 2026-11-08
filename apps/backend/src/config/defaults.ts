@@ -48,6 +48,16 @@ export interface StageDefaults {
     deepseekModel: string;
     togetherModel: string;
     groqModel: string;
+    freeTier: {
+      chain: string[];
+      baseUrls: { groq: string; cloudflare: string; openrouter: string; mistral: string; sambanova: string };
+      models: { cloudflare: string; openrouter: string; mistral: string; sambanova: string };
+      trainingOptOutConfirmed: string[];
+      modelCheckTtlMs: number;
+      callTimeoutMs: number;
+      dailyRequestsGlobal: number;
+      dailyRequestsPerIp: number;
+    };
     azureOpenAIApiVersion: string;
     bedrockModelId: string;
     ollamaModel: string;
@@ -205,9 +215,36 @@ const BASE_DEFAULTS: StageDefaults = {
     openrouterModel: 'anthropic/claude-3.5-sonnet',
     deepseekModel: 'deepseek-chat',
     togetherModel: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
-    // Groq's stable workhorse for open-source inference; overridable via
-    // GROQ_MODEL without a code change like every other default here.
-    groqModel: 'llama-3.3-70b-versatile',
+    // Overridable via GROQ_MODEL without a code change. The previous default
+    // (llama-3.3-70b-versatile) is no longer in Groq's /models listing, so this
+    // is a model that is, and that answers without spending its token budget on
+    // hidden reasoning (checked 2026-11-08 with a real 400-token generation).
+    groqModel: 'qwen/qwen3.8-27b',
+    // Base URLs: each provider's own OpenAI-compatibility docs (checked 2026-11-08).
+    // Model ids are STARTING POINTS, not promises: each is looked up in the
+    // provider's /models listing at runtime and the provider is skipped when
+    // absent. Override with FREE_TIER_MODEL_<PROVIDER> without a code change.
+    freeTier: {
+      chain: ['groq', 'cloudflare', 'openrouter', 'mistral', 'sambanova'],
+      baseUrls: {
+        groq: 'https://api.groq.com/openai/v1',
+        cloudflare: 'https://api.cloudflare.com/client/v4/accounts/{accountId}/ai/v1',
+        openrouter: 'https://openrouter.ai/api/v1',
+        mistral: 'https://api.mistral.ai/v1',
+        sambanova: 'https://api.sambanova.ai/v1',
+      },
+      models: {
+        cloudflare: '@cf/meta/llama-3.1-8b-instruct-fp8',
+        openrouter: 'google/gemma-4-31b-it:free',
+        mistral: 'mistral-small-latest',
+        sambanova: 'Meta-Llama-3.3-70B-Instruct',
+      },
+      trainingOptOutConfirmed: [],
+      modelCheckTtlMs: 10 * 60_000,
+      callTimeoutMs: 20_000,
+      dailyRequestsGlobal: 500,
+      dailyRequestsPerIp: 25,
+    },
     azureOpenAIApiVersion: '2024-10-21',
     bedrockModelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
     ollamaModel: 'llama3.1',

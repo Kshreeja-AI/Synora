@@ -4,6 +4,8 @@ import { PROVIDER_REGISTRY } from '../../ai/registry';
 import { IMAGE_PROVIDER_REGISTRY } from '../../ai/imageRegistry';
 import { VIDEO_PROVIDER_REGISTRY } from '../../ai/videoRegistry';
 import { TTS_PROVIDER_REGISTRY } from '../../ai/ttsRegistry';
+import { STT_PROVIDER_REGISTRY } from '../../ai/sttRegistry';
+import { SEARCH_PROVIDER_REGISTRY } from '../../ai/searchRegistry';
 import { EMBEDDING_PROVIDER_REGISTRY } from '../../embeddings';
 import { VECTORDB_PROVIDER_REGISTRY } from '../../vectordb';
 import { STORAGE_REGISTRY } from '../../storage/registry';
@@ -30,6 +32,12 @@ vi.mock('../../ai/videoRegistry', () => ({
 vi.mock('../../ai/ttsRegistry', () => ({
   TTS_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
 }));
+vi.mock('../../ai/sttRegistry', () => ({
+  STT_PROVIDER_REGISTRY: [{ id: 'openai-compatible', isConfigured: vi.fn() }],
+}));
+vi.mock('../../ai/searchRegistry', () => ({
+  SEARCH_PROVIDER_REGISTRY: [{ id: 'wikipedia', isConfigured: vi.fn() }],
+}));
 vi.mock('../../embeddings', () => ({
   EMBEDDING_PROVIDER_REGISTRY: [{ id: 'openai', isConfigured: vi.fn() }],
 }));
@@ -55,6 +63,8 @@ const ai = PROVIDER_REGISTRY[0] as unknown as Configurable;
 const image = IMAGE_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const video = VIDEO_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const tts = TTS_PROVIDER_REGISTRY[0] as unknown as Configurable;
+const stt = STT_PROVIDER_REGISTRY[0] as unknown as Configurable;
+const search = SEARCH_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const embeddings = EMBEDDING_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const vectors = VECTORDB_PROVIDER_REGISTRY[0] as unknown as Configurable;
 const storage = STORAGE_REGISTRY[0] as unknown as Configurable;
@@ -65,6 +75,8 @@ function configure(options: {
   image?: boolean;
   video?: boolean;
   tts?: boolean;
+  stt?: boolean;
+  search?: boolean;
   embeddings?: boolean;
   vectors?: boolean;
   storage?: boolean;
@@ -75,6 +87,8 @@ function configure(options: {
   image.isConfigured.mockResolvedValue(options.image ?? false);
   video.isConfigured.mockResolvedValue(options.video ?? false);
   tts.isConfigured.mockResolvedValue(options.tts ?? false);
+  stt.isConfigured.mockResolvedValue(options.stt ?? false);
+  search.isConfigured.mockResolvedValue(options.search ?? false);
   embeddings.isConfigured.mockResolvedValue(options.embeddings ?? false);
   vectors.isConfigured.mockResolvedValue(options.vectors ?? false);
   storage.isConfigured.mockResolvedValue(options.storage ?? false);
@@ -174,6 +188,35 @@ describe('getPlatformCapabilities', () => {
     expect(scanning.provider).toBe('clamav');
   });
 
+  it('reports speech-to-text as unconfigured without fabricating a transcript', async () => {
+    configure({});
+
+    const transcription = find(await getPlatformCapabilities(), 'speech-to-text');
+
+    expect(transcription.status).toBe('unconfigured');
+    expect(transcription.degradedBehavior).toContain('no transcript is ever fabricated');
+  });
+
+  it('activates speech-to-text and web search when their providers are configured', async () => {
+    configure({ stt: true, search: true });
+
+    const result = await getPlatformCapabilities();
+
+    expect(find(result, 'speech-to-text').status).toBe('active');
+    expect(find(result, 'speech-to-text').provider).toBe('openai-compatible');
+    expect(find(result, 'web-search').status).toBe('active');
+    expect(find(result, 'web-search').provider).toBe('wikipedia');
+  });
+
+  it('reports web search as unconfigured without fabricating results', async () => {
+    configure({});
+
+    const webSearch = find(await getPlatformCapabilities(), 'web-search');
+
+    expect(webSearch.status).toBe('unconfigured');
+    expect(webSearch.degradedBehavior).toContain('never fabricated');
+  });
+
   it('reports image generation as unconfigured with an honest degradation message', async () => {
     configure({});
 
@@ -216,6 +259,8 @@ describe('getPlatformCapabilities', () => {
       image: true,
       video: true,
       tts: true,
+      stt: true,
+      search: true,
       embeddings: true,
       vectors: true,
       storage: true,
@@ -226,6 +271,22 @@ describe('getPlatformCapabilities', () => {
     const result = await getPlatformCapabilities();
 
     expect(result.allActive).toBe(true);
+
+    configure({
+      ai: true,
+      image: true,
+      video: true,
+      tts: true,
+      stt: false,
+      search: true,
+      embeddings: true,
+      vectors: true,
+      storage: true,
+      virusScan: true,
+      mailTransport: 'smtp',
+    });
+
+    expect((await getPlatformCapabilities()).allActive).toBe(false);
   });
 
   it('never exposes a secret value, only provider identifiers', async () => {

@@ -43,6 +43,22 @@ export function errorHandler(
     });
   }
 
+  // body-parser's own failures are the client's doing: an over-limit body is a
+  // 413 and unparseable JSON is a 400, not a server defect.
+  const bodyErrorType = (error as { type?: unknown } | null)?.type;
+  if (bodyErrorType === 'entity.too.large') {
+    return res.status(413).json({
+      success: false,
+      error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' },
+    });
+  }
+  if (bodyErrorType === 'entity.parse.failed' || bodyErrorType === 'encoding.unsupported') {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_BODY', message: 'Request body could not be parsed' },
+    });
+  }
+
   if (error instanceof Error) {
     // Only genuine 500s reach this branch — Zod and ApiException returns
     // above are expected client-facing outcomes, not defects. This is the

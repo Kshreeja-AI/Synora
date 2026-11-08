@@ -129,20 +129,29 @@ export function resetTextResilienceForTests(): void {
  * that: a refusal ends the span with an error immediately (duration ~0),
  * exactly as it should read.
  */
+export interface ResilienceOverrides {
+  /** Tighter than the 120s default; a caller with a fallback chain should fail over, not wait. */
+  timeoutMs?: number;
+  /** A caller that fails over to another provider may prefer no in-provider retries. */
+  retry?: RetryPolicyConfig;
+}
+
 export async function generateWithResilience(
   provider: TextGenerationProvider,
   request: TextGenerationRequest,
+  overrides: ResilienceOverrides = {},
 ): Promise<TextGenerationResult> {
   return withSpan(
     'ai.generateText',
     { providerId: provider.id, model: request.model },
-    () => generateWithResilienceInner(provider, request),
+    () => generateWithResilienceInner(provider, request, overrides),
   );
 }
 
 async function generateWithResilienceInner(
   provider: TextGenerationProvider,
   request: TextGenerationRequest,
+  overrides: ResilienceOverrides,
 ): Promise<TextGenerationResult> {
   const breaker = breakers.get(provider.id);
 
@@ -170,8 +179,8 @@ async function generateWithResilienceInner(
   const startedAt = Date.now();
   try {
     const result = await withRetry(
-      () => withTimeout(provider.generateText(request), TEXT_TIMEOUT_MS, provider.id),
-      TEXT_RETRY,
+      () => withTimeout(provider.generateText(request), overrides.timeoutMs ?? TEXT_TIMEOUT_MS, provider.id),
+      overrides.retry ?? TEXT_RETRY,
       { providerId: provider.id, operation: 'generateText' },
     );
     breaker.recordSuccess();

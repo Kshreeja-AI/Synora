@@ -70,7 +70,16 @@ describe('InMemoryCacheBackend', () => {
   })
 })
 
-describe('RedisCacheBackend', () => {
+/**
+ * The tests below talk to a REAL Redis. They run only when REDIS_URL is set
+ * (CI provisions a Redis service and sets it). On a laptop or sandbox without
+ * one they are SKIPPED, with the reason in the suite name, instead of hanging
+ * for 10s each and failing for a reason unrelated to the code. A skip means
+ * NOT VERIFIED on that machine.
+ */
+const REDIS_AVAILABLE = Boolean(process.env.REDIS_URL)
+
+describe.skipIf(!REDIS_AVAILABLE)('RedisCacheBackend (real Redis; SKIPPED unless REDIS_URL is set = NOT VERIFIED)', () => {
   let client: Redis
   let backend: RedisCacheBackend
 
@@ -139,7 +148,10 @@ describe('RedisCacheBackend', () => {
     const stats = await backend.getStats()
     expect(stats.hitRate).toBeCloseTo(0.5)
   })
+})
 
+// Needs no Redis (it points at a dead port on purpose), so it always runs.
+describe('RedisCacheBackend with an unreachable Redis', () => {
   it('degrades to a cache miss (not a thrown error) when Redis is unreachable', async () => {
     const brokenClient = new Redis({ port: 1, lazyConnect: true, maxRetriesPerRequest: 0 })
     const brokenBackend = new RedisCacheBackend(brokenClient)

@@ -223,6 +223,27 @@ export const SECRET_CATALOG: SecretDescriptor[] = [
     requiredIn: [],
   },
   {
+    key: 'MISTRAL_API_KEY',
+    description: 'Mistral API key for the free-tier fallback chain (ai/freeTierChain.ts).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'SAMBANOVA_API_KEY',
+    description: 'SambaNova API key for the free-tier fallback chain (ai/freeTierChain.ts).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
+    key: 'CLOUDFLARE_API_TOKEN',
+    description: 'Cloudflare API token (Workers AI) for the free-tier fallback chain (ai/freeTierChain.ts).',
+    owner: 'backend',
+    environments: ['staging', 'production'],
+    requiredIn: [],
+  },
+  {
     key: 'TOOL_SECRET_MASTER_KEY',
     description:
       'Master key for AES-256-GCM encryption of stored tool secrets (crypto/encryption.service.ts). ' +

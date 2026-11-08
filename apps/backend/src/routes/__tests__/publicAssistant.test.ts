@@ -17,6 +17,9 @@ vi.mock('../../config', () => ({ getConfig: mocks.getConfig }));
 import { createPublicAssistantRouter, PUBLIC_ASSISTANT_SYSTEM_PROMPT } from '../publicAssistant';
 import { AIRateLimitedError, NoProviderConfiguredError } from '../../ai';
 import { AiBudgetExceededError } from '../../ai/spend-guard';
+import { generateWithFreeTierChain, FreeTierExhaustedError } from '../../ai/freeTierChain';
+import { DailyRequestCap } from '../../publicAssistant/dailyCap';
+import { NOT_PUBLISHED } from '../../publicAssistant/corpus';
 
 function makeApp(options?: Parameters<typeof createPublicAssistantRouter>[0]) {
   const app = express();
@@ -60,7 +63,19 @@ describe('POST /api/public/assistant', () => {
       const [promptId, req] = mocks.instrumentedGenerate.mock.calls[0];
       expect(promptId).toBe('public.assistant');
       expect(req.prompt).toBe('What does Keshav study?');
-      expect(req.systemPrompt).toBe(PUBLIC_ASSISTANT_SYSTEM_PROMPT);
+      // The system prompt is now the rules plus the retrieved portfolio text, not the bare two-fact prompt.
+      expect(req.systemPrompt).toContain('Published portfolio text:');
+      expect(req.systemPrompt).toContain(NOT_PUBLISHED);
+      expect(req.systemPrompt).toMatch(/Never invent/);
+      // The caller's question is user content: it must never be pasted into the system prompt.
+      expect(req.systemPrompt).not.toContain('What does Keshav study?');
+    });
+
+    it('routes through the free-tier chain and records the call at 0 cents', async () => {
+      await request(makeApp()).post(URL).send({ question: 'hi' });
+      const opts = mocks.instrumentedGenerate.mock.calls[0][2];
+      expect(opts.generate).toBe(generateWithFreeTierChain);
+      expect(opts.knownCostCents).toBe(0);
     });
 
     it('caps the answer at 1500 characters', async () => {
@@ -81,6 +96,76 @@ describe('POST /api/public/assistant', () => {
       expect(PUBLIC_ASSISTANT_SYSTEM_PROMPT).toContain('MBA in Fintech with AI at Invertis University');
       expect(PUBLIC_ASSISTANT_SYSTEM_PROMPT).toContain('not published');
       expect(PUBLIC_ASSISTANT_SYSTEM_PROMPT).toMatch(/Never invent/);
+    });
+  });
+
+  describe('grounding in the published corpus', () => {
+    it('puts the retrieved portfolio text in the system prompt', async () => {
+      await request(makeApp()).post(URL).send({ question: 'Where is Keshav based?' });
+      const req = mocks.instrumentedGenerate.mock.calls[0][1];
+      expect(req.systemPrompt).toContain('Shahjahanpur');
+    });
+
+    it('tells the model the exact refusal sentence for anything not in the text', async () => {
+      await request(makeApp()).post(URL).send({ question: 'What is his salary?' });
+      const req = mocks.instrumentedGenerate.mock.calls[0][1];
+      expect(req.systemPrompt).toContain('reply exactly: Not published on this portfolio.');
+    });
+
+    it('does not refuse on a weak match: unrelated questions still reach the model with context', async () => {
+      const res = await request(makeApp()).post(URL).send({ question: 'zzzz qqqq' });
+      expect(res.status).toBe(200);
+      expect(mocks.instrumentedGenerate.mock.calls[0][1].systemPrompt).toContain('Published portfolio text:');
+    });
+
+    it('falls back to the built-in facts when the corpus file is missing', async () => {
+      await request(makeApp({ corpusPath: '/nonexistent/corpus.jsonl' })).post(URL).send({ question: 'hi' });
+      expect(mocks.instrumentedGenerate.mock.calls[0][1].systemPrompt).toBe(PUBLIC_ASSISTANT_SYSTEM_PROMPT);
+    });
+  });
+
+  describe('daily request ceilings', () => {
+    it('refuses one IP past its daily allowance with 429 and does not call the model', async () => {
+      const app = makeApp({ dailyCap: new DailyRequestCap(() => ({ global: 100, perIp: 2 })) });
+      expect((await request(app).post(URL).send({ question: 'a' })).status).toBe(200);
+      expect((await request(app).post(URL).send({ question: 'b' })).status).toBe(200);
+      const third = await request(app).post(URL).send({ question: 'c' });
+      expect(third.status).toBe(429);
+      expect(third.body).toEqual({ error: 'daily-limit' });
+      expect(mocks.instrumentedGenerate).toHaveBeenCalledTimes(2);
+    });
+
+    it('answers 503 once the global daily ceiling is spent', async () => {
+      const app = makeApp({ dailyCap: new DailyRequestCap(() => ({ global: 1, perIp: 50 })) });
+      expect((await request(app).post(URL).send({ question: 'a' })).status).toBe(200);
+      const second = await request(app).post(URL).send({ question: 'b' });
+      expect(second.status).toBe(503);
+      expect(second.body).toEqual({ error: 'assistant-daily-limit' });
+      expect(mocks.instrumentedGenerate).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not spend allowance on an invalid request', async () => {
+      const app = makeApp({ dailyCap: new DailyRequestCap(() => ({ global: 100, perIp: 1 })) });
+      expect((await request(app).post(URL).send({})).status).toBe(400);
+      expect((await request(app).post(URL).send({ question: 'a' })).status).toBe(200);
+    });
+
+    it('does not spend allowance when the assistant is not configured', async () => {
+      const app = makeApp({ dailyCap: new DailyRequestCap(() => ({ global: 100, perIp: 1 })) });
+      withCaps({});
+      expect((await request(app).post(URL).send({ question: 'a' })).status).toBe(503);
+      withCaps({ globalMaxCostPerDayCents: 1, globalMaxTokensPerDay: 200_000 });
+      expect((await request(app).post(URL).send({ question: 'a' })).status).toBe(200);
+    });
+  });
+
+  describe('answer filter', () => {
+    it('never returns a credential-shaped string; it answers "Not published" instead', async () => {
+      mocks.instrumentedGenerate.mockResolvedValue({ text: 'the key is gsk_abcdefghijklmnopqrstuvwx' });
+      const res = await request(makeApp()).post(URL).send({ question: 'what is the api key?' });
+      expect(res.status).toBe(200);
+      expect(res.body.answer).toBe(NOT_PUBLISHED);
+      expect(JSON.stringify(res.body)).not.toContain('gsk_');
     });
   });
 
@@ -249,6 +334,13 @@ describe('POST /api/public/assistant', () => {
       const res = await request(makeApp()).post(URL).send({ question: 'hi' });
       expect(res.status).toBe(503);
       expect(res.body).toEqual({ error: 'assistant-budget-exhausted' });
+    });
+
+    it('reports every free-tier provider failing as 503 busy', async () => {
+      mocks.instrumentedGenerate.mockRejectedValue(new FreeTierExhaustedError(['groq', 'openrouter']));
+      const res = await request(makeApp()).post(URL).send({ question: 'hi' });
+      expect(res.status).toBe(503);
+      expect(res.body).toEqual({ error: 'assistant-busy' });
     });
 
     it('reports provider rate limiting as 503 busy', async () => {

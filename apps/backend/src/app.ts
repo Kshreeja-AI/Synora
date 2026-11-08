@@ -16,6 +16,7 @@ import { csrfProtection } from './middleware/csrf';
 import { cspMiddleware } from './middleware/csp';
 import { correlationIdMiddleware } from './middleware/correlation-id';
 import { requestTimeout } from './middleware/requestTimeout';
+import { mountBodyParsers } from './middleware/bodyLimits';
 import type { AppConfig } from './config/types';
 import authRoutes from './routes/auth';
 import mfaRoutes from './routes/mfa';
@@ -148,9 +149,9 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
     next();
   });
 
-  // Body Parser (for all other routes)
-  app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ limit: '10mb', extended: true }));
+  // Body Parser (for all other routes). 100kb by default; document text gets
+  // 2mb; multipart uploads are handled by multer, not by these parsers.
+  mountBodyParsers(app);
 
   // Cookie parsing must run in every environment: the access/refresh tokens
   // (see setAuthCookies in routes/auth.ts) are httpOnly cookies the browser
