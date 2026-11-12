@@ -51,7 +51,14 @@ works.
   service `synora-api` (`srv-dbgcbs8u01pc73ao3jkg`) → Events/Deploys tab,
   then Environment tab.
 - **EXACTLY:** Open the service, look at the latest successful deploy's
-  commit SHA, and note the Environment tab's variable names.
+  commit SHA, and in the Environment tab specifically check for these
+  NAMES (presence only, don't read values here): `REGISTRATION_ALLOWLIST`,
+  `REGISTRATION_MODE`, `QUEUE_ENABLED`, `REDIS_URL`, `METRICS_TOKEN`,
+  `MAIL_TRANSPORT`, `CORS_ORIGINS`, `AI_GLOBAL_MAX_COST_PER_DAY_CENTS`,
+  `AI_GLOBAL_MAX_TOKENS_PER_DAY`. This one read settles several open
+  "NOT VERIFIED" items at once: whether Redis/the queue is really absent,
+  whether `METRICS_TOKEN` already exists, and whether the allowlist is
+  the name the vault calls it.
 - **EXPECTED:** commit = `7685485`; branch = `SYNORA`; autoDeploy = `no`
   (this was true as of Nov 8 — confirm it is still true). **Write down the
   current live deploy's id** — that's your rollback target for everything
@@ -73,57 +80,68 @@ works.
 - **WHERE:** Your own terminal, in this repo.
 - **EXACTLY:** `! synora-render-push --dry-run`
 - **EXPECTED:** A list of variable NAMES that differ, no values printed.
+  **This result gates steps 4–6**: only run the real (non-`--dry-run`)
+  push later if this list shows only the names you expect to change and
+  nothing else surprising.
 - **WHAT NOT TO DO:** Do not run it without `--dry-run`. If it times out
   for you too, that's useful information on its own — don't debug it
-  mid-launch, just note it and use the dashboard instead.
+  mid-launch, just note it and use the dashboard directly for steps 4–6
+  instead of the vault-push path.
 
-### 3. A decision, not a bug: should the public domain stay unprotected during closed beta?
-- **WHAT:** Decide whether `synora-fawn.vercel.app` — the project's one
-  real, working production domain — should stay fully public, or get an
-  extra protection layer while `REGISTRATION_MODE=invite` is on.
-- **WHY:** Read directly from Vercel's project settings (`get_project`),
-  not inferred: `ssoProtection: {enabled: true, deploymentType:
-  "all_except_custom_domains"}`. That setting is already deliberately
-  scoped to exempt `synora-fawn.vercel.app` (the one domain actually
-  registered through Vercel's domain management) while protecting the
-  two auto-generated aliases (`synora-kshreeja.vercel.app` and the
-  git-branch alias both redirect to `vercel.com/sso-api`). `CORS_ORIGINS`
-  correctly matches this — it allows `fawn`, not the SSO-gated aliases.
-  **None of this is a bug or a gap** — it's how the project is already
-  configured, and it's the normal way to have a public production URL.
-  The only genuinely open question is whether you want it this way during
-  an invite-only beta: right now, anyone can load the real login/app page
-  at `fawn` (they just can't get past the invite gate to register, and —
-  see step 7 — login itself may not work yet anyway). `passwordProtection`
-  and `trustedIps` are both off, so there is currently no other layer if
-  you wanted one.
+### 3. Your assumption that Vercel Authentication protects the live site is WRONG — decide what to do
+- **WHAT:** The master prompt behind this run assumed "Vercel Authentication
+  is ON, so the public gets a Vercel login page" and said to leave it that
+  way until login is verified. Read directly from Vercel (`get_project`),
+  that assumption does not hold for the domain that is actually live.
+  Decide whether to fix that now or accept it for the beta.
+- **WHY:** `ssoProtection: {enabled: true, deploymentType:
+  "all_except_custom_domains"}`. In plain terms: SSO protection is on, but
+  it is configured to skip any domain registered through Vercel's domain
+  management — and `synora-fawn.vercel.app` (the project's one real
+  production domain, the one `CORS_ORIGINS` allows and the one with the
+  correct CSP) is exactly such a domain. So `fawn` has had NO protection
+  wall this whole time; only the two auto-generated aliases
+  (`synora-kshreeja.vercel.app` and the git-branch alias) redirect to
+  Vercel's SSO. This session found no record of anyone choosing that
+  scope on purpose — it may be a default nobody reviewed. Either way, the
+  practical result right now: anyone can load the real login/app page at
+  `fawn` today (they can't get past the invite gate to register without
+  an allowlisted email, and — see step 7 — login may not work yet anyway,
+  but the page itself is not hidden).
 - **WHERE:** Vercel dashboard → synora project → Settings → Deployment
-  Protection, only if you want to change anything.
-- **EXACTLY:** No action needed to leave it as-is. To add a layer during
-  beta, Vercel's dashboard offers password protection or trusted-IP
-  allowlisting — both configuration, not a code change. (Not verified
-  whether your plan includes these; some tiers gate them.)
-- **EXPECTED:** If you make no change, behaviour stays exactly as
-  described above.
-- **WHAT NOT TO DO:** Don't change the `deploymentType` away from
-  `all_except_custom_domains` without understanding it will also start
-  SSO-gating the auto-generated aliases' current behaviour (they're
-  already gated, so no visible change there) — and don't do this if it
-  requires a paid plan tier you haven't confirmed you have.
+  Protection.
+- **EXACTLY:** If you want it the way you originally assumed — protected
+  until login works — change the scope so it also covers `fawn` (e.g. set
+  it to protect all deployments, not just "all except custom domains"), or
+  add password protection / a trusted-IP allowlist specifically. If you'd
+  rather the production URL just be public (common for a real product),
+  leave it as-is and update your own mental model instead. (Whether your
+  Vercel plan includes password protection / IP allowlisting is NOT
+  VERIFIED — check before assuming it's available.)
+- **EXPECTED:** Whichever you choose, re-check with
+  `curl -I https://synora-fawn.vercel.app/` afterward — a 200 means still
+  public, a redirect to `vercel.com/sso-api` means now protected.
+- **WHAT NOT TO DO:** Don't assume this is already handled because an
+  earlier document said "Vercel Authentication is ON" — for the domain
+  people will actually visit, it is not.
 
 ### 4. Close the open /metrics endpoint
 - **WHAT:** Set `METRICS_TOKEN` to a random value.
 - **WHY:** This session confirmed `/metrics` returns HTTP 200 with no
   authentication at all — 21.5 KB of internal route/queue data readable by
   anyone on the internet.
-- **WHERE:** Your vault, then Render.
-- **EXACTLY:** `! synora-secret-set --gen METRICS_TOKEN` then
-  `! synora-render-push` — but that push command has timed out three times
-  across this run's sessions and was not debugged (per standing
-  instruction not to retry/debug it). If it times out for you too, use
-  `! synora-secret-set --copy METRICS_TOKEN` to copy the generated value to
-  your clipboard, then paste it directly into Render dashboard → synora-api
-  → Environment → add `METRICS_TOKEN`.
+- **WHERE:** Your vault, then Render — OR skip the vault entirely and just
+  type a random string straight into the Render dashboard.
+- **EXACTLY, vault path (only if step 2's dry-run came back clean — see
+  its WHAT NOT TO DO):** `! synora-secret-set --gen METRICS_TOKEN`, then
+  **do not push yet** — queue this change and do step 5's change too,
+  then push both together once (see step 6). If `synora-render-push`
+  keeps timing out (it has, three times, across this run), use
+  `! synora-secret-set --copy METRICS_TOKEN` to copy the value to your
+  clipboard instead. **Simpler path:** skip the vault, open Render
+  dashboard → synora-api → Environment → add `METRICS_TOKEN` and paste in
+  any long random string you generate yourself (e.g. your password
+  manager) — the vault is a convenience, not a requirement.
 - **EXPECTED:** `/metrics` then returns HTTP 401 without a bearer token,
   and 200 with `Authorization: Bearer <that token>`.
 - **WHAT NOT TO DO:** Don't paste the token anywhere public. Any scraper
@@ -134,10 +152,12 @@ works.
   you'll register with.
 - **WHY:** This session confirmed the invite gate is live and working — a
   throwaway, non-listed email was refused with 403 — but cannot see the
-  list's contents (names only, never values, per the secrets rules).
-- **WHERE:** Your local vault.
+  list's contents (names only, never values, per the secrets rules), and
+  step 1's dashboard read tells you whether the name even exists there.
+- **WHERE:** Your local vault, or directly in the Render dashboard.
 - **EXACTLY:** `! synora-secret-set REGISTRATION_ALLOWLIST` (comma
-  separated if more than one), then `! synora-render-push`.
+  separated if more than one) — **don't push yet**, see step 6. Or set it
+  directly on Render if you'd rather skip the vault.
 - **EXPECTED:** Registering with that email now reaches the
   "already registered / create the account" path instead of 403 — but see
   step 7 before you try it from the actual website.
@@ -148,24 +168,30 @@ works.
   the same IP you'll register from. If your own registration gets rate-
   limited, that's why; wait rather than retrying repeatedly.
 
-### 6. Make sure the changes above actually take effect
-- **WHAT:** After steps 4–5, make sure Render has actually restarted the
-  service with the new `METRICS_TOKEN` and (if you changed it)
-  `REGISTRATION_ALLOWLIST` values.
-- **WHY:** `autoDeploy=no` governs git-push deploys only. Saving an
-  environment variable in the Render dashboard usually triggers Render to
-  redeploy on its own — but this session has no way to confirm that
-  behaviour (Render access was deliberately not used). Don't assume it
-  happened.
-- **WHERE:** Render dashboard → synora-api.
-- **EXACTLY:** After saving env changes, check the Events/Deploys tab for a
-  new deploy. If none started within a minute or two, click
-  "Manual Deploy" → "Deploy latest commit" yourself. If step 1 found the
-  live commit was NOT `7685485`, this is also where that gets fixed.
+### 6. Push both changes together, once, then confirm they took effect
+- **WHAT:** Apply steps 4 and 5's changes to Render in a single push, then
+  confirm Render actually restarted with them.
+- **WHY:** `synora-render-push` syncs the WHOLE vault to Render, one
+  variable at a time — a diff nobody has reviewed this run, so it's safer
+  to run it once with both changes queued than to run it twice. Separately,
+  `autoDeploy=no` governs git-push deploys only; whether saving an env var
+  in the dashboard auto-restarts the service was not confirmed this
+  session — don't assume it happened.
+- **WHERE:** Your terminal, then Render dashboard → synora-api.
+- **EXACTLY:** `! synora-render-push` (only after step 2's `--dry-run`
+  came back showing nothing unexpected — if it didn't, or you skipped the
+  vault entirely in steps 4–5, set both values directly on Render instead
+  and skip this command). If the dashboard offers to deploy immediately
+  when you save, you can let it, or save without deploying and trigger
+  one deploy afterward — either way, deploy ONCE after both changes are
+  in, not once per change. If nothing redeploys within a minute or two,
+  click "Manual Deploy" → "Deploy latest commit" yourself. If step 1 found
+  the live commit was NOT `7685485`, this is also where that gets fixed.
 - **EXPECTED:** A new deploy appears, finishes, and `curl .../metrics`
-  afterward returns 401 without a token (confirms `METRICS_TOKEN` is live).
-- **WHAT NOT TO DO:** Don't deploy a different commit than `7685485` unless
-  you've deliberately decided to.
+  afterward returns 401 without a token.
+- **WHAT NOT TO DO:** Don't run `synora-render-push` without having seen
+  a clean `--dry-run` first. Don't deploy a different commit than
+  `7685485` unless you've deliberately decided to.
 
 ### 7. Try logging in yourself, and expect it not to stick — this is the real test
 - **WHAT:** After steps 1–6, open the live web app and go through
@@ -191,16 +217,23 @@ works.
     never confirmed that in a real browser, because doing so needs a real
     account and this session was told to register nobody.
   - **Second, independent reason step 4 below might fail even if login
-    somehow does work:** reading `message.service.ts`, sending a chat
-    message always hands the AI response off to a Redis-backed job queue
-    with no synchronous fallback, and its own code comment says it will
-    not throw or surface an error if that fails — it just leaves your
-    message with no reply, silently. If Redis/the queue worker is off on
-    Render (several signals point that way; none is a direct Render
-    read), chat may accept your message and simply never answer.
+    somehow does work**, traced through two files: `message.service.ts`'s
+    `enqueueGeneration()` always hands the AI response off to a
+    Redis-backed job queue with no synchronous fallback, and its own code
+    comment says it will not throw or surface an error if that fails;
+    separately, `index.ts` only starts the worker that would process that
+    job `if (config.queue.enabled)` — with `QUEUE_ENABLED=false` (several
+    signals point to this being set on Render; not a direct Render read),
+    no worker starts at all, so even a job that enqueues successfully is
+    never picked up. Either way: chat may accept your message and simply
+    never answer, with nothing in the UI telling you why.
 - **WHERE:** `https://synora-fawn.vercel.app` in a real browser — this is
   the one real public domain (see step 3); no SSO wall stands between you
-  and the actual app.
+  and the actual app. **Do not test on `synora-kshreeja.vercel.app`**: if
+  you're logged into Vercel in that browser, you'll pass its SSO check and
+  reach the app, but every API call will then fail CORS (that domain is
+  not in `CORS_ORIGINS`) — a different failure that would wrongly look
+  like confirmation of this document's prediction.
 - **EXACTLY:** 1) Open the URL. 2) Register with your allowlisted email
   (step 5). 3) Log in. 4) Send one chat message or open any page that
   needs auth. 5) Refresh the page or open a new tab to the same URL and
@@ -295,9 +328,9 @@ is real development work for a future session, not a config toggle.
    response off to a Redis-backed queue with no fallback and no error
    surfaced if that fails. Neither was confirmed with an actual logged-in
    session (see step 7's 6-step manual check). This is the single biggest
-   risk in this document — not because the product is public (it's meant
-   to be, see step 3), but because the core authenticated flow is unlikely
-   to work end-to-end.
+   risk in this document — the core authenticated flow is unlikely to
+   work end-to-end. (Whether the public domain should be reachable at
+   all right now is a separate question — see step 3.)
 3. **The portfolio widget's origin can make cookie-bearing requests to the
    full authenticated API, not just the public assistant endpoint** — a
    live preflight to `/api/auth/login` from `keshav-kumar-singh.vercel.app`

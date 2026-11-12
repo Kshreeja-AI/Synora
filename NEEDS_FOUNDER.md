@@ -136,18 +136,19 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
    it redirects (302) to `vercel.com/sso-api`, Vercel's own protection. The project's one actual
    domain, `synora-fawn.vercel.app`, IS in `CORS_ORIGINS` and returns the real app (HTTP 200, no
    SSO). No action needed. (See point 2a below for what this DOES mean.)
-2a. **This is Vercel's own deliberate configuration, not a gap**: `ssoProtection` is on but scoped
-    (`deploymentType: "all_except_custom_domains"`) to exempt the one domain actually registered
-    through domain management (`fawn`) while protecting the two auto-generated aliases. That's the
-    normal way to have a public production URL. The only real decision for you (see READY_TO_DEPLOY.md
-    step 3) is whether you want an EXTRA layer (password protection, IP allowlist — both currently off)
-    during the invite-only beta, given the cookie problem in item 1 means the login form is reachable
-    but may not be very useful yet either way.
-2b. **Second, independent reason chat might not work even if login somehow does**: reading
-    `message.service.ts`, every chat send hands the AI response to a Redis-backed queue with no
-    fallback, and its own comment says it will not throw or surface an error if that fails — the
-    message would just never get a reply, silently. Depends on the same Redis-absence evidence as
-    item 4 below.
+2a. **Your assumption that "Vercel Authentication is ON" protects the site is WRONG for the domain
+    that matters.** `ssoProtection` is on but scoped (`deploymentType: "all_except_custom_domains"`)
+    to exempt the one domain actually registered through domain management — which is `fawn`, the
+    real production URL. The two auto-generated aliases ARE protected; the one people actually visit
+    is not. This session found no record of anyone choosing that scope on purpose. See READY_TO_DEPLOY.md
+    step 3 for what to do about it — password protection and IP allowlisting are both currently off too,
+    so right now there is no protection layer at all on the real URL.
+2b. **Second, independent reason chat might not work even if login somehow does**, traced through
+    two files: `message.service.ts` hands every chat send to a Redis-backed queue with no fallback
+    (swallows the error if enqueueing fails), and `index.ts` only starts the worker that would
+    process that job when `QUEUE_ENABLED` is true — so even a successfully-queued job is never
+    picked up if it's false. Either failure point means the message just never gets a reply,
+    silently. Depends on the same Redis-absence evidence as item 4 below.
 3. **`/metrics` is open to the public internet, no token required.** Set `METRICS_TOKEN` on Render.
 4. **Contradiction about Redis, best evidence available without Render access**: `REDIS_URL` does
    not appear anywhere in `synora-secret-set --status`'s output (neither CONFIGURED nor MISSING —
