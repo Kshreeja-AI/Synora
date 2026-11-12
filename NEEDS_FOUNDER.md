@@ -2,26 +2,18 @@
 
 No secret values appear in this file. Variable NAMES only.
 
-## 1. Database (blocks the deploy) — STOP RULE: needs an account/credential I do not have
-Root cause of the failing deploys: the service's `DATABASE_URL` points at the Supabase
-direct host `db.<project-ref>.supabase.co:5432` and the backend's `prisma.$connect()` fails with
-`Can't reach database server`. The Supabase project `Synora` is ACTIVE_HEALTHY, so the
-database is up; Render cannot reach it from there. (Likely cause, NOT verified: Supabase's direct
-host is IPv6-only unless the paid IPv4 add-on is on, and Render has no IPv6 egress.)
+## 1. Database (blocks the deploy) — SUPERSEDED, see section 7
+This section described the Nov 7 state (direct Supabase host, IPv6 unreachable from Render).
+It was resolved on Nov 8 (section 7 below) and re-confirmed this session (`migrate status` ->
+up to date, `/ready` -> database ok). Kept only for history; no action needed.
 
-Do ONE of these in the Render dashboard (synora-api -> Environment):
-- Create a free Neon Postgres (no card) and set `DATABASE_URL` to its pooled connection string; or
-- Set `DATABASE_URL` to the Supabase **pooler** (IPv4) connection string for project `Synora`.
-  Caution: that project may hold real data. Migrations run against it would change it.
-
-Then run `prisma migrate deploy` against it (Render shell, or a one-off locally with the URL in your own shell).
-
-## 2. Push to GitHub — STOP RULE: no credentials in this WSL session
-`git fetch`/`git push` fail: `could not read Username for 'https://github.com'`. No `gh`, no credential helper.
-Local commit ready: `0c7e6d0` on branch `build/capabilities-2026-11`.
-Backup of all uncommitted work: branch `backup/pre-launch-20261107-1959` (commit `fc7354d`).
-Render builds the `SYNORA` branch, so the assistant endpoint is NOT deployable until this is pushed.
-Remote difference was not inspected (fetch failed); do a fast-forward-only push or open a PR.
+## 2. Push to GitHub — SUPERSEDED, the commit reached GitHub by a different path
+This described a Nov 7 WSL session with no git credentials. By Nov 8 the launch branch's commit
+(`7685485`) was on `origin/SYNORA` — confirmed this session (`gh api .../activity`) to be a direct
+**push** by account `Synoraagi`, not a push from this kind of session and not a merge-button click.
+So the credential problem described here was worked around some other way, or from a different
+session/machine with git credentials — NOT VERIFIED which. No action needed now; the commit is on
+GitHub. Kept for history.
 
 ## 3. Secrets — I did not write these (a value passed to a tool call would appear in the transcript)
 `JWT_SECRET`, `NEXTAUTH_SECRET`, `TOOL_SECRET_MASTER_KEY` and `DATABASE_URL` are already present in the
@@ -98,8 +90,14 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
 ## 9. Things only you can do before the first real user
 1. ~~Cloudflare Account ID was wrong~~ **RESOLVED 2026-11-08**: the 32-hex id is in the vault and on Render; `models/search` returns HTTP 200
    (INTEGRATION VERIFIED) and a real 400-token generation worked on `@cf/meta/llama-3.1-8b-instruct-fp8`.
-2. **Nobody can register yet.** `REGISTRATION_MODE=invite` and `REGISTRATION_ALLOWLIST` is empty. Put your own email in it:
-   `! synora-secret-set REGISTRATION_ALLOWLIST` (comma separated), then `! synora-render-push`.
+2. **Registration gate is ACTIVE** (updated 2026-11-12): `REGISTRATION_ALLOWLIST` shows as CONFIGURED
+   in the vault (names only; contents not visible to this session), and a live probe this session
+   confirmed a non-listed email is refused with 403 "Registration is by invitation only." Whether
+   YOUR email specifically is on that list is NOT VERIFIED by this session — confirm it yourself, or
+   set it: `! synora-secret-set REGISTRATION_ALLOWLIST` (comma separated), then `! synora-render-push`
+   (or `--copy` + paste into the Render dashboard directly, since render-push has timed out 3x this
+   run). Login itself needs no email verification (confirmed by reading `routes/auth.ts`) — only the
+   password check and, if MFA is enrolled, a second factor.
 3. **Email is not delivered** (`MAIL_TRANSPORT` defaults to `console`: verification links only appear in server logs). Not needed for you to log in. Needed to accept a
    workspace invitation. Free options without DNS: Brevo (free daily quota, single verified sender) or Gmail SMTP with an app password. Then set
    `MAIL_TRANSPORT=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM_ADDRESS`.
@@ -117,20 +115,40 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
 
 ## 10. New findings, 2026-11-12 master run (see LAUNCH_LOG.md "launch/master-run-2026-11-11" for full evidence)
 
-1. **The logged-in web app does not work as deployed — confirmed, not suspected.** The web app
-   (`*.vercel.app`) and the API (`onrender.com`) are different sites with no proxy between them
-   anywhere in the code. Login/CSRF cookies are `SameSite=Strict`, so they cannot survive that
-   cross-site boundary: a login attempt will not stay logged in, and every mutating request outside
-   `/api/auth` will 403. This needs a same-origin proxy or a shared parent domain — real development
-   work, not a config change, and out of scope for this launch run. The public assistant widget is
-   unaffected (it uses no cookies).
-2. **`CORS_ORIGINS` on Render is missing one of the two live Vercel production domains.** Live
-   preflight checks this session show the API allows `synora-fawn.vercel.app` and the portfolio's
-   origin, but not `synora-kshreeja.vercel.app`. Add it if you want that domain reachable.
+1. **The logged-in web app is very unlikely to work as deployed.** Confirmed facts: (a) no proxy
+   exists anywhere in `apps/web` between the web app (`*.vercel.app`) and the API (`onrender.com`) —
+   they are genuinely different sites; (b) a live GET to the API today returned a cookie
+   (`Set-Cookie: X-CSRF-Token=...; Secure; SameSite=Strict`, no `Domain` attribute, checked
+   attributes-only, no value) which is scoped to the API's own host and cannot be sent back on a
+   cross-site request; (c) `authSession.ts` sets the real login cookies (`accessToken`,
+   `refreshToken`) with the identical options (`sameSite: 'strict'`, no `Domain`, `httpOnly: true`) —
+   confirmed by reading the code, NOT by an actual login (this session has no valid account and did
+   not create one). Putting (a)+(b)+(c) together: a login POST should still succeed and return a 200
+   with the user's data, but the session cookie will not be sent back on the NEXT request to the API
+   from the web app, so the user will appear logged out again immediately. This was not tested with a
+   real account — do that yourself (see the 5-step check in READY_TO_DEPLOY.md) and tell the release
+   engineer what you actually see, since this conclusion, however well-supported, was not observed
+   end-to-end in a browser. Fix needs a same-origin proxy or a shared parent domain — real development
+   work, out of scope for this launch run. The public assistant widget is unaffected (it uses no
+   cookies).
+2. ~~`CORS_ORIGINS` on Render is missing one of the two live Vercel production domains~~
+   **WITHDRAWN, same session**: `synora-kshreeja.vercel.app` is not a real public domain at all —
+   it redirects (302) to `vercel.com/sso-api`, Vercel's own protection. The project's one actual
+   domain, `synora-fawn.vercel.app`, IS in `CORS_ORIGINS` and returns the real app (HTTP 200, no
+   SSO). No action needed. (See point 2a below for what this DOES mean.)
+2a. **Because `synora-fawn.vercel.app` has no Vercel Authentication wall, the real login page is
+    already publicly loadable by anyone, right now.** Combined with the cookie problem in item 1,
+    that means a stranger can reach your login form today and it probably won't keep them (or you)
+    logged in either way — but the form itself is not hidden behind anything.
 3. **`/metrics` is open to the public internet, no token required.** Set `METRICS_TOKEN` on Render.
-4. **Contradiction about Redis is resolved**: `REDIS_URL` is genuinely absent from the vault; the
-   "Upstash provisioned" line in an earlier `READY_TO_DEPLOY.md` was false. `QUEUE_ENABLED=false` is
-   the correct, current state — this document's section 6 above was right all along.
+4. **Contradiction about Redis, best evidence available without Render access**: `REDIS_URL` does
+   not appear anywhere in `synora-secret-set --status`'s output (neither CONFIGURED nor MISSING —
+   it's just not a name the vault tool tracks at all), and this document's own section 6 (written
+   independently, Nov 7/8) already recorded `QUEUE_ENABLED=false` on Render. Both point the same way:
+   no Redis. But neither is a direct read of Render's actual environment — that is still NOT VERIFIED
+   (dry-run timed out 3x this run). Whether an earlier `READY_TO_DEPLOY.md`'s "Upstash provisioned"
+   claim was ever true is therefore UNSUPPORTED by this session's evidence, not proven false — the
+   founder dashboard read in step 1 of READY_TO_DEPLOY.md settles it.
 5. **PR #47 / SYNORA merge mechanism, now confirmed**: GitHub's repo activity log shows the Nov 8
    event that advanced `SYNORA` to the current commit was a direct **push** (not a merge-button
    click) by the `Synoraagi` account. PR #47 (a draft) was then marked "merged" only because its
