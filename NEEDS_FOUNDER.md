@@ -32,7 +32,10 @@ If they are, replace each with `openssl rand -base64 32` output in the dashboard
 Set ONE in the Render dashboard: `GROQ_API_KEY` or `OPENROUTER_API_KEY`.
 Also consider `AI_PROVIDER` (set to that provider's id) so a paid key can never be picked first.
 
-## 5. Spend caps — the task's "cap = 0" is rejected by the backend itself
+## 5. Spend caps — RESOLVED 2026-11-12
+Confirmed resolved: the public assistant returned real 200-status generations in this session's probes,
+which only happens when `spendCapPermitsAnswers()` sees at least one positive global cap. A cap is set and
+working on Render right now. No action needed. (History of the problem kept below for the record.)
 Setting `AI_GLOBAL_MAX_COST_PER_DAY_CENTS=0` / `AI_GLOBAL_MAX_TOKENS_PER_DAY=0` made boot abort:
 `Configuration failed validation: ai.globalMaxCostPerDayCents: Number must be greater than 0` (same for tokens).
 So both were reset to empty (= unset) on Render. With them unset, boot works and the assistant answers 503
@@ -107,4 +110,28 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
 5. **Mistral** is excluded from the chain: its free Experiment plan may train on prompts. Add it only after opting out in Mistral's Admin Console and setting
    `FREE_TIER_TRAINING_OPTOUT_CONFIRMED=mistral`.
 6. **Redis is absent:** `QUEUE_ENABLED=false` is set on Render, so background workers (streamed chat generation, file processing) are off. The public assistant does not need them.
-7. **Two production advisories stay open on purpose** (major bumps): `zod` 3->4 and `nodemailer` (>=10.0.6; a minor bump to 9.1.x fixes only one of its two advisories).
+7. ~~Two production advisories stay open on purpose (major bumps): `zod` 3->4 and `nodemailer` (>=10.0.6)~~
+   **RESOLVED 2026-11-12**: both majors are already bumped in `apps/backend/package.json`
+   (`zod@^4.6.7`, `nodemailer@^10.1.4`). `pnpm audit --prod` returns 0 vulnerabilities at every
+   severity, genuinely (no audit-ignore config found). This note was stale; no action needed.
+
+## 10. New findings, 2026-11-12 master run (see LAUNCH_LOG.md "launch/master-run-2026-11-11" for full evidence)
+
+1. **The logged-in web app does not work as deployed — confirmed, not suspected.** The web app
+   (`*.vercel.app`) and the API (`onrender.com`) are different sites with no proxy between them
+   anywhere in the code. Login/CSRF cookies are `SameSite=Strict`, so they cannot survive that
+   cross-site boundary: a login attempt will not stay logged in, and every mutating request outside
+   `/api/auth` will 403. This needs a same-origin proxy or a shared parent domain — real development
+   work, not a config change, and out of scope for this launch run. The public assistant widget is
+   unaffected (it uses no cookies).
+2. **`CORS_ORIGINS` on Render is missing one of the two live Vercel production domains.** Live
+   preflight checks this session show the API allows `synora-fawn.vercel.app` and the portfolio's
+   origin, but not `synora-kshreeja.vercel.app`. Add it if you want that domain reachable.
+3. **`/metrics` is open to the public internet, no token required.** Set `METRICS_TOKEN` on Render.
+4. **Contradiction about Redis is resolved**: `REDIS_URL` is genuinely absent from the vault; the
+   "Upstash provisioned" line in an earlier `READY_TO_DEPLOY.md` was false. `QUEUE_ENABLED=false` is
+   the correct, current state — this document's section 6 above was right all along.
+5. **PR #47 / SYNORA merge mechanism, now confirmed**: GitHub's repo activity log shows the Nov 8
+   event that advanced `SYNORA` to the current commit was a direct **push** (not a merge-button
+   click) by the `Synoraagi` account. PR #47 (a draft) was then marked "merged" only because its
+   head commit matched the new tip. Not reverted, per standing instruction.
