@@ -2,15 +2,17 @@
 
 Rewritten 2026-11-12 from the `launch/master-run-2026-11-11` session's own
 evidence only (see `LAUNCH_LOG.md` for every command and result this is
-based on). The previous version of this file made claims ("Upstash Redis
-provisioned", "Working Tree: Clean, fully synced") that this session could
-not confirm and in one case (Redis) found to be false. Treat that version as
-superseded.
+based on, including a correction pass this same session caught its own
+overstated findings on — see LAUNCH_LOG.md's "Correction pass" entry). The
+previous version of this file made claims ("Upstash Redis provisioned",
+"Working Tree: Clean, fully synced") that this session could not confirm
+and has no independent evidence for either way (Render access was not
+used). Treat that version as superseded by this one, not necessarily wrong.
 
 Status words used below: IMPLEMENTED, TESTED, LOCALLY VERIFIED, INTEGRATION
 VERIFIED, PRODUCTION VERIFIED, NOT VERIFIED, BLOCKED.
 
-## A. VERDICT: READY FOR FOUNDER STEPS
+## A. VERDICT: READY FOR FOUNDER STEPS — public assistant LIVE; logged-in web app LIKELY BLOCKED, unverified
 
 The API backend (`synora-api` on Render) is live, healthy, and its public,
 unauthenticated surface (`/api/public/assistant`) is PRODUCTION VERIFIED
@@ -75,20 +77,39 @@ works.
   for you too, that's useful information on its own — don't debug it
   mid-launch, just note it and use the dashboard instead.
 
-### 3. No action needed — CORS and the public domain are already correct
-- This session initially flagged `synora-kshreeja.vercel.app` as "missing"
-  from `CORS_ORIGINS`, then checked further and found that domain is
-  **not a real public URL at all** — it redirects (HTTP 302) to
-  `vercel.com/sso-api`, Vercel's own Deployment Protection/SSO wall. The
-  project's one actual attached domain (per `list_project_domains`) is
-  `synora-fawn.vercel.app`, which returns the real app (HTTP 200, correct
-  CSP pointing at the Render API) with **no** SSO wall at all. `CORS_ORIGINS`
-  already correctly allows `fawn` and excludes the SSO-gated alias. Nothing
-  to change here. (Earlier internal drafts of this document said otherwise
-  — that was corrected before this version was committed.)
-- **Consequence worth knowing:** because `synora-fawn.vercel.app` has no
-  Vercel Authentication wall, the real login/dashboard page is already
-  publicly loadable by anyone today — see step 7.
+### 3. A decision, not a bug: should the public domain stay unprotected during closed beta?
+- **WHAT:** Decide whether `synora-fawn.vercel.app` — the project's one
+  real, working production domain — should stay fully public, or get an
+  extra protection layer while `REGISTRATION_MODE=invite` is on.
+- **WHY:** Read directly from Vercel's project settings (`get_project`),
+  not inferred: `ssoProtection: {enabled: true, deploymentType:
+  "all_except_custom_domains"}`. That setting is already deliberately
+  scoped to exempt `synora-fawn.vercel.app` (the one domain actually
+  registered through Vercel's domain management) while protecting the
+  two auto-generated aliases (`synora-kshreeja.vercel.app` and the
+  git-branch alias both redirect to `vercel.com/sso-api`). `CORS_ORIGINS`
+  correctly matches this — it allows `fawn`, not the SSO-gated aliases.
+  **None of this is a bug or a gap** — it's how the project is already
+  configured, and it's the normal way to have a public production URL.
+  The only genuinely open question is whether you want it this way during
+  an invite-only beta: right now, anyone can load the real login/app page
+  at `fawn` (they just can't get past the invite gate to register, and —
+  see step 7 — login itself may not work yet anyway). `passwordProtection`
+  and `trustedIps` are both off, so there is currently no other layer if
+  you wanted one.
+- **WHERE:** Vercel dashboard → synora project → Settings → Deployment
+  Protection, only if you want to change anything.
+- **EXACTLY:** No action needed to leave it as-is. To add a layer during
+  beta, Vercel's dashboard offers password protection or trusted-IP
+  allowlisting — both configuration, not a code change. (Not verified
+  whether your plan includes these; some tiers gate them.)
+- **EXPECTED:** If you make no change, behaviour stays exactly as
+  described above.
+- **WHAT NOT TO DO:** Don't change the `deploymentType` away from
+  `all_except_custom_domains` without understanding it will also start
+  SSO-gating the auto-generated aliases' current behaviour (they're
+  already gated, so no visible change there) — and don't do this if it
+  requires a paid plan tier you haven't confirmed you have.
 
 ### 4. Close the open /metrics endpoint
 - **WHAT:** Set `METRICS_TOKEN` to a random value.
@@ -121,7 +142,11 @@ works.
   "already registered / create the account" path instead of 403 — but see
   step 7 before you try it from the actual website.
 - **WHAT NOT TO DO:** Don't add anyone else's email yet; this is a closed
-  beta by design.
+  beta by design. Also: `/auth/register` is rate-limited to 3 attempts per
+  hour per IP, and this session already used 1 of those 3 today running
+  its negative test (a refused `@example.invalid` address) — possibly from
+  the same IP you'll register from. If your own registration gets rate-
+  limited, that's why; wait rather than retrying repeatedly.
 
 ### 6. Make sure the changes above actually take effect
 - **WHAT:** After steps 4–5, make sure Render has actually restarted the
@@ -143,7 +168,7 @@ works.
   you've deliberately decided to.
 
 ### 7. Try logging in yourself, and expect it not to stick — this is the real test
-- **WHAT:** After steps 1–5, open the live web app and go through
+- **WHAT:** After steps 1–6, open the live web app and go through
   registration/login once, watching specifically for whether you stay
   logged in.
 - **WHY:** This session found strong evidence of a problem but — correctly
@@ -165,21 +190,32 @@ works.
     the app will look logged-out again right away — but this session
     never confirmed that in a real browser, because doing so needs a real
     account and this session was told to register nobody.
-  - **Also newly relevant:** `synora-fawn.vercel.app` (the real production
-    domain) has no Vercel Authentication wall at all — the login page is
-    already visible to anyone who loads the URL today.
-- **WHERE:** `https://synora-fawn.vercel.app` in a real browser.
+  - **Second, independent reason step 4 below might fail even if login
+    somehow does work:** reading `message.service.ts`, sending a chat
+    message always hands the AI response off to a Redis-backed job queue
+    with no synchronous fallback, and its own code comment says it will
+    not throw or surface an error if that fails — it just leaves your
+    message with no reply, silently. If Redis/the queue worker is off on
+    Render (several signals point that way; none is a direct Render
+    read), chat may accept your message and simply never answer.
+- **WHERE:** `https://synora-fawn.vercel.app` in a real browser — this is
+  the one real public domain (see step 3); no SSO wall stands between you
+  and the actual app.
 - **EXACTLY:** 1) Open the URL. 2) Register with your allowlisted email
   (step 5). 3) Log in. 4) Send one chat message or open any page that
   needs auth. 5) Refresh the page or open a new tab to the same URL and
-  check whether you're still logged in.
+  check whether you're still logged in. 6) Explicitly log out and confirm
+  you're actually logged out (a cookie problem can make this ambiguous
+  too — check that protected pages redirect you to login afterward).
 - **EXPECTED (prediction, not yet observed):** Steps 1–3 likely succeed.
-  Step 4 or the refresh in step 5 likely shows you logged out again, or a
-  403 on the first real mutation. If instead everything works, this
-  session's reasoning was wrong somewhere — tell the release engineer
-  either way, because that's new information this session didn't have.
+  Step 4 may accept the message but never show a reply (Redis/queue
+  theory above) even if the session somehow survives. The refresh in
+  step 5 likely shows you logged out again, or a 403 on the first real
+  mutation. If instead everything works, this session's reasoning was
+  wrong somewhere — tell the release engineer either way, because that's
+  new information this session didn't have.
 - **WHAT NOT TO DO:** Don't conclude the product is broken OR working from
-  this document alone — steps 1–5 plus this manual check is what actually
+  this document alone — steps 1–6 plus this manual check is what actually
   tells you.
 
 **PROPOSAL (too large for a launch-run code fix, not something this
@@ -214,10 +250,12 @@ is real development work for a future session, not a config toggle.
   presumed still `console`, not independently confirmed).
 - Exact contents of `REGISTRATION_ALLOWLIST` and `CORS_ORIGINS` beyond what
   this session's behavioural probes showed.
-- ~~Vercel Deployment Protection's current on/off state~~ **NOW VERIFIED**:
-  `synora-fawn.vercel.app` (the real public domain) has NO protection —
-  HTTP 200, real app HTML, no SSO redirect. The earlier claimed fact that
-  "Vercel Authentication is ON" does not hold for the domain that matters.
+- Vercel Deployment Protection is now VERIFIED, not NOT VERIFIED — see
+  step 3 for the full picture (`ssoProtection` on, scoped to exempt the
+  real domain).
+- Whether authenticated chat message generation works at all without
+  Redis — `message.service.ts` was read (see step 7), but no actual
+  message was sent through a logged-in session.
 - Whether the CD Pipeline failure (legacy GHCR image-tag path, see
   LAUNCH_LOG.md) has any bearing on Render's own build — classified as
   unrelated to Render, but Render's own build of `LAUNCH_COMMIT` was never
@@ -248,21 +286,33 @@ is real development work for a future session, not a config toggle.
 ## RISKS
 
 1. **`/metrics` is open to the public internet** with no token — see step 4.
-2. **The real public web app (`synora-fawn.vercel.app`) has no Vercel
-   Authentication wall and is very unlikely to keep anyone logged in.**
-   Verified today: the domain serves the real app with HTTP 200 (no SSO
-   gate); separately, the API's cookies are `SameSite=Strict` with no
-   `Domain` attribute, and no proxy exists anywhere to make the two sites
-   one origin. Net effect: anyone can load the login page right now, and a
-   login attempt is expected to not persist a session — see step 7's
-   5-step manual check for what to actually observe. This is the single
-   biggest risk in this document.
-3. **The October `assertNoLocalhostInProduction` loopback-bypass bug is
+2. **Login is very unlikely to persist a session, and chat may silently
+   never reply even if it does.** Two independent, code-level findings:
+   (a) the API's auth cookies are `SameSite=Strict` with no `Domain`
+   attribute, and no proxy exists anywhere to make the web app and API one
+   origin — a login POST is predicted to succeed but the cookie won't come
+   back on the next request; (b) sending a chat message always hands the
+   response off to a Redis-backed queue with no fallback and no error
+   surfaced if that fails. Neither was confirmed with an actual logged-in
+   session (see step 7's 6-step manual check). This is the single biggest
+   risk in this document — not because the product is public (it's meant
+   to be, see step 3), but because the core authenticated flow is unlikely
+   to work end-to-end.
+3. **The portfolio widget's origin can make cookie-bearing requests to the
+   full authenticated API, not just the public assistant endpoint** — a
+   live preflight to `/api/auth/login` from `keshav-kumar-singh.vercel.app`
+   returned an allow-origin header on the app-wide, credentialed CORS
+   config, in addition to being correctly allowed on the public assistant
+   route's own separate, non-credentialed CORS. Not a demonstrated
+   exploit, just broader scope than the portfolio widget needs — worth
+   tightening `CORS_ORIGINS` to exclude it if the portfolio only ever
+   calls `/api/public/assistant`.
+4. **The October `assertNoLocalhostInProduction` loopback-bypass bug is
    still present in code** (a CORS list with one real domain and one
    loopback entry would pass the gate). It is dormant today — the live
    list has no loopback entry — but a future config change could silently
    reintroduce the exact failure mode that gate was built to catch.
-4. **The legacy CD Pipeline (GHCR/VPS path) is broken** at Docker image-tag
+5. **The legacy CD Pipeline (GHCR/VPS path) is broken** at Docker image-tag
    validation (mixed-case repo name) and has been for a while. It does not
    affect the Render deployment path, but it does mean CI shows a permanent
    red CD run for every push to SYNORA, which could mask a real failure in

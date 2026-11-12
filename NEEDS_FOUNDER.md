@@ -1,4 +1,4 @@
-# NEEDS_FOUNDER — 2026-11-07
+# NEEDS_FOUNDER — 2026-11-07 (last updated 2026-11-12)
 
 No secret values appear in this file. Variable NAMES only.
 
@@ -20,9 +20,9 @@ GitHub. Kept for history.
 Render environment (boot log shows them read from env). I cannot see whether they are development values.
 If they are, replace each with `openssl rand -base64 32` output in the dashboard.
 
-## 4. Assistant provider key (free tier)
-Set ONE in the Render dashboard: `GROQ_API_KEY` or `OPENROUTER_API_KEY`.
-Also consider `AI_PROVIDER` (set to that provider's id) so a paid key can never be picked first.
+## 4. Assistant provider key (free tier) — RESOLVED, re-confirmed 2026-11-12
+Both `GROQ_API_KEY` and `OPENROUTER_API_KEY` show CONFIGURED in the vault, and this session got two
+real 200-status generations from the live public assistant. No action needed.
 
 ## 5. Spend caps — RESOLVED 2026-11-12
 Confirmed resolved: the public assistant returned real 200-status generations in this session's probes,
@@ -136,10 +136,18 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
    it redirects (302) to `vercel.com/sso-api`, Vercel's own protection. The project's one actual
    domain, `synora-fawn.vercel.app`, IS in `CORS_ORIGINS` and returns the real app (HTTP 200, no
    SSO). No action needed. (See point 2a below for what this DOES mean.)
-2a. **Because `synora-fawn.vercel.app` has no Vercel Authentication wall, the real login page is
-    already publicly loadable by anyone, right now.** Combined with the cookie problem in item 1,
-    that means a stranger can reach your login form today and it probably won't keep them (or you)
-    logged in either way — but the form itself is not hidden behind anything.
+2a. **This is Vercel's own deliberate configuration, not a gap**: `ssoProtection` is on but scoped
+    (`deploymentType: "all_except_custom_domains"`) to exempt the one domain actually registered
+    through domain management (`fawn`) while protecting the two auto-generated aliases. That's the
+    normal way to have a public production URL. The only real decision for you (see READY_TO_DEPLOY.md
+    step 3) is whether you want an EXTRA layer (password protection, IP allowlist — both currently off)
+    during the invite-only beta, given the cookie problem in item 1 means the login form is reachable
+    but may not be very useful yet either way.
+2b. **Second, independent reason chat might not work even if login somehow does**: reading
+    `message.service.ts`, every chat send hands the AI response to a Redis-backed queue with no
+    fallback, and its own comment says it will not throw or surface an error if that fails — the
+    message would just never get a reply, silently. Depends on the same Redis-absence evidence as
+    item 4 below.
 3. **`/metrics` is open to the public internet, no token required.** Set `METRICS_TOKEN` on Render.
 4. **Contradiction about Redis, best evidence available without Render access**: `REDIS_URL` does
    not appear anywhere in `synora-secret-set --status`'s output (neither CONFIGURED nor MISSING —
