@@ -162,3 +162,39 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
    event that advanced `SYNORA` to the current commit was a direct **push** (not a merge-button
    click) by the `Synoraagi` account. PR #47 (a draft) was then marked "merged" only because its
    head commit matched the new tip. Not reverted, per standing instruction.
+
+---
+
+## 9. SYNORA worktree: 22 uncommitted changes — needs review before commit
+
+Branch: `pre-consolidation-2026-09-30` in `/mnt/f/Synora-SYNORA`.
+These 22 files have been in the working tree uncommitted since at least October 2026.
+**Do NOT commit without explicit founder approval.** No intent is inferred here — descriptions are from the diffs.
+
+| # | File | One-line diff description |
+|---|------|--------------------------|
+| 1 | `.claude/settings.local.json` | Local Claude session settings — **NEVER commit this file** |
+| 2 | `apps/backend/src/ai/__tests__/models.test.ts` | Test updates for expanded model catalog and OpenRouter discovery |
+| 3 | `apps/backend/src/ai/__tests__/ttsRegistry.test.ts` | Test updates for TTS provider registry changes |
+| 4 | `apps/backend/src/ai/core/types.ts` | Adds `ModelCapability` type (6 lines) |
+| 5 | `apps/backend/src/ai/models.ts` | Expands model catalog: adds OpenRouter discovery, `capabilitySupport` / `availability` fields, `ModelCapabilityReadiness` type, imports from openrouter provider (+259 lines net) |
+| 6 | `apps/backend/src/ai/providers/openaiTextToSpeech.provider.ts` | Minor fix to TTS provider (~6 lines changed) |
+| 7 | `apps/backend/src/ai/providers/openrouter.provider.ts` | New file: full OpenRouter provider implementation (+110 lines) |
+| 8 | `apps/backend/src/ai/ttsRegistry.ts` | TTS registry updates (+22/-22 lines) |
+| 9 | `apps/backend/src/config/defaults.ts` | Adds `'http://127.0.0.1:3000'` to `corsOrigins` list (1 line) |
+| 10 | `apps/backend/src/embeddings/__tests__/registry.test.ts` | Test updates for embeddings registry |
+| 11 | `apps/backend/src/embeddings/registry.ts` | Minor embeddings registry update (+2 lines) |
+| 12 | `apps/backend/src/routes/audio.ts` | Minor audio route fix (~6 lines changed) |
+| 13 | `apps/backend/src/routes/memories.ts` | Memories route refactor (~64 lines changed) |
+| 14 | `apps/backend/src/services/__tests__/memoryEmbedding.service.test.ts` | Test expansion (+31 lines) |
+| 15 | `apps/backend/src/services/__tests__/memoryRetrieval.service.test.ts` | New test file for memory retrieval service (+30 lines) |
+| 16 | `apps/backend/src/services/audioGeneration.service.ts` | Adds `providerId` and `model` fields to `GenerateAudioInput`; passes them through to provider synthesize call |
+| 17 | `apps/backend/src/services/memory.service.ts` | Bug fix: replaces double `where.OR` assignment (search clause was silently overwriting permission filter) with `where.AND` to correctly combine both |
+| 18 | `apps/backend/src/services/memoryCache.service.ts` | Cache key now includes `userId`+`workspaceId`; search cache key hashes full scope object; adds `MemorySearchCacheScope` interface |
+| 19 | `apps/backend/src/services/memoryEmbedding.service.ts` | Updates to memory embedding service (+20/-20 lines) |
+| 20 | `apps/backend/src/services/memoryRetrieval.service.ts` | Updates to memory retrieval service (+37 lines) |
+| 21 | `docker-compose.dev.yml` | Changes host port mapping from `5432:5432` to `5434:5432` (avoids port conflict with an existing local Postgres) |
+| 22 | `package.json` | Adds `onlyBuiltDependencies` list to pnpm config (prisma, argon2, esbuild, etc.) |
+
+**Note:** Items 17 and 18 contain correctness bug fixes (memory search silently ignoring search terms;
+cache keys not scoped to user+workspace). These are HIGH priority to review and commit.
