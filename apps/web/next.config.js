@@ -78,6 +78,30 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_URL: apiUrl,
   },
+  /**
+   * SAME-ORIGIN API PROXY.
+   *
+   * The browser calls `/api/*` and `/socket.io/*` on the website's own
+   * origin and this forwards them to the backend. Without it the site and
+   * the API are two different SITES, and the `SameSite=Strict` session and
+   * CSRF cookies are neither sent nor readable across that boundary — login
+   * appears to succeed and every later request is anonymous.
+   *
+   * These are fallback-phase rewrites on purpose: a route this app really
+   * serves (`/api/health`, the web server's own probe) is matched first and
+   * never forwarded.
+   *
+   * The destination is the same public URL already baked into the bundle,
+   * so there is nothing new to configure — and nothing secret here.
+   */
+  async rewrites() {
+    return {
+      fallback: [
+        { source: '/api/:path*', destination: `${apiUrl}/api/:path*` },
+        { source: '/socket.io/:path*', destination: `${apiUrl}/socket.io/:path*` },
+      ],
+    };
+  },
   async headers() {
     return [
       {

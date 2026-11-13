@@ -14,8 +14,32 @@ export class ApiError extends Error {
   }
 }
 
-export function getApiBaseUrl(): string {
+/**
+ * The API's own absolute address. Use it only for a URL that is handed to
+ * something OUTSIDE this browser session — a webhook address a person
+ * pastes into another service — where "relative to this page" means nothing.
+ */
+export function getPublicApiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+}
+
+/**
+ * The base every request is made against.
+ *
+ * IN THE BROWSER THIS IS EMPTY, so requests go to the page's own origin and
+ * `next.config.js` proxies `/api/*` on to the backend. That is deliberate:
+ * the session and CSRF cookies are `SameSite=Strict`, and the website and
+ * the API are deployed on different sites. A browser will neither send
+ * those cookies to another site nor let the page read the CSRF one, so a
+ * direct cross-site call can register and log in and then do nothing else.
+ * Same-origin requests make the cookies first-party again without weakening
+ * a single cookie attribute.
+ *
+ * On the server there is no page origin to be relative to, so server-side
+ * code talks to the API directly.
+ */
+export function getApiBaseUrl(): string {
+  return typeof window === 'undefined' ? getPublicApiUrl() : '';
 }
 
 interface RequestOptions {
