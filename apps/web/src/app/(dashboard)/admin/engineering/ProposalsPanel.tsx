@@ -26,10 +26,10 @@ const REFRESH_MS = 30_000;
 function StatusBadge({ status }: { status: Proposal['status'] }) {
   const tone =
     status === 'approved'
-      ? 'bg-emerald-500/10 text-emerald-600'
+      ? 'bg-success/10 text-success'
       : status === 'rejected'
         ? 'bg-muted text-muted-foreground'
-        : 'bg-amber-500/10 text-amber-600';
+        : 'bg-warning/10 text-warning';
   return (
     <span className={`rounded px-2 py-0.5 text-xs font-medium ${tone}`}>{status}</span>
   );
@@ -65,10 +65,10 @@ function DraftSection({ draft }: { draft: NonNullable<Proposal['draft']> }) {
     !measured
       ? 'border-border bg-muted/30'
       : draft.verdict === 'improvement'
-        ? 'border-emerald-500/50 bg-emerald-500/5'
+        ? 'border-success/50 bg-success/5'
         : draft.verdict === 'regression'
-          ? 'border-red-500/50 bg-red-500/5'
-          : 'border-amber-500/50 bg-amber-500/5';
+          ? 'border-destructive/50 bg-destructive/5'
+          : 'border-warning/50 bg-warning/5';
 
   return (
     <div className={`mt-4 rounded-md border p-3 ${tone}`}>
@@ -164,10 +164,10 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
         Same type size and a full border, not a footnote. A reader who skims
         only the bold text should still hit this block.
       */}
-      <div className="mt-4 rounded-md border border-amber-500/50 bg-amber-500/5 p-3">
+      <div className="mt-4 rounded-md border border-warning/50 bg-warning/5 p-3">
         <div className="flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          <h4 className="text-sm font-semibold text-amber-600">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <h4 className="text-sm font-semibold text-warning">
             What this evidence cannot tell you
           </h4>
         </div>
@@ -210,7 +210,7 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
               type="button"
               disabled={decide.isPending}
               onClick={() => decide.mutate('approved')}
-              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-md bg-success px-3 py-1.5 text-sm font-medium text-success-foreground disabled:opacity-50"
             >
               Approve
             </button>
@@ -227,7 +227,7 @@ function ProposalCard({ proposal }: { proposal: Proposal }) {
             </span>
           </div>
           {decide.isError ? (
-            <p className="mt-2 text-sm text-red-500">
+            <p className="mt-2 text-sm text-destructive">
               Could not record that decision: {(decide.error as Error).message}
             </p>
           ) : null}

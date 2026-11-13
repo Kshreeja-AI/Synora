@@ -82,12 +82,12 @@ export function LoginForm(): React.JSX.Element {
 
   if (challengeToken) {
     return (
-      <Card>
-        <CardContent className="p-8">
-          <h1 className="mb-2 text-center text-3xl font-bold text-foreground">
-            Two-Factor Authentication
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="p-0">
+          <h1 className="mb-2 text-[1.75rem] font-semibold tracking-tightest text-foreground">
+            Two-factor authentication
           </h1>
-          <p className="mb-6 text-center text-sm text-muted-foreground">
+          <p className="mb-8 text-sm text-muted-foreground">
             {useRecoveryCode
               ? 'Enter one of your recovery codes.'
               : 'Enter the 6-digit code from your authenticator app.'}
@@ -121,7 +121,7 @@ export function LoginForm(): React.JSX.Element {
               />
             </div>
 
-            <Button type="submit" variant="primary" size="md" loading={loading} className="w-full">
+            <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full text-sm">
               {loading ? 'Verifying...' : 'Verify'}
             </Button>
           </form>
@@ -154,9 +154,10 @@ export function LoginForm(): React.JSX.Element {
   }
 
   return (
-    <Card>
-      <CardContent className="p-8">
-        <h1 className="mb-8 text-center text-3xl font-bold text-foreground">Sign In</h1>
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="p-0">
+        <h1 className="mb-2 text-[1.75rem] font-semibold tracking-tightest text-foreground">Welcome back</h1>
+        <p className="mb-8 text-sm text-muted-foreground">Sign in to your Synora workspace.</p>
 
         {error && (
           <div
@@ -209,15 +210,15 @@ export function LoginForm(): React.JSX.Element {
             </Label>
           </div>
 
-          <Button type="submit" variant="primary" size="md" loading={loading} className="w-full">
-            {loading ? 'Signing in...' : 'Sign In'}
+          <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full text-sm">
+            {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-muted-foreground">
+        <p className="mt-8 text-sm text-muted-foreground">
           Don&apos;t have an account?{' '}
-          <Link href="/auth/register" className="font-semibold text-primary hover:underline">
-            Register
+          <Link href="/auth/register" className="font-medium text-primary hover:underline">
+            Create one
           </Link>
         </p>
       </CardContent>

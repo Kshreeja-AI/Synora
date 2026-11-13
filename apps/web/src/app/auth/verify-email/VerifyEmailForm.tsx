@@ -52,8 +52,8 @@ export function VerifyEmailForm(): React.JSX.Element {
 
   if (status === 'verifying') {
     return (
-      <Card>
-        <CardContent className="flex flex-col items-center gap-4 p-8 text-center">
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="flex flex-col items-center gap-4 p-0 text-center">
           <Spinner size="lg" />
           <p className="text-muted-foreground">Verifying your email...</p>
         </CardContent>
@@ -63,9 +63,9 @@ export function VerifyEmailForm(): React.JSX.Element {
 
   if (status === 'success') {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <h1 className="mb-4 text-2xl font-bold text-foreground">Email verified</h1>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="p-0 text-center">
+          <h1 className="mb-4 text-2xl font-semibold tracking-tight text-foreground">Email verified</h1>
           <p className="mb-6 text-muted-foreground">Your email address has been confirmed.</p>
           <Button asChild variant="primary" className="w-full">
             <Link href="/dashboard">Continue to dashboard</Link>
@@ -76,9 +76,9 @@ export function VerifyEmailForm(): React.JSX.Element {
   }
 
   return (
-    <Card>
-      <CardContent className="p-8 text-center">
-        <h1 className="mb-4 text-2xl font-bold text-foreground">Verification failed</h1>
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="p-0 text-center">
+        <h1 className="mb-4 text-2xl font-semibold tracking-tight text-foreground">Verification failed</h1>
         <p className="mb-6 text-muted-foreground">{message}</p>
 
         {resendStatus === 'sent' ? (

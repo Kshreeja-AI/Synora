@@ -1,227 +1,127 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import HomePage from '../src/app/(marketing)/page';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { FEATURES } from '../src/content/features';
 
-const createTestQueryClient = () =>
-  new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-
-function Wrapper({ children }: { children: React.ReactNode }) {
-  const testQueryClient = createTestQueryClient();
-  return (
-    <QueryClientProvider client={testQueryClient}>
-      {children}
-    </QueryClientProvider>
-  );
-}
-
-describe('Landing Page - Production Quality', () => {
-  describe('Hero Section', () => {
-    it('renders hero with main headline', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/The only AI workspace/i)).toBeInTheDocument();
+describe('Landing page', () => {
+  describe('hero', () => {
+    it('states what the product is, in one headline', () => {
+      render(<HomePage />);
+      expect(
+        screen.getByRole('heading', { level: 1, name: /one workspace for every model/i })
+      ).toBeInTheDocument();
     });
 
-    it('renders hero with subheading', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/you'll never outgrow/i)).toBeInTheDocument();
+    it('offers account creation and sign-in, and says registration is by invitation', () => {
+      render(<HomePage />);
+      const create = screen.getAllByRole('link', { name: /create an account/i });
+      expect(create.length).toBeGreaterThan(0);
+      create.forEach((link) => expect(link).toHaveAttribute('href', '/auth/register'));
+      const signIn = screen.getAllByRole('link', { name: /^sign in$/i });
+      signIn.forEach((link) => expect(link).toHaveAttribute('href', '/auth/login'));
+      expect(screen.getByText(/registration is by invitation/i)).toBeInTheDocument();
     });
 
-    it('renders call-to-action buttons', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      const startButtons = screen.getAllByText(/Start free/i);
-      expect(startButtons.length).toBeGreaterThan(0);
-      const ctaButtons = screen.getAllByText(/No credit card required/i);
-      expect(ctaButtons.length).toBeGreaterThan(0);
-    });
-
-    it('renders status badge', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Live now/i)).toBeInTheDocument();
-    });
-
-    it('renders statistics band with provider count', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('10+');
-      expect(container.textContent).toContain('AI providers');
-      expect(container.textContent).toContain('portable');
+    it('labels the release honestly as a private beta', () => {
+      render(<HomePage />);
+      expect(screen.getAllByText(/private beta/i).length).toBeGreaterThan(0);
     });
   });
 
-  describe('Features Section', () => {
-    it('renders features section heading', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/One platform, every medium/i)).toBeInTheDocument();
+  describe('content is truthful', () => {
+    /*
+     * The previous page carried invented testimonials, an uptime SLA, a
+     * latency figure, a "10x faster" claim and compliance badges. None were
+     * measured or earned. This test exists so they cannot quietly return.
+     */
+    it('carries no invented testimonials, metrics or compliance claims', () => {
+      const { container } = render(<HomePage />);
+      const text = container.textContent ?? '';
+      for (const fabricated of [
+        'Aisha Patel',
+        'Marcus Chen',
+        'Emma Rodriguez',
+        '99.9%',
+        '<100ms',
+        '10x',
+        'SOC 2',
+        'SOC2',
+        'HIPAA',
+        'End-to-end encryption',
+        'Zero-knowledge',
+        'No credit card required',
+      ]) {
+        expect(text).not.toContain(fabricated);
+      }
     });
 
-    it('renders feature cards with titles and descriptions', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('Text Generation');
-      expect(container.textContent).toContain('Code Generation');
-      expect(container.textContent).toContain('Image Generation');
+    it('lists every capability with its real status from the content module', () => {
+      render(<HomePage />);
+      for (const feature of FEATURES) {
+        expect(screen.getByText(feature.title)).toBeInTheDocument();
+      }
+      const available = FEATURES.filter((f) => f.status === 'available').length;
+      const comingSoon = FEATURES.filter((f) => f.status === 'coming-soon').length;
+      expect(screen.getAllByText('Available')).toHaveLength(available);
+      expect(screen.getAllByText('Coming soon')).toHaveLength(comingSoon);
     });
 
-    it('renders coming-soon badges for unreleased features', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      const comingSoonBadges = screen.getAllByText(/Coming soon/i);
-      expect(comingSoonBadges.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('AI Capabilities Section', () => {
-    it('renders capabilities section', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Powered by the latest AI models/i)).toBeInTheDocument();
-    });
-
-    it('renders all capability cards with descriptions', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('Text & Code Generation');
-      expect(container.textContent).toContain('Write, edit, refactor, and debug');
-      expect(container.textContent).toContain('Unlimited Iterations');
-    });
-  });
-
-  describe('Why Synora Section', () => {
-    it('renders pillars section with three key differentiators', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Choose your AI provider/i)).toBeInTheDocument();
-      expect(screen.getByText(/Own your data/i)).toBeInTheDocument();
-      expect(screen.getByText(/Enterprise-grade security/i)).toBeInTheDocument();
-    });
-  });
-
-  describe('Security Section', () => {
-    it('renders security features', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      const encryptionElements = screen.getAllByText(/End-to-end encryption/i);
-      expect(encryptionElements.length).toBeGreaterThan(0);
-      const auditElements = screen.getAllByText(/Audit trail logging/i);
-      expect(auditElements.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Pricing Section', () => {
-    it('renders three pricing tiers', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('Free');
-      expect(container.textContent).toContain('Pro');
-      expect(container.textContent).toContain('Enterprise');
-    });
-
-    it('renders pricing features for each plan', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.textContent).toContain('Unlimited text & code generation');
-      expect(container.textContent).toContain('Team collaboration');
-    });
-  });
-
-  describe('Testimonials Section', () => {
-    it('renders testimonials from creators', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Aisha Patel/)).toBeInTheDocument();
-      expect(screen.getByText(/Marcus Chen/)).toBeInTheDocument();
-      expect(screen.getByText(/Emma Rodriguez/)).toBeInTheDocument();
-    });
-  });
-
-  describe('FAQ Section', () => {
-    it('renders FAQ heading', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Frequently asked questions/i)).toBeInTheDocument();
-    });
-
-    it('renders FAQ items as details elements', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/How do I get started/i)).toBeInTheDocument();
-      expect(screen.getByText(/What AI providers can I use/i)).toBeInTheDocument();
-    });
-  });
-
-  describe('Footer CTA', () => {
-    it('renders final call-to-action section', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      const ctaElements = screen.getAllByText(/Start creating today/i);
-      expect(ctaElements.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('renders semantic HTML structure', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.querySelectorAll('section').length).toBeGreaterThan(0);
-      expect(container.querySelectorAll('h1').length).toBeGreaterThan(0);
-      expect(container.querySelectorAll('h2').length).toBeGreaterThan(0);
-      expect(container.querySelectorAll('h3').length).toBeGreaterThan(0);
-    });
-
-    // getAllByRole('link') walks jsdom's accessibility tree over this page's
-    // full DOM, which takes ~2s in isolation and can exceed the default 5s
-    // timeout under the CPU contention of a full parallel test run.
-    it('renders buttons with proper accessibility', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      const buttons = screen.getAllByRole('link');
-      const actionButtons = buttons.filter((btn) => {
-        const text = btn.textContent || '';
-        return (
-          text.includes('Get started') ||
-          text.includes('Start creating') ||
-          text.includes('View pricing')
+    it('links each capability to its feature page', () => {
+      render(<HomePage />);
+      for (const feature of FEATURES) {
+        expect(screen.getByRole('link', { name: new RegExp(feature.title, 'i') })).toHaveAttribute(
+          'href',
+          `/features/${feature.slug}`
         );
-      });
-      expect(actionButtons.length).toBeGreaterThan(0);
-    }, 15000);
-
-    it('includes aria-hidden on decorative elements', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      const decorativeElements = container.querySelectorAll('[aria-hidden="true"]');
-      expect(decorativeElements.length).toBeGreaterThan(0);
+      }
     });
   });
 
-  describe('Responsive Design', () => {
-    it('renders with proper container structure', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      expect(container.querySelectorAll('section').length).toBeGreaterThan(0);
+  describe('sections', () => {
+    it('describes the workspace surfaces', () => {
+      render(<HomePage />);
+      for (const title of ['Conversations', 'Ask Synora', 'Agents', 'Workflows']) {
+        expect(screen.getByRole('heading', { level: 3, name: title })).toBeInTheDocument();
+      }
     });
 
-    it('renders grid layouts for different breakpoints', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      const grids = container.querySelectorAll('[class*="grid"]');
-      expect(grids.length).toBeGreaterThan(0);
+    it('names the supported providers', () => {
+      render(<HomePage />);
+      const list = screen.getByRole('list', { name: /supported providers/i });
+      for (const provider of ['Anthropic', 'OpenAI', 'Google Gemini', 'Groq', 'Ollama']) {
+        expect(list.textContent).toContain(provider);
+      }
+    });
+
+    it('lists implemented security controls', () => {
+      render(<HomePage />);
+      expect(screen.getByText(/passwords hashed with bcrypt/i)).toBeInTheDocument();
+      expect(screen.getByText(/two-factor authentication with recovery codes/i)).toBeInTheDocument();
+    });
+
+    it('renders the FAQ as native disclosure elements', () => {
+      const { container } = render(<HomePage />);
+      expect(screen.getByRole('heading', { name: /frequently asked questions/i })).toBeInTheDocument();
+      expect(container.querySelectorAll('details').length).toBeGreaterThanOrEqual(4);
+      expect(screen.getByText(/how do i get access/i)).toBeInTheDocument();
     });
   });
 
-  describe('Content Quality', () => {
-    it('contains no placeholder or lorem ipsum text', () => {
-      const { container } = render(<HomePage />, { wrapper: Wrapper });
-      const text = container.textContent || '';
-      expect(text.toLowerCase()).not.toContain('lorem ipsum');
-      expect(text.toLowerCase()).not.toContain('placeholder');
-      expect(text.toLowerCase()).not.toContain('todo');
-      expect(text.toLowerCase()).not.toContain('fixme');
+  describe('structure', () => {
+    it('has exactly one h1 and anchors for the in-page nav links', () => {
+      const { container } = render(<HomePage />);
+      expect(container.querySelectorAll('h1')).toHaveLength(1);
+      for (const id of ['features', 'providers', 'security']) {
+        expect(container.querySelector(`#${id}`)).not.toBeNull();
+      }
     });
 
-    it('renders unique and purposeful content in each section', () => {
-      render(<HomePage />, { wrapper: Wrapper });
-      expect(screen.getByText(/Choose your AI provider/i)).toBeInTheDocument();
-      expect(screen.getByText(/Own your data/i)).toBeInTheDocument();
-      expect(screen.getByText(/Enterprise-grade security/i)).toBeInTheDocument();
-    });
-  });
-
-  describe('SEO and Metadata', () => {
-    it('layout component exports metadata', async () => {
-      const { metadata } = await import('../src/app/(marketing)/layout');
-      expect(metadata).toBeDefined();
-      expect(metadata.title).toBeTruthy();
-      expect(metadata.description).toBeTruthy();
+    it('renders all content without waiting for an animation to reveal it', () => {
+      const { container } = render(<HomePage />);
+      const hidden = Array.from(container.querySelectorAll<HTMLElement>('*')).filter(
+        (el) => el.style.opacity === '0'
+      );
+      expect(hidden).toHaveLength(0);
     });
   });
 });

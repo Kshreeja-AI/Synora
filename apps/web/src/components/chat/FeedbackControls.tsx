@@ -105,7 +105,7 @@ export function FeedbackControls({
         aria-pressed={activeVote === 'up'}
         className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition ${
           activeVote === 'up'
-            ? 'bg-green-500/10 text-green-600 dark:text-green-400'
+            ? 'bg-success/10 text-success '
             : 'hover:bg-muted hover:text-foreground'
         }`}
       >
@@ -120,7 +120,7 @@ export function FeedbackControls({
         aria-pressed={activeVote === 'down'}
         className={`flex items-center gap-1 rounded px-1.5 py-0.5 transition ${
           activeVote === 'down'
-            ? 'bg-red-500/10 text-red-600 dark:text-red-400'
+            ? 'bg-destructive/10 text-destructive '
             : 'hover:bg-muted hover:text-foreground'
         }`}
       >

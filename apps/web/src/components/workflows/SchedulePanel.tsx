@@ -116,7 +116,7 @@ export function SchedulePanel({
                 <span
                   className={
                     s.enabled
-                      ? 'rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                      ? 'rounded bg-success/10 px-1.5 py-0.5 text-xs text-success '
                       : 'rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'
                   }
                 >
@@ -156,7 +156,7 @@ export function SchedulePanel({
               {s.missedOccurrences > 0 && (
                 <div
                   role="alert"
-                  className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                  className="flex gap-2 rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning "
                 >
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
                   <span>

@@ -19,7 +19,7 @@ export function WhatsNew({ workspaceId }: { workspaceId: string }) {
   if (!data || data.count === 0) return null;
 
   return (
-    <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+    <div className="rounded-lg border border-primary/25 bg-primary/5 p-4">
       <p className="flex items-center gap-2 text-sm font-medium">
         <Sparkles className="h-4 w-4 text-primary" aria-hidden />
         {data.count} thing{data.count === 1 ? '' : 's'} happened while you were away

@@ -115,7 +115,7 @@ export default function WorkflowsPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive ">
           {error.message}
         </div>
       )}
@@ -370,8 +370,8 @@ export default function WorkflowsPage() {
                       role="note"
                       className={`space-y-2 rounded-md border p-3 text-sm ${
                         dryRunReport.wouldStart
-                          ? 'border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200'
-                          : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
+                          ? 'border-success/30 bg-success/10 text-success '
+                          : 'border-warning/30 bg-warning/10 text-warning '
                       }`}
                     >
                       <p className="font-semibold">
@@ -413,7 +413,7 @@ export default function WorkflowsPage() {
                   {lastNotice && (
                     <div
                       role="note"
-                      className="rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
+                      className="rounded-md border border-primary/30 bg-primary/10 p-3 text-sm text-primary "
                     >
                       <p className="font-semibold">AUTHORED — repeatable, not improvised</p>
                       <p>{lastNotice}</p>

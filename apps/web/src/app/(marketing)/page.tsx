@@ -1,822 +1,433 @@
-'use client';
-
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 import {
   ArrowRight,
-  Blocks,
-  Lock,
-  RefreshCw,
-  Zap,
-  Shield,
-  Code2,
-  Users,
-  TrendingUp,
-  Repeat2,
+  Bot,
   Check,
-  ChevronDown,
+  FolderKanban,
+  KeyRound,
+  Layers,
+  MessageSquare,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Workflow,
+  type LucideIcon,
 } from 'lucide-react';
-import { Badge, Button, Card, CardContent } from '@synora/design-system';
+import { Badge, Button } from '@synora/design-system';
 import { Section, SectionHeading } from '../../components/marketing/Section';
+import { Reveal } from '../../components/marketing/Reveal';
 import { FEATURES } from '../../content/features';
-import {
-  heroHeadlineVariants,
-  heroSubheadlineVariants,
-  heroCTAVariants,
-  sectionRevealVariants,
-  cardContainerVariants,
-  cardItemVariants,
-  cardHoverVariants,
-  buttonVariants,
-  statContainerVariants,
-  statItemVariants,
-  pricingContainerVariants,
-  pricingPlanVariants,
-  testimonialContainerVariants,
-  testimonialCardVariants,
-  faqContainerVariants,
-  faqItemVariants,
-  footerRevealVariants,
-  ANIMATION_DURATIONS,
-  EASING,
-  getReducedMotionVariants,
-} from '../../lib/animations';
-import { useMotionPreference } from '../../hooks/useMotionPreference';
-import { useScrollReveal } from '../../hooks/useScrollReveal';
 
-const PILLARS = [
-  {
-    icon: Blocks,
-    title: 'Choose your AI provider',
-    body: 'Anthropic, OpenAI, Google, xAI, Mistral. Switch providers in settings without migrating projects or losing history.',
-  },
-  {
-    icon: RefreshCw,
-    title: 'Own your data',
-    body: 'Everything you create stays with you—portable across any AI provider or self-hosted model. Zero lock-in by architecture.',
-  },
-  {
-    icon: Lock,
-    title: 'Enterprise-grade security',
-    body: 'End-to-end encryption, SOC 2 ready, audit logging. Built for startups and enterprises.',
-  },
-];
+/*
+ * EVERY CLAIM ON THIS PAGE IS A STATEMENT ABOUT THE CODE AS IT IS.
+ *
+ * No testimonials, customer counts, uptime figures, latency numbers or
+ * compliance badges appear here, because none of them have been measured or
+ * earned yet. When one is — a real customer quote, a completed audit — it
+ * belongs here with its source. Until then the page describes the product.
+ */
 
-type IconComponent = typeof Code2;
-
-interface Capability {
+interface Surface {
+  icon: LucideIcon;
   title: string;
-  description: string;
-  icon: IconComponent;
+  body: string;
 }
 
-const AI_CAPABILITIES: Capability[] = [
+const SURFACES: Surface[] = [
   {
-    title: 'Text & Code Generation',
-    description: 'Write, edit, refactor, and debug with AI that understands context.',
-    icon: Code2,
+    icon: MessageSquare,
+    title: 'Conversations',
+    body: 'Streaming chat with the model you choose. Branch a reply to explore an alternative, share a thread, or export it.',
   },
   {
-    title: 'Image Generation',
-    description: 'Create stunning visuals from text descriptions in seconds.',
-    icon: Zap,
+    icon: Sparkles,
+    title: 'Ask Synora',
+    body: 'Describe an outcome in one sentence. Synora proposes a plan and waits for your approval before it runs.',
   },
   {
-    title: 'Video & Audio',
-    description: 'Generate video scripts, voiceovers, and music seamlessly.',
-    icon: TrendingUp,
+    icon: Bot,
+    title: 'Agents',
+    body: 'Hand over a multi-step task, preview the plan, and approve or reject the steps that carry risk.',
   },
   {
-    title: 'Unlimited Iterations',
-    description: 'Branch conversations, explore alternatives, refine endlessly.',
-    icon: Repeat2,
+    icon: Workflow,
+    title: 'Workflows',
+    body: 'Chain steps into a repeatable process and start it on a schedule or from a webhook trigger.',
+  },
+  {
+    icon: FolderKanban,
+    title: 'Projects & knowledge',
+    body: 'File conversations and documents into projects, and keep prompts, templates and memories in one library.',
+  },
+  {
+    icon: Layers,
+    title: 'One engine underneath',
+    body: 'Every surface talks to models through the same provider abstraction, so switching is configuration.',
   },
 ];
 
-const PERFORMANCE_METRICS = [
-  { metric: '<100ms', label: 'Token latency' },
-  { metric: '99.9%', label: 'Uptime SLA' },
-  { metric: '10x', label: 'Faster than alternatives' },
-  { metric: '0', label: 'Vendor lock-in' },
+// The text providers registered in the backend's provider registry.
+const PROVIDERS = [
+  'Anthropic',
+  'OpenAI',
+  'Google Gemini',
+  'xAI',
+  'Groq',
+  'OpenRouter',
+  'DeepSeek',
+  'Together AI',
+  'Azure OpenAI',
+  'AWS Bedrock',
+  'Ollama',
+  'Self-hosted (OpenAI-compatible)',
 ];
 
-const SECURITY_FEATURES = [
-  'End-to-end encryption',
-  'Zero-knowledge architecture',
-  'Rotated session tokens',
-  'Audit trail logging',
-  'HIPAA/SOC2 ready',
-  'DLP & content filtering',
-];
-
-const TESTIMONIALS = [
-  {
-    author: 'Aisha Patel',
-    role: 'Creative Director, Studio Pro',
-    content:
-      'Synora eliminated vendor lock-in and gave us the freedom to choose the best model for each project. Game-changing.',
-    avatar: '👩‍💼',
-  },
-  {
-    author: 'Marcus Chen',
-    role: 'Tech Lead, Innovation Labs',
-    content:
-      'The provider-agnostic abstraction is genius. We switched from OpenAI to Anthropic in minutes — no code changes.',
-    avatar: '👨‍💻',
-  },
-  {
-    author: 'Emma Rodriguez',
-    role: 'Founder, Content Studio',
-    content:
-      'The unified workspace transformed how our team creates. Everything in one place, organized, and collaborative.',
-    avatar: '👩‍🎨',
-  },
+// Controls that exist in the codebase today.
+const SECURITY_CONTROLS = [
+  'Passwords hashed with bcrypt',
+  'Short-lived access tokens with rotating refresh tokens',
+  'Optional two-factor authentication with recovery codes',
+  'CSRF protection on every state-changing request',
+  'Rate limiting on sign-in and registration',
+  'Session list with sign-out everywhere',
+  'Workspace audit log for admins',
+  'Provider keys stay server-side, never sent to the browser',
 ];
 
 const FAQ_ITEMS = [
   {
-    question: 'How do I get started?',
+    question: 'How do I get access?',
     answer:
-      'Sign up for free (no credit card required). You get instant access to all AI providers and 10 conversations per month. Upgrade anytime.',
+      'Synora is in private beta. Accounts are created by invitation: a workspace owner invites your email address, and you register with that address.',
   },
   {
-    question: 'What AI providers can I use?',
+    question: 'Which AI providers can I use?',
     answer:
-      'Anthropic Claude, OpenAI, Google Gemini, xAI Grok, Mistral, Cohere, and more. Switch providers anytime in settings without losing any data.',
+      'Anthropic, OpenAI, Google Gemini, xAI, Groq, OpenRouter, DeepSeek, Together AI, Azure OpenAI and AWS Bedrock, plus self-hosted models through Ollama or any OpenAI-compatible endpoint. Which ones are active depends on the keys configured for a deployment.',
   },
   {
-    question: 'How much does it cost?',
+    question: 'What is available today?',
     answer:
-      'Free forever for 10 conversations/month. Pro at $19/month gets unlimited conversations, images, video, and audio. Enterprise plans available for teams.',
+      'Text and code generation, conversations, agents, workflows, projects and the knowledge library are built. Capabilities that are still in progress are labelled "Coming soon" on this page rather than presented as finished.',
   },
   {
-    question: 'Is my data used for training?',
+    question: 'Can I run it against my own models?',
     answer:
-      'No. Synora treats your content as confidential. We never use your prompts or outputs to train any models.',
+      'Yes. Point Synora at an Ollama server or any OpenAI-compatible endpoint and it is used through the same interface as the hosted providers.',
   },
   {
-    question: 'Is Synora secure?',
+    question: 'Where do I ask something that is not answered here?',
     answer:
-      'Yes. We use end-to-end encryption, rotating session tokens, audit logging, and meet SOC 2 and HIPAA requirements for enterprise customers.',
-  },
-  {
-    question: 'Can I use Synora with my team?',
-    answer:
-      'Absolutely. Create unlimited workspaces, invite team members, and control permissions (owner, editor, viewer). Pro plan includes 5 team seats.',
+      'Sign in and open the Synora assistant — a dedicated chat for questions about the product and your workspace.',
   },
 ];
 
-const PRICING_PLANS = [
-  {
-    name: 'Free',
-    price: 'Free',
-    description: 'Start creating today',
-    features: [
-      'Unlimited text & code generation',
-      '10 conversations per month',
-      'All AI providers',
-      'Community support',
-    ],
-  },
-  {
-    name: 'Pro',
-    price: '$19',
-    period: '/month',
-    description: 'Most popular',
-    features: [
-      'Everything in Free',
-      'Unlimited conversations',
-      'Image, video & audio generation',
-      'Team collaboration (5 seats)',
-      'Priority support',
-      'API access',
-    ],
-    highlighted: true,
-  },
-  {
-    name: 'Enterprise',
-    price: 'Custom',
-    description: 'For teams at scale',
-    features: [
-      'Everything in Pro',
-      'Unlimited team seats',
-      'Dedicated support',
-      'Custom security',
-      'Self-hosted option',
-      'Advanced analytics',
-    ],
-  },
-];
-
-function ScrollRevealSection({
-  children,
-  ...props
-}: React.ComponentProps<typeof Section>) {
-  const { ref, isVisible } = useScrollReveal();
+function ProductPreview(): React.JSX.Element {
   return (
-    <div ref={ref}>
-      <motion.div
-        initial="hidden"
-        animate={isVisible ? 'visible' : 'hidden'}
-        variants={sectionRevealVariants}
-      >
-        <Section {...props}>{children}</Section>
-      </motion.div>
+    <div
+      aria-hidden
+      className="relative mx-auto w-full max-w-4xl overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+    >
+      <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
+        <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/25" />
+        <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/25" />
+        <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/25" />
+        <span className="ml-3 text-xs text-muted-foreground">Ask Synora</span>
+      </div>
+      <div className="grid gap-0 sm:grid-cols-[180px_1fr]">
+        <div className="hidden space-y-1 border-r border-border p-3 sm:block">
+          {['Dashboard', 'Ask Synora', 'Conversations', 'Agents', 'Workflows', 'Projects'].map(
+            (label, index) => (
+              <div
+                key={label}
+                className={`rounded-md px-2.5 py-1.5 text-xs ${
+                  index === 1 ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground'
+                }`}
+              >
+                {label}
+              </div>
+            )
+          )}
+        </div>
+        <div className="space-y-4 p-5 text-left sm:p-6">
+          <div className="ml-auto w-fit max-w-[85%] rounded-lg rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
+            Summarise this week&apos;s project notes and draft an update.
+          </div>
+          <div className="rounded-lg border border-border bg-background/60 p-4">
+            <p className="mb-3 text-xs font-medium text-muted-foreground">Proposed plan · waiting for you</p>
+            <ol className="space-y-2.5 text-sm">
+              {[
+                'Read the notes filed in the project',
+                'Draft a summary with the selected model',
+                'Save the update as a document',
+              ].map((step, index) => (
+                <li key={step} className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-medium text-muted-foreground">
+                    {index + 1}
+                  </span>
+                  <span className="text-foreground">{step}</span>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-4 flex gap-2">
+              <span className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                Approve and run
+              </span>
+              <span className="rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground">
+                Edit plan
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 export default function HomePage(): React.JSX.Element {
-  const prefersReducedMotion = useMotionPreference();
-  const { ref: heroRef, isVisible: heroVisible } = useScrollReveal({
-    once: true,
-    threshold: 0.1,
-  });
-
-  // Apply reduced motion to critical animations
-  const effectiveHeroHeadlineVariants = getReducedMotionVariants(
-    heroHeadlineVariants,
-    prefersReducedMotion
-  );
-  const effectiveHeroSubheadlineVariants = getReducedMotionVariants(
-    heroSubheadlineVariants,
-    prefersReducedMotion
-  );
-  const effectiveHeroCTAVariants = getReducedMotionVariants(
-    heroCTAVariants,
-    prefersReducedMotion
-  );
-
   return (
-    <motion.div layout>
-      {/* Hero Section */}
-      <div className="relative overflow-hidden">
-        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -top-32 left-1/2 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
-          <div className="absolute -top-16 left-1/4 h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl" />
-          <div className="absolute right-1/4 top-24 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+    <>
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div
+          aria-hidden
+          className="bg-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-1/2 top-[-280px] h-[520px] w-[820px] -translate-x-1/2 rounded-full bg-primary/10 blur-3xl"
+        />
+
+        <div className="relative mx-auto max-w-6xl px-5 pb-16 pt-20 text-center sm:px-8 sm:pb-24 sm:pt-28">
+          <div className="animate-fade-up">
+            <Badge variant="outline" className="mb-6 gap-2 px-3 py-1 text-xs font-medium">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden />
+              Private beta
+            </Badge>
+            <h1 className="mx-auto max-w-3xl text-[2.5rem] font-semibold leading-[1.05] tracking-tightest text-foreground sm:text-6xl">
+              One workspace for every model you work with.
+            </h1>
+            <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+              Synora puts conversations, agents and workflows behind a single provider-agnostic
+              engine — and asks for your approval before anything runs on your behalf.
+            </p>
+            <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Button asChild size="lg" className="w-full sm:w-auto">
+                <Link href="/auth/register">
+                  Create an account <ArrowRight aria-hidden />
+                </Link>
+              </Button>
+              <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+                <Link href="/auth/login">Sign in</Link>
+              </Button>
+            </div>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Registration is by invitation during the beta.
+            </p>
+          </div>
+
+          <div className="mt-16 animate-fade-up [animation-delay:150ms] sm:mt-20">
+            <ProductPreview />
+          </div>
         </div>
+      </section>
 
-        <div ref={heroRef}>
-          <Section className="min-h-screen flex flex-col items-center justify-center pb-24 pt-24 text-center sm:pt-32">
+      {/* Surfaces */}
+      <Section id="features" className="scroll-mt-16">
+        <Reveal>
+          <SectionHeading
+            eyebrow="The workspace"
+            title="Everything you do with AI, in one place"
+            description="Six connected surfaces instead of six separate tools — each one sharing the same projects, history and permissions."
+          />
+        </Reveal>
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {SURFACES.map((surface, index) => {
+            const Icon = surface.icon;
+            return (
+              <li key={surface.title}>
+                <Reveal delay={(index % 3) * 70} className="h-full">
+                  <div className="surface-interactive h-full p-6">
+                    <span className="mb-4 flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-primary">
+                      <Icon className="h-[18px] w-[18px]" aria-hidden />
+                    </span>
+                    <h3 className="text-base font-semibold text-foreground">{surface.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{surface.body}</p>
+                  </div>
+                </Reveal>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
 
-          <motion.div
-            initial="hidden"
-            animate={heroVisible ? 'visible' : 'hidden'}
-            className="w-full max-w-4xl"
-          >
-            {/* Badge */}
-            <motion.div variants={effectiveHeroSubheadlineVariants} className="mb-6">
-              <Badge variant="outline" className="gap-2 px-3 py-1 inline-flex">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
-                Live now: Text & code. Next: Images, video, audio.
-              </Badge>
-            </motion.div>
-
-            {/* Headline */}
-            <motion.h1
-              variants={effectiveHeroHeadlineVariants}
-              className="mx-auto max-w-4xl text-balance bg-gradient-to-br from-foreground via-foreground to-muted-foreground bg-clip-text text-5xl font-bold tracking-tight text-transparent sm:text-6xl lg:text-7xl"
-            >
-              The only AI workspace
-              <br />
-              you'll never outgrow.
-            </motion.h1>
-
-            {/* Subheading */}
-            <motion.p
-              variants={effectiveHeroSubheadlineVariants}
-              className="mx-auto mt-6 max-w-2xl text-lg text-muted-foreground sm:text-xl"
-            >
-              One workspace for text, code, images, and video. Use any AI provider. Switch anytime.
-            </motion.p>
-
-            {/* CTA Buttons */}
-            <motion.div
-              variants={effectiveHeroCTAVariants}
-              className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row"
-            >
-              <motion.div
-                variants={buttonVariants}
-                initial="rest"
-                whileHover="hover"
-                whileTap="tap"
-              >
-                <Button asChild size="lg" className="group">
-                  <Link href="/auth/register">
-                    Start free
-                    <ArrowRight
-                      aria-hidden
-                      className="transition-transform group-hover:translate-x-0.5"
-                    />
-                  </Link>
-                </Button>
-              </motion.div>
-              <motion.div
-                variants={buttonVariants}
-                initial="rest"
-                whileHover="hover"
-                whileTap="tap"
-              >
-                <Button asChild variant="outline" size="lg" className="bg-card/50 hover:bg-card">
-                  <Link href="/pricing">No credit card required</Link>
-                </Button>
-              </motion.div>
-            </motion.div>
-          </motion.div>
-
-          {/* Stats Band */}
-          <motion.dl
-            initial="hidden"
-            animate={heroVisible ? 'visible' : 'hidden'}
-            variants={statContainerVariants}
-            className="mx-auto mt-20 grid max-w-3xl grid-cols-1 gap-8 sm:grid-cols-3"
-          >
-            {[
-              ['10+', 'AI providers supported'],
-              ['100%', 'portable—switch anytime'],
-              ['<100ms', 'token streaming latency'],
-            ].map(([stat, label], idx) => (
-              <motion.div
-                key={label}
-                variants={statItemVariants}
-                custom={idx}
-                className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
-              >
-                <dt className="order-2 text-sm text-muted-foreground">{label}</dt>
-                <dd className="order-1 text-4xl font-bold tracking-tight text-foreground">
-                  {stat}
-                </dd>
-              </motion.div>
+      {/* Capabilities, with honest status */}
+      <div className="border-y border-border bg-card/40">
+        <Section id="capabilities" className="scroll-mt-16">
+          <Reveal>
+            <SectionHeading
+              eyebrow="Capabilities"
+              title="What is built, and what is still landing"
+              description="Each capability carries its real status. Nothing here is presented as finished before it is."
+            />
+          </Reveal>
+          <ul className="mx-auto grid max-w-4xl gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">
+            {FEATURES.map((feature) => (
+              <li key={feature.slug} className="bg-card">
+                <Link
+                  href={`/features/${feature.slug}`}
+                  className="group flex h-full items-start justify-between gap-4 p-5 transition-colors hover:bg-accent/50"
+                >
+                  <span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">{feature.title}</span>
+                      {feature.status === 'available' ? (
+                        <Badge variant="outline" className="border-success/40 text-success">
+                          Available
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">Coming soon</Badge>
+                      )}
+                    </span>
+                    <span className="mt-1.5 block text-sm leading-relaxed text-muted-foreground">
+                      {feature.tagline}
+                    </span>
+                  </span>
+                  <ArrowRight
+                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground"
+                    aria-hidden
+                  />
+                </Link>
+              </li>
             ))}
-          </motion.dl>
-
-          {/* Scroll Indicator */}
-          {!prefersReducedMotion && (
-            <motion.div
-              animate={{ y: [0, 8, 0] }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: EASING.smooth,
-              }}
-              className="absolute bottom-8 left-1/2 -translate-x-1/2"
-              aria-label="Scroll for more content"
-            >
-              <ChevronDown className="h-6 w-6 text-muted-foreground" />
-            </motion.div>
-          )}
+          </ul>
         </Section>
-        </div>
       </div>
 
-      {/* Trusted By Section */}
-      <ScrollRevealSection className="border-t border-border">
-        <motion.div className="mb-12 text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-            Trusted by developers and creators
-          </p>
-        </motion.div>
-
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="flex flex-wrap items-center justify-center gap-8"
-        >
-          {['OpenAI', 'Anthropic', 'Google', 'Mistral', 'Cohere'].map((provider) => (
-            <motion.div
-              key={provider}
-              variants={cardItemVariants}
-              className="rounded-md border border-border/40 bg-card/30 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-card/50"
+      {/* Providers */}
+      <Section id="providers" className="scroll-mt-16">
+        <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
+          <Reveal>
+            <SectionHeading
+              align="left"
+              eyebrow="Provider-agnostic"
+              title="Change the model, not your work"
+              description="Business logic never learns a vendor's name. Providers sit behind one interface, so moving between them is a settings change — your conversations, projects and history stay exactly where they are."
+            />
+            <ul className="-mt-6 space-y-3 text-sm text-foreground">
+              {[
+                'Pick a provider and model per conversation',
+                'Run hosted and self-hosted models side by side',
+                'Daily spend and token ceilings enforced server-side',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-3">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={100}>
+            <ul
+              aria-label="Supported providers"
+              className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3"
             >
-              {provider}
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Features Grid */}
-      <ScrollRevealSection id="features" className="scroll-mt-16 border-t border-border">
-        <SectionHeading
-          eyebrow="Everything you create"
-          title="One platform, every medium"
-          description="Start with text and code today. Images, video, audio, and team workspaces are landing next — on the same engine, in the same projects."
-        />
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3"
-        >
-          {FEATURES.map((feature, idx) => (
-            <motion.div
-              key={feature.slug}
-              variants={cardItemVariants}
-              custom={idx}
-              whileHover="hover"
-              initial="rest"
-            >
-              <Link href={`/features/${feature.slug}`} className="group">
-                <motion.div variants={cardHoverVariants}>
-                  <Card className="h-full transition-all group-hover:border-primary/30">
-                    <CardContent className="p-6">
-                      <div className="mb-4 text-3xl" aria-hidden>
-                        {feature.icon}
-                      </div>
-                      <div className="mb-2 flex items-center gap-2">
-                        <h3 className="text-lg font-semibold text-foreground">{feature.title}</h3>
-                        {feature.status === 'coming-soon' && (
-                          <Badge variant="secondary">Coming soon</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-muted-foreground">{feature.tagline}</p>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              </Link>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* AI Capabilities */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Capabilities"
-          title="Powered by the latest AI models"
-          description="Access the most advanced AI capabilities for every creative medium."
-        />
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-2"
-        >
-          {AI_CAPABILITIES.map((capability, idx) => (
-            <motion.div
-              key={capability.title}
-              variants={cardItemVariants}
-              custom={idx}
-              className="group rounded-lg border border-border/50 bg-gradient-to-br from-card to-background p-8 transition-all hover:border-primary/30 hover:shadow-md"
-            >
-              <motion.div
-                whileHover={{ scale: 1.1 }}
-                transition={{ duration: ANIMATION_DURATIONS.xs }}
-              >
-                <capability.icon className="mb-4 h-8 w-8 text-primary transition-transform" />
-              </motion.div>
-              <h3 className="mb-3 text-lg font-semibold text-foreground">{capability.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{capability.description}</p>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Workflow Section */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="How it works"
-          title="Intuitive workflow, powerful results"
-          description="From inspiration to execution, Synora streamlines the entire creative process."
-        />
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          {[
-            { step: '1', title: 'Create', desc: 'Start a new project or conversation' },
-            { step: '2', title: 'Generate', desc: 'Choose AI provider and model' },
-            { step: '3', title: 'Refine', desc: 'Branch, iterate, and perfect' },
-            { step: '4', title: 'Export', desc: 'Save, share, or integrate' },
-          ].map((item, idx) => (
-            <motion.div key={item.step} variants={cardItemVariants} custom={idx}>
-              <Card className="h-full bg-gradient-to-br from-primary/5 to-transparent">
-                <CardContent className="p-6">
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                    {item.step}
-                  </div>
-                  <h4 className="mb-2 font-semibold text-foreground">{item.title}</h4>
-                  <p className="text-sm text-muted-foreground">{item.desc}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Why Synora */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Why Synora"
-          title="Built like infrastructure, polished like a product"
-        />
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
-        >
-          {PILLARS.map((pillar, index) => (
-            <motion.div key={pillar.title} variants={cardItemVariants} custom={index}>
-              <Card>
-                <CardContent className="p-8">
-                  <pillar.icon aria-hidden className="mb-4 h-8 w-8 text-primary" />
-                  <h3 className="mb-2 text-lg font-semibold text-foreground">{pillar.title}</h3>
-                  <p className="text-sm leading-relaxed text-muted-foreground">{pillar.body}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Performance */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Performance"
-          title="Built for speed and scale"
-          description="Experience the fastest AI platform with enterprise-grade reliability."
-        />
-        <motion.div
-          variants={statContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4"
-        >
-          {PERFORMANCE_METRICS.map((item, idx) => (
-            <motion.div
-              key={item.metric}
-              variants={statItemVariants}
-              custom={idx}
-              className="rounded-lg bg-gradient-to-br from-primary/8 to-transparent p-6 text-center"
-            >
-              <div className="mb-2 text-3xl font-bold text-primary">{item.metric}</div>
-              <div className="text-sm text-muted-foreground">{item.label}</div>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
+              {PROVIDERS.map((provider) => (
+                <li
+                  key={provider}
+                  className="flex min-h-[72px] items-center justify-center bg-card px-3 py-4 text-center text-sm font-medium text-foreground"
+                >
+                  {provider}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+        </div>
+      </Section>
 
       {/* Security */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Security"
-          title="Enterprise-grade protection"
-          description="Your data is protected with industry-leading security practices."
-        />
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="mx-auto max-w-3xl"
-        >
-          <div className="rounded-lg border border-border/40 bg-gradient-to-br from-card to-background p-8 lg:p-10">
-            <div className="mb-8 flex items-center gap-3">
-              <Shield className="h-6 w-6 text-primary flex-shrink-0" />
-              <h3 className="text-lg font-semibold text-foreground">Security Features</h3>
-            </div>
-            <motion.div
-              variants={cardContainerVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true, amount: 0.2 }}
-              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-            >
-              {SECURITY_FEATURES.map((feature) => (
-                <motion.div key={feature} variants={cardItemVariants} className="flex items-start gap-3">
-                  <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-                  <span className="text-sm text-foreground">{feature}</span>
-                </motion.div>
-              ))}
-            </motion.div>
+      <div className="border-y border-border bg-card/40">
+        <Section id="security" className="scroll-mt-16">
+          <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
+            <Reveal>
+              <SectionHeading
+                align="left"
+                eyebrow="Security"
+                title="Controls that are implemented, listed plainly"
+                description="No badges for audits that have not happened. This is what protects an account today."
+              />
+              <div className="-mt-4 flex items-center gap-3 text-sm text-muted-foreground">
+                <span className="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-primary">
+                  <KeyRound className="h-4 w-4" aria-hidden />
+                </span>
+                Manage sessions and two-factor authentication from your account settings.
+              </div>
+            </Reveal>
+            <Reveal delay={100}>
+              <ul className="space-y-3">
+                {SECURITY_CONTROLS.map((control) => (
+                  <li key={control} className="flex items-start gap-3 text-sm text-foreground">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+                    {control}
+                  </li>
+                ))}
+              </ul>
+            </Reveal>
           </div>
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Developers */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="For Developers"
-          title="Powerful APIs and integrations"
-          description="Build on top of Synora with our comprehensive REST API and webhooks."
-        />
-        <motion.div
-          variants={cardContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
-        >
-          {[
-            {
-              title: 'REST API',
-              description: 'Full-featured API for managing conversations, generating content, and more.',
-              icon: Code2,
-            },
-            {
-              title: 'Webhooks',
-              description: 'Real-time events for generation complete, errors, and more.',
-              icon: Zap,
-            },
-            {
-              title: 'SDKs',
-              description: 'Official SDKs for JavaScript, Python, and more coming soon.',
-              icon: Users,
-            },
-          ].map((item, idx) => (
-            <motion.div key={item.title} variants={cardItemVariants} custom={idx}>
-              <Card className="h-full">
-                <CardContent className="p-6">
-                  <item.icon className="mb-4 h-8 w-8 text-primary" />
-                  <h3 className="mb-3 font-semibold text-foreground">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Pricing Preview */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Pricing"
-          title="Plans for every creator"
-          description="Free to start, pay as you grow. No hidden fees."
-        />
-        <motion.div
-          variants={pricingContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
-        >
-          {PRICING_PLANS.map((plan, idx) => (
-            <motion.div
-              key={plan.name}
-              variants={pricingPlanVariants}
-              custom={idx}
-              whileHover={{ y: -4 }}
-              transition={{ duration: ANIMATION_DURATIONS.xs }}
-            >
-              <Card
-                className={`relative h-full transition-all ${
-                  plan.highlighted ? 'border-primary/40 bg-gradient-to-br from-primary/5 to-transparent lg:scale-105' : ''
-                }`}
-              >
-                {plan.highlighted && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground">
-                    Most Popular
-                  </div>
-                )}
-                <CardContent className="p-8">
-                  <h3 className="mb-1 text-lg font-semibold text-foreground">{plan.name}</h3>
-                  <p className="mb-6 text-sm text-muted-foreground">{plan.description}</p>
-                  <div className="mb-8">
-                    <span className="text-4xl font-bold text-foreground">{plan.price}</span>
-                    {plan.period && <span className="text-sm text-muted-foreground">{plan.period}</span>}
-                  </div>
-                  <motion.div
-                    variants={buttonVariants}
-                    initial="rest"
-                    whileHover="hover"
-                    whileTap="tap"
-                    className="w-full"
-                  >
-                    <Button asChild className="mb-8 w-full" variant={plan.highlighted ? 'primary' : 'outline'}>
-                      <Link href="/auth/register">Get started</Link>
-                    </Button>
-                  </motion.div>
-                  <ul className="space-y-3">
-                    {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3 text-sm text-foreground">
-                        <Check className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" />
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
-
-      {/* Testimonials */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="Testimonials"
-          title="Loved by creators"
-          description="See what creators are building with Synora."
-        />
-        <motion.div
-          variants={testimonialContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="grid grid-cols-1 gap-6 lg:grid-cols-3"
-        >
-          {TESTIMONIALS.map((testimonial, idx) => (
-            <motion.div
-              key={testimonial.author}
-              variants={testimonialCardVariants}
-              custom={idx}
-            >
-              <Card>
-                <CardContent className="p-6 flex flex-col h-full">
-                  <p className="mb-6 text-sm leading-relaxed text-muted-foreground italic flex-1">
-                    "{testimonial.content}"
-                  </p>
-                  <div className="flex items-center gap-3 border-t border-border/20 pt-4">
-                    <div className="text-2xl" aria-hidden>
-                      {testimonial.avatar}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-foreground">{testimonial.author}</p>
-                      <p className="text-xs text-muted-foreground">{testimonial.role}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-          ))}
-        </motion.div>
-      </ScrollRevealSection>
+        </Section>
+      </div>
 
       {/* FAQ */}
-      <ScrollRevealSection className="border-t border-border">
-        <SectionHeading
-          eyebrow="FAQ"
-          title="Frequently asked questions"
-          description="Everything you need to know about Synora."
-        />
-        <motion.div
-          variants={faqContainerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.2 }}
-          className="mx-auto max-w-2xl space-y-3"
-        >
-          {FAQ_ITEMS.map((item, idx) => (
-            <motion.div key={item.question} variants={faqItemVariants} custom={idx}>
-              <Card className="overflow-hidden">
-                <CardContent className="p-0">
-                  <details className="group">
-                    <summary className="flex cursor-pointer items-center justify-between px-6 py-4 font-semibold text-foreground hover:bg-card/50 transition-colors">
-                      {item.question}
-                      <motion.div
-                        animate={{ rotate: 0 }}
-                        className="group-open:rotate-180 transition-transform"
-                      >
-                        <ChevronDown className="h-5 w-5 flex-shrink-0" />
-                      </motion.div>
-                    </summary>
-                    <p className="border-t border-border/30 px-6 py-4 text-sm text-muted-foreground">{item.answer}</p>
-                  </details>
-                </CardContent>
-              </Card>
-            </motion.div>
+      <Section id="faq" className="scroll-mt-16">
+        <Reveal>
+          <SectionHeading title="Frequently asked questions" />
+        </Reveal>
+        <div className="mx-auto max-w-3xl divide-y divide-border border-y border-border">
+          {FAQ_ITEMS.map((item) => (
+            <details key={item.question} className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left text-[15px] font-medium text-foreground [&::-webkit-details-marker]:hidden">
+                {item.question}
+                <Plus
+                  className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 group-open:rotate-45"
+                  aria-hidden
+                />
+              </summary>
+              <p className="pb-5 pr-8 text-sm leading-relaxed text-muted-foreground">{item.answer}</p>
+            </details>
           ))}
-        </motion.div>
-      </ScrollRevealSection>
+        </div>
+      </Section>
 
-      {/* Final CTA */}
-      <ScrollRevealSection className="border-t border-border">
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.3 }}
-          variants={footerRevealVariants}
-          className="relative overflow-hidden rounded-2xl border border-border/40 bg-gradient-to-br from-primary/12 via-background to-fuchsia-500/8 p-12 text-center sm:p-16 lg:p-20"
-        >
-          <h2 className="mx-auto max-w-2xl text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-            Start creating today. Free forever.
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground sm:text-base">
-            No credit card required. No waiting. Get instant access to all AI providers and start with 10 free conversations.
-          </p>
-          <motion.div
-            variants={buttonVariants}
-            initial="rest"
-            whileHover="hover"
-            whileTap="tap"
-            className="mt-8 inline-block"
-          >
-            <Button asChild size="lg">
-              <Link href="/auth/register">Start free now</Link>
-            </Button>
-          </motion.div>
-        </motion.div>
-      </ScrollRevealSection>
-    </motion.div>
+      {/* Closing call to action */}
+      <Section className="pt-0">
+        <Reveal>
+          <div className="relative overflow-hidden rounded-2xl border border-border bg-card px-6 py-14 text-center sm:px-12 sm:py-20">
+            <div
+              aria-hidden
+              className="bg-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black,transparent_75%)]"
+            />
+            <div className="relative">
+              <h2 className="mx-auto max-w-xl text-3xl font-semibold tracking-tightest text-foreground sm:text-4xl">
+                Have an invitation? Set up your workspace.
+              </h2>
+              <p className="mx-auto mt-4 max-w-lg text-base text-muted-foreground">
+                Register with the email address you were invited on, or sign in to pick up where
+                you left off.
+              </p>
+              <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                <Button asChild size="lg" className="w-full sm:w-auto">
+                  <Link href="/auth/register">
+                    Create an account <ArrowRight aria-hidden />
+                  </Link>
+                </Button>
+                <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
+                  <Link href="/auth/login">Sign in</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+      </Section>
+    </>
   );
 }

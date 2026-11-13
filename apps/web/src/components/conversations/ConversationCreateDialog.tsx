@@ -1,10 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Zap, Sparkles } from 'lucide-react';
+import { Zap, Sparkles } from 'lucide-react';
 import { PromptSelector } from './PromptSelector';
 import { ModelPicker, type ModelPickerValue } from '@/components/chat/ModelPicker';
-import { Button } from '@synora/design-system';
+import {
+  Button,
+  Input,
+  Label,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  cn,
+} from '@synora/design-system';
 import { toast } from 'sonner';
 
 interface ConversationCreateDialogProps {
@@ -34,8 +44,6 @@ export function ConversationCreateDialog({
   const [tab, setTab] = useState<'blank' | 'template' | 'prompt'>('blank');
   const [title, setTitle] = useState('');
   const [model, setModel] = useState<ModelPickerValue>(defaultModel);
-
-  if (!isOpen) return null;
 
   const handleCreateBasic = async () => {
     if (!title.trim()) {
@@ -71,72 +79,63 @@ export function ConversationCreateDialog({
     }
   };
 
+  const tabClass =
+    'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+  const inactiveTab = 'border-transparent text-muted-foreground hover:text-foreground';
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full mx-4">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            New Conversation
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-          >
-            <X className="w-5 h-5" />
-          </button>
+    <Dialog open={isOpen} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-w-2xl gap-0 p-0">
+        <DialogHeader className="border-b border-border p-6">
+          <DialogTitle className="text-xl">New Conversation</DialogTitle>
+          <DialogDescription className="sr-only">
+            Start blank, or from a template or saved prompt.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div role="tablist" aria-label="How to start" className="flex overflow-x-auto border-b border-border px-6">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'blank'}
+              onClick={() => setTab('blank')}
+              className={cn(tabClass, tab === 'blank' ? 'border-primary text-primary' : inactiveTab)}
+            >
+              Blank
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'template'}
+              onClick={() => setTab('template')}
+              className={cn(tabClass, tab === 'template' ? 'border-primary text-primary' : inactiveTab)}
+            >
+              <Zap aria-hidden className="w-4 h-4" />
+              From Template
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'prompt'}
+              onClick={() => setTab('prompt')}
+              className={cn(tabClass, tab === 'prompt' ? 'border-primary text-primary' : inactiveTab)}
+            >
+              <Sparkles aria-hidden className="w-4 h-4" />
+              From Prompt
+            </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700 px-6">
-          <button
-            onClick={() => setTab('blank')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'blank'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            Blank
-          </button>
-          <button
-            onClick={() => setTab('template')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'template'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <Zap className="w-4 h-4" />
-            From Template
-          </button>
-          <button
-            onClick={() => setTab('prompt')}
-            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              tab === 'prompt'
-                ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <Sparkles className="w-4 h-4" />
-            From Prompt
-          </button>
-        </div>
-
-        {/* Content */}
         <div className="p-6">
           {tab === 'blank' && (
             <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                  Conversation Title
-                </label>
-                <input
+              <div className="space-y-2">
+                <Label htmlFor="conversation-title">Conversation Title</Label>
+                <Input
+                  id="conversation-title"
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="e.g., Project brainstorm, Code review..."
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleCreateBasic();
@@ -145,13 +144,11 @@ export function ConversationCreateDialog({
                   disabled={isLoading}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                  Model
-                </label>
+              <div className="space-y-2">
+                <Label>Model</Label>
                 <ModelPicker value={model} onChange={setModel} disabled={isLoading} />
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+              <p className="text-sm text-muted-foreground">
                 Start a new conversation. You can change the model any time later.
               </p>
             </div>
@@ -159,7 +156,7 @@ export function ConversationCreateDialog({
 
           {tab === 'template' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              <p className="text-sm text-muted-foreground">
                 Select a template to get started with a pre-configured conversation
               </p>
               <PromptSelector
@@ -172,8 +169,8 @@ export function ConversationCreateDialog({
 
           {tab === 'prompt' && (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Choose a prompt to use as your conversation's system instructions
+              <p className="text-sm text-muted-foreground">
+                Choose a prompt to use as your conversation&apos;s system instructions
               </p>
               <PromptSelector
                 workspaceId={workspaceId}
@@ -184,9 +181,8 @@ export function ConversationCreateDialog({
           )}
         </div>
 
-        {/* Footer */}
         {tab === 'blank' && (
-          <div className="flex gap-3 p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 rounded-b-lg">
+          <div className="flex flex-col-reverse gap-3 rounded-b-lg border-t border-border bg-muted p-6 sm:flex-row">
             <Button variant="outline" onClick={onClose} disabled={isLoading}>
               Cancel
             </Button>
@@ -195,7 +191,7 @@ export function ConversationCreateDialog({
             </Button>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

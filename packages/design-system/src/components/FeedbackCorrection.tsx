@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useId, useState } from 'react'
 import { Button } from './Button'
 
 const CORRECTION_TYPES = [
@@ -13,6 +13,12 @@ const CORRECTION_TYPES = [
   'TECHNICAL',
   'OTHER',
 ]
+
+/** Shared look for the compact fields in the feedback forms. Token-only, so
+ *  both themes follow tokens.css without `dark:` overrides. */
+export const feedbackFieldClass =
+  'w-full rounded-md border border-input bg-background px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60'
+export const feedbackLabelClass = 'mb-1 block text-xs font-medium text-foreground'
 
 export interface FeedbackCorrectionProps {
   originalContent: string
@@ -36,6 +42,7 @@ export function FeedbackCorrection({
   const [correctionType, setCorrectionType] = useState(CORRECTION_TYPES[0])
   const [reason, setReason] = useState('')
   const [confidence, setConfidence] = useState(0.8)
+  const id = useId()
 
   const handleSubmit = async () => {
     if (!correctedContent.trim()) return
@@ -53,39 +60,39 @@ export function FeedbackCorrection({
   }
 
   return (
-    <div className="space-y-3 rounded-lg bg-slate-50 p-4 dark:bg-slate-900">
+    <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-4">
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
-          Original
-        </label>
-        <div className="rounded-md border border-slate-200 bg-white p-2 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+        <p className={feedbackLabelClass}>Original</p>
+        <div className="rounded-md border border-border bg-background p-2 text-xs text-muted-foreground">
           {originalContent}
         </div>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-corrected`} className={feedbackLabelClass}>
           Corrected
         </label>
         <textarea
+          id={`${id}-corrected`}
           value={correctedContent}
           onChange={(e) => setCorrectedContent(e.target.value)}
           placeholder="Enter the corrected version..."
           disabled={isLoading}
-          className="w-full resize-none rounded-md border border-slate-200 bg-white p-2 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={`${feedbackFieldClass} resize-none p-2`}
           rows={3}
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-type`} className={feedbackLabelClass}>
           Type of correction
         </label>
         <select
+          id={`${id}-type`}
           value={correctionType}
           onChange={(e) => setCorrectionType(e.target.value)}
           disabled={isLoading}
-          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          className={feedbackFieldClass}
         >
           {CORRECTION_TYPES.map((type) => (
             <option key={type} value={type}>
@@ -96,24 +103,26 @@ export function FeedbackCorrection({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-reason`} className={feedbackLabelClass}>
           Reason (optional)
         </label>
         <input
+          id={`${id}-reason`}
           type="text"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           placeholder="Why this correction?"
           disabled={isLoading}
-          className="w-full rounded-md border border-slate-200 bg-white px-2 py-1 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={feedbackFieldClass}
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-confidence`} className={feedbackLabelClass}>
           Confidence: {(confidence * 100).toFixed(0)}%
         </label>
         <input
+          id={`${id}-confidence`}
           type="range"
           min="0"
           max="1"
@@ -121,7 +130,7 @@ export function FeedbackCorrection({
           value={confidence}
           onChange={(e) => setConfidence(parseFloat(e.target.value))}
           disabled={isLoading}
-          className="w-full"
+          className="w-full accent-primary"
         />
       </div>
 

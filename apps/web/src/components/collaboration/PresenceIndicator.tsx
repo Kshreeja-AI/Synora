@@ -69,7 +69,7 @@ export function PresenceIndicator({
               )}
               {participant.isTyping && (
                 <span
-                  className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-blue-500"
+                  className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-primary"
                   aria-hidden
                 />
               )}

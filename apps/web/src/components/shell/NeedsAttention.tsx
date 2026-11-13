@@ -50,10 +50,10 @@ export function NeedsAttention({ workspaceId }: { workspaceId: string }) {
   if (failed.length === 0) return null;
 
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-labelledby="attention-heading">
+    <section className="space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm" aria-labelledby="attention-heading">
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-destructive" aria-hidden />
-        <h2 id="attention-heading" className="font-semibold">
+        <h2 id="attention-heading" className="text-sm font-semibold">
           Needs attention
         </h2>
       </div>
@@ -62,7 +62,7 @@ export function NeedsAttention({ workspaceId }: { workspaceId: string }) {
         {failed.map((run) => {
           const agent = agents.find((a) => a.lineageId === run.lineageId);
           return (
-            <li key={run.id} className="rounded-md border p-3 text-sm">
+            <li key={run.id} className="rounded-md border border-border bg-background/40 p-3 text-sm">
               <p className="font-medium">{run.task || 'Untitled run'}</p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {agent?.name ?? 'An agent'} ·{' '}

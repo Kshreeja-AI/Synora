@@ -120,7 +120,7 @@ export default function PluginsPage() {
 
       <div
         role="note"
-        className="rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200"
+        className="rounded-md border border-primary/30 bg-primary/10 p-3 text-sm text-primary "
       >
         <p className="font-semibold">Plugins do not run code</p>
         <p>
@@ -156,7 +156,7 @@ export default function PluginsPage() {
           </p>
 
           {preview && (
-            <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950/40">
+            <div className="space-y-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm ">
               <p className="font-semibold">
                 Before you install {preview.name} v{preview.version}
               </p>
@@ -260,7 +260,7 @@ export default function PluginsPage() {
                 <span
                   className={
                     p.state === 'enabled'
-                      ? 'rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                      ? 'rounded bg-success/10 px-1.5 py-0.5 text-xs text-success '
                       : 'rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'
                   }
                 >

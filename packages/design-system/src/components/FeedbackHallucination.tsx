@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useId, useState } from 'react'
 import { AlertTriangle, Link as LinkIcon } from 'lucide-react'
 import { Button } from './Button'
+import { feedbackFieldClass, feedbackLabelClass } from './FeedbackCorrection'
 
 const SEVERITY_LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
 const CATEGORIES = [
@@ -27,6 +28,16 @@ export interface FeedbackHallucinationProps {
   isLoading?: boolean
 }
 
+/* Severity tints the panel through the warning/destructive tokens. The
+   selected level is also stated in the Severity field, so colour is never
+   the only carrier of it. */
+const severityColors = {
+  LOW: 'bg-warning/5 border-warning/30',
+  MEDIUM: 'bg-warning/10 border-warning/50',
+  HIGH: 'bg-destructive/5 border-destructive/40',
+  CRITICAL: 'bg-destructive/10 border-destructive/70',
+}
+
 export function FeedbackHallucination({
   messageContent: _unused,
   onSubmit,
@@ -39,6 +50,7 @@ export function FeedbackHallucination({
   const [category, setCategory] = useState(CATEGORIES[0])
   const [evidence, setEvidence] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
+  const id = useId()
 
   const handleSubmit = async () => {
     if (!hallucinatedText.trim() || !factualCorrection.trim()) return
@@ -60,58 +72,54 @@ export function FeedbackHallucination({
     setSourceUrl('')
   }
 
-  const severityColors = {
-    LOW: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800',
-    MEDIUM: 'bg-orange-50 border-orange-200 dark:bg-orange-950 dark:border-orange-800',
-    HIGH: 'bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800',
-    CRITICAL: 'bg-red-100 border-red-300 dark:bg-red-900 dark:border-red-700',
-  }
-
   return (
     <div className={`space-y-3 rounded-lg border-2 p-4 ${severityColors[severity as keyof typeof severityColors]}`}>
       <div className="flex items-start gap-2">
-        <AlertTriangle size={16} className="mt-0.5 flex-shrink-0 text-red-600 dark:text-red-400" />
-        <p className="text-xs font-medium text-slate-700 dark:text-slate-300">Report a hallucination</p>
+        <AlertTriangle size={16} aria-hidden className="mt-0.5 flex-shrink-0 text-destructive" />
+        <p className="text-xs font-medium text-foreground">Report a hallucination</p>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-quote`} className={feedbackLabelClass}>
           Hallucinated text (quote from message)
         </label>
         <textarea
+          id={`${id}-quote`}
           value={hallucinatedText}
           onChange={(e) => setHallucinatedText(e.target.value)}
           placeholder="Copy the incorrect text from the message..."
           disabled={isLoading}
-          className="w-full resize-none rounded-md border border-slate-300 bg-white p-2 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={`${feedbackFieldClass} resize-none p-2`}
           rows={2}
         />
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-correction`} className={feedbackLabelClass}>
           Factual correction
         </label>
         <textarea
+          id={`${id}-correction`}
           value={factualCorrection}
           onChange={(e) => setFactualCorrection(e.target.value)}
           placeholder="What is the correct information?"
           disabled={isLoading}
-          className="w-full resize-none rounded-md border border-slate-300 bg-white p-2 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={`${feedbackFieldClass} resize-none p-2`}
           rows={2}
         />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+          <label htmlFor={`${id}-severity`} className={feedbackLabelClass}>
             Severity
           </label>
           <select
+            id={`${id}-severity`}
             value={severity}
             onChange={(e) => setSeverity(e.target.value)}
             disabled={isLoading}
-            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            className={feedbackFieldClass}
           >
             {SEVERITY_LEVELS.map((level) => (
               <option key={level} value={level}>
@@ -122,14 +130,15 @@ export function FeedbackHallucination({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+          <label htmlFor={`${id}-category`} className={feedbackLabelClass}>
             Category
           </label>
           <select
+            id={`${id}-category`}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={isLoading}
-            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            className={feedbackFieldClass}
           >
             {CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>
@@ -141,31 +150,33 @@ export function FeedbackHallucination({
       </div>
 
       <div>
-        <label className="mb-1 block text-xs font-medium text-slate-700 dark:text-slate-300">
+        <label htmlFor={`${id}-evidence`} className={feedbackLabelClass}>
           Evidence (optional)
         </label>
         <textarea
+          id={`${id}-evidence`}
           value={evidence}
           onChange={(e) => setEvidence(e.target.value)}
           placeholder="Why is this incorrect? (e.g., citation, fact check)"
           disabled={isLoading}
-          className="w-full resize-none rounded-md border border-slate-300 bg-white p-2 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={`${feedbackFieldClass} resize-none p-2`}
           rows={2}
         />
       </div>
 
       <div>
-        <label className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-300">
-          <LinkIcon size={12} />
+        <label htmlFor={`${id}-source`} className={`${feedbackLabelClass} flex items-center gap-1`}>
+          <LinkIcon size={12} aria-hidden />
           Source URL (optional)
         </label>
         <input
+          id={`${id}-source`}
           type="url"
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
           placeholder="https://example.com/fact-check"
           disabled={isLoading}
-          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/10 disabled:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+          className={feedbackFieldClass}
         />
       </div>
 

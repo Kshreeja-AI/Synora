@@ -4,8 +4,8 @@ import { LoginForm } from './LoginForm';
 
 function LoginFormFallback(): React.JSX.Element {
   return (
-    <Card>
-      <CardContent className="space-y-4 p-8">
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="space-y-4 p-0">
         <Skeleton className="mx-auto h-8 w-32" />
         <Skeleton className="h-9 w-full" />
         <Skeleton className="h-9 w-full" />
