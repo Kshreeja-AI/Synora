@@ -28,6 +28,8 @@ export interface AIModel {
 }
 
 export type ModelCapability =
+  | 'text-generation'
+  | 'code-generation'
   | 'chat'
   | 'completion'
   | 'streaming'
@@ -39,6 +41,10 @@ export type ModelCapability =
   | 'reasoning'
   | 'embeddings'
   | 'image-generation'
+  | 'text-to-speech'
+  | 'decision'
+  | 'evaluation'
+  | 'rag'
   | 'function-calling';
 
 export interface CapabilityMatrix {

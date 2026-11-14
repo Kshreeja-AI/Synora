@@ -9,14 +9,22 @@
  * model ships is worth the payoff — the picker gets accurate metadata and
  * the platform never surprises a user with "model X was silently deprecated".
  *
- * Every entry that appears here MUST work at inference time. If a provider
- * removes a model, remove it from here in the same change so a user cannot
- * pick something we can no longer serve.
+ * Catalog entries are retained even when Synora cannot invoke the model's
+ * modality yet. `roles` describes the vendor's model contract;
+ * `capabilitySupport` and `availability` describe what this deployment can
+ * route and what OpenRouter currently lists.
  */
 
 import { PROVIDER_REGISTRY } from './registry';
 import { getConfig } from '../config';
 import type { AICapability } from './types';
+import type { ModelCapability } from './core/types';
+import { EMBEDDING_PROVIDER_REGISTRY } from '../embeddings/registry';
+import { IMAGE_PROVIDER_REGISTRY } from './imageRegistry';
+import { TTS_PROVIDER_REGISTRY } from './ttsRegistry';
+import { discoverOpenRouterModelAvailability } from './providers/openrouter.provider';
+
+export type ModelCapabilityReadiness = 'supported' | 'metadata-only';
 
 export interface ModelCard {
   /** Wire model id sent to the provider — do not localize or rewrite. */
@@ -41,6 +49,8 @@ export interface ModelCard {
     readonly streaming?: boolean;
     readonly thinking?: boolean;
   };
+  /** Vendor model roles, expressed with the core router's capability vocabulary. */
+  readonly roles?: readonly ModelCapability[];
   /**
    * Cost estimate for display in the picker. USD per 1M tokens (millions
    * scales nicer on-screen than per-1k for frontier models). Kept separate
@@ -61,6 +71,10 @@ export interface ModelCard {
 /** A model card plus what Synora can actually do with it here. */
 export interface ResolvedModelCard extends ModelCard {
   readonly synoraSupports: SynoraModelSupport;
+  /** A role is supported only when Synora has a matching adapter path. */
+  readonly capabilitySupport: Partial<Record<ModelCapability, ModelCapabilityReadiness>>;
+  /** Live OpenRouter discovery result; omitted for providers without discovery. */
+  readonly availability?: 'available' | 'unavailable' | 'unknown';
 }
 
 export interface ProviderCatalog {
@@ -68,6 +82,60 @@ export interface ProviderCatalog {
   readonly providerName: string;
   readonly configured: boolean;
   readonly models: readonly ResolvedModelCard[];
+}
+
+export function negotiateCapabilitySupport(
+  model: ModelCard,
+  providerId: string,
+  providerCapabilities: readonly AICapability[]
+): Partial<Record<ModelCapability, ModelCapabilityReadiness>> {
+  const support: Partial<Record<ModelCapability, ModelCapabilityReadiness>> = {};
+  for (const role of model.roles ?? []) {
+    switch (role) {
+      case 'text-generation':
+      case 'code-generation':
+      case 'reasoning':
+        support[role] = providerCapabilities.includes('text-generation')
+          ? 'supported'
+          : 'metadata-only';
+        break;
+      case 'tool-calling':
+        support[role] = model.capabilities.toolUse === true &&
+          providerCapabilities.includes('tool-calling')
+          ? 'supported'
+          : 'metadata-only';
+        break;
+      case 'embeddings':
+        support[role] = providerId === 'openrouter' &&
+          EMBEDDING_PROVIDER_REGISTRY.some((descriptor) => descriptor.id === providerId) &&
+          !model.roles?.includes('vision')
+          ? 'supported'
+          : 'metadata-only';
+        break;
+      case 'image-generation':
+        support[role] = providerId === 'openrouter' &&
+          IMAGE_PROVIDER_REGISTRY.some((descriptor) => descriptor.id === providerId)
+          ? 'supported'
+          : 'metadata-only';
+        break;
+      case 'text-to-speech':
+        support[role] = providerId === 'openrouter' &&
+          TTS_PROVIDER_REGISTRY.some((descriptor) => descriptor.id === providerId)
+          ? 'supported'
+          : 'metadata-only';
+        break;
+      // Text requests cannot carry image references. There is no OpenRouter
+      // decision/evaluation contract in Synora yet; RAG is a pipeline role,
+      // not an endpoint exposed by an individual text model.
+      case 'vision':
+      case 'decision':
+      case 'evaluation':
+      case 'rag':
+      default:
+        support[role] = 'metadata-only';
+    }
+  }
+  return support;
 }
 
 const ANTHROPIC_MODELS: readonly ModelCard[] = [
@@ -205,6 +273,155 @@ const OPENROUTER_MODELS: readonly ModelCard[] = [
     description: 'Route OpenAI traffic through OpenRouter.',
     contextWindow: 128_000,
     capabilities: { vision: true, toolUse: true, streaming: true },
+  },
+  {
+    id: 'thinkingmachines/inkling-small:free',
+    label: 'Inkling Small (free)',
+    description: 'Multimodal reasoning model for coding, agents and retrieval.',
+    contextWindow: 1_048_576,
+    capabilities: { vision: true, toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'vision', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'nvidia/nemotron-3.5-lightning:free',
+    label: 'Nemotron 3.5 Lightning (free)',
+    description: 'High-throughput text model for agentic workloads.',
+    contextWindow: 1_000_000,
+    capabilities: { reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'inclusionai/ming-image-0.1-design-layer',
+    label: 'Ming Image 0.1 Design Layer',
+    description: 'Separates a design reference into editable image layers.',
+    contextWindow: 0,
+    capabilities: { vision: true },
+    roles: ['image-generation', 'vision'],
+  },
+  {
+    id: 'fish-audio/s2.1-pro-free:free',
+    label: 'Fish Audio S2.1 Pro (free)',
+    description: 'Multilingual text-to-speech for testing and low-volume use.',
+    contextWindow: 0,
+    capabilities: {},
+    roles: ['text-to-speech'],
+  },
+  {
+    id: 'inception/mercury-decide:free',
+    label: 'Mercury Decide (free)',
+    description: 'Returns calibrated choices, scores or yes/no decisions.',
+    contextWindow: 32_768,
+    capabilities: {},
+    roles: ['decision'],
+  },
+  {
+    id: 'respan/span-01-lite:free',
+    label: 'Span-01 Lite (free)',
+    description: 'Scores conversation spans for behaviors and evaluation signals.',
+    contextWindow: 0,
+    capabilities: {},
+    roles: ['decision', 'evaluation'],
+  },
+  {
+    id: 'liquid/lfm-2.5-embedding-350m:free',
+    label: 'LFM 2.5 Embedding 350M (free)',
+    description: 'Text embeddings for semantic retrieval and RAG.',
+    contextWindow: 8_192,
+    capabilities: {},
+    roles: ['embeddings', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'google/gemma-4-31b-it:free',
+    label: 'Gemma 4 31B IT (free)',
+    description: 'Multimodal instruction model with configurable reasoning and tools.',
+    contextWindow: 262_144,
+    capabilities: { vision: true, toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'vision', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'nvidia/nemotron-3-ultra:free',
+    label: 'Nemotron 3 Ultra (free)',
+    description: 'Long-context reasoning model for orchestration and research.',
+    contextWindow: 1_000_000,
+    capabilities: { toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'nvidia/nemotron-3-super:free',
+    label: 'Nemotron 3 Super (free)',
+    description: 'Reasoning model for multi-agent and long-running workflows.',
+    contextWindow: 262_144,
+    capabilities: { toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'qwen/qwen3.8-27b:free',
+    label: 'Qwen3.8 27B (free)',
+    description: 'Vision-language model for coding, research and agent tasks.',
+    contextWindow: 262_144,
+    capabilities: { vision: true, toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'vision', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'dots-studio/dots3-note-preview:free',
+    label: 'Dots3-Note Preview (free)',
+    description: 'Long-context multimodal reasoning model for coding and agents.',
+    contextWindow: 512_000,
+    capabilities: { vision: true, toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'vision', 'tool-calling'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'liquid/lfm2.5-2.6b:free',
+    label: 'LFM2.5 2.6B (free)',
+    description: 'Compact text model with built-in reasoning.',
+    contextWindow: 65_536,
+    capabilities: { reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'reasoning'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'nvidia/nemotron-3-embed-1b:free',
+    label: 'Nemotron 3 Embed 1B (free)',
+    description: 'Text embeddings optimized for retrieval and RAG.',
+    contextWindow: 32_768,
+    capabilities: {},
+    roles: ['embeddings', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'nvidia/llama-nemotron-embed-vl-1b-v2:free',
+    label: 'Llama Nemotron Embed VL 1B V2 (free)',
+    description: 'Text and image embeddings for multimodal retrieval.',
+    contextWindow: 131_072,
+    capabilities: { vision: true },
+    roles: ['embeddings', 'vision', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'google/gemma-4-26b-a4b-it:free',
+    label: 'Gemma 4 26B A4B IT (free)',
+    description: 'Efficient multimodal instruction model with reasoning and tools.',
+    contextWindow: 262_144,
+    capabilities: { vision: true, toolUse: true, reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning', 'vision', 'tool-calling', 'rag'],
+    pricePerMillion: { input: 0, output: 0 },
+  },
+  {
+    id: 'poolside/laguna-s-2.1:free',
+    label: 'Laguna S 2.1 (free)',
+    description: 'Coding-focused model for software engineering agents.',
+    contextWindow: 262_144,
+    capabilities: { reasoning: true, streaming: true, thinking: true },
+    roles: ['text-generation', 'code-generation', 'reasoning'],
+    pricePerMillion: { input: 0, output: 0 },
   },
 ];
 
@@ -414,18 +631,30 @@ export function modelCatalogGaps(): { providersWithoutModels: string[]; orphaned
  */
 export async function listAvailableModels(): Promise<ProviderCatalog[]> {
   return Promise.all(
-    PROVIDER_REGISTRY.map(async (descriptor) => ({
-      providerId: descriptor.id,
-      providerName: descriptor.displayName,
-      configured: await descriptor.isConfigured(),
-      models: catalogFor(descriptor.id).map((model) => ({
-        ...model,
-        // Negotiated per model AND per provider: the same model reached
-        // through two providers can be usable differently, because the
-        // limit is Synora's adapter, not the model.
-        synoraSupports: negotiateModelSupport(model, descriptor.id, descriptor.capabilities),
-      })),
-    }))
+    PROVIDER_REGISTRY.map(async (descriptor) => {
+      const configured = await descriptor.isConfigured();
+      const cards = catalogFor(descriptor.id);
+      const availability = descriptor.id === 'openrouter' && configured
+        ? await discoverOpenRouterModelAvailability(cards).catch(() => undefined)
+        : undefined;
+
+      return {
+        providerId: descriptor.id,
+        providerName: descriptor.displayName,
+        configured,
+        models: cards.map((model) => ({
+          ...model,
+          // Negotiated per model AND per provider: the same model reached
+          // through two providers can be usable differently, because the
+          // limit is Synora's adapter, not the model.
+          synoraSupports: negotiateModelSupport(model, descriptor.id, descriptor.capabilities),
+          capabilitySupport: negotiateCapabilitySupport(model, descriptor.id, descriptor.capabilities),
+          ...(descriptor.id === 'openrouter'
+            ? { availability: availability?.get(model.id) ?? 'unknown' }
+            : {}),
+        })),
+      };
+    })
   );
 }
 
