@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Bell, Copy, Loader2, Pause, Play, Trash2, Webhook } from 'lucide-react';
 import { Button } from '@synora/design-system';
 import { toast } from 'sonner';
-import { getApiBaseUrl } from '@/lib/api/client';
+import { getPublicApiUrl } from '@/lib/api/client';
 import {
   useCreateEventTrigger,
   useCreateTrigger,
@@ -61,7 +61,7 @@ export function TriggerPanel({
   function add() {
     create.mutate(workflowId, {
       onSuccess: (created) => {
-        setRevealedUrl(`${getApiBaseUrl()}/api/hooks/workflows/${created.secret}`);
+        setRevealedUrl(`${getPublicApiUrl()}/api/hooks/workflows/${created.secret}`);
         toast.success('Trigger created');
       },
       onError: (e) => toast.error(e.message),
