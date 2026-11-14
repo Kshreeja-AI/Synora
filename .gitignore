@@ -190,3 +190,7 @@ apps/backend/exports/
 apps/web/e2e/.results/
 apps/web/test-results/
 apps/web/playwright-report/
+
+# Never commit local Claude session config
+.claude/settings.local.json
+.claude/.claude/settings.local.json
