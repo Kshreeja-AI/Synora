@@ -69,15 +69,15 @@ describe('MemoryCacheService — user isolation', () => {
 
   it('stores and retrieves a search result for a user', async () => {
     await cache.cacheSearchResults('ws-1', scope('user-1'), fakeResults)
-    const hit = await cache.getCachedSearch('ws-1', scope('user-1'))
+    const hit = await cache.getCachedSearchResults('ws-1', scope('user-1'))
     expect(hit).toEqual(fakeResults)
   })
 
-  it('user-2 cannot read user-1's cached search results in the same workspace', async () => {
+  it('user-2 cannot read user-1 cached search results in the same workspace', async () => {
     await cache.cacheSearchResults('ws-1', scope('user-1'), fakeResults)
 
     // user-2 uses the identical query params but a different userId
-    const miss = await cache.getCachedSearch('ws-1', scope('user-2'))
+    const miss = await cache.getCachedSearchResults('ws-1', scope('user-2'))
     expect(miss).toBeNull()
   })
 
@@ -88,10 +88,10 @@ describe('MemoryCacheService — user isolation', () => {
     await cache.cacheSearchResults('ws-1', scope('user-1'), user1Results)
     await cache.cacheSearchResults('ws-1', scope('user-2'), user2Results)
 
-    const user1Hit = await cache.getCachedSearch('ws-1', scope('user-1'))
+    const user1Hit = await cache.getCachedSearchResults('ws-1', scope('user-1'))
     expect(user1Hit?.memories[0]?.id).toBe('user1-mem')
 
-    const user2Hit = await cache.getCachedSearch('ws-1', scope('user-2'))
+    const user2Hit = await cache.getCachedSearchResults('ws-1', scope('user-2'))
     expect(user2Hit?.memories[0]?.id).toBe('user2-mem')
   })
 })
