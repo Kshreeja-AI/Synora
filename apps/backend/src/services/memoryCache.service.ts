@@ -1,6 +1,20 @@
 import { Memory } from '@synora/database'
+import { createHash } from 'node:crypto'
 import { logger } from '../utils/logger'
 import { CacheBackend, resolveMemoryCacheBackend } from './memoryCache/backend'
+
+export interface MemorySearchCacheScope {
+  userId: string
+  conversationId?: string
+  type?: string
+  status?: string
+  tags: string[]
+  searchTerm?: string
+  limit: number
+  offset: number
+  pinnedOnly: boolean
+  archivedOnly: boolean
+}
 
 export class MemoryCacheService {
   private readonly MEMORY_PREFIX = 'memory:'
@@ -12,16 +26,21 @@ export class MemoryCacheService {
   /**
    * Cache a memory
    */
-  async cacheMemory(memory: Memory, ttl: number = 15 * 60 * 1000): Promise<void> {
-    const key = `${this.MEMORY_PREFIX}${memory.id}`
+  async cacheMemory(
+    memory: Memory,
+    userId: string = memory.userId,
+    workspaceId: string = memory.workspaceId,
+    ttl: number = 15 * 60 * 1000,
+  ): Promise<void> {
+    const key = this.memoryKey(memory.id, userId, workspaceId)
     await this.cache.set(key, memory, ttl)
   }
 
   /**
    * Get cached memory
    */
-  async getCachedMemory(memoryId: string): Promise<Memory | null> {
-    const key = `${this.MEMORY_PREFIX}${memoryId}`
+  async getCachedMemory(memoryId: string, userId: string, workspaceId: string): Promise<Memory | null> {
+    const key = this.memoryKey(memoryId, userId, workspaceId)
     return this.cache.get<Memory>(key)
   }
 
@@ -30,11 +49,11 @@ export class MemoryCacheService {
    */
   async cacheSearchResults(
     workspaceId: string,
-    query: string,
+    scope: MemorySearchCacheScope,
     results: { memories: Memory[]; total: number },
     ttl: number = 5 * 60 * 1000,
   ): Promise<void> {
-    const key = `${this.SEARCH_PREFIX}${workspaceId}:${this.hashQuery(query)}`
+    const key = `${this.SEARCH_PREFIX}${workspaceId}:${this.hashQuery(JSON.stringify(scope))}`
     await this.cache.set(key, results, ttl)
   }
 
@@ -43,9 +62,9 @@ export class MemoryCacheService {
    */
   async getCachedSearchResults(
     workspaceId: string,
-    query: string,
+    scope: MemorySearchCacheScope,
   ): Promise<{ memories: Memory[]; total: number } | null> {
-    const key = `${this.SEARCH_PREFIX}${workspaceId}:${this.hashQuery(query)}`
+    const key = `${this.SEARCH_PREFIX}${workspaceId}:${this.hashQuery(JSON.stringify(scope))}`
     return this.cache.get<{ memories: Memory[]; total: number }>(key)
   }
 
@@ -82,8 +101,11 @@ export class MemoryCacheService {
    * Invalidate memory cache
    */
   async invalidateMemory(memoryId: string): Promise<void> {
-    const key = `${this.MEMORY_PREFIX}${memoryId}`
-    await this.cache.delete(key)
+    const keys = await this.cache.keys(`${this.MEMORY_PREFIX}*:*:${memoryId}`)
+    await Promise.all([
+      ...keys.map((key) => this.cache.delete(key)),
+      this.cache.delete(`${this.MEMORY_PREFIX}access:${memoryId}`),
+    ])
   }
 
   /**
@@ -117,7 +139,7 @@ export class MemoryCacheService {
    * Warm cache with frequently accessed memories
    */
   async warmCache(memories: Memory[], ttl: number = 30 * 60 * 1000): Promise<void> {
-    await Promise.all(memories.map((memory) => this.cacheMemory(memory, ttl)))
+    await Promise.all(memories.map((memory) => this.cacheMemory(memory, memory.userId, memory.workspaceId, ttl)))
     logger.info(`Cache warmed with ${memories.length} memories`)
   }
 
@@ -137,13 +159,11 @@ export class MemoryCacheService {
    * Private: Hash query string for cache key
    */
   private hashQuery(query: string): string {
-    let hash = 0
-    for (let i = 0; i < query.length; i++) {
-      const char = query.charCodeAt(i)
-      hash = (hash << 5) - hash + char
-      hash = hash & hash
-    }
-    return Math.abs(hash).toString(36)
+    return createHash('sha256').update(query).digest('hex')
+  }
+
+  private memoryKey(memoryId: string, userId: string, workspaceId: string): string {
+    return `${this.MEMORY_PREFIX}${workspaceId}:${userId}:${memoryId}`
   }
 }
 
