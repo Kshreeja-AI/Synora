@@ -167,7 +167,7 @@ export interface StageDefaults {
 const BASE_DEFAULTS: StageDefaults = {
   server: {
     port: 3001,
-    corsOrigins: ['http://localhost:3000'],
+    corsOrigins: ['http://localhost:3000', 'http://127.0.0.1:3000'],
   },
   rateLimit: {
     windowMs: 15 * 60 * 1000,
