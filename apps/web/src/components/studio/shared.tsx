@@ -45,7 +45,7 @@ export function GenerationError({ error }: { error: unknown }): React.JSX.Elemen
       className={cn(
         'flex items-start gap-3 rounded-md border p-3 text-sm',
         unavailable
-          ? 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200'
+          ? 'border-warning/40 bg-warning/10 text-warning '
           : 'border-destructive/40 bg-destructive/10 text-destructive'
       )}
     >

@@ -125,7 +125,7 @@ export function ShareDialog({
                 </div>
               </div>
 
-              <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-900 dark:bg-blue-950 dark:text-blue-100">
+              <div className="rounded-md bg-primary/10 p-3 text-sm text-primary ">
                 <p className="mb-1 font-medium">Link created</p>
                 <p className="text-xs">{getPermissionDescription(permission)}</p>
               </div>
@@ -173,7 +173,7 @@ export function ShareDialog({
                 </select>
               </div>
 
-              <div className="rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+              <div className="rounded-md bg-warning/10 p-3 text-sm text-warning ">
                 <div className="flex gap-2">
                   <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                   <p className="text-xs">

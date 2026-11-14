@@ -1,38 +1,33 @@
-# NEEDS_FOUNDER — 2026-11-07
+# NEEDS_FOUNDER — 2026-11-07 (last updated 2026-11-12)
 
 No secret values appear in this file. Variable NAMES only.
 
-## 1. Database (blocks the deploy) — STOP RULE: needs an account/credential I do not have
-Root cause of the failing deploys: the service's `DATABASE_URL` points at the Supabase
-direct host `db.<project-ref>.supabase.co:5432` and the backend's `prisma.$connect()` fails with
-`Can't reach database server`. The Supabase project `Synora` is ACTIVE_HEALTHY, so the
-database is up; Render cannot reach it from there. (Likely cause, NOT verified: Supabase's direct
-host is IPv6-only unless the paid IPv4 add-on is on, and Render has no IPv6 egress.)
+## 1. Database (blocks the deploy) — SUPERSEDED, see section 7
+This section described the Nov 7 state (direct Supabase host, IPv6 unreachable from Render).
+It was resolved on Nov 8 (section 7 below) and re-confirmed this session (`migrate status` ->
+up to date, `/ready` -> database ok). Kept only for history; no action needed.
 
-Do ONE of these in the Render dashboard (synora-api -> Environment):
-- Create a free Neon Postgres (no card) and set `DATABASE_URL` to its pooled connection string; or
-- Set `DATABASE_URL` to the Supabase **pooler** (IPv4) connection string for project `Synora`.
-  Caution: that project may hold real data. Migrations run against it would change it.
-
-Then run `prisma migrate deploy` against it (Render shell, or a one-off locally with the URL in your own shell).
-
-## 2. Push to GitHub — STOP RULE: no credentials in this WSL session
-`git fetch`/`git push` fail: `could not read Username for 'https://github.com'`. No `gh`, no credential helper.
-Local commit ready: `0c7e6d0` on branch `build/capabilities-2026-11`.
-Backup of all uncommitted work: branch `backup/pre-launch-20261107-1959` (commit `fc7354d`).
-Render builds the `SYNORA` branch, so the assistant endpoint is NOT deployable until this is pushed.
-Remote difference was not inspected (fetch failed); do a fast-forward-only push or open a PR.
+## 2. Push to GitHub — SUPERSEDED, the commit reached GitHub by a different path
+This described a Nov 7 WSL session with no git credentials. By Nov 8 the launch branch's commit
+(`7685485`) was on `origin/SYNORA` — confirmed this session (`gh api .../activity`) to be a direct
+**push** by account `Synoraagi`, not a push from this kind of session and not a merge-button click.
+So the credential problem described here was worked around some other way, or from a different
+session/machine with git credentials — NOT VERIFIED which. No action needed now; the commit is on
+GitHub. Kept for history.
 
 ## 3. Secrets — I did not write these (a value passed to a tool call would appear in the transcript)
 `JWT_SECRET`, `NEXTAUTH_SECRET`, `TOOL_SECRET_MASTER_KEY` and `DATABASE_URL` are already present in the
 Render environment (boot log shows them read from env). I cannot see whether they are development values.
 If they are, replace each with `openssl rand -base64 32` output in the dashboard.
 
-## 4. Assistant provider key (free tier)
-Set ONE in the Render dashboard: `GROQ_API_KEY` or `OPENROUTER_API_KEY`.
-Also consider `AI_PROVIDER` (set to that provider's id) so a paid key can never be picked first.
+## 4. Assistant provider key (free tier) — RESOLVED, re-confirmed 2026-11-12
+Both `GROQ_API_KEY` and `OPENROUTER_API_KEY` show CONFIGURED in the vault, and this session got two
+real 200-status generations from the live public assistant. No action needed.
 
-## 5. Spend caps — the task's "cap = 0" is rejected by the backend itself
+## 5. Spend caps — RESOLVED 2026-11-12
+Confirmed resolved: the public assistant returned real 200-status generations in this session's probes,
+which only happens when `spendCapPermitsAnswers()` sees at least one positive global cap. A cap is set and
+working on Render right now. No action needed. (History of the problem kept below for the record.)
 Setting `AI_GLOBAL_MAX_COST_PER_DAY_CENTS=0` / `AI_GLOBAL_MAX_TOKENS_PER_DAY=0` made boot abort:
 `Configuration failed validation: ai.globalMaxCostPerDayCents: Number must be greater than 0` (same for tokens).
 So both were reset to empty (= unset) on Render. With them unset, boot works and the assistant answers 503
@@ -95,8 +90,14 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
 ## 9. Things only you can do before the first real user
 1. ~~Cloudflare Account ID was wrong~~ **RESOLVED 2026-11-08**: the 32-hex id is in the vault and on Render; `models/search` returns HTTP 200
    (INTEGRATION VERIFIED) and a real 400-token generation worked on `@cf/meta/llama-3.1-8b-instruct-fp8`.
-2. **Nobody can register yet.** `REGISTRATION_MODE=invite` and `REGISTRATION_ALLOWLIST` is empty. Put your own email in it:
-   `! synora-secret-set REGISTRATION_ALLOWLIST` (comma separated), then `! synora-render-push`.
+2. **Registration gate is ACTIVE** (updated 2026-11-12): `REGISTRATION_ALLOWLIST` shows as CONFIGURED
+   in the vault (names only; contents not visible to this session), and a live probe this session
+   confirmed a non-listed email is refused with 403 "Registration is by invitation only." Whether
+   YOUR email specifically is on that list is NOT VERIFIED by this session — confirm it yourself, or
+   set it: `! synora-secret-set REGISTRATION_ALLOWLIST` (comma separated), then `! synora-render-push`
+   (or `--copy` + paste into the Render dashboard directly, since render-push has timed out 3x this
+   run). Login itself needs no email verification (confirmed by reading `routes/auth.ts`) — only the
+   password check and, if MFA is enrolled, a second factor.
 3. **Email is not delivered** (`MAIL_TRANSPORT` defaults to `console`: verification links only appear in server logs). Not needed for you to log in. Needed to accept a
    workspace invitation. Free options without DNS: Brevo (free daily quota, single verified sender) or Gmail SMTP with an app password. Then set
    `MAIL_TRANSPORT=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM_ADDRESS`.
@@ -107,4 +108,93 @@ reached through `DATABASE_URL=...?schema=synora`. 40/40 Prisma migrations applie
 5. **Mistral** is excluded from the chain: its free Experiment plan may train on prompts. Add it only after opting out in Mistral's Admin Console and setting
    `FREE_TIER_TRAINING_OPTOUT_CONFIRMED=mistral`.
 6. **Redis is absent:** `QUEUE_ENABLED=false` is set on Render, so background workers (streamed chat generation, file processing) are off. The public assistant does not need them.
-7. **Two production advisories stay open on purpose** (major bumps): `zod` 3->4 and `nodemailer` (>=10.0.6; a minor bump to 9.1.x fixes only one of its two advisories).
+7. ~~Two production advisories stay open on purpose (major bumps): `zod` 3->4 and `nodemailer` (>=10.0.6)~~
+   **RESOLVED 2026-11-12**: both majors are already bumped in `apps/backend/package.json`
+   (`zod@^4.6.7`, `nodemailer@^10.1.4`). `pnpm audit --prod` returns 0 vulnerabilities at every
+   severity, genuinely (no audit-ignore config found). This note was stale; no action needed.
+
+## 10. New findings, 2026-11-12 master run (see LAUNCH_LOG.md "launch/master-run-2026-11-11" for full evidence)
+
+1. **The logged-in web app is very unlikely to work as deployed.** Confirmed facts: (a) no proxy
+   exists anywhere in `apps/web` between the web app (`*.vercel.app`) and the API (`onrender.com`) —
+   they are genuinely different sites; (b) a live GET to the API today returned a cookie
+   (`Set-Cookie: X-CSRF-Token=...; Secure; SameSite=Strict`, no `Domain` attribute, checked
+   attributes-only, no value) which is scoped to the API's own host and cannot be sent back on a
+   cross-site request; (c) `authSession.ts` sets the real login cookies (`accessToken`,
+   `refreshToken`) with the identical options (`sameSite: 'strict'`, no `Domain`, `httpOnly: true`) —
+   confirmed by reading the code, NOT by an actual login (this session has no valid account and did
+   not create one). Putting (a)+(b)+(c) together: a login POST should still succeed and return a 200
+   with the user's data, but the session cookie will not be sent back on the NEXT request to the API
+   from the web app, so the user will appear logged out again immediately. This was not tested with a
+   real account — do that yourself (see the 5-step check in READY_TO_DEPLOY.md) and tell the release
+   engineer what you actually see, since this conclusion, however well-supported, was not observed
+   end-to-end in a browser. Fix needs a same-origin proxy or a shared parent domain — real development
+   work, out of scope for this launch run. The public assistant widget is unaffected (it uses no
+   cookies).
+2. ~~`CORS_ORIGINS` on Render is missing one of the two live Vercel production domains~~
+   **WITHDRAWN, same session**: `synora-kshreeja.vercel.app` is not a real public domain at all —
+   it redirects (302) to `vercel.com/sso-api`, Vercel's own protection. The project's one actual
+   domain, `synora-fawn.vercel.app`, IS in `CORS_ORIGINS` and returns the real app (HTTP 200, no
+   SSO). No action needed. (See point 2a below for what this DOES mean.)
+2a. **Your assumption that "Vercel Authentication is ON" protects the site is WRONG for the domain
+    that matters.** `ssoProtection` is on but scoped (`deploymentType: "all_except_custom_domains"`)
+    to exempt the one domain actually registered through domain management — which is `fawn`, the
+    real production URL. The two auto-generated aliases ARE protected; the one people actually visit
+    is not. This session found no record of anyone choosing that scope on purpose. See READY_TO_DEPLOY.md
+    step 3 for what to do about it — password protection and IP allowlisting are both currently off too,
+    so right now there is no protection layer at all on the real URL.
+2b. **Second, independent reason chat might not work even if login somehow does**, traced through
+    two files: `message.service.ts` hands every chat send to a Redis-backed queue with no fallback
+    (swallows the error if enqueueing fails), and `index.ts` only starts the worker that would
+    process that job when `QUEUE_ENABLED` is true — so even a successfully-queued job is never
+    picked up if it's false. Either failure point means the message just never gets a reply,
+    silently. Depends on the same Redis-absence evidence as item 4 below.
+3. **`/metrics` is open to the public internet, no token required.** Set `METRICS_TOKEN` on Render.
+4. **Contradiction about Redis, best evidence available without Render access**: `REDIS_URL` does
+   not appear anywhere in `synora-secret-set --status`'s output (neither CONFIGURED nor MISSING —
+   it's just not a name the vault tool tracks at all), and this document's own section 6 (written
+   independently, Nov 7/8) already recorded `QUEUE_ENABLED=false` on Render. Both point the same way:
+   no Redis. But neither is a direct read of Render's actual environment — that is still NOT VERIFIED
+   (dry-run timed out 3x this run). Whether an earlier `READY_TO_DEPLOY.md`'s "Upstash provisioned"
+   claim was ever true is therefore UNSUPPORTED by this session's evidence, not proven false — the
+   founder dashboard read in step 1 of READY_TO_DEPLOY.md settles it.
+5. **PR #47 / SYNORA merge mechanism, now confirmed**: GitHub's repo activity log shows the Nov 8
+   event that advanced `SYNORA` to the current commit was a direct **push** (not a merge-button
+   click) by the `Synoraagi` account. PR #47 (a draft) was then marked "merged" only because its
+   head commit matched the new tip. Not reverted, per standing instruction.
+
+---
+
+## 9. SYNORA worktree: 22 uncommitted changes — needs review before commit
+
+Branch: `pre-consolidation-2026-09-30` in `/mnt/f/Synora-SYNORA`.
+These 22 files have been in the working tree uncommitted since at least October 2026.
+**Do NOT commit without explicit founder approval.** No intent is inferred here — descriptions are from the diffs.
+
+| # | File | One-line diff description |
+|---|------|--------------------------|
+| 1 | `.claude/settings.local.json` | Local Claude session settings — **NEVER commit this file** |
+| 2 | `apps/backend/src/ai/__tests__/models.test.ts` | Test updates for expanded model catalog and OpenRouter discovery |
+| 3 | `apps/backend/src/ai/__tests__/ttsRegistry.test.ts` | Test updates for TTS provider registry changes |
+| 4 | `apps/backend/src/ai/core/types.ts` | Adds `ModelCapability` type (6 lines) |
+| 5 | `apps/backend/src/ai/models.ts` | Expands model catalog: adds OpenRouter discovery, `capabilitySupport` / `availability` fields, `ModelCapabilityReadiness` type, imports from openrouter provider (+259 lines net) |
+| 6 | `apps/backend/src/ai/providers/openaiTextToSpeech.provider.ts` | Minor fix to TTS provider (~6 lines changed) |
+| 7 | `apps/backend/src/ai/providers/openrouter.provider.ts` | New file: full OpenRouter provider implementation (+110 lines) |
+| 8 | `apps/backend/src/ai/ttsRegistry.ts` | TTS registry updates (+22/-22 lines) |
+| 9 | `apps/backend/src/config/defaults.ts` | Adds `'http://127.0.0.1:3000'` to `corsOrigins` list (1 line) |
+| 10 | `apps/backend/src/embeddings/__tests__/registry.test.ts` | Test updates for embeddings registry |
+| 11 | `apps/backend/src/embeddings/registry.ts` | Minor embeddings registry update (+2 lines) |
+| 12 | `apps/backend/src/routes/audio.ts` | Minor audio route fix (~6 lines changed) |
+| 13 | `apps/backend/src/routes/memories.ts` | Memories route refactor (~64 lines changed) |
+| 14 | `apps/backend/src/services/__tests__/memoryEmbedding.service.test.ts` | Test expansion (+31 lines) |
+| 15 | `apps/backend/src/services/__tests__/memoryRetrieval.service.test.ts` | New test file for memory retrieval service (+30 lines) |
+| 16 | `apps/backend/src/services/audioGeneration.service.ts` | Adds `providerId` and `model` fields to `GenerateAudioInput`; passes them through to provider synthesize call |
+| 17 | `apps/backend/src/services/memory.service.ts` | Bug fix: replaces double `where.OR` assignment (search clause was silently overwriting permission filter) with `where.AND` to correctly combine both |
+| 18 | `apps/backend/src/services/memoryCache.service.ts` | Cache key now includes `userId`+`workspaceId`; search cache key hashes full scope object; adds `MemorySearchCacheScope` interface |
+| 19 | `apps/backend/src/services/memoryEmbedding.service.ts` | Updates to memory embedding service (+20/-20 lines) |
+| 20 | `apps/backend/src/services/memoryRetrieval.service.ts` | Updates to memory retrieval service (+37 lines) |
+| 21 | `docker-compose.dev.yml` | Changes host port mapping from `5432:5432` to `5434:5432` (avoids port conflict with an existing local Postgres) |
+| 22 | `package.json` | Adds `onlyBuiltDependencies` list to pnpm config (prisma, argon2, esbuild, etc.) |
+
+**Note:** Items 17 and 18 contain correctness bug fixes (memory search silently ignoring search terms;
+cache keys not scoped to user+workspace). These are HIGH priority to review and commit.

@@ -141,7 +141,7 @@ export default function TemplatesPage() {
                           template.category}
                       </span>
                       {template.isPublic && (
-                        <span className="rounded bg-green-100 px-2 py-1 text-xs text-green-700 dark:bg-green-900 dark:text-green-300">
+                        <span className="rounded bg-success/10 px-2 py-1 text-xs text-success ">
                           Public
                         </span>
                       )}

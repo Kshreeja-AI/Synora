@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button, Card, CardContent, Input, Label } from '@synora/design-system';
 import { PasswordInput } from '../../../components/auth/PasswordInput';
+import { RegistrationNotice } from '../../../components/auth/RegistrationNotice';
 import { register } from '../../../lib/api/auth';
 import { ApiError } from '../../../lib/api/client';
 
@@ -44,9 +45,14 @@ export default function RegisterPage(): React.JSX.Element {
   };
 
   return (
-    <Card>
-      <CardContent className="p-8">
-        <h1 className="mb-8 text-center text-3xl font-bold text-foreground">Create Account</h1>
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="p-0">
+        <h1 className="mb-2 text-[1.75rem] font-semibold tracking-tightest text-foreground">
+          Create your account
+        </h1>
+        <p className="mb-8 text-sm text-muted-foreground">Set up your Synora workspace in a minute.</p>
+
+        <RegistrationNotice />
 
         {error && (
           <div
@@ -92,7 +98,11 @@ export default function RegisterPage(): React.JSX.Element {
               onChange={(e) => setPassword(e.target.value)}
               required
               placeholder="••••••••"
+              aria-describedby="password-hint"
             />
+            <p id="password-hint" className="text-xs text-muted-foreground">
+              At least 8 characters.
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -107,15 +117,15 @@ export default function RegisterPage(): React.JSX.Element {
             />
           </div>
 
-          <Button type="submit" variant="primary" size="md" loading={loading} className="w-full">
-            {loading ? 'Creating account...' : 'Sign Up'}
+          <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full text-sm">
+            {loading ? 'Creating account...' : 'Sign up'}
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-muted-foreground">
+        <p className="mt-8 text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/auth/login" className="font-semibold text-primary hover:underline">
-            Sign In
+          <Link href="/auth/login" className="font-medium text-primary hover:underline">
+            Sign in
           </Link>
         </p>
       </CardContent>

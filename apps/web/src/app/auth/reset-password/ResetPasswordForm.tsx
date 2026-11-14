@@ -19,9 +19,9 @@ export function ResetPasswordForm(): React.JSX.Element {
 
   if (!token) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <h1 className="mb-4 text-2xl font-bold text-foreground">Invalid reset link</h1>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="p-0 text-center">
+          <h1 className="mb-4 text-2xl font-semibold tracking-tight text-foreground">Invalid reset link</h1>
           <p className="text-muted-foreground">
             This password reset link is missing or malformed. Request a new one below.
           </p>
@@ -35,9 +35,9 @@ export function ResetPasswordForm(): React.JSX.Element {
 
   if (success) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <h1 className="mb-4 text-2xl font-bold text-foreground">Password reset</h1>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="p-0 text-center">
+          <h1 className="mb-4 text-2xl font-semibold tracking-tight text-foreground">Password reset</h1>
           <p className="mb-6 text-muted-foreground">
             Your password has been changed. Sign in with your new password.
           </p>
@@ -74,9 +74,9 @@ export function ResetPasswordForm(): React.JSX.Element {
   };
 
   return (
-    <Card>
-      <CardContent className="p-8">
-        <h1 className="mb-8 text-center text-3xl font-bold text-foreground">Reset your password</h1>
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="p-0">
+        <h1 className="mb-8 text-[1.75rem] font-semibold tracking-tightest text-foreground">Reset your password</h1>
 
         {error && (
           <div
@@ -112,7 +112,7 @@ export function ResetPasswordForm(): React.JSX.Element {
             />
           </div>
 
-          <Button type="submit" variant="primary" size="md" loading={loading} className="w-full">
+          <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full text-sm">
             {loading ? 'Resetting...' : 'Reset password'}
           </Button>
         </form>

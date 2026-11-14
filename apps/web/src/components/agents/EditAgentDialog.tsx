@@ -75,7 +75,7 @@ export function EditAgentDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Edit agent"

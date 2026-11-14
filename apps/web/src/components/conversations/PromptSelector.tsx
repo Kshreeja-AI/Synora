@@ -47,7 +47,7 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm"
+        type="button" aria-expanded={isOpen} className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg hover:bg-accent transition-colors text-sm"
       >
         <Sparkles className="w-4 h-4" />
         Quick Start
@@ -55,9 +55,9 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
       </button>
 
       {isOpen && (
-        <div className="absolute top-full mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+        <div className="absolute top-full mt-2 w-96 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg z-50">
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
+          <div className="flex border-b border-border ">
             <button
               onClick={() => {
                 setTab('prompts');
@@ -65,8 +65,8 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
               }}
               className={`flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'prompts'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  ? 'border-primary text-primary '
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <Sparkles className="w-4 h-4 inline mr-2" />
@@ -79,8 +79,8 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
               }}
               className={`flex-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 tab === 'templates'
-                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                  : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  ? 'border-primary text-primary '
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
               }`}
             >
               <BookOpen className="w-4 h-4 inline mr-2" />
@@ -89,15 +89,15 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
           </div>
 
           {/* Search */}
-          <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+          <div className="p-3 border-b border-border ">
             <div className="relative">
-              <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
+              <Search aria-hidden className="absolute left-3 top-2.5 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search..." aria-label="Search prompts and templates"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-3 py-2 border border-input bg-background text-foreground rounded text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 autoFocus
               />
             </div>
@@ -107,26 +107,26 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
           <div className="max-h-80 overflow-y-auto">
             {tab === 'prompts' ? (
               filteredPrompts.length === 0 ? (
-                <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+                <div className="p-6 text-center text-muted-foreground ">
                   {prompts.length === 0 ? 'No prompts yet' : 'No matching prompts'}
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                <div className="divide-y divide-border ">
                   {filteredPrompts.map((prompt) => (
                     <button
                       key={prompt.id}
                       onClick={() => handleSelectPrompt(prompt)}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      className="w-full text-left px-4 py-3 hover:bg-accent transition-colors"
                     >
-                      <div className="font-medium text-sm text-gray-900 dark:text-white">
+                      <div className="font-medium text-sm text-foreground">
                         {prompt.name}
                       </div>
                       {prompt.description && (
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">
+                        <div className="text-xs text-muted-foreground mt-1 line-clamp-1">
                           {prompt.description}
                         </div>
                       )}
-                      <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2 bg-gray-50 dark:bg-gray-600 p-2 rounded mt-2">
+                      <div className="text-xs text-muted-foreground mt-1 line-clamp-2 bg-muted p-2 rounded mt-2">
                         {prompt.content}
                       </div>
                     </button>
@@ -134,26 +134,26 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
                 </div>
               )
             ) : filteredTemplates.length === 0 ? (
-              <div className="p-6 text-center text-gray-500 dark:text-gray-400">
+              <div className="p-6 text-center text-muted-foreground ">
                 {templates.length === 0 ? 'No templates yet' : 'No matching templates'}
               </div>
             ) : (
-              <div className="divide-y divide-gray-200 dark:divide-gray-700">
+              <div className="divide-y divide-border ">
                 {filteredTemplates.map((template) => (
                   <button
                     key={template.id}
                     onClick={() => handleSelectTemplate(template as Template)}
-                    className="w-full text-left px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    className="w-full text-left px-4 py-3 hover:bg-accent transition-colors"
                   >
-                    <div className="font-medium text-sm text-gray-900 dark:text-white">
+                    <div className="font-medium text-sm text-foreground">
                       {template.title}
                     </div>
                     {template.description && (
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-1">
+                      <div className="text-xs text-muted-foreground mt-1 line-clamp-1">
                         {template.description}
                       </div>
                     )}
-                    <div className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2 bg-gray-50 dark:bg-gray-600 p-2 rounded mt-2">
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2 bg-muted p-2 rounded mt-2">
                       {template.systemPrompt}
                     </div>
                   </button>
@@ -163,7 +163,7 @@ export function PromptSelector({ workspaceId, onSelectPrompt, onSelectTemplate }
           </div>
 
           {/* Footer */}
-          <div className="p-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 text-xs text-gray-600 dark:text-gray-400">
+          <div className="p-3 border-t border-border bg-muted text-xs text-muted-foreground ">
             Manage your library in Knowledge Center
           </div>
         </div>

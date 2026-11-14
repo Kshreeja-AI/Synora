@@ -95,7 +95,7 @@ export function UsageOverview({ workspaceId, dateRange }: UsageOverviewProps) {
                   </div>
                   <div className="h-2 overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full bg-blue-500"
+                      className="h-full bg-primary"
                       style={{
                         width: `${getPercentage(provider.costCents, summary.totalCostCents)}%`,
                       }}

@@ -4,7 +4,7 @@ import {
   useQuery,
   UseQueryResult,
 } from '@tanstack/react-query';
-import { api } from './client';
+import { api, getApiBaseUrl } from './client';
 
 /**
  * Mirrors the backend ConversationUsage record (aggregate-only
@@ -176,8 +176,7 @@ export async function exportUsageCSV(
     ? `/api/workspaces/${workspaceId}/usage/export/csv?${queryString}`
     : `/api/workspaces/${workspaceId}/usage/export/csv`;
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-  const response = await fetch(`${baseUrl}${url}`, {
+  const response = await fetch(`${getApiBaseUrl()}${url}`, {
     credentials: 'include',
   });
 

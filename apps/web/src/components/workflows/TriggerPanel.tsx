@@ -91,7 +91,7 @@ export function TriggerPanel({
       {revealedUrl && (
         <div
           role="note"
-          className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+          className="space-y-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning "
         >
           <p className="font-semibold">This URL is shown once — copy it now</p>
           <p>
@@ -125,7 +125,7 @@ export function TriggerPanel({
               <span
                 className={
                   t.enabled
-                    ? 'rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                    ? 'rounded bg-success/10 px-1.5 py-0.5 text-xs text-success '
                     : 'rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'
                 }
               >
@@ -213,7 +213,7 @@ export function TriggerPanel({
                 <span
                   className={
                     t.enabled
-                      ? 'rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200'
+                      ? 'rounded bg-success/10 px-1.5 py-0.5 text-xs text-success '
                       : 'rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground'
                   }
                 >

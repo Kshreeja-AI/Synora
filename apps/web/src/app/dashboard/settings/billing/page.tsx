@@ -16,10 +16,10 @@ export default function BillingPage() {
   if (isLoadingSubscription || isLoadingPlans || isLoadingCredits) {
     return (
       <div className="space-y-6">
-        <div className="bg-gray-200 dark:bg-gray-700 h-40 rounded animate-pulse" />
+        <div className="bg-muted h-40 rounded animate-pulse" />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-gray-200 dark:bg-gray-700 h-32 rounded animate-pulse" />
-          <div className="bg-gray-200 dark:bg-gray-700 h-32 rounded animate-pulse" />
+          <div className="bg-muted h-32 rounded animate-pulse" />
+          <div className="bg-muted h-32 rounded animate-pulse" />
         </div>
       </div>
     );
@@ -44,13 +44,13 @@ export default function BillingPage() {
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-bold">{currentPlan?.name || 'Unknown Plan'}</h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
+            <p className="text-muted-foreground mt-1">
               {subscription.status === 'ACTIVE'
                 ? 'Your subscription is active'
                 : `Subscription status: ${subscription.status}`}
             </p>
             {subscription.currentPeriodEnd && (
-              <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">
+              <p className="text-sm text-muted-foreground mt-2">
                 Next billing date:{' '}
                 {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
               </p>
@@ -60,7 +60,7 @@ export default function BillingPage() {
             <div className="text-3xl font-bold">
               ${(currentPlan?.priceCents || 0) / 100}
             </div>
-            <div className="text-gray-600 dark:text-gray-400">
+            <div className="text-muted-foreground ">
               per {currentPlan?.interval === 'MONTH' ? 'month' : 'year'}
             </div>
           </div>
@@ -73,12 +73,12 @@ export default function BillingPage() {
           <h3 className="text-lg font-semibold mb-4">Credits Balance</h3>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-gray-600 dark:text-gray-400">Available Credits</p>
+              <p className="text-muted-foreground ">Available Credits</p>
               <p className="text-3xl font-bold mt-2">{credits.balance.toLocaleString()}</p>
             </div>
             {currentPlan && currentPlan.creditsPerInterval > 0 && (
               <div className="text-right">
-                <p className="text-gray-600 dark:text-gray-400">Credits per {currentPlan.interval === 'MONTH' ? 'month' : 'year'}</p>
+                <p className="text-muted-foreground ">Credits per {currentPlan.interval === 'MONTH' ? 'month' : 'year'}</p>
                 <p className="text-2xl font-semibold mt-2">{currentPlan.creditsPerInterval.toLocaleString()}</p>
               </div>
             )}
@@ -93,7 +93,7 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(currentPlan.features).map(([key, value]) => (
               <div key={key} className="flex items-center space-x-2">
-                <span className="text-green-600 dark:text-green-400">✓</span>
+                <span className="text-success ">✓</span>
                 <span className="capitalize">
                   {key.replace(/_/g, ' ')}: {String(value)}
                 </span>
@@ -105,14 +105,14 @@ export default function BillingPage() {
 
       {/* Cancel Subscription */}
       {subscription.status === 'ACTIVE' && (
-        <Card className="p-6 border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950">
-          <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+        <Card className="p-6 border-destructive/30 bg-destructive/10 ">
+          <h3 className="text-lg font-semibold text-destructive mb-2">
             Danger Zone
           </h3>
-          <p className="text-red-800 dark:text-red-200 mb-4">
+          <p className="text-destructive mb-4">
             Cancel your subscription at the end of your current billing period. You'll lose access to premium features when your period ends.
           </p>
-          <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors">
+          <button type="button" className="px-4 py-2 bg-destructive text-destructive-foreground rounded hover:bg-destructive/90 transition-colors">
             Cancel Subscription
           </button>
         </Card>

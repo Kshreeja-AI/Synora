@@ -69,10 +69,10 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
     commands.length === 0;
 
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-labelledby="waiting-heading">
+    <section className="space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm" aria-labelledby="waiting-heading">
       <div className="flex items-center gap-2">
         <PauseCircle className="h-4 w-4" aria-hidden />
-        <h2 id="waiting-heading" className="font-semibold">
+        <h2 id="waiting-heading" className="text-sm font-semibold">
           Waiting for you
         </h2>
       </div>
@@ -84,7 +84,7 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
       ) : (
         <ul className="space-y-2">
           {waiting.map((run) => (
-            <li key={run.id} className="rounded-md border p-3 text-sm">
+            <li key={run.id} className="rounded-md border border-border bg-background/40 p-3 text-sm">
               <Link href="/agents" className="font-medium hover:underline">
                 {run.task || 'Untitled run'}
               </Link>
@@ -110,7 +110,7 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               yes/no here would be a decision made without the context
               the decision needs. */}
           {pendingExecutions.map((execution) => (
-            <li key={execution.id} className="rounded-md border p-3 text-sm">
+            <li key={execution.id} className="rounded-md border border-border bg-background/40 p-3 text-sm">
               <Link href="/dashboard/tools" className="font-medium hover:underline">
                 {execution.tool?.name ?? 'A tool'} is waiting to run
               </Link>
@@ -124,7 +124,7 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
             </li>
           ))}
           {commands.map((command) => (
-            <li key={command.id} className="rounded-md border p-3 text-sm">
+            <li key={command.id} className="rounded-md border border-border bg-background/40 p-3 text-sm">
               <Link href="/command" className="font-medium hover:underline">
                 {command.commandText}
               </Link>
@@ -147,7 +147,7 @@ export function WaitingForYou({ workspaceId }: { workspaceId: string }) {
               leaving an invitation alone changes nothing, and it expires
               on its own. */}
           {invitations.map((invitation) => (
-            <li key={invitation.id} className="rounded-md border p-3 text-sm">
+            <li key={invitation.id} className="rounded-md border border-border bg-background/40 p-3 text-sm">
               <Link href={`/invite/${invitation.token}`} className="font-medium hover:underline">
                 {invitation.invitedBy || 'Someone'} invited you to join {invitation.workspaceName}
               </Link>

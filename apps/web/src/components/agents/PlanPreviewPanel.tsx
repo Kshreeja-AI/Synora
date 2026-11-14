@@ -37,7 +37,7 @@ export function PlanPreviewPanel({ report }: { report: PlanPreviewReport }) {
       <RuntimeNotice runtime={report.runtime} />
 
       {report.blockers.length > 0 && (
-        <div className="space-y-1 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive ">
           <p className="flex items-center gap-1 font-medium">
             <AlertTriangle className="h-4 w-4" aria-hidden />
             This run would not succeed as-is
@@ -70,7 +70,7 @@ export function PlanPreviewPanel({ report }: { report: PlanPreviewReport }) {
               </p>
             )}
             {step.problems.map((problem) => (
-              <p key={problem} className="mt-1 text-xs text-red-700 dark:text-red-300">
+              <p key={problem} className="mt-1 text-xs text-destructive ">
                 Would fail: {problem}
               </p>
             ))}

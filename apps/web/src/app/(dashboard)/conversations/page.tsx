@@ -162,11 +162,11 @@ export default function ConversationsPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3">
-            <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex gap-3">
+            <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
             <div>
-              <h3 className="font-semibold text-red-900">Error</h3>
-              <p className="text-sm text-red-800">{error instanceof Error ? error.message : 'An error occurred'}</p>
+              <h3 className="font-semibold text-destructive">Error</h3>
+              <p className="text-sm text-destructive">{error instanceof Error ? error.message : 'An error occurred'}</p>
             </div>
           </div>
         )}
@@ -219,10 +219,10 @@ export default function ConversationsPage() {
                       </button>
                       <button
                         onClick={(e) => handleDeleteConversation(conversation.id, e)}
-                        className="p-2 hover:bg-red-50 dark:hover:bg-red-950 rounded-md transition-colors"
+                        className="p-2 hover:bg-destructive/10 rounded-md transition-colors"
                         title="Delete conversation"
                       >
-                        <Trash2 className="h-4 w-4 text-red-500" />
+                        <Trash2 className="h-4 w-4 text-destructive" />
                       </button>
                     </div>
                   </div>

@@ -55,11 +55,14 @@ function FolderItem({
       >
         {hasChildren && (
           <button
+            type="button"
+            aria-label={isExpanded ? `Collapse ${folder.name}` : `Expand ${folder.name}`}
+            aria-expanded={isExpanded}
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-0 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+            className="p-0 hover:bg-accent rounded"
           >
             <ChevronRight
-              className={`h-4 w-4 text-gray-400 transition-transform ${
+              className={`h-4 w-4 text-muted-foreground transition-transform ${
                 isExpanded ? 'rotate-90' : ''
               }`}
             />
@@ -74,9 +77,9 @@ function FolderItem({
           className="flex items-center gap-2 flex-1 text-left min-w-0"
         >
           {isExpanded ? (
-            <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
+            <FolderOpen className="h-4 w-4 text-warning flex-shrink-0" />
           ) : (
-            <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
+            <Folder className="h-4 w-4 text-warning flex-shrink-0" />
           )}
           {isRenaming ? (
             <input
@@ -91,11 +94,11 @@ function FolderItem({
                   setRenamingValue(folder.name);
                 }
               }}
-              className="flex-1 text-sm font-medium px-1 py-0 border rounded dark:bg-gray-800 dark:border-gray-700"
+              className="flex-1 text-sm font-medium px-1 py-0 border rounded "
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+            <span className="flex-1 text-sm font-medium text-foreground truncate">
               {folder.name}
             </span>
           )}
@@ -106,27 +109,29 @@ function FolderItem({
           )}
         </button>
 
-        <div className="opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+        <div className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition flex-shrink-0">
           <div className="relative group/menu">
             <button
+              type="button"
+              aria-label={`Actions for ${folder.name}`}
               onClick={(e) => e.stopPropagation()}
-              className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded"
+              className="p-1 hover:bg-accent rounded"
             >
-              <MoreVertical className="h-4 w-4 text-gray-400" />
+              <MoreVertical className="h-4 w-4 text-muted-foreground" />
             </button>
-            <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 opacity-0 group-hover/menu:opacity-100 pointer-events-none group-hover/menu:pointer-events-auto transition z-10">
+            <div className="absolute right-0 mt-1 w-32 bg-popover text-popover-foreground rounded-lg shadow-lg border border-border opacity-0 group-hover/menu:opacity-100 group-focus-within/menu:opacity-100 pointer-events-none group-hover/menu:pointer-events-auto group-focus-within/menu:pointer-events-auto transition z-10">
               <button
                 onClick={() => {
                   setIsRenaming(true);
                   setRenamingValue(folder.name);
                 }}
-                className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t"
+                className="block w-full text-left px-3 py-1.5 text-sm hover:bg-accent rounded-t"
               >
                 Rename
               </button>
               <button
                 onClick={() => onDeleteFolder?.(folder.id)}
-                className="block w-full text-left px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-b"
+                className="block w-full text-left px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 rounded-b"
               >
                 Delete
               </button>
@@ -163,7 +168,7 @@ export function FolderTree({
 }: FolderTreeProps) {
   if (!folders || folders.length === 0) {
     return (
-      <div className="px-2 py-4 text-sm text-gray-500 dark:text-gray-400 text-center">
+      <div className="px-2 py-4 text-sm text-muted-foreground text-center">
         No folders yet
       </div>
     );

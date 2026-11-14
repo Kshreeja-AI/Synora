@@ -27,8 +27,8 @@ export function RuntimeNotice({ runtime }: { runtime: RunRuntime }) {
       aria-label={isLocal ? 'Local deterministic run' : 'Model-backed run'}
       className={
         isLocal
-          ? 'flex gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200'
-          : 'flex gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
+          ? 'flex gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm text-warning '
+          : 'flex gap-3 rounded-md border border-success/30 bg-success/10 p-3 text-sm text-success '
       }
     >
       <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />

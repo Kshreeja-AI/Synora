@@ -29,9 +29,9 @@ export default function ForgotPasswordPage(): React.JSX.Element {
 
   if (submitted) {
     return (
-      <Card>
-        <CardContent className="p-8 text-center">
-          <h1 className="mb-4 text-2xl font-bold text-foreground">Check your email</h1>
+      <Card className="border-0 bg-transparent shadow-none">
+        <CardContent className="p-0 text-center">
+          <h1 className="mb-4 text-2xl font-semibold tracking-tight text-foreground">Check your email</h1>
           <p className="text-muted-foreground">
             If an account exists for <strong className="text-foreground">{email}</strong>, we&apos;ve sent a
             link to reset your password.
@@ -45,10 +45,10 @@ export default function ForgotPasswordPage(): React.JSX.Element {
   }
 
   return (
-    <Card>
-      <CardContent className="p-8">
-        <h1 className="mb-2 text-center text-3xl font-bold text-foreground">Forgot password?</h1>
-        <p className="mb-8 text-center text-sm text-muted-foreground">
+    <Card className="border-0 bg-transparent shadow-none">
+      <CardContent className="p-0">
+        <h1 className="mb-2 text-[1.75rem] font-semibold tracking-tightest text-foreground">Forgot password?</h1>
+        <p className="mb-8 text-sm text-muted-foreground">
           Enter your email and we&apos;ll send you a link to reset your password.
         </p>
 
@@ -75,14 +75,14 @@ export default function ForgotPasswordPage(): React.JSX.Element {
             />
           </div>
 
-          <Button type="submit" variant="primary" size="md" loading={loading} className="w-full">
+          <Button type="submit" variant="primary" size="lg" loading={loading} className="w-full text-sm">
             {loading ? 'Sending...' : 'Send reset link'}
           </Button>
         </form>
 
-        <p className="mt-6 text-center text-muted-foreground">
+        <p className="mt-8 text-sm text-muted-foreground">
           Remembered your password?{' '}
-          <Link href="/auth/login" className="font-semibold text-primary hover:underline">
+          <Link href="/auth/login" className="font-medium text-primary hover:underline">
             Sign in
           </Link>
         </p>

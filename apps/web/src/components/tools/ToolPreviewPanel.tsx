@@ -68,7 +68,7 @@ export function ToolPreviewPanel({ preview }: { preview: ToolExecutionPreview })
       )}
 
       {preview.blockers.length > 0 && (
-        <div className="space-y-1 rounded-md border border-red-300 bg-red-50 p-2 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive ">
           <p className="flex items-center gap-1 font-medium">
             <AlertTriangle className="h-3 w-3" aria-hidden />
             This would not run as-is

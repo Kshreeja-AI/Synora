@@ -30,7 +30,7 @@ import {
   deviceMetadata,
 } from '../utils/authSession';
 import { createNotification } from '../services/notification.service';
-import { assertRegistrationAllowed } from '../services/registrationPolicy';
+import { assertRegistrationAllowed, registrationMode } from '../services/registrationPolicy';
 import {
   sendVerificationEmail,
   sendPasswordResetEmail,
@@ -100,6 +100,16 @@ async function notifyBestEffort(label: string, notify: () => Promise<unknown>): 
     });
   }
 }
+
+/**
+ * Whether sign-up is open or by invitation. Public on purpose: the mode is
+ * already observable by submitting the form, and stating it up front lets
+ * the page explain a closed beta before someone fills in a password. It
+ * says nothing about any individual address.
+ */
+router.get('/registration-status', (_req, res) => {
+  res.json(createApiResponse({ mode: registrationMode() }));
+});
 
 router.post('/register', authInputValidator, registerLimiter, async (req, res, next) => {
   try {

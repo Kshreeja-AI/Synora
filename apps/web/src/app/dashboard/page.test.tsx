@@ -72,7 +72,7 @@ describe('DashboardPage', () => {
     });
     render(<DashboardPage />);
 
-    expect(screen.getByText(/welcome, ada!/i)).toBeDefined();
+    expect(screen.getByText(/welcome, ada/i)).toBeDefined();
     expect(screen.queryByText(/verify your email/i)).toBeNull();
   });
 
