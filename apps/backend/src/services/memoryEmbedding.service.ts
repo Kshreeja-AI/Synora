@@ -1,5 +1,5 @@
 import { prisma as db } from '@synora/database'
-import { Memory } from '@synora/database'
+import { Memory, MemoryPermission } from '@synora/database'
 import { NotFoundException, ServiceUnavailableException } from '@synora/shared'
 import { logger } from '../utils/logger'
 import { embed, EMBEDDING_PROVIDER_REGISTRY } from '../embeddings'
@@ -199,7 +199,8 @@ export class MemoryEmbeddingService {
   async semanticSearch(
     query: string,
     workspaceId: string,
-    limit: number = 10,
+    limit: number,
+    userId: string,
   ): Promise<Array<{ memoryId: string; memory: Memory; score: number }>> {
     await requireAvailable()
 
@@ -225,7 +226,20 @@ export class MemoryEmbeddingService {
     // re-read from Postgres and re-scoped to the workspace so a stale or
     // cross-workspace vector can never surface content.
     const memories = await db.memory.findMany({
-      where: { id: { in: [...scoreById.keys()] }, workspaceId },
+      where: {
+        id: { in: [...scoreById.keys()] },
+        workspaceId,
+        AND: [
+          {
+            OR: [
+              { permission: MemoryPermission.PRIVATE, userId },
+              { permission: MemoryPermission.WORKSPACE },
+              { permission: MemoryPermission.SHARED, sharedWith: { hasSome: [userId] } },
+              { permission: MemoryPermission.PUBLIC },
+            ],
+          },
+        ],
+      },
       include: { metadata: true },
     })
 

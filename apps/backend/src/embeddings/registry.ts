@@ -15,9 +15,11 @@ import { voyageEmbeddingDescriptor } from './providers/voyage.provider';
 import { cohereEmbeddingDescriptor } from './providers/cohere.provider';
 import { ollamaEmbeddingDescriptor } from './providers/ollama.provider';
 import { selfHostedEmbeddingDescriptor } from './providers/selfHosted.provider';
+import { openrouterEmbeddingDescriptor } from './providers/openrouter.provider';
 
 export const EMBEDDING_PROVIDER_REGISTRY: readonly EmbeddingProviderDescriptor[] = [
   openaiEmbeddingDescriptor,
+  openrouterEmbeddingDescriptor,
   voyageEmbeddingDescriptor,
   geminiEmbeddingDescriptor,
   cohereEmbeddingDescriptor,

@@ -5,7 +5,9 @@ describe('EMBEDDING_PROVIDER_REGISTRY', () => {
   it('includes every provider named in the product requirement', () => {
     const ids = EMBEDDING_PROVIDER_REGISTRY.map((p) => p.id);
     expect(ids).toEqual(
-      expect.arrayContaining(['openai', 'gemini', 'claude', 'voyage', 'cohere', 'ollama', 'self-hosted'])
+      expect.arrayContaining([
+        'openai', 'openrouter', 'gemini', 'claude', 'voyage', 'cohere', 'ollama', 'self-hosted',
+      ])
     );
   });
 
