@@ -14,6 +14,9 @@ export interface GenerateAudioInput {
   /** Optional until audio routes are workspace-scoped; global caps always bind. */
   workspaceId?: string;
   text: string;
+  /** Select a provider/model explicitly, e.g. an OpenRouter catalog entry. */
+  providerId?: string;
+  model?: string;
   voice?: string;
   format?: 'mp3' | 'wav' | 'ogg' | 'flac' | 'aac';
   projectId?: string;
@@ -38,7 +41,7 @@ const EXTENSION_BY_FORMAT: Record<string, string> = {
  */
 export class AudioGenerationService {
   async generate(input: GenerateAudioInput): Promise<GeneratedAudio> {
-    const provider = await resolveTextToSpeechProvider(); // throws if unconfigured — caller surfaces 503
+    const provider = await resolveTextToSpeechProvider({ explicitProviderId: input.providerId }); // throws if unconfigured — caller surfaces 503
     const storage = await resolveStorageProvider();
 
     const pending = await prisma.generatedAudio.create({
@@ -62,6 +65,7 @@ export class AudioGenerationService {
     try {
       const result = await provider.synthesize({
         text: input.text,
+        model: input.model,
         voice: input.voice,
         format: input.format,
       });
