@@ -28,7 +28,7 @@ vi.mock('./memoryCache/backend', () => {
       set: (key: string, value: unknown) => { store.set(key, value) },
       del: (key: string) => { store.delete(key) },
       keys: (pattern: string) =>
-        [...store.keys()].filter((k) => k.startsWith(pattern.replace('*', ''))),
+        [...store.keys()].filter((k) => k.startsWith(pattern.replace(/\*/g, ''))),
     }),
   }
 })
