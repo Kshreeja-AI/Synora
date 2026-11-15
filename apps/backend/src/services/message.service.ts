@@ -116,6 +116,7 @@ export class MessageService {
   }
 
   async enqueueGeneration(conversationId: string, userMessage: Message, assistantMessage: Message, userId: string): Promise<void> {
+    let streamingJobId: string | undefined
     try {
       const conversation = await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -135,6 +136,7 @@ export class MessageService {
           status: 'RUNNING',
         },
       })
+      streamingJobId = job.id
 
       // Enqueue the generation job on the shared singleton producer —
       // constructing a Queue per send leaked a Redis connection per
@@ -153,10 +155,27 @@ export class MessageService {
         assistantMessageId: assistantMessage.id,
       })
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
       logger.error('[messageService.enqueueGeneration] Failed to enqueue generation', {
-        error: error instanceof Error ? error.message : String(error),
+        error: reason,
+        streamingJobId,
       })
-      // Don't throw - let the placeholder message stay so user knows something happened
+      // Don't throw - the user's message is saved and the placeholder stays.
+      // But no worker will ever pick this job up, so it must not stay RUNNING:
+      // a subscriber would wait on a stream nobody publishes to.
+      if (streamingJobId) {
+        await prisma.streamingJob
+          .update({
+            where: { id: streamingJobId },
+            data: { status: 'FAILED', lastError: reason, completedAt: new Date() },
+          })
+          .catch((updateError: unknown) => {
+            logger.error('[messageService.enqueueGeneration] Could not mark streaming job FAILED', {
+              streamingJobId,
+              error: updateError instanceof Error ? updateError.message : String(updateError),
+            })
+          })
+      }
     }
   }
 

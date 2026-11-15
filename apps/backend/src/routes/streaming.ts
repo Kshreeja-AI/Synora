@@ -75,6 +75,14 @@ router.get(
         return;
       }
 
+      if (job.status === 'FAILED') {
+        // Nothing will ever publish on this job's channel; say so now
+        // instead of holding the connection open on heartbeats.
+        res.write(`event: error\ndata: ${JSON.stringify({ code: 'GENERATION_FAILED', message: 'The response could not be generated. Please try again.' })}\n\n`);
+        res.end();
+        return;
+      }
+
       const subscriber = redis.duplicate();
       const streamChannel = `job:${job.id}:stream`;
 
