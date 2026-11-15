@@ -14,10 +14,14 @@
  * to the permission filter.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { prisma } from '@synora/database'
 import { MemoryService } from '../memory.service'
 
 vi.mock('@synora/database', () => ({
   prisma: {
+    workspace: {
+      findFirst: vi.fn().mockResolvedValue({ id: 'ws-1' }),
+    },
     memory: {
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
@@ -42,7 +46,6 @@ vi.mock('../memoryCache.service', () => ({
   },
 }))
 
-const { prisma } = await import('@synora/database')
 const findManyMock = vi.mocked(prisma.memory.findMany)
 
 describe('MemoryService.searchMemories — where.AND fix', () => {
