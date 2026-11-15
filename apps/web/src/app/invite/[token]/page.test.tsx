@@ -17,12 +17,12 @@ vi.mock('../../../lib/api/invitations', () => ({
   acceptInvitation: vi.fn(),
 }));
 
-vi.mock('../../../lib/auth/token-storage', () => ({
-  getAccessToken: vi.fn(),
+vi.mock('../../../hooks/useCurrentUser', () => ({
+  useCurrentUser: vi.fn(),
 }));
 
 import { previewInvitation, acceptInvitation } from '../../../lib/api/invitations';
-import { getAccessToken } from '../../../lib/auth/token-storage';
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
 
 function renderWithClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -35,7 +35,7 @@ describe('InvitePage', () => {
   });
 
   it('shows workspace + inviter details from a valid preview', async () => {
-    (getAccessToken as unknown as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ data: undefined });
     (previewInvitation as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       workspaceName: 'Acme Inc',
       role: 'EDITOR',
@@ -52,7 +52,7 @@ describe('InvitePage', () => {
   });
 
   it('prompts login/signup when not authenticated', async () => {
-    (getAccessToken as unknown as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ data: undefined });
     (previewInvitation as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       workspaceName: 'Acme Inc',
       role: 'MEMBER',
@@ -69,7 +69,7 @@ describe('InvitePage', () => {
   });
 
   it('accepts the invitation when authenticated and redirects to the dashboard', async () => {
-    (getAccessToken as unknown as ReturnType<typeof vi.fn>).mockReturnValue('a-token');
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ data: { id: 'user-1' } });
     (previewInvitation as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       workspaceName: 'Acme Inc',
       role: 'MEMBER',
@@ -89,7 +89,7 @@ describe('InvitePage', () => {
   });
 
   it('shows a not-found state for an invalid token', async () => {
-    (getAccessToken as unknown as ReturnType<typeof vi.fn>).mockReturnValue(null);
+    (useCurrentUser as unknown as ReturnType<typeof vi.fn>).mockReturnValue({ data: undefined });
     (previewInvitation as unknown as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('not found'));
 
     renderWithClient(<InvitePage />);

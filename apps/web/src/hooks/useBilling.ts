@@ -20,13 +20,11 @@ import type {
   CreditLedgerEntry,
   Invoice,
 } from '../lib/api/types';
-import { getAccessToken } from '../lib/auth/token-storage';
 
 export function usePlans(): UseQueryResult<Plan[]> {
   return useQuery({
     queryKey: ['billing', 'plans'],
     queryFn: listPlans,
-    enabled: Boolean(getAccessToken()),
   });
 }
 
@@ -34,7 +32,7 @@ export function useSubscription(workspaceId: string): UseQueryResult<Subscriptio
   return useQuery({
     queryKey: ['billing', 'subscription', workspaceId],
     queryFn: () => getSubscription(workspaceId),
-    enabled: Boolean(getAccessToken() && workspaceId),
+    enabled: Boolean(workspaceId),
   });
 }
 
@@ -42,7 +40,7 @@ export function useCreditBalance(workspaceId: string): UseQueryResult<WorkspaceC
   return useQuery({
     queryKey: ['billing', 'credits', workspaceId],
     queryFn: () => getCreditBalance(workspaceId),
-    enabled: Boolean(getAccessToken() && workspaceId),
+    enabled: Boolean(workspaceId),
   });
 }
 
@@ -50,7 +48,7 @@ export function useCreditLedger(workspaceId: string): UseQueryResult<CreditLedge
   return useQuery({
     queryKey: ['billing', 'creditLedger', workspaceId],
     queryFn: () => listCreditLedger(workspaceId),
-    enabled: Boolean(getAccessToken() && workspaceId),
+    enabled: Boolean(workspaceId),
   });
 }
 
@@ -58,7 +56,7 @@ export function useUsageSummary(workspaceId: string): UseQueryResult<Record<stri
   return useQuery({
     queryKey: ['billing', 'usage', workspaceId],
     queryFn: () => getUsageSummary(workspaceId),
-    enabled: Boolean(getAccessToken() && workspaceId),
+    enabled: Boolean(workspaceId),
   });
 }
 
@@ -66,7 +64,7 @@ export function useInvoices(workspaceId: string): UseQueryResult<Invoice[]> {
   return useQuery({
     queryKey: ['billing', 'invoices', workspaceId],
     queryFn: () => listInvoices(workspaceId),
-    enabled: Boolean(getAccessToken() && workspaceId),
+    enabled: Boolean(workspaceId),
   });
 }
 

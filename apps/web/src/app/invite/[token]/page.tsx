@@ -1,13 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Card, CardContent, EmptyState, Skeleton, toast } from '@synora/design-system';
 import { MailOpen } from 'lucide-react';
 import { previewInvitation, acceptInvitation } from '../../../lib/api/invitations';
 import { ApiError } from '../../../lib/api/client';
-import { getAccessToken } from '../../../lib/auth/token-storage';
+import { useCurrentUser } from '../../../hooks/useCurrentUser';
 import { useWorkspaceStore } from '../../../stores/workspace-store';
 
 export default function InvitePage(): React.JSX.Element {
@@ -16,7 +15,7 @@ export default function InvitePage(): React.JSX.Element {
   const router = useRouter();
   const queryClient = useQueryClient();
   const setCurrentWorkspaceId = useWorkspaceStore((state) => state.setCurrentWorkspaceId);
-  const [isAuthenticated] = useState(() => Boolean(getAccessToken()));
+  const isAuthenticated = Boolean(useCurrentUser().data);
 
   const { data: preview, isLoading, isError } = useQuery({
     queryKey: ['invitations', token, 'preview'],
