@@ -104,4 +104,17 @@ describe('POST /api/auth/register — REGISTRATION_MODE', () => {
     await request(makeApp()).post('/api/auth/register').send(body);
     expect(mocks.invitationFindFirst).not.toHaveBeenCalled();
   });
+
+  it('reports the mode publicly, defaulting to invite and never leaking the allowlist', async () => {
+    delete process.env.REGISTRATION_MODE;
+    process.env.REGISTRATION_ALLOWLIST = 'founder@example.com';
+    const closed = await request(makeApp()).get('/api/auth/registration-status');
+    expect(closed.status).toBe(200);
+    expect(closed.body.data).toEqual({ mode: 'invite' });
+    expect(JSON.stringify(closed.body)).not.toContain('founder@example.com');
+
+    process.env.REGISTRATION_MODE = 'open';
+    const open = await request(makeApp()).get('/api/auth/registration-status');
+    expect(open.body.data).toEqual({ mode: 'open' });
+  });
 });

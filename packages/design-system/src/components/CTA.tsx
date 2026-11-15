@@ -22,9 +22,11 @@ export interface CTAProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 const variantStyles = {
-  primary: 'bg-gradient-to-br from-primary/12 via-background to-fuchsia-500/8 border-primary/20',
+  // Opacity steps must be on Tailwind's scale (5, 10, 15, ...): the previous
+  // `/12` and `/8` generated no CSS at all, so the gradient never rendered.
+  primary: 'bg-gradient-to-br from-primary/10 via-background to-primary/5 border-primary/20',
   secondary: 'bg-card/50 border-border/30',
-  gradient: 'bg-gradient-to-br from-primary/8 to-transparent border-border/20',
+  gradient: 'bg-gradient-to-br from-primary/10 to-transparent border-border/20',
 };
 
 /**

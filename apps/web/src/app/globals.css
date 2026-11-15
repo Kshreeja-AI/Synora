@@ -9,17 +9,58 @@
 
   html {
     scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings:
       'rlig' 1,
-      'calt' 1;
+      'calt' 1,
+      'ss01' 1;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply tracking-tight;
+    text-wrap: balance;
   }
 
   ::selection {
     @apply bg-primary/30;
+  }
+
+  /* One visible focus treatment for anything that does not set its own. */
+  :where(a, button, [role='button'], [tabindex]):focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: calc(var(--radius) - 4px);
+  }
+}
+
+@layer components {
+  /* Small uppercase label above a section or a group of nav items. */
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /* A card that responds to the pointer: border and lift, nothing louder. */
+  .surface-interactive {
+    @apply rounded-lg border border-border bg-card shadow-sm transition-[border-color,box-shadow,transform] duration-200 ease-out-expo;
+  }
+  .surface-interactive:hover {
+    @apply border-foreground/15 shadow-md;
+    transform: translateY(-1px);
+  }
+
+  /* Hairline grid used behind marketing and auth panels. */
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, hsl(var(--border) / 0.55) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border) / 0.55) 1px, transparent 1px);
+    background-size: 56px 56px;
   }
 }
 
@@ -39,4 +80,21 @@
 
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-accent;
+}
+
+/* Motion is decoration here, never information: with reduced motion on,
+   everything arrives in its final state immediately. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

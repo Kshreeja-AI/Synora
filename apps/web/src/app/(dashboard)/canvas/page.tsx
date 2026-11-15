@@ -155,8 +155,8 @@ type UndoEntry =
 
 const BLOCK_STYLES: Record<BlockKind, string> = {
   text: 'bg-background',
-  note: 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800',
-  link: 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800',
+  note: 'bg-warning/10 border-warning/30 ',
+  link: 'bg-primary/10 border-primary/30 ',
 };
 
 export default function CanvasPage() {

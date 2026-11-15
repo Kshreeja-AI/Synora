@@ -78,16 +78,16 @@ const STATUS_META: Record<ToolExecutionStatus, { label: string; tone: 'ok' | 'ba
 
 function StatusIcon({ status }: { status: ToolExecutionStatus }) {
   const tone = STATUS_META[status].tone;
-  if (tone === 'ok') return <CheckCircle aria-hidden className="h-4 w-4 text-green-600" />;
+  if (tone === 'ok') return <CheckCircle aria-hidden className="h-4 w-4 text-success" />;
   if (tone === 'bad') {
     return status === 'REJECTED' || status === 'CANCELLED' ? (
-      <XCircle aria-hidden className="h-4 w-4 text-red-600" />
+      <XCircle aria-hidden className="h-4 w-4 text-destructive" />
     ) : (
-      <AlertCircle aria-hidden className="h-4 w-4 text-red-600" />
+      <AlertCircle aria-hidden className="h-4 w-4 text-destructive" />
     );
   }
   return status === 'PENDING' ? (
-    <Clock aria-hidden className="h-4 w-4 text-yellow-600" />
+    <Clock aria-hidden className="h-4 w-4 text-warning" />
   ) : (
     <Spinner size="sm" />
   );

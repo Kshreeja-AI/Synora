@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { listAvailableModels, getModelsForProvider, modelCatalogGaps } from '../models';
+import {
+  listAvailableModels,
+  getModelsForProvider,
+  modelCatalogGaps,
+  negotiateCapabilitySupport,
+} from '../models';
 import { initConfig, __resetConfigForTests } from '../../config';
 
 // Provider descriptors call getConfig() inside isConfigured(); the app path
@@ -50,6 +55,57 @@ describe('AI model catalog', () => {
 
   it('returns an empty list for an unknown provider rather than throwing', () => {
     expect(getModelsForProvider('does-not-exist')).toEqual([]);
+  });
+
+  it('keeps all requested OpenRouter cards in the hand-maintained catalog', () => {
+    const ids = getModelsForProvider('openrouter').map((model) => model.id);
+    expect(ids).toEqual(expect.arrayContaining([
+      'thinkingmachines/inkling-small:free',
+      'nvidia/nemotron-3.5-lightning:free',
+      'inclusionai/ming-image-0.1-design-layer',
+      'fish-audio/s2.1-pro-free:free',
+      'inception/mercury-decide:free',
+      'respan/span-01-lite:free',
+      'liquid/lfm-2.5-embedding-350m:free',
+      'google/gemma-4-31b-it:free',
+      'nvidia/nemotron-3-ultra:free',
+      'nvidia/nemotron-3-super:free',
+      'qwen/qwen3.8-27b:free',
+      'dots-studio/dots3-note-preview:free',
+      'liquid/lfm2.5-2.6b:free',
+      'nvidia/nemotron-3-embed-1b:free',
+      'nvidia/llama-nemotron-embed-vl-1b-v2:free',
+      'google/gemma-4-26b-a4b-it:free',
+      'poolside/laguna-s-2.1:free',
+    ]));
+  });
+
+  it('classifies specialized models by role instead of treating them as chat', () => {
+    const models = getModelsForProvider('openrouter');
+    const byId = (id: string) => models.find((model) => model.id === id)!;
+    expect(byId('liquid/lfm-2.5-embedding-350m:free').roles).toContain('embeddings');
+    expect(byId('inclusionai/ming-image-0.1-design-layer').roles).toContain('image-generation');
+    expect(byId('fish-audio/s2.1-pro-free:free').roles).toEqual(['text-to-speech']);
+    expect(byId('inception/mercury-decide:free').roles).toEqual(['decision']);
+    expect(byId('respan/span-01-lite:free').roles).toEqual(['decision', 'evaluation']);
+    expect(byId('nvidia/llama-nemotron-embed-vl-1b-v2:free').roles).toContain('vision');
+
+    const routerCapabilities = ['text-generation', 'code-generation', 'tool-calling'] as const;
+    expect(negotiateCapabilitySupport(
+      byId('qwen/qwen3.8-27b:free'), 'openrouter', routerCapabilities
+    )['tool-calling']).toBe('supported');
+    expect(negotiateCapabilitySupport(
+      byId('liquid/lfm-2.5-embedding-350m:free'), 'openrouter', routerCapabilities
+    ).embeddings).toBe('supported');
+    expect(negotiateCapabilitySupport(
+      byId('nvidia/llama-nemotron-embed-vl-1b-v2:free'), 'openrouter', routerCapabilities
+    ).embeddings).toBe('metadata-only');
+    expect(negotiateCapabilitySupport(
+      byId('inclusionai/ming-image-0.1-design-layer'), 'openrouter', routerCapabilities
+    )['image-generation']).toBe('metadata-only');
+    expect(negotiateCapabilitySupport(
+      byId('respan/span-01-lite:free'), 'openrouter', routerCapabilities
+    ).evaluation).toBe('metadata-only');
   });
 });
 

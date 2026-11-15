@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Skeleton } from '@synora/design-system';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useCurrentWorkspace } from '@/hooks/useCurrentWorkspace';
 import { useSearchDialog } from '@/hooks/useSearchDialog';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import { LogoMark } from '../brand/Logo';
 import { SearchDialog } from '../search/SearchDialog';
 import { CommandPalette } from './CommandPalette';
 import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog';
@@ -32,7 +32,7 @@ export interface AppShellProps {
  * there is exactly one place where "you must be logged in to see this"
  * and "this is what the app frame looks like" are decided.
  */
-export function AppShell({ children, contentClassName = 'p-6' }: AppShellProps): React.JSX.Element {
+export function AppShell({ children, contentClassName = 'mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8' }: AppShellProps): React.JSX.Element {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const { data: user, isLoading } = useRequireAuth();
   const { currentWorkspace } = useCurrentWorkspace();
@@ -63,28 +63,38 @@ export function AppShell({ children, contentClassName = 'p-6' }: AppShellProps):
 
   if (isLoading || !user) {
     return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Skeleton className="h-10 w-10 rounded-full" />
+      <div
+        role="status"
+        aria-label="Loading your workspace"
+        className="flex h-screen items-center justify-center bg-background"
+      >
+        <LogoMark className="h-10 w-10 animate-pulse" />
       </div>
     );
   }
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-dvh bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground"
+      >
+        Skip to content
+      </a>
       {sidebarOpen && (
         <div
           aria-hidden
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm md:hidden"
         />
       )}
 
       <Sidebar open={sidebarOpen} onNavigate={closeOverlayOnMobile} />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <Topbar onToggleSidebar={() => setSidebarOpen((open) => !open)} onSearch={openSearch} />
-        <main className="flex-1 overflow-auto">
-          <div className={contentClassName || undefined}>{children}</div>
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto outline-none">
+          <div className={contentClassName || 'h-full'}>{children}</div>
         </main>
       </div>
 

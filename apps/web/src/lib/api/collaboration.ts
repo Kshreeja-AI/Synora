@@ -36,9 +36,12 @@ let socketInstance: Socket | null = null;
  */
 export function getRealtimeSocket(): Socket {
   if (!socketInstance) {
-    socketInstance = io(getApiBaseUrl(), {
+    // Same origin as the page, for the same reason as every other request
+    // (see getApiBaseUrl). Polling first: it works through any HTTP proxy,
+    // and socket.io upgrades to a WebSocket only where one is available.
+    socketInstance = io(getApiBaseUrl() || undefined, {
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       autoConnect: false,
     });
   }

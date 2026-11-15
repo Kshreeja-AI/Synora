@@ -24,7 +24,6 @@ import {
   type GenerateAudioInput,
 } from '../lib/api/media';
 import { ApiError } from '../lib/api/client';
-import { getAccessToken } from '../lib/auth/token-storage';
 
 /** Poll cadence for in-flight video jobs. */
 const VIDEO_POLL_INTERVAL_MS = 4000;
@@ -33,7 +32,6 @@ export function useImages(): UseQueryResult<GeneratedImage[]> {
   return useQuery({
     queryKey: ['media', 'images'],
     queryFn: listImages,
-    enabled: Boolean(getAccessToken()),
   });
 }
 
@@ -41,7 +39,6 @@ export function useVideos(): UseQueryResult<GeneratedVideo[]> {
   return useQuery({
     queryKey: ['media', 'videos'],
     queryFn: listVideos,
-    enabled: Boolean(getAccessToken()),
     // Video generation finishes in a worker, so the list has to re-check
     // itself while anything on it is still running. Once every job is
     // terminal the interval returns false and polling stops.
@@ -58,7 +55,7 @@ export function useVideoJob(id: string | undefined): UseQueryResult<GeneratedVid
   return useQuery({
     queryKey: ['media', 'videos', id],
     queryFn: () => getVideo(id!),
-    enabled: Boolean(getAccessToken() && id),
+    enabled: Boolean(id),
     refetchInterval: (query) => {
       const video = query.state.data;
       if (!video) return VIDEO_POLL_INTERVAL_MS;
@@ -71,7 +68,6 @@ export function useAudioClips(): UseQueryResult<GeneratedAudio[]> {
   return useQuery({
     queryKey: ['media', 'audio'],
     queryFn: listAudio,
-    enabled: Boolean(getAccessToken()),
   });
 }
 

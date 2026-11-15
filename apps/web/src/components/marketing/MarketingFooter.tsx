@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { FEATURES } from '../../content/features';
+import { Logo } from '../brand/Logo';
 
 const PRODUCT_LINKS = FEATURES.map((f) => ({
   href: `/features/${f.slug}`,
@@ -57,19 +58,13 @@ function FooterColumn({
 export function MarketingFooter(): React.JSX.Element {
   return (
     <footer className="border-t border-border">
-      <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl px-5 py-14 sm:px-8">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 text-lg font-bold tracking-tight">
-              <span
-                aria-hidden
-                className="inline-block h-5 w-5 rounded-md bg-gradient-to-br from-primary to-fuchsia-500"
-              />
-              Synora
-            </div>
-            <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              The unified AI platform for creators — text, code, images, video, and audio behind
-              one provider-agnostic engine.
+            <Logo markClassName="h-7 w-7" />
+            <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted-foreground">
+              One workspace for conversations, agents and workflows, behind a single
+              provider-agnostic engine.
             </p>
           </div>
           <FooterColumn title="Product" links={PRODUCT_LINKS} />

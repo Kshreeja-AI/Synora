@@ -223,17 +223,21 @@ export class MemoryService {
       where.tags = { hasSome: tags }
     }
 
-    // Full-text search if term provided
-    if (searchTerm) {
-      where.OR = [{ content: { search: searchTerm } }, { summary: { search: searchTerm } }]
-    }
-
-    // Permission filtering
-    where.OR = [
-      { permission: MemoryPermission.PRIVATE, userId },
-      { permission: MemoryPermission.WORKSPACE },
-      { permission: MemoryPermission.SHARED, sharedWith: { hasSome: [userId] } },
-      { permission: MemoryPermission.PUBLIC },
+    // Keep full-text matching and access control as separate AND clauses.
+    // Assigning both to `where.OR` made the permission clause silently
+    // replace the search clause and returned unrelated memories.
+    where.AND = [
+      ...(searchTerm
+        ? [{ OR: [{ content: { search: searchTerm } }, { summary: { search: searchTerm } }] }]
+        : []),
+      {
+        OR: [
+          { permission: MemoryPermission.PRIVATE, userId },
+          { permission: MemoryPermission.WORKSPACE },
+          { permission: MemoryPermission.SHARED, sharedWith: { hasSome: [userId] } },
+          { permission: MemoryPermission.PUBLIC },
+        ],
+      },
     ]
 
     const [memories, total] = await Promise.all([

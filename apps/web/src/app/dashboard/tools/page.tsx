@@ -36,10 +36,10 @@ function ExecutionHistory({ workspaceId, toolId }: { workspaceId: string; toolId
           <span
             className={
               isActiveExecution(execution.status)
-                ? 'font-medium text-yellow-700 dark:text-yellow-500'
+                ? 'font-medium text-warning '
                 : execution.status === 'COMPLETED'
-                  ? 'font-medium text-green-700 dark:text-green-500'
-                  : 'font-medium text-red-700 dark:text-red-500'
+                  ? 'font-medium text-success '
+                  : 'font-medium text-destructive '
             }
           >
             {execution.status}
@@ -97,7 +97,7 @@ export default function ToolsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Tools</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">
+          <p className="mt-2 text-muted-foreground ">
             HTTP endpoints your workspace can call, with per-tool timeouts, retries, and
             optional admin approval.
           </p>
@@ -155,7 +155,7 @@ export default function ToolsPage() {
                       {tool.requiresApproval && (
                         <span
                           title="Requires approval"
-                          className="flex items-center gap-1 rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-medium text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-400"
+                          className="flex items-center gap-1 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning "
                         >
                           <ShieldCheck aria-hidden className="h-3 w-3" />
                           approval

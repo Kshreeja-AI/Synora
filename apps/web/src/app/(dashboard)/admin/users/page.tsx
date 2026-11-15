@@ -13,8 +13,8 @@ import {
 } from '@/lib/api/admin';
 
 const STATUS_COLOR: Record<string, string> = {
-  ACTIVE: 'text-emerald-500',
-  SUSPENDED: 'text-amber-500',
+  ACTIVE: 'text-success',
+  SUSPENDED: 'text-warning',
   DELETED: 'text-destructive',
 };
 

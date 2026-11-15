@@ -62,6 +62,29 @@ describe('recognising an address that only works on this machine', () => {
     expect(isLoopbackUrl('https://synora.example.com/localhost')).toBe(false);
   });
 
+  it('catches the whole 127.0.0.0/8 loopback block, not only 127.0.0.1', () => {
+    // A bare Set of literal strings would miss every address in the block
+    // besides the one it happens to list.
+    expect(isLoopbackUrl('http://127.0.0.2:3000')).toBe(true);
+    expect(isLoopbackUrl('http://127.1.2.3:3000')).toBe(true);
+    expect(isLoopbackUrl('http://127.255.255.254:3000')).toBe(true);
+  });
+
+  it('catches "localhost." — the trailing-dot FQDN form browsers treat as identical', () => {
+    expect(isLoopbackUrl('http://localhost.:3000')).toBe(true);
+  });
+
+  it('catches the IPv4-mapped IPv6 spelling of a loopback address', () => {
+    // ::ffff:127.0.0.1 is 127.0.0.1 written as IPv6, and the URL parser
+    // renders it as the compressed hex "[::ffff:7f00:1]".
+    expect(isLoopbackUrl('http://[::ffff:127.0.0.1]:3000')).toBe(true);
+    expect(isLoopbackUrl('http://[::ffff:7f00:1]:3000')).toBe(true);
+  });
+
+  it('does not flag an IPv4-mapped IPv6 address outside the loopback block', () => {
+    expect(isLoopbackUrl('http://[::ffff:8.8.8.8]:3000')).toBe(false);
+  });
+
   it('leaves an unparseable value to the schema, rather than blaming it', () => {
     expect(isLoopbackUrl('not a url')).toBe(false);
   });

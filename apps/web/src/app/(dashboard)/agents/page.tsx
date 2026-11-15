@@ -116,7 +116,7 @@ export default function AgentsPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive ">
           {error.message}
         </div>
       )}

@@ -28,13 +28,13 @@ import {
 
 const RUN_STATE_STYLES: Record<RunState, string> = {
   pending: 'bg-muted text-muted-foreground',
-  planning: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
-  awaiting_approval: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
-  running: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
-  completed: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
-  failed: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+  planning: 'bg-primary/10 text-primary ',
+  awaiting_approval: 'bg-warning/10 text-warning ',
+  running: 'bg-primary/10 text-primary ',
+  completed: 'bg-success/10 text-success ',
+  failed: 'bg-destructive/10 text-destructive ',
   cancelled: 'bg-muted text-muted-foreground',
-  timed_out: 'bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200',
+  timed_out: 'bg-destructive/10 text-destructive ',
 };
 
 const STEP_STATE_LABEL: Record<StepState, string> = {
@@ -162,28 +162,28 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
       </div>
 
       {run.error && (
-        <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive ">
           {run.error}
         </div>
       )}
 
       {pending && (
-        <div className="space-y-3 rounded-md border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
+        <div className="space-y-3 rounded-md border border-warning/30 bg-warning/10 p-4 ">
           <div className="flex items-start gap-2">
-            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning " aria-hidden />
             <div>
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+              <p className="text-sm font-semibold text-warning ">
                 Waiting for your decision on step {pending.stepId}
               </p>
               {/* Nothing has run yet. There is no execute-first path, so a
                   rejection here means the step never happens at all. */}
-              <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">{pending.reason}</p>
+              <p className="mt-1 text-sm text-warning ">{pending.reason}</p>
               {/* The person approving is often not the person who asked,
                   and arrives with less context, not more. These are the
                   same facts a preview would have shown — computed by the
                   same checker, so the two can never disagree. */}
               {facts && (
-                <div className="mt-2 space-y-1 text-sm text-amber-900 dark:text-amber-200">
+                <div className="mt-2 space-y-1 text-sm text-warning ">
                   <p>{facts.description}</p>
                   <p className="text-xs">
                     {facts.kind === 'tool' ? `Calls tool ${facts.toolId}` : 'Generates text'}
@@ -252,7 +252,7 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
           </div>
           {/* Said out loud because it surprises people: rejecting does not
               skip the step and carry on. */}
-          <p className="text-xs text-amber-800 dark:text-amber-300">
+          <p className="text-xs text-warning ">
             Rejecting ends the whole run. A refused step is never skipped past.
           </p>
         </div>
@@ -300,7 +300,7 @@ export function RunDetail({ workspaceId, run }: { workspaceId: string; run: Agen
                   </pre>
                 )}
                 {record.error && (
-                  <p className="mt-2 text-xs text-red-700 dark:text-red-300">{record.error}</p>
+                  <p className="mt-2 text-xs text-destructive ">{record.error}</p>
                 )}
               </li>
             ))}

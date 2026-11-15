@@ -152,9 +152,9 @@ export default function DeveloperPage() {
                       {revoked ? (
                         <span className="text-destructive">Revoked</span>
                       ) : expired ? (
-                        <span className="text-amber-500">Expired</span>
+                        <span className="text-warning">Expired</span>
                       ) : (
-                        <span className="text-emerald-500">Active</span>
+                        <span className="text-success">Active</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right">
@@ -181,7 +181,7 @@ export default function DeveloperPage() {
       {/* Create dialog */}
       {showCreate ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
         >
@@ -222,7 +222,7 @@ export default function DeveloperPage() {
           key must not survive in memory once the modal is dismissed. */}
       {justCreated ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm"
           role="dialog"
           aria-modal="true"
         >

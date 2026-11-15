@@ -49,9 +49,9 @@ function Tile({
     <div className="rounded-lg border border-border bg-card p-4">
       <div className="flex items-center justify-between">
         <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
-        <Icon className={`h-4 w-4 ${tone === 'warn' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+        <Icon className={`h-4 w-4 ${tone === 'warn' ? 'text-warning' : 'text-muted-foreground'}`} />
       </div>
-      <div className={`mt-2 text-2xl font-semibold ${tone === 'warn' ? 'text-amber-500' : ''}`}>{value}</div>
+      <div className={`mt-2 text-2xl font-semibold ${tone === 'warn' ? 'text-warning' : ''}`}>{value}</div>
       {sub ? <div className="mt-1 text-xs text-muted-foreground">{sub}</div> : null}
     </div>
   );
@@ -167,7 +167,7 @@ function DriftTable({
                     not enough history yet ({row.baselineSamples} baseline samples)
                   </span>
                 ) : row.flagged ? (
-                  <span className="text-xs font-medium text-amber-500">{row.flaggedLabel}</span>
+                  <span className="text-xs font-medium text-warning">{row.flaggedLabel}</span>
                 ) : (
                   <span className="text-xs text-muted-foreground">steady</span>
                 )}
@@ -250,8 +250,8 @@ export default function EngineeringDashboardPage() {
           <>
             <p className="text-sm">{readiness.data.summary}</p>
             <div className="mt-3 flex flex-wrap gap-4 text-sm">
-              <span className="text-emerald-600">{readiness.data.passed} passing</span>
-              <span className="text-red-500">{readiness.data.failed} failing</span>
+              <span className="text-success">{readiness.data.passed} passing</span>
+              <span className="text-destructive">{readiness.data.failed} failing</span>
               <span className="text-muted-foreground">{readiness.data.unmeasured} unmeasured</span>
             </div>
             <ul className="mt-4 space-y-3">
@@ -262,9 +262,9 @@ export default function EngineeringDashboardPage() {
                     <span
                       className={
                         gate.status === 'passed'
-                          ? 'text-sm font-semibold text-emerald-600'
+                          ? 'text-sm font-semibold text-success'
                           : gate.status === 'failed'
-                            ? 'text-sm font-semibold text-red-500'
+                            ? 'text-sm font-semibold text-destructive'
                             : 'text-sm font-semibold text-muted-foreground'
                       }
                     >
@@ -361,10 +361,10 @@ export default function EngineeringDashboardPage() {
         // First thing on the page, deliberately. If a watcher is not
         // running, every calm figure below it is calm for the wrong reason,
         // and the reader needs to know that before reading any of them.
-        <div className="rounded-lg border border-red-500/60 bg-red-500/5 p-4">
+        <div className="rounded-lg border border-destructive/60 bg-destructive/5 p-4">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-500" />
-            <h2 className="text-sm font-semibold text-red-500">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            <h2 className="text-sm font-semibold text-destructive">
               {runtime.data.notRunning.length} watcher(s) are not running
             </h2>
           </div>
@@ -439,8 +439,8 @@ export default function EngineeringDashboardPage() {
                   <span
                     className={
                       entry.running
-                        ? 'text-xs font-medium text-emerald-500'
-                        : 'text-xs font-medium text-red-500'
+                        ? 'text-xs font-medium text-success'
+                        : 'text-xs font-medium text-destructive'
                     }
                   >
                     {entry.running ? `running (${entry.listeners} listener(s))` : 'not running'}
@@ -470,7 +470,7 @@ export default function EngineeringDashboardPage() {
                 <span
                   className={
                     path.instrumented
-                      ? 'text-xs font-medium text-emerald-500'
+                      ? 'text-xs font-medium text-success'
                       : 'text-xs font-medium text-muted-foreground'
                   }
                 >
@@ -517,7 +517,7 @@ export default function EngineeringDashboardPage() {
                       <span className="text-muted-foreground"> / {entry.modelId}</span>
                     </td>
                     <td className="py-2 pr-4">{entry.requests}</td>
-                    <td className={`py-2 pr-4 ${entry.successRate < 1 ? 'text-amber-500' : ''}`}>
+                    <td className={`py-2 pr-4 ${entry.successRate < 1 ? 'text-warning' : ''}`}>
                       {Math.round(entry.successRate * 100)}%
                     </td>
                     <td className="py-2 pr-4">{entry.p95LatencyMs} ms</td>
@@ -562,7 +562,7 @@ export default function EngineeringDashboardPage() {
                     <td className="py-2 pr-4">{Math.round(entry.recentSuccessRate * 100)}%</td>
                     <td className="py-2">
                       {entry.regressing ? (
-                        <span className="text-xs font-medium text-amber-500">regressing</span>
+                        <span className="text-xs font-medium text-warning">regressing</span>
                       ) : (
                         <span className="text-xs text-muted-foreground">stable</span>
                       )}
@@ -617,7 +617,7 @@ export default function EngineeringDashboardPage() {
                           not enough history yet ({entry.baselineSamples} baseline samples)
                         </span>
                       ) : entry.anomalous ? (
-                        <span className="text-xs font-medium text-amber-500">
+                        <span className="text-xs font-medium text-warning">
                           risen{entry.ratio !== null ? ` ${entry.ratio.toFixed(1)}×` : ' from no recorded cost'}
                         </span>
                       ) : (

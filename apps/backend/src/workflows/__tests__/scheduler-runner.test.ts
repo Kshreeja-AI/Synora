@@ -21,6 +21,10 @@ const createWorkspaceToolRunner = vi.hoisted(() =>
   vi.fn(() => ({ execute: vi.fn(async () => ({ output: 'ok' })) })),
 );
 vi.mock('../../agents/tool-runner-adapter.js', () => ({ createWorkspaceToolRunner }));
+vi.mock('../../agents/metering.js', () => ({
+  assertRunBudget: vi.fn(async () => undefined),
+  meterRun: vi.fn(async () => undefined),
+}));
 
 import { InMemoryKeyedStore, setAgentRunStore } from '../../agents/agent-stores';
 import { listRuns, resetRuns } from '../../agents/run-engine';

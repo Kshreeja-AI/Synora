@@ -19,6 +19,12 @@ vi.mock('@synora/database', () => ({
       findUnique: vi.fn(),
     },
   },
+  MemoryPermission: {
+    PRIVATE: 'PRIVATE',
+    WORKSPACE: 'WORKSPACE',
+    SHARED: 'SHARED',
+    PUBLIC: 'PUBLIC',
+  },
 }))
 
 vi.mock('../memoryCache.service', () => ({
@@ -143,6 +149,35 @@ describe('MemoryRetrievalService without a semantic provider', () => {
     expect(serialized).toContain('compose')
     expect(serialized).toContain('config')
   })
+
+  it('applies requester permissions to lexical and candidate queries before limiting results', async () => {
+    const { prisma } = await import('@synora/database')
+    vi.mocked(prisma.memory.findMany).mockResolvedValue([memory()] as never)
+
+    await service.retrieveMemories({
+      query: 'deploy runbook',
+      workspaceId: 'ws-1',
+      userId: 'u-1',
+    })
+
+    const calls = vi.mocked(prisma.memory.findMany).mock.calls
+    const expectedVisibility = {
+      OR: [
+        { permission: 'PRIVATE', userId: 'u-1' },
+        { permission: 'WORKSPACE' },
+        { permission: 'SHARED', sharedWith: { hasSome: ['u-1'] } },
+        { permission: 'PUBLIC' },
+      ],
+    }
+
+    expect(calls[0][0]).toMatchObject({
+      where: { workspaceId: 'ws-1', AND: [expectedVisibility] },
+      take: 30,
+    })
+    expect(calls[1][0]).toMatchObject({
+      where: { workspaceId: 'ws-1', AND: [expectedVisibility] },
+    })
+  })
 })
 
 describe('MemoryRetrievalService with a semantic provider', () => {
@@ -168,6 +203,7 @@ describe('MemoryRetrievalService with a semantic provider', () => {
     })
 
     expect(semanticSearchMock).toHaveBeenCalled()
+    expect(semanticSearchMock).toHaveBeenCalledWith('deploy runbook', 'ws-1', 30, 'u-1')
     expect(results[0].rankingDetails.semanticSearchUsed).toBe(true)
     expect(results[0].rankingDetails.semanticScore).toBe(0.9)
   })

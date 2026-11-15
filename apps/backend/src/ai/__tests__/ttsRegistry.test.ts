@@ -31,10 +31,10 @@ describe('text-to-speech provider registry', () => {
     vi.clearAllMocks();
   });
 
-  it('lists the self-hosted provider before OpenAI (adding another is one descriptor)', () => {
+  it('lists all providers: self-hosted first, then openai, then openrouter', () => {
     // Order matters: first configured wins, so a free self-hosted endpoint
-    // must outrank the paid OpenAI key when both are present.
-    expect(TTS_PROVIDER_REGISTRY.map((p) => p.id)).toEqual(['self-hosted-tts', 'openai']);
+    // must outrank paid keys when both are present.
+    expect(TTS_PROVIDER_REGISTRY.map((p) => p.id)).toEqual(['self-hosted-tts', 'openai', 'openrouter']);
     for (const descriptor of TTS_PROVIDER_REGISTRY) {
       expect(descriptor.capabilities).toContain('text-to-speech');
     }
@@ -52,6 +52,15 @@ describe('text-to-speech provider registry', () => {
 
     const provider = await resolveTextToSpeechProvider();
     expect(provider.id).toBe('openai');
+    expect(provider.capabilities).toContain('text-to-speech');
+  });
+
+  it('resolves OpenRouter when explicitly selected', async () => {
+    vi.mocked(secretsManager.hasReal).mockResolvedValue(true);
+    vi.mocked(secretsManager.get).mockResolvedValue('test-key');
+
+    const provider = await resolveTextToSpeechProvider({ explicitProviderId: 'openrouter' });
+    expect(provider.id).toBe('openrouter');
     expect(provider.capabilities).toContain('text-to-speech');
   });
 });

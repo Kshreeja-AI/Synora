@@ -1,5 +1,5 @@
 import { prisma as db } from '@synora/database'
-import { Memory } from '@synora/database'
+import { Memory, MemoryPermission } from '@synora/database'
 import { NotFoundException, ValidationException } from '@synora/shared'
 import { memoryEmbeddingService, isSemanticSearchAvailable } from './memoryEmbedding.service'
 import { memoryCacheService } from './memoryCache.service'
@@ -8,7 +8,7 @@ import { logger } from '../utils/logger'
 export interface RetrievalQuery {
   query: string
   workspaceId: string
-  userId?: string
+  userId: string
   conversationId?: string
   limit?: number
   filters?: {
@@ -18,6 +18,17 @@ export interface RetrievalQuery {
     minImportance?: number
     maxAge?: number // days
     onlyPinned?: boolean
+  }
+}
+
+function visibleMemoryFilter(userId: string) {
+  return {
+    OR: [
+      { permission: MemoryPermission.PRIVATE, userId },
+      { permission: MemoryPermission.WORKSPACE },
+      { permission: MemoryPermission.SHARED, sharedWith: { hasSome: [userId] } },
+      { permission: MemoryPermission.PUBLIC },
+    ],
   }
 }
 
@@ -66,14 +77,14 @@ export class MemoryRetrievalService {
       const semanticUsed = hasQuery && (await isSemanticSearchAvailable())
       let semanticResults: Array<{ memoryId: string; score: number }> = []
       if (semanticUsed) {
-        semanticResults = await this.semanticSearch(query.query, query.workspaceId, limit * 3)
+        semanticResults = await this.semanticSearch(query.query, query.workspaceId, limit * 3, query.userId)
       }
 
       // Step 2: Lexical search over stored content — the always-available
       // retrieval path.
       let lexicalResults: Memory[] = []
       if (hasQuery) {
-        lexicalResults = await this.lexicalSearch(terms, query.workspaceId, limit * 3)
+        lexicalResults = await this.lexicalSearch(terms, query.workspaceId, limit * 3, query.userId)
       }
 
       // Step 3: Build candidate pool
@@ -86,6 +97,7 @@ export class MemoryRetrievalService {
         where: {
           id: { in: Array.from(candidateIds) },
           workspaceId: query.workspaceId,
+          AND: [visibleMemoryFilter(query.userId)],
         },
         include: {
           metadata: true,
@@ -204,9 +216,10 @@ export class MemoryRetrievalService {
     query: string,
     workspaceId: string,
     limit: number,
+    userId: string,
   ): Promise<Array<{ memoryId: string; score: number }>> {
     try {
-      const results = await memoryEmbeddingService.semanticSearch(query, workspaceId, limit)
+      const results = await memoryEmbeddingService.semanticSearch(query, workspaceId, limit, userId)
       return results.map((r) => ({
         memoryId: r.memoryId,
         score: r.score,
@@ -241,7 +254,7 @@ export class MemoryRetrievalService {
    * alone), and the candidate pool is intentionally an OR — per-term
    * precision is what the lexical score below is for.
    */
-  private async lexicalSearch(terms: string[], workspaceId: string, limit: number): Promise<Memory[]> {
+  private async lexicalSearch(terms: string[], workspaceId: string, limit: number, userId: string): Promise<Memory[]> {
     if (terms.length === 0) {
       return []
     }
@@ -250,6 +263,10 @@ export class MemoryRetrievalService {
       return await db.memory.findMany({
         where: {
           workspaceId,
+          // Restrict by requester before `take`; filtering after retrieval can
+          // both expose unauthorized candidates to later code and starve valid
+          // results when the page is filled with inaccessible memories.
+          AND: [visibleMemoryFilter(userId)],
           OR: [
             ...terms.flatMap((term) => [
               { content: { contains: term, mode: 'insensitive' as const } },
@@ -286,12 +303,7 @@ export class MemoryRetrievalService {
   /**
    * Apply access control (PRIVATE, WORKSPACE, SHARED, PUBLIC)
    */
-  private async applyAccessControl(memories: Memory[], userId?: string): Promise<Memory[]> {
-    if (!userId) {
-      // Unauthenticated: only PUBLIC
-      return memories.filter((m) => m.permission === 'PUBLIC')
-    }
-
+  private async applyAccessControl(memories: Memory[], userId: string): Promise<Memory[]> {
     // Authenticated user: own + workspace + shared + public
     return memories.filter((m) => {
       if (m.permission === 'PUBLIC') return true
@@ -441,6 +453,7 @@ export class MemoryRetrievalService {
         memory.content,
         memory.workspaceId,
         limit + 1, // +1 to exclude self
+        memory.userId,
       )
 
       // Filter self and by threshold

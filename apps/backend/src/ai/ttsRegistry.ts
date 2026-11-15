@@ -3,6 +3,7 @@ import { NoProviderConfiguredError } from './types';
 import type { AIProviderDescriptor } from './types/descriptor';
 import { openaiTextToSpeechDescriptor } from './providers/openaiTextToSpeech.provider';
 import { selfHostedTextToSpeechDescriptor } from './providers/selfHostedTextToSpeech.provider';
+import { openrouterTextToSpeechDescriptor } from './providers/openrouterTextToSpeech.provider';
 
 /**
  * Text-to-speech providers, kept in their own registry because they build a
@@ -15,6 +16,7 @@ export const TTS_PROVIDER_REGISTRY: readonly AIProviderDescriptor<TextToSpeechPr
   // Self-hosted first: when both are configured, the free endpoint wins over a paid key.
   selfHostedTextToSpeechDescriptor,
   openaiTextToSpeechDescriptor,
+  openrouterTextToSpeechDescriptor,
 ];
 
 const TTS_CAPABILITY: AICapability = 'text-to-speech';
@@ -25,7 +27,25 @@ const TTS_CAPABILITY: AICapability = 'text-to-speech';
  * configured, so the caller surfaces an honest "not available" rather than
  * fabricating audio.
  */
-export async function resolveTextToSpeechProvider(): Promise<TextToSpeechProvider> {
+export async function resolveTextToSpeechProvider(options?: {
+  explicitProviderId?: string;
+}): Promise<TextToSpeechProvider> {
+  if (options?.explicitProviderId) {
+    const explicit = TTS_PROVIDER_REGISTRY.find((p) => p.id === options.explicitProviderId);
+    if (!explicit) {
+      throw new Error(
+        `The requested provider is not a known text-to-speech provider. Known providers: ` +
+          `${TTS_PROVIDER_REGISTRY.map((p) => p.id).join(', ')}.`
+      );
+    }
+    if (!(await explicit.isConfigured())) {
+      throw new Error(
+        `The requested text-to-speech provider "${explicit.id}" is not configured.`
+      );
+    }
+    return explicit.create();
+  }
+
   for (const descriptor of TTS_PROVIDER_REGISTRY) {
     if (await descriptor.isConfigured()) {
       return descriptor.create();

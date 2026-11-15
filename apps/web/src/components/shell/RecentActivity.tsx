@@ -35,10 +35,10 @@ export function RecentActivity({ workspaceId }: { workspaceId: string }) {
   if (isLoading) return null;
 
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-labelledby="activity-heading">
+    <section className="space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm" aria-labelledby="activity-heading">
       <div className="flex items-center gap-2">
         <History className="h-4 w-4" aria-hidden />
-        <h2 id="activity-heading" className="font-semibold">
+        <h2 id="activity-heading" className="text-sm font-semibold">
           Recent activity
         </h2>
       </div>

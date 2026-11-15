@@ -39,7 +39,7 @@ router.post('/:workspaceId/memories/search/semantic', authMiddleware, requireWor
       throw new ValidationException('Query is required')
     }
 
-    const results = await memoryEmbeddingService.semanticSearch(query, workspaceId, parseInt(limit))
+    const results = await memoryEmbeddingService.semanticSearch(query, workspaceId, parseInt(limit), req.user!.id)
 
     res.json({ success: true, data: results })
   } catch (error) {
@@ -344,13 +344,11 @@ router.get('/:workspaceId/memories/:memoryId', authMiddleware, requireWorkspaceA
     const { workspaceId, memoryId } = req.params
     const userId = req.user!.id
 
-    // Check cache first
-    let memory = await memoryCacheService.getCachedMemory(memoryId)
-
-    if (!memory) {
-      memory = await memoryService.getMemory(memoryId, userId, workspaceId)
-      await memoryCacheService.cacheMemory(memory)
-    }
+    // Authorization is checked against the source of truth on every read.
+    // The cache is only warmed after that check; a cached object must never
+    // bypass the memory's PRIVATE/SHARED permission boundary.
+    const memory = await memoryService.getMemory(memoryId, userId, workspaceId)
+    await memoryCacheService.cacheMemory(memory, userId, workspaceId)
 
     res.json({ success: true, data: memory })
   } catch (error) {
@@ -370,32 +368,44 @@ router.get('/:workspaceId/memories', authMiddleware, requireWorkspaceAccess(), a
     const { conversationId, type, status, tags, search, limit = 20, offset = 0, pinnedOnly, archivedOnly } = req.query
     const userId = req.user!.id
 
-    // Check cache for search results
-    const cacheKey = `${workspaceId}:${search || ''}`
-    const cached = await memoryCacheService.getCachedSearchResults(workspaceId, cacheKey)
+    const normalizedTags = tags ? (Array.isArray(tags) ? (tags as string[]) : [tags as string]) : []
+    const searchParams = {
+      workspaceId,
+      conversationId: conversationId as string,
+      type: type as any,
+      status: status as any,
+      tags: normalizedTags,
+      searchTerm: search as string,
+      limit: parseInt(limit as string) || 20,
+      offset: parseInt(offset as string) || 0,
+      pinnedOnly: pinnedOnly === 'true',
+      archivedOnly: archivedOnly === 'true',
+    }
+    const cacheScope = {
+      userId,
+      conversationId: searchParams.conversationId,
+      type: searchParams.type,
+      status: searchParams.status,
+      tags: [...normalizedTags].sort(),
+      searchTerm: searchParams.searchTerm,
+      limit: searchParams.limit,
+      offset: searchParams.offset,
+      pinnedOnly: searchParams.pinnedOnly,
+      archivedOnly: searchParams.archivedOnly,
+    }
+
+    // Every filter and the requesting user participate in the key. A cache
+    // entry from another member or a different page/filter cannot be reused.
+    const cached = await memoryCacheService.getCachedSearchResults(workspaceId, cacheScope)
 
     if (cached) {
       return res.json({ success: true, data: cached })
     }
 
-    const result = await memoryService.searchMemories(
-      {
-        workspaceId,
-        conversationId: conversationId as string,
-        type: type as any,
-        status: status as any,
-        tags: tags ? (Array.isArray(tags) ? (tags as string[]) : [tags as string]) : [],
-        searchTerm: search as string,
-        limit: parseInt(limit as string) || 20,
-        offset: parseInt(offset as string) || 0,
-        pinnedOnly: pinnedOnly === 'true',
-        archivedOnly: archivedOnly === 'true',
-      },
-      userId,
-    )
+    const result = await memoryService.searchMemories(searchParams, userId)
 
     // Cache results
-    await memoryCacheService.cacheSearchResults(workspaceId, cacheKey, result)
+    await memoryCacheService.cacheSearchResults(workspaceId, cacheScope, result)
 
     res.json({ success: true, data: result })
   } catch (error) {

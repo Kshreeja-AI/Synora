@@ -34,13 +34,17 @@ export class OpenAITextToSpeechProvider implements TextToSpeechProvider {
     readonly id: string,
     private readonly client: OpenAI,
     private readonly defaultModel: string,
-    private readonly defaultVoice: string
+    private readonly defaultVoice?: string
   ) {}
 
   async synthesize(request: TextToSpeechRequest): Promise<TextToSpeechResult> {
     const model = request.model ?? this.defaultModel;
     const voice = request.voice ?? this.defaultVoice;
     const format = request.format ?? DEFAULT_FORMAT;
+
+    if (!voice) {
+      throw new AIProviderError(`${this.id} text-to-speech requires an explicit voice`, this.id);
+    }
 
     try {
       const response = await this.client.audio.speech.create({

@@ -10,7 +10,7 @@ import {
   UseQueryResult,
   UseMutationResult,
 } from '@tanstack/react-query';
-import { api } from './client';
+import { api, getApiBaseUrl } from './client';
 
 export interface MessageAttachment {
   id: string;
@@ -119,14 +119,7 @@ export function subscribeToMessageStream(
   onError: (error: string) => void
 ): () => void {
   const streamUrl = `/api/workspaces/${workspaceId}/conversations/${conversationId}/stream?messageId=${messageId}`;
-  const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-
-  // Resolve the full URL based on environment
-  const fullUrl = baseUrl
-    ? `${baseUrl}${streamUrl}`
-    : streamUrl;
-
-  const eventSource = new EventSource(fullUrl, { withCredentials: true });
+  const eventSource = new EventSource(`${getApiBaseUrl()}${streamUrl}`, { withCredentials: true });
 
   eventSource.addEventListener('token', (e) => {
     try {

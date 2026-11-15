@@ -96,7 +96,7 @@ export function SearchDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-16 transition-opacity"
+      role="dialog" aria-modal="true" aria-label="Search" className="fixed inset-0 z-50 bg-background/70 backdrop-blur-sm flex items-start justify-center pt-16 transition-opacity"
       onClick={onClose}
     >
       <div
@@ -113,10 +113,12 @@ export function SearchDialog({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="flex-1 bg-transparent text-foreground outline-none text-sm"
+            aria-label="Search conversations and messages" className="flex-1 bg-transparent text-foreground text-sm placeholder:text-muted-foreground focus:outline-none"
           />
           {query && (
             <button
+              type="button"
+              aria-label="Clear search"
               onClick={() => {
                 setQuery('');
                 setSelectedIndex(0);
@@ -133,6 +135,7 @@ export function SearchDialog({
           <div className="border-b border-border flex gap-0 px-4">
             {['all', 'conversations', 'messages'].map((tab) => (
               <button
+                type="button"
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={`px-4 py-2 text-sm font-medium border-b-2 transition ${

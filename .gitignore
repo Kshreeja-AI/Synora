@@ -186,7 +186,15 @@ dump.rdb
 # Dataset export output files written by datasetExport.service.ts during local testing
 apps/backend/exports/
 
+# Machine-local Claude Code permissions and one-off run scripts
+.claude/settings.local.json
+tmp-scripts/
+
 # Playwright test artifacts
 apps/web/e2e/.results/
 apps/web/test-results/
 apps/web/playwright-report/
+
+# Never commit local Claude session config
+.claude/settings.local.json
+.claude/.claude/settings.local.json

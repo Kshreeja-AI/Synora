@@ -20,7 +20,7 @@ export default function BillingPlansPage() {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-gray-200 dark:bg-gray-700 h-96 rounded animate-pulse" />
+          <div key={i} className="bg-muted h-96 rounded animate-pulse" />
         ))}
       </div>
     );
@@ -60,7 +60,7 @@ export default function BillingPlansPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Billing Plans</h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
+        <p className="text-muted-foreground mt-2">
           Choose the plan that best fits your needs
         </p>
       </div>
@@ -75,7 +75,7 @@ export default function BillingPlansPage() {
               key={plan.id}
               className={`p-6 transition-all ${
                 isCurrentPlan
-                  ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950'
+                  ? 'ring-2 ring-primary bg-primary/10 '
                   : 'hover:shadow-lg'
               }`}
             >
@@ -90,7 +90,7 @@ export default function BillingPlansPage() {
                   )}
                 </div>
                 {plan.trialDays && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-muted-foreground ">
                     {plan.trialDays} day free trial
                   </p>
                 )}
@@ -102,7 +102,7 @@ export default function BillingPlansPage() {
                   <span className="text-4xl font-bold">
                     ${(plan.priceCents / 100).toFixed(2)}
                   </span>
-                  <span className="text-gray-600 dark:text-gray-400 ml-2">
+                  <span className="text-muted-foreground ml-2">
                     /{plan.interval === 'MONTH' ? 'month' : 'year'}
                   </span>
                 </div>
@@ -110,8 +110,8 @@ export default function BillingPlansPage() {
 
               {/* Credits */}
               {plan.creditsPerInterval > 0 && (
-                <div className="mb-6 pb-6 border-b dark:border-gray-700">
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                <div className="mb-6 pb-6 border-b ">
+                  <p className="text-sm text-muted-foreground ">
                     {plan.creditsPerInterval.toLocaleString()} credits per{' '}
                     {plan.interval === 'MONTH' ? 'month' : 'year'}
                   </p>
@@ -125,7 +125,7 @@ export default function BillingPlansPage() {
                   <ul className="space-y-2">
                     {Object.entries(plan.features).map(([key, value]) => (
                       <li key={key} className="flex items-center text-sm">
-                        <span className="text-green-600 dark:text-green-400 mr-2">✓</span>
+                        <span className="text-success mr-2">✓</span>
                         <span className="capitalize">
                           {key.replace(/_/g, ' ')}: {String(value)}
                         </span>
@@ -139,7 +139,7 @@ export default function BillingPlansPage() {
               {isCurrentPlan ? (
                 <button
                   disabled
-                  className="w-full py-2 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded font-medium cursor-not-allowed"
+                  className="w-full py-2 bg-muted text-foreground rounded font-medium cursor-not-allowed"
                 >
                   Current Plan
                 </button>
@@ -149,14 +149,14 @@ export default function BillingPlansPage() {
                     <button
                       onClick={() => handleChangePlan(plan.id)}
                       disabled={changePlanMutation.isPending}
-                      className="w-full py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700 disabled:opacity-50"
+                      className="w-full py-2 bg-primary text-primary-foreground rounded font-medium hover:bg-primary/90 disabled:opacity-50"
                     >
                       {changePlanMutation.isPending ? 'Changing...' : 'Confirm'}
                     </button>
                   ) : (
                     <button
                       onClick={() => handleSelectPlan(plan.id)}
-                      className="w-full py-2 bg-blue-600 text-white rounded font-medium hover:bg-blue-700"
+                      className="w-full py-2 bg-primary text-primary-foreground rounded font-medium hover:bg-primary/90"
                     >
                       Select Plan
                     </button>
@@ -167,7 +167,7 @@ export default function BillingPlansPage() {
               {isSelected && (
                 <button
                   onClick={() => setSelectedPlanId(null)}
-                  className="w-full mt-2 py-2 text-gray-600 dark:text-gray-400 text-sm hover:text-gray-700 dark:hover:text-gray-300"
+                  className="w-full mt-2 py-2 text-muted-foreground text-sm hover:text-foreground "
                 >
                   Cancel
                 </button>

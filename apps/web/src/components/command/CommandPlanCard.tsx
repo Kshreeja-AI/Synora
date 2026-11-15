@@ -60,11 +60,11 @@ const STEP_LABEL: Record<string, string> = {
  * words lack — a person who cannot distinguish these must lose nothing.
  */
 const STEP_TONE: Record<string, string> = {
-  completed: 'text-emerald-700 dark:text-emerald-400',
-  'waiting-approval': 'text-amber-700 dark:text-amber-400',
-  'needs-input': 'text-amber-700 dark:text-amber-400',
-  failed: 'text-red-700 dark:text-red-400',
-  rejected: 'text-red-700 dark:text-red-400',
+  completed: 'text-success ',
+  'waiting-approval': 'text-warning ',
+  'needs-input': 'text-warning ',
+  failed: 'text-destructive ',
+  rejected: 'text-destructive ',
 };
 
 function StepRow({
@@ -161,7 +161,7 @@ export function CommandPlanPreview({
           {plan.observations.map((observation) => (
             <li
               key={observation.kind}
-              className="rounded-md border border-amber-300 bg-amber-50 p-2 text-xs dark:bg-amber-950/30"
+              className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs "
             >
               {observation.detail}
             </li>

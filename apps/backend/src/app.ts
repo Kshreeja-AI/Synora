@@ -110,8 +110,19 @@ export function createApp(config: AppConfig, deps: CreateAppDeps = {}): Express 
   // Behind Render's/any reverse proxy every request arrives from the proxy's
   // address, so per-IP limits would all share one bucket. Trust exactly one
   // hop, and only where a proxy is known to exist.
+  //
+  // TRUST_PROXY_HOPS exists for one case: when the website proxies `/api/*`
+  // to this server (the same-origin proxy in apps/web/next.config.js), the
+  // website's host is a SECOND proxy in front of this one. With one trusted
+  // hop every visitor would then appear to come from that host's address and
+  // share a single login/registration rate-limit bucket. Set it to the real
+  // number of proxies in the chain — and no higher, because each extra
+  // trusted hop is one more forwarded address a direct caller could forge.
   if (config.stage === 'production' || config.stage === 'staging') {
-    app.set('trust proxy', 1);
+    const requestedHops = Number(process.env.TRUST_PROXY_HOPS);
+    const hops =
+      Number.isInteger(requestedHops) && requestedHops >= 1 && requestedHops <= 5 ? requestedHops : 1;
+    app.set('trust proxy', hops);
   }
 
   // Public, unauthenticated portfolio assistant. Mounted BEFORE the global

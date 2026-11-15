@@ -12,6 +12,8 @@ const router: Router = Router();
 
 const generateAudioSchema = z.object({
   text: z.string().min(1).max(4096),
+  providerId: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
   voice: z.string().min(1).max(100).optional(),
   format: z.enum(['mp3', 'wav', 'ogg', 'flac', 'aac']).optional(),
   projectId: z.string().min(1).optional(),
@@ -32,7 +34,7 @@ router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: AuthRequest, res, next) => {
   try {
-    const { text, voice, format, projectId } = generateAudioSchema.parse(req.body);
+    const { text, providerId, model, voice, format, projectId } = generateAudioSchema.parse(req.body);
 
     // Same rule as images: an unchecked projectId would plant media in a
     // project the caller cannot see. 404 on inaccessible projects.
@@ -43,6 +45,8 @@ router.post('/generate', authMiddleware, mediaGenerationLimiter, async (req: Aut
     const audio = await audioGenerationService.generate({
       userId: req.userId!,
       text,
+      providerId,
+      model,
       voice,
       format,
       projectId,

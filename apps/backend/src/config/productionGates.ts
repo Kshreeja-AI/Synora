@@ -94,17 +94,60 @@ export class ProductionGateError extends Error {
  * hop, and refusing on that would be an opinion rather than a fact. The
  * loopback host is the fact.
  */
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0', '[::1]']);
+const LOOPBACK_NAMES = new Set(['localhost', '0.0.0.0']);
+
+/**
+ * True for any dotted-decimal address in 127.0.0.0/8, not only 127.0.0.1.
+ * The whole block loops back to the local machine — WHATWG URL parsing
+ * already normalizes shorthand, decimal and hex IPv4 spellings (e.g.
+ * `127.1`, `2130706433`, `0x7f000001`) into this dotted form, so checking
+ * the first octet here is sufficient.
+ */
+function isIPv4LoopbackOctets(hostname: string): boolean {
+  const match = /^(\d{1,3})\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.exec(hostname);
+  return match !== null && Number(match[1]) === 127;
+}
+
+/**
+ * True for the IPv4-mapped IPv6 form of a 127.0.0.0/8 address, e.g.
+ * `::ffff:127.0.0.1`, which the URL parser renders as the compressed hex
+ * group pair `ffff:7f00:1`. Decodes the two trailing hex groups back into
+ * the four address bytes and checks the first one.
+ */
+function isIPv4MappedLoopback(ipv6Body: string): boolean {
+  const match = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ipv6Body);
+  if (!match) return false;
+  const firstByteHex = match[1].padStart(4, '0').slice(0, 2);
+  return Number.parseInt(firstByteHex, 16) === 127;
+}
 
 /** True when this URL would send a browser back to its own machine. */
 export function isLoopbackUrl(value: string): boolean {
+  let hostname: string;
   try {
-    return LOOPBACK_HOSTS.has(new URL(value).hostname.toLowerCase());
+    hostname = new URL(value).hostname.toLowerCase();
   } catch {
     // Unparseable is not this gate's problem — the schema validates shape.
     // Reporting it as loopback would blame the wrong thing.
     return false;
   }
+
+  // A trailing dot makes a hostname an explicit FQDN (the DNS root), and
+  // browsers resolve "localhost." identically to "localhost" — without
+  // stripping it, that one dot would be a free bypass of this gate.
+  const name = hostname.endsWith('.') ? hostname.slice(0, -1) : hostname;
+  if (LOOPBACK_NAMES.has(name)) return true;
+  if (isIPv4LoopbackOctets(name)) return true;
+
+  // IPv6 literals arrive bracketed, e.g. "[::1]" or the IPv4-mapped
+  // "[::ffff:7f00:1]" (127.0.0.1 written as an IPv6 address).
+  if (name.startsWith('[') && name.endsWith(']')) {
+    const inner = name.slice(1, -1);
+    if (inner === '::1') return true;
+    if (isIPv4MappedLoopback(inner)) return true;
+  }
+
+  return false;
 }
 
 export class LocalhostInProductionError extends Error {

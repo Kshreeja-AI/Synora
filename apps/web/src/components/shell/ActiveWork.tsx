@@ -32,10 +32,10 @@ export function ActiveWork({ workspaceId }: { workspaceId: string }) {
   if (active.length === 0) return null;
 
   return (
-    <section className="space-y-3 rounded-md border p-4" aria-labelledby="active-work-heading">
+    <section className="space-y-3 rounded-lg border border-border bg-card p-5 shadow-sm" aria-labelledby="active-work-heading">
       <div className="flex items-center gap-2">
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-        <h2 id="active-work-heading" className="font-semibold">
+        <h2 id="active-work-heading" className="text-sm font-semibold">
           Working right now
         </h2>
       </div>
@@ -46,7 +46,7 @@ export function ActiveWork({ workspaceId }: { workspaceId: string }) {
           return (
             <li
               key={run.id}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background/40 p-3 text-sm"
             >
               <div>
                 <p className="font-medium">{run.task || 'Untitled run'}</p>

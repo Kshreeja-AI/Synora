@@ -13,6 +13,7 @@ import { upsertVectors, queryVectors, VECTORDB_PROVIDER_REGISTRY } from '../../v
  */
 
 vi.mock('@synora/database', () => ({
+  MemoryPermission: { PRIVATE: 'PRIVATE', WORKSPACE: 'WORKSPACE', SHARED: 'SHARED', PUBLIC: 'PUBLIC' },
   prisma: {
     memory: {
       findUnique: vi.fn(),
@@ -85,7 +86,7 @@ describe('MemoryEmbeddingService without configured providers', () => {
   })
 
   it('throws a 503 from semanticSearch rather than returning empty results', async () => {
-    await expect(service.semanticSearch('deploy', 'ws-1')).rejects.toMatchObject({
+    await expect(service.semanticSearch('deploy', 'ws-1', 10, 'u-1')).rejects.toMatchObject({
       statusCode: 503,
     })
     expect(vi.mocked(embed)).not.toHaveBeenCalled()
@@ -189,7 +190,7 @@ describe('MemoryEmbeddingService with configured providers', () => {
     } as never)
     vi.mocked(prisma.memory.findMany).mockResolvedValueOnce([memoryFixture] as never)
 
-    const results = await service.semanticSearch('deploy runbook', 'ws-1')
+    const results = await service.semanticSearch('deploy runbook', 'ws-1', 10, 'u-1')
 
     expect(vi.mocked(queryVectors)).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -211,11 +212,35 @@ describe('MemoryEmbeddingService with configured providers', () => {
     // Postgres returns nothing for that id within this workspace.
     vi.mocked(prisma.memory.findMany).mockResolvedValueOnce([] as never)
 
-    const results = await service.semanticSearch('deploy', 'ws-1')
+    const results = await service.semanticSearch('deploy', 'ws-1', 10, 'u-1')
 
     expect(results).toEqual([])
     expect(vi.mocked(prisma.memory.findMany).mock.calls[0][0]!.where).toMatchObject({
       workspaceId: 'ws-1',
+    })
+  })
+
+  it('filters semantic results by the requesting user\'s memory permissions', async () => {
+    const { prisma } = await import('@synora/database')
+    vi.mocked(queryVectors).mockResolvedValue({
+      matches: [{ id: 'memory_mem-1', score: 0.87 }],
+    } as never)
+    vi.mocked(prisma.memory.findMany).mockResolvedValueOnce([memoryFixture] as never)
+
+    await service.semanticSearch('deploy runbook', 'ws-1', 10, 'u-1')
+
+    expect(vi.mocked(prisma.memory.findMany).mock.calls[0][0]!.where).toMatchObject({
+      workspaceId: 'ws-1',
+      AND: [
+        {
+          OR: [
+            { permission: 'PRIVATE', userId: 'u-1' },
+            { permission: 'WORKSPACE' },
+            { permission: 'SHARED', sharedWith: { hasSome: ['u-1'] } },
+            { permission: 'PUBLIC' },
+          ],
+        },
+      ],
     })
   })
 

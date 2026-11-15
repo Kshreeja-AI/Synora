@@ -2,81 +2,98 @@
  * Synora design tokens. Dark is the default theme (:root); light is the
  * override. Every color is an HSL triple consumed by the shared Tailwind
  * preset (tailwind-preset.cjs) as `hsl(var(--token) / <alpha-value>)`.
+ *
+ * Palette: midnight navy surfaces, warm-white light theme, one restrained
+ * blue accent. Contrast pairs are chosen for WCAG AA: body text on every
+ * surface, muted text on background/card, and primary-foreground on primary.
  */
 :root {
-  --background: 240 10% 4%;
-  --foreground: 240 6% 96%;
+  --background: 222 30% 6%;
+  --foreground: 220 20% 95%;
 
-  --card: 240 8% 6%;
-  --card-foreground: 240 6% 96%;
+  --card: 222 26% 8.5%;
+  --card-foreground: 220 20% 95%;
 
-  --popover: 240 8% 7%;
-  --popover-foreground: 240 6% 96%;
+  --popover: 222 26% 10%;
+  --popover-foreground: 220 20% 95%;
 
-  --primary: 252 92% 68%;
-  --primary-foreground: 0 0% 100%;
+  /* Light enough to read as link text on the dark surfaces, so its
+     foreground is the dark navy rather than white. */
+  --primary: 214 92% 66%;
+  --primary-foreground: 222 45% 8%;
 
-  --secondary: 240 5% 12%;
-  --secondary-foreground: 240 6% 96%;
+  --secondary: 222 20% 13%;
+  --secondary-foreground: 220 20% 95%;
 
-  --muted: 240 5% 12%;
-  --muted-foreground: 240 5% 64%;
+  --muted: 222 20% 13%;
+  --muted-foreground: 220 12% 66%;
 
-  --accent: 240 5% 14%;
-  --accent-foreground: 240 6% 96%;
+  --accent: 222 20% 15%;
+  --accent-foreground: 220 20% 96%;
 
-  --destructive: 0 72% 56%;
+  --destructive: 0 74% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 152 60% 44%;
-  --success-foreground: 0 0% 100%;
+  --success: 158 58% 46%;
+  --success-foreground: 222 45% 8%;
 
-  --warning: 38 92% 50%;
-  --warning-foreground: 240 10% 4%;
+  --warning: 38 92% 56%;
+  --warning-foreground: 222 45% 8%;
 
-  --border: 240 6% 14%;
-  --input: 240 6% 16%;
-  --ring: 252 92% 68%;
+  --border: 222 18% 16%;
+  --input: 222 18% 21%;
+  --ring: 214 92% 66%;
 
   --radius: 0.625rem;
+
+  /* Elevation. Dark surfaces separate by border first, shadow second. */
+  --shadow-color: 222 60% 2%;
+  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.4);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.5), 0 1px 2px 0 hsl(var(--shadow-color) / 0.4);
+  --shadow-lg: 0 16px 48px -12px hsl(var(--shadow-color) / 0.65), 0 2px 6px 0 hsl(var(--shadow-color) / 0.4);
 
   color-scheme: dark;
 }
 
 [data-theme='light'] {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 8%;
+  --background: 40 23% 98%;
+  --foreground: 222 32% 11%;
 
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 8%;
+  --card-foreground: 222 32% 11%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 8%;
+  --popover-foreground: 222 32% 11%;
 
-  --primary: 252 82% 58%;
+  --primary: 220 84% 48%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 240 5% 96%;
-  --secondary-foreground: 240 10% 8%;
+  --secondary: 220 16% 95%;
+  --secondary-foreground: 222 32% 11%;
 
-  --muted: 240 5% 96%;
-  --muted-foreground: 240 4% 42%;
+  --muted: 220 16% 95%;
+  --muted-foreground: 220 10% 38%;
 
-  --accent: 240 5% 94%;
-  --accent-foreground: 240 10% 8%;
+  --accent: 220 16% 93%;
+  --accent-foreground: 222 32% 11%;
 
-  --destructive: 0 72% 48%;
+  --destructive: 0 72% 46%;
   --destructive-foreground: 0 0% 100%;
 
-  --success: 152 60% 34%;
+  --success: 158 64% 30%;
   --success-foreground: 0 0% 100%;
 
-  --warning: 32 95% 44%;
+  --warning: 32 95% 38%;
   --warning-foreground: 0 0% 100%;
 
-  --border: 240 6% 90%;
-  --input: 240 6% 88%;
-  --ring: 252 82% 58%;
+  --border: 220 14% 89%;
+  --input: 220 14% 84%;
+  --ring: 220 84% 48%;
+
+  --shadow-color: 222 30% 20%;
+  --shadow-sm: 0 1px 2px 0 hsl(var(--shadow-color) / 0.06);
+  --shadow-md: 0 4px 16px -4px hsl(var(--shadow-color) / 0.1), 0 1px 2px 0 hsl(var(--shadow-color) / 0.06);
+  --shadow-lg: 0 16px 48px -12px hsl(var(--shadow-color) / 0.18), 0 2px 6px 0 hsl(var(--shadow-color) / 0.06);
 
   color-scheme: light;
 }
