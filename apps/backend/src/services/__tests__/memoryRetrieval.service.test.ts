@@ -19,6 +19,12 @@ vi.mock('@synora/database', () => ({
       findUnique: vi.fn(),
     },
   },
+  MemoryPermission: {
+    PRIVATE: 'PRIVATE',
+    WORKSPACE: 'WORKSPACE',
+    SHARED: 'SHARED',
+    PUBLIC: 'PUBLIC',
+  },
 }))
 
 vi.mock('../memoryCache.service', () => ({
